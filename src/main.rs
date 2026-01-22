@@ -1,22 +1,32 @@
-//! Stellar-K8s Operator Entry Point
-//!
-//! Starts the Kubernetes controller and optional REST API server.
-
+use clap::Parser;
 use std::sync::Arc;
-
 use stellar_k8s::{controller, Error};
 use tracing::{info, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Enable mTLS for the REST API
+    #[arg(long, env = "ENABLE_MTLS")]
+    enable_mtls: bool,
+
+    /// Operator namespace
+    #[arg(long, env = "OPERATOR_NAMESPACE", default_value = "default")]
+    namespace: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    let args = Args::parse();
+
     // Initialize tracing with OpenTelemetry
     let env_filter = EnvFilter::builder()
         .with_default_directive(Level::INFO.into())
         .from_env_lossy();
 
     let fmt_layer = fmt::layer().with_target(true);
-    
+
     // Register the subscriber with both stdout logging and OpenTelemetry tracing
     let registry = tracing_subscriber::registry()
         .with(env_filter)
@@ -24,7 +34,7 @@ async fn main() -> Result<(), Error> {
 
     // Only enable OTEL if an endpoint is provided or via a flag
     let otel_enabled = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok();
-    
+
     if otel_enabled {
         let otel_layer = stellar_k8s::telemetry::init_telemetry(&registry);
         registry.with(otel_layer).init();
@@ -42,22 +52,79 @@ async fn main() -> Result<(), Error> {
     // Initialize Kubernetes client
     let client = kube::Client::try_default()
         .await
-        .map_err(|e| Error::KubeError(e))?;
+        .map_err(Error::KubeError)?;
 
     info!("Connected to Kubernetes cluster");
+
+    let client_clone = client.clone();
+    let namespace = args.namespace.clone();
+
+    let mtls_config = if args.enable_mtls {
+        info!("Initializing mTLS for Operator...");
+
+        // Ensure CA and Server Cert exist
+        controller::mtls::ensure_ca(&client_clone, &namespace).await?;
+        controller::mtls::ensure_server_cert(
+            &client_clone,
+            &namespace,
+            vec![
+                "stellar-operator".to_string(),
+                format!("stellar-operator.{}", namespace),
+            ],
+        )
+        .await?;
+
+        // Fetch the secret to get the PEM data
+        let secrets: kube::Api<k8s_openapi::api::core::v1::Secret> =
+            kube::Api::namespaced(client_clone, &namespace);
+        let secret = secrets
+            .get(controller::mtls::SERVER_CERT_SECRET_NAME)
+            .await
+            .map_err(Error::KubeError)?;
+        let data = secret
+            .data
+            .ok_or_else(|| Error::ConfigError("Secret has no data".to_string()))?;
+
+        let cert_pem = data
+            .get("tls.crt")
+            .ok_or_else(|| Error::ConfigError("Missing tls.crt".to_string()))?
+            .0
+            .clone();
+        let key_pem = data
+            .get("tls.key")
+            .ok_or_else(|| Error::ConfigError("Missing tls.key".to_string()))?
+            .0
+            .clone();
+        let ca_pem = data
+            .get("ca.crt")
+            .ok_or_else(|| Error::ConfigError("Missing ca.crt".to_string()))?
+            .0
+            .clone();
+
+        Some(stellar_k8s::MtlsConfig {
+            cert_pem,
+            key_pem,
+            ca_pem,
+        })
+    } else {
+        None
+    };
 
     // Create shared controller state
     let state = Arc::new(controller::ControllerState {
         client: client.clone(),
+        enable_mtls: args.enable_mtls,
+        operator_namespace: args.namespace.clone(),
+        mtls_config: mtls_config.clone(),
     });
 
-    // Start the controller
-    // In production, you might also start the REST API server here
+    // Start the REST API server
     #[cfg(feature = "rest-api")]
     {
         let api_state = state.clone();
+
         tokio::spawn(async move {
-            if let Err(e) = stellar_k8s::rest_api::run_server(api_state).await {
+            if let Err(e) = stellar_k8s::rest_api::run_server(api_state, mtls_config).await {
                 tracing::error!("REST API server error: {:?}", e);
             }
         });

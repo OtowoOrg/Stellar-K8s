@@ -8,10 +8,11 @@ mod finalizers;
 mod health;
 #[cfg(test)]
 mod health_test;
+pub mod mtls;
 mod reconciler;
 mod resources;
 
-pub use archive_health::{check_history_archive_health, calculate_backoff, ArchiveHealthResult};
+pub use archive_health::{calculate_backoff, check_history_archive_health, ArchiveHealthResult};
 pub use finalizers::STELLAR_NODE_FINALIZER;
 pub use health::{check_node_health, HealthCheckResult};
 pub use reconciler::{run_controller, ControllerState};

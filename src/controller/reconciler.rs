@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
-use k8s_openapi::api::core::v1::{PersistentVolumeClaim, Service, Event};
+use k8s_openapi::api::core::v1::{Event, PersistentVolumeClaim, Service};
 use kube::{
     api::{Api, Patch, PatchParams, PostParams},
     client::Client,
@@ -20,16 +20,25 @@ use kube::{
 };
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::crd::{NodeType, StellarNode, Condition};
+use crate::controller::archive_health::{
+    calculate_backoff, check_history_archive_health, ArchiveHealthResult,
+};
+use crate::crd::{Condition, NodeType, StellarNode, StellarNodeStatus};
 use crate::error::{Error, Result};
+
+const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-retries";
 
 use super::finalizers::STELLAR_NODE_FINALIZER;
 use super::health;
+use super::mtls;
 use super::resources;
 
 /// Shared state for the controller
 pub struct ControllerState {
     pub client: Client,
+    pub enable_mtls: bool,
+    pub operator_namespace: String,
+    pub mtls_config: Option<crate::MtlsConfig>,
 }
 
 /// Main entry point to start the controller
@@ -167,7 +176,7 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
     // Use kube-rs built-in finalizer helper for clean lifecycle management
     finalizer(&api, STELLAR_NODE_FINALIZER, obj, |event| async {
         match event {
-            FinalizerEvent::Apply(node) => apply_stellar_node(&client, &node).await,
+            FinalizerEvent::Apply(node) => apply_stellar_node(&client, &node, &ctx).await,
             FinalizerEvent::Cleanup(node) => cleanup_stellar_node(&client, &node).await,
         }
     })
@@ -176,8 +185,12 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
 }
 
 /// Apply/create/update the StellarNode resources
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Action> {
+#[instrument(skip(client, node, ctx), fields(name = %node.name_any(), namespace = node.namespace()))]
+async fn apply_stellar_node(
+    client: &Client,
+    node: &StellarNode,
+    ctx: &ControllerState,
+) -> Result<Action> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
 
@@ -192,7 +205,7 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
 
     // 1. Core infrastructure (PVC and ConfigMap) always managed by operator
     resources::ensure_pvc(client, node).await?;
-    resources::ensure_config_map(client, node).await?;
+    resources::ensure_config_map(client, node, ctx.enable_mtls).await?;
 
     // 2. Maintenance Mode Check
     // If active, we skip workload management (Step 3) and suspension checks.
@@ -203,13 +216,15 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
             namespace, name
         );
 
-        resources::ensure_service(client, node).await?;
+        resources::ensure_service(client, node, ctx.enable_mtls).await?;
 
         update_status(
             client,
             node,
             "Maintenance",
             Some("Manual maintenance mode active; workload management paused"),
+            0,
+            true,
         )
         .await?;
 
@@ -220,7 +235,15 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
     // This only runs if NOT in maintenance mode.
     if node.spec.suspended {
         info!("Node {}/{} is suspended, scaling to 0", namespace, name);
-        update_status(client, node, "Suspended", Some("Node is suspended"), 0, true).await?;
+        update_status(
+            client,
+            node,
+            "Suspended",
+            Some("Node is suspended"),
+            0,
+            true,
+        )
+        .await?;
         // Still create resources but with 0 replicas
     }
 
@@ -238,13 +261,14 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
                     .unwrap_or(true);
 
                 if is_startup_or_update {
-                    info!("Running history archive health check for {}/{}", namespace, name);
+                    info!(
+                        "Running history archive health check for {}/{}",
+                        namespace, name
+                    );
 
-                    let health_result = check_history_archive_health(
-                        &validator_config.history_archive_urls,
-                        None,
-                    )
-                    .await?;
+                    let health_result =
+                        check_history_archive_health(&validator_config.history_archive_urls, None)
+                            .await?;
 
                     if !health_result.any_healthy {
                         warn!(
@@ -276,7 +300,10 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
 
                         info!(
                             "Requeuing {}/{} in {:?} (retry attempt {})",
-                            namespace, name, delay, retries + 1
+                            namespace,
+                            name,
+                            delay,
+                            retries + 1
                         );
 
                         // Increment retry count in annotations
@@ -304,38 +331,51 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
     }
 
     // Update status to Creating
-    update_status(client, node, "Creating", Some("Creating resources"), 0, true).await?;
+    update_status(
+        client,
+        node,
+        "Creating",
+        Some("Creating resources"),
+        0,
+        true,
+    )
+    .await?;
 
     // 1. Create/update the PersistentVolumeClaim
     resources::ensure_pvc(client, node).await?;
     info!("PVC ensured for {}/{}", namespace, name);
 
     // 2. Create/update the ConfigMap for node configuration
-    resources::ensure_config_map(client, node).await?;
+    resources::ensure_config_map(client, node, ctx.enable_mtls).await?;
     info!("ConfigMap ensured for {}/{}", namespace, name);
+
+    // 2.5 Ensure mTLS certificates (if strict mTLS will be handled at rest_api level)
+    // We always ensure them for now if the operator supports it
+    mtls::ensure_ca(client, &namespace).await?;
+    mtls::ensure_node_cert(client, node).await?;
+    info!("mTLS certificates ensured for {}/{}", namespace, name);
 
     // 3. Create/update the Deployment/StatefulSet based on node type
     match node.spec.node_type {
         NodeType::Validator => {
-            resources::ensure_statefulset(client, node).await?;
+            resources::ensure_statefulset(client, node, ctx.enable_mtls).await?;
         }
         NodeType::Horizon | NodeType::SorobanRpc => {
-            resources::ensure_deployment(client, node).await?;
+            resources::ensure_deployment(client, node, ctx.enable_mtls).await?;
         }
     }
 
     // 5. Ensure Service and finalize status
-    resources::ensure_service(client, node).await?;
-
+    resources::ensure_service(client, node, ctx.enable_mtls).await?;
 
     // 5. Perform health check to determine if node is ready
-    let health_result = health::check_node_health(client, node).await?;
-    
+    let health_result = health::check_node_health(client, node, ctx.mtls_config.as_ref()).await?;
+
     debug!(
         "Health check result for {}/{}: healthy={}, synced={}, message={}",
         namespace, name, health_result.healthy, health_result.synced, health_result.message
     );
-    
+
     // Determine the phase based on health check
     let (phase, message) = if node.spec.suspended {
         ("Suspended", "Node is suspended".to_string())
@@ -346,10 +386,10 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
     } else {
         ("Ready", "Node is healthy and synced".to_string())
     };
-    
+
     // 6. Update status with health check results
     update_status_with_health(client, node, phase, Some(&message), &health_result).await?;
-    
+
     info!(
         "Node {}/{} status updated to: {} - {}",
         namespace, name, phase, message
@@ -375,7 +415,11 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
     let ready_replicas = get_ready_replicas(client, node).await.unwrap_or(0);
 
     // 9. Update status to Running with ready replica count
-    let phase = if node.spec.suspended { "Suspended" } else { "Running" };
+    let phase = if node.spec.suspended {
+        "Suspended"
+    } else {
+        "Running"
+    };
     update_status(
         client,
         node,
@@ -386,7 +430,6 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
     )
     .await?;
 
-
     // Requeue based on current state
     let requeue_duration = if phase == "Ready" {
         // Check less frequently when ready
@@ -395,7 +438,7 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
         // Check more frequently when syncing
         Duration::from_secs(15)
     };
-    
+
     Ok(Action::requeue(requeue_duration))
 }
 
@@ -565,12 +608,7 @@ async fn update_archive_health_status(
 
     let condition = Condition {
         type_: "ArchiveHealthCheck".to_string(),
-        status: if result.any_healthy {
-            "True"
-        } else {
-            "False"
-        }
-        .to_string(),
+        status: if result.any_healthy { "True" } else { "False" }.to_string(),
         last_transition_time: chrono::Utc::now().to_rfc3339(),
         reason: if result.any_healthy {
             "ArchiveHealthy"
@@ -633,29 +671,17 @@ async fn update_status_with_health(
 
     // Build conditions based on health check
     let mut conditions = Vec::new();
-    
+
     // Ready condition
     let ready_condition = if health.synced {
-        crate::crd::Condition::ready(
-            true,
-            "NodeSynced",
-            "Node is fully synced and operational",
-        )
+        crate::crd::Condition::ready(true, "NodeSynced", "Node is fully synced and operational")
     } else if health.healthy {
-        crate::crd::Condition::ready(
-            false,
-            "NodeSyncing",
-            &health.message,
-        )
+        crate::crd::Condition::ready(false, "NodeSyncing", &health.message)
     } else {
-        crate::crd::Condition::ready(
-            false,
-            "NodeNotHealthy",
-            &health.message,
-        )
+        crate::crd::Condition::ready(false, "NodeNotHealthy", &health.message)
     };
     conditions.push(ready_condition);
-    
+
     // Progressing condition
     if !health.synced && health.healthy {
         conditions.push(crate::crd::Condition::progressing(
@@ -668,7 +694,11 @@ async fn update_status_with_health(
         phase: phase.to_string(),
         message: message.map(String::from),
         observed_generation: node.metadata.generation,
-        replicas: if node.spec.suspended { 0 } else { node.spec.replicas },
+        replicas: if node.spec.suspended {
+            0
+        } else {
+            node.spec.replicas
+        },
         ready_replicas: if health.synced && !node.spec.suspended {
             node.spec.replicas
         } else {

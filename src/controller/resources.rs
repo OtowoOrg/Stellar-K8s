@@ -23,7 +23,7 @@ use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta, OwnerReference};
 use kube::api::{Api, DeleteParams, Patch, PatchParams, PostParams};
 use kube::{Client, Resource, ResourceExt};
-use tracing::{info, warn, instrument};
+use tracing::{info, instrument, warn};
 
 use crate::crd::{IngressConfig, KeySource, NodeType, StellarNode};
 use crate::error::{Error, Result};
@@ -159,12 +159,16 @@ pub async fn delete_pvc(client: &Client, node: &StellarNode) -> Result<()> {
 
 /// Ensure a ConfigMap exists with node configuration
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_config_map(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_config_map(
+    client: &Client,
+    node: &StellarNode,
+    enable_mtls: bool,
+) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "config");
 
-    let cm = build_config_map(node);
+    let cm = build_config_map(node, enable_mtls);
 
     let patch = Patch::Apply(&cm);
     api.patch(&name, &PatchParams::apply("stellar-operator"), &patch)
@@ -173,7 +177,7 @@ pub async fn ensure_config_map(client: &Client, node: &StellarNode) -> Result<()
     Ok(())
 }
 
-fn build_config_map(node: &StellarNode) -> ConfigMap {
+fn build_config_map(node: &StellarNode, enable_mtls: bool) -> ConfigMap {
     let labels = standard_labels(node);
     let name = resource_name(node, "config");
 
@@ -188,10 +192,20 @@ fn build_config_map(node: &StellarNode) -> ConfigMap {
     // Add node-type-specific configuration
     match &node.spec.node_type {
         NodeType::Validator => {
+            let mut core_cfg = String::new();
             if let Some(config) = &node.spec.validator_config {
                 if let Some(quorum) = &config.quorum_set {
-                    data.insert("stellar-core.cfg".to_string(), quorum.clone());
+                    core_cfg.push_str(quorum);
                 }
+            }
+            if enable_mtls {
+                core_cfg.push_str("\n# mTLS Configuration\n");
+                core_cfg.push_str("HTTP_PORT_SECURE=true\n");
+                core_cfg.push_str("TLS_CERT_FILE=\"/etc/stellar/tls/tls.crt\"\n");
+                core_cfg.push_str("TLS_KEY_FILE=\"/etc/stellar/tls/tls.key\"\n");
+            }
+            if !core_cfg.is_empty() {
+                data.insert("stellar-core.cfg".to_string(), core_cfg);
             }
         }
         NodeType::Horizon => {
@@ -253,12 +267,16 @@ pub async fn delete_config_map(client: &Client, node: &StellarNode) -> Result<()
 
 /// Ensure a Deployment exists for RPC nodes
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_deployment(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_deployment(
+    client: &Client,
+    node: &StellarNode,
+    enable_mtls: bool,
+) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
-    let deployment = build_deployment(node);
+    let deployment = build_deployment(node, enable_mtls);
 
     let patch = Patch::Apply(&deployment);
     api.patch(
@@ -271,7 +289,7 @@ pub async fn ensure_deployment(client: &Client, node: &StellarNode) -> Result<()
     Ok(())
 }
 
-fn build_deployment(node: &StellarNode) -> Deployment {
+fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deployment {
     let labels = standard_labels(node);
     let name = node.name_any();
 
@@ -295,7 +313,7 @@ fn build_deployment(node: &StellarNode) -> Deployment {
                 match_labels: Some(labels.clone()),
                 ..Default::default()
             },
-            template: build_pod_template(node, &labels),
+            template: build_pod_template(node, &labels, enable_mtls),
             ..Default::default()
         }),
         status: None,
@@ -308,12 +326,16 @@ fn build_deployment(node: &StellarNode) -> Deployment {
 
 /// Ensure a StatefulSet exists for Validator nodes
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_statefulset(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_statefulset(
+    client: &Client,
+    node: &StellarNode,
+    enable_mtls: bool,
+) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<StatefulSet> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
-    let statefulset = build_statefulset(node);
+    let statefulset = build_statefulset(node, enable_mtls);
 
     let patch = Patch::Apply(&statefulset);
     api.patch(
@@ -326,7 +348,7 @@ pub async fn ensure_statefulset(client: &Client, node: &StellarNode) -> Result<(
     Ok(())
 }
 
-fn build_statefulset(node: &StellarNode) -> StatefulSet {
+fn build_statefulset(node: &StellarNode, enable_mtls: bool) -> StatefulSet {
     let labels = standard_labels(node);
     let name = node.name_any();
 
@@ -347,7 +369,7 @@ fn build_statefulset(node: &StellarNode) -> StatefulSet {
                 ..Default::default()
             },
             service_name: format!("{}-headless", name),
-            template: build_pod_template(node, &labels),
+            template: build_pod_template(node, &labels, enable_mtls),
             ..Default::default()
         }),
         status: None,
@@ -392,12 +414,12 @@ pub async fn delete_workload(client: &Client, node: &StellarNode) -> Result<()> 
 
 /// Ensure a Service exists for the node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_service(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_service(client: &Client, node: &StellarNode, enable_mtls: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
-    let service = build_service(node);
+    let service = build_service(node, enable_mtls);
 
     let patch = Patch::Apply(&service);
     api.patch(
@@ -410,9 +432,11 @@ pub async fn ensure_service(client: &Client, node: &StellarNode) -> Result<()> {
     Ok(())
 }
 
-fn build_service(node: &StellarNode) -> Service {
+fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
     let labels = standard_labels(node);
     let name = node.name_any();
+
+    let http_port_name = if enable_mtls { "https" } else { "http" }.to_string();
 
     let ports = match node.spec.node_type {
         NodeType::Validator => vec![
@@ -422,18 +446,18 @@ fn build_service(node: &StellarNode) -> Service {
                 ..Default::default()
             },
             ServicePort {
-                name: Some("http".to_string()),
+                name: Some(http_port_name),
                 port: 11626,
                 ..Default::default()
             },
         ],
         NodeType::Horizon => vec![ServicePort {
-            name: Some("http".to_string()),
+            name: Some(http_port_name),
             port: 8000,
             ..Default::default()
         }],
         NodeType::SorobanRpc => vec![ServicePort {
-            name: Some("http".to_string()),
+            name: Some(http_port_name),
             port: 8000,
             ..Default::default()
         }],
@@ -615,9 +639,13 @@ pub async fn delete_ingress(client: &Client, node: &StellarNode) -> Result<()> {
 // Pod Template Builder
 // ============================================================================
 
-fn build_pod_template(node: &StellarNode, labels: &BTreeMap<String, String>) -> PodTemplateSpec {
+fn build_pod_template(
+    node: &StellarNode,
+    labels: &BTreeMap<String, String>,
+    enable_mtls: bool,
+) -> PodTemplateSpec {
     let mut pod_spec = PodSpec {
-        containers: vec![build_container(node)],
+        containers: vec![build_container(node, enable_mtls)],
         volumes: Some(vec![
             Volume {
                 name: "data".to_string(),
@@ -701,6 +729,17 @@ fn build_pod_template(node: &StellarNode, labels: &BTreeMap<String, String>) -> 
         }
     }
 
+    // Add mTLS certificate volume
+    let volumes = pod_spec.volumes.get_or_insert_with(Vec::new);
+    volumes.push(Volume {
+        name: "tls".to_string(),
+        secret: Some(k8s_openapi::api::core::v1::SecretVolumeSource {
+            secret_name: Some(format!("{}-client-cert", node.name_any())),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+
     PodTemplateSpec {
         metadata: Some(ObjectMeta {
             labels: Some(labels.clone()),
@@ -710,7 +749,7 @@ fn build_pod_template(node: &StellarNode, labels: &BTreeMap<String, String>) -> 
     }
 }
 
-fn build_container(node: &StellarNode) -> Container {
+fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
     let mut requests = BTreeMap::new();
     requests.insert(
         "cpu".to_string(),
@@ -791,6 +830,30 @@ fn build_container(node: &StellarNode) -> Container {
         });
     }
 
+    // Add TLS environment variables if mTLS is enabled
+    if enable_mtls {
+        match node.spec.node_type {
+            NodeType::Horizon | NodeType::SorobanRpc => {
+                env_vars.push(EnvVar {
+                    name: "TLS_CERT_FILE".to_string(),
+                    value: Some("/etc/stellar/tls/tls.crt".to_string()),
+                    ..Default::default()
+                });
+                env_vars.push(EnvVar {
+                    name: "TLS_KEY_FILE".to_string(),
+                    value: Some("/etc/stellar/tls/tls.key".to_string()),
+                    ..Default::default()
+                });
+                env_vars.push(EnvVar {
+                    name: "CA_CERT_FILE".to_string(),
+                    value: Some("/etc/stellar/tls/ca.crt".to_string()),
+                    ..Default::default()
+                });
+            }
+            _ => {}
+        }
+    }
+
     let mut volume_mounts = vec![
         VolumeMount {
             name: "data".to_string(),
@@ -806,7 +869,7 @@ fn build_container(node: &StellarNode) -> Container {
     ];
 
     // Mount keys volume if using KMS
-    if let NodeType::Validator = node.spec.node_type {
+    if node.spec.node_type == NodeType::Validator {
         if let Some(validator_config) = &node.spec.validator_config {
             if validator_config.key_source == KeySource::KMS {
                 volume_mounts.push(VolumeMount {
@@ -818,6 +881,14 @@ fn build_container(node: &StellarNode) -> Container {
             }
         }
     }
+
+    // Mount mTLS certificates
+    volume_mounts.push(VolumeMount {
+        name: "tls".to_string(),
+        mount_path: "/etc/stellar/tls".to_string(),
+        read_only: Some(true),
+        ..Default::default()
+    });
 
     Container {
         name: "stellar-node".to_string(),

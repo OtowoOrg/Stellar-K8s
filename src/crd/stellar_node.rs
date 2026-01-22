@@ -120,6 +120,10 @@ pub struct StellarNodeSpec {
     /// Ingress configuration for HTTPS exposure via an ingress controller and cert-manager
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ingress: Option<IngressConfig>,
+
+    /// Maintenance mode (skips workload updates)
+    #[serde(default)]
+    pub maintenance_mode: bool,
 }
 
 fn default_replicas() -> i32 {

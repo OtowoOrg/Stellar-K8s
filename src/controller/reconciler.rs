@@ -7,24 +7,27 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
-use k8s_openapi::api::core::v1::{PersistentVolumeClaim, Service};
+use k8s_openapi::api::core::v1::{PersistentVolumeClaim, Service, Event};
 use kube::{
-    api::{Api, Patch, PatchParams},
+    api::{Api, Patch, PatchParams, PostParams},
     client::Client,
     runtime::{
         controller::{Action, Controller},
-        finalizer::{finalizer, Event},
+        finalizer::{finalizer, Event as FinalizerEvent},
         watcher::Config,
     },
     Resource, ResourceExt,
 };
 use tracing::{error, info, instrument, warn};
 
-use crate::crd::{NodeType, StellarNode, StellarNodeStatus};
+use crate::crd::{NodeType, StellarNode, StellarNodeStatus, Condition};
 use crate::error::{Error, Result};
 
 use super::finalizers::STELLAR_NODE_FINALIZER;
-use super::resources;
+use super::{resources, check_history_archive_health, calculate_backoff, ArchiveHealthResult};
+
+/// Annotation key for tracking history archive health check retries
+const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-retries";
 
 /// Shared state for the controller
 pub struct ControllerState {
@@ -68,6 +71,79 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
     Ok(())
 }
 
+/// Helper to emit a Kubernetes Event
+async fn emit_event(
+    client: &Client,
+    node: &StellarNode,
+    event_type: &str,
+    reason: &str,
+    message: &str,
+) -> Result<()> {
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let events: Api<Event> = Api::namespaced(client.clone(), &namespace);
+
+    let time = chrono::Utc::now();
+    let event = Event {
+        metadata: kube::api::ObjectMeta {
+            generate_name: Some(format!("{}-event-", node.name_any())),
+            ..Default::default()
+        },
+        type_: Some(event_type.to_string()),
+        reason: Some(reason.to_string()),
+        message: Some(message.to_string()),
+        involved_object: node.object_ref(&()),
+        first_timestamp: Some(k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(time)),
+        last_timestamp: Some(k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(time)),
+        count: Some(1),
+        ..Default::default()
+    };
+
+    events
+        .create(&PostParams::default(), &event)
+        .await
+        .map_err(Error::KubeError)?;
+    Ok(())
+}
+
+/// Get the current retry count for archive health checks from annotations
+fn get_retry_count(node: &StellarNode) -> u32 {
+    node.metadata
+        .annotations
+        .as_ref()
+        .and_then(|a| a.get(ARCHIVE_RETRIES_ANNOTATION))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
+}
+
+/// Set the retry count for archive health checks in annotations
+async fn set_retry_count(client: &Client, node: &StellarNode, count: u32) -> Result<()> {
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+
+    let mut annotations = node.metadata.annotations.clone().unwrap_or_default();
+    if count == 0 {
+        annotations.remove(ARCHIVE_RETRIES_ANNOTATION);
+    } else {
+        annotations.insert(ARCHIVE_RETRIES_ANNOTATION.to_string(), count.to_string());
+    }
+
+    let patch = serde_json::json!({
+        "metadata": {
+            "annotations": annotations
+        }
+    });
+
+    api.patch(
+        &node.name_any(),
+        &PatchParams::apply("stellar-operator"),
+        &Patch::Merge(&patch),
+    )
+    .await
+    .map_err(Error::KubeError)?;
+
+    Ok(())
+}
+
 /// The main reconciliation function
 ///
 /// This function is called whenever:
@@ -90,8 +166,8 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
     // Use kube-rs built-in finalizer helper for clean lifecycle management
     finalizer(&api, STELLAR_NODE_FINALIZER, obj, |event| async {
         match event {
-            Event::Apply(node) => apply_stellar_node(&client, &node).await,
-            Event::Cleanup(node) => cleanup_stellar_node(&client, &node).await,
+            FinalizerEvent::Apply(node) => apply_stellar_node(&client, &node).await,
+            FinalizerEvent::Cleanup(node) => cleanup_stellar_node(&client, &node).await,
         }
     })
     .await
@@ -108,19 +184,98 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
     // Validate the spec
     if let Err(e) = node.spec.validate() {
         warn!("Validation failed for {}/{}: {}", namespace, name, e);
-        update_status(client, node, "Failed", Some(&e)).await?;
+        update_status(client, node, "Failed", Some(&e), true).await?;
         return Err(Error::ValidationError(e));
     }
 
     // Check if suspended
     if node.spec.suspended {
         info!("Node {}/{} is suspended, scaling to 0", namespace, name);
-        update_status(client, node, "Suspended", Some("Node is suspended")).await?;
+        update_status(client, node, "Suspended", Some("Node is suspended"), true).await?;
         // Still create resources but with 0 replicas
     }
 
+    // History Archive Health Check for Validators
+    if node.spec.node_type == NodeType::Validator {
+        if let Some(validator_config) = &node.spec.validator_config {
+            if validator_config.enable_history_archive
+                && !validator_config.history_archive_urls.is_empty()
+            {
+                let is_startup_or_update = node
+                    .status
+                    .as_ref()
+                    .and_then(|s| s.observed_generation)
+                    .map(|og| og < node.metadata.generation.unwrap_or(0))
+                    .unwrap_or(true);
+
+                if is_startup_or_update {
+                    info!("Running history archive health check for {}/{}", namespace, name);
+
+                    let health_result = check_history_archive_health(
+                        &validator_config.history_archive_urls,
+                        None,
+                    )
+                    .await?;
+
+                    if !health_result.any_healthy {
+                        warn!(
+                            "Archive health check failed for {}/{}: {}",
+                            namespace,
+                            name,
+                            health_result.summary()
+                        );
+
+                        // Emit Kubernetes Event
+                        emit_event(
+                            client,
+                            node,
+                            "Warning",
+                            "ArchiveHealthCheckFailed",
+                            &format!(
+                                "None of the configured archives are reachable:\n{}",
+                                health_result.error_details()
+                            ),
+                        )
+                        .await?;
+
+                        // Update status with condition (observed_generation NOT updated to trigger retry)
+                        update_archive_health_status(client, node, &health_result).await?;
+
+                        // Requeue with exponential backoff
+                        let retries = get_retry_count(node);
+                        let delay = calculate_backoff(retries, None, None);
+
+                        info!(
+                            "Requeuing {}/{} in {:?} (retry attempt {})",
+                            namespace, name, delay, retries + 1
+                        );
+
+                        // Increment retry count in annotations
+                        set_retry_count(client, node, retries + 1).await?;
+
+                        return Ok(Action::requeue(delay));
+                    } else {
+                        info!(
+                            "Archive health check passed for {}/{}: {}",
+                            namespace,
+                            name,
+                            health_result.summary()
+                        );
+                        // Update status with archive health condition
+                        update_archive_health_status(client, node, &health_result).await?;
+
+                        // Reset retry count on success
+                        if get_retry_count(node) > 0 {
+                            set_retry_count(client, node, 0).await?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Update status to Creating
-    update_status(client, node, "Creating", Some("Creating resources")).await?;
+    update_status(client, node, "Creating", Some("Creating resources"), true).await?;
 
     // 1. Create/update the PersistentVolumeClaim
     resources::ensure_pvc(client, node).await?;
@@ -150,7 +305,7 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
 
     // 5. Update status to Running
     let phase = if node.spec.suspended { "Suspended" } else { "Running" };
-    update_status(client, node, phase, Some("Resources created successfully")).await?;
+    update_status(client, node, phase, Some("Resources created successfully"), true).await?;
 
     // Requeue after 30 seconds to check node health and sync status
     Ok(Action::requeue(Duration::from_secs(30)))
@@ -208,19 +363,94 @@ async fn update_status(
     node: &StellarNode,
     phase: &str,
     message: Option<&str>,
+    update_obs_gen: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
 
+    let observed_generation = if update_obs_gen {
+        node.metadata.generation
+    } else {
+        node.status
+            .as_ref()
+            .and_then(|status| status.observed_generation)
+    };
+
     let status = StellarNodeStatus {
         phase: phase.to_string(),
         message: message.map(String::from),
-        observed_generation: node.metadata.generation,
+        observed_generation,
         replicas: if node.spec.suspended { 0 } else { node.spec.replicas },
         ..Default::default()
     };
 
     let patch = serde_json::json!({ "status": status });
+    api.patch_status(
+        &node.name_any(),
+        &PatchParams::apply("stellar-operator"),
+        &Patch::Merge(&patch),
+    )
+    .await
+    .map_err(Error::KubeError)?;
+
+    Ok(())
+}
+
+/// Update the status with archive health check results
+async fn update_archive_health_status(
+    client: &Client,
+    node: &StellarNode,
+    result: &ArchiveHealthResult,
+) -> Result<()> {
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+
+    let condition = Condition {
+        type_: "ArchiveHealthCheck".to_string(),
+        status: if result.any_healthy {
+            "True"
+        } else {
+            "False"
+        }
+        .to_string(),
+        last_transition_time: chrono::Utc::now().to_rfc3339(),
+        reason: if result.any_healthy {
+            "ArchiveHealthy"
+        } else {
+            "ArchiveUnreachable"
+        }
+        .to_string(),
+        message: if result.any_healthy {
+            result.summary()
+        } else {
+            format!("{}\n{}", result.summary(), result.error_details())
+        },
+    };
+
+    let mut conditions = node
+        .status
+        .as_ref()
+        .map(|s| s.conditions.clone())
+        .unwrap_or_default();
+
+    // Update or append the condition
+    if let Some(pos) = conditions
+        .iter()
+        .position(|c| c.type_ == "ArchiveHealthCheck")
+    {
+        conditions[pos] = condition;
+    } else {
+        conditions.push(condition);
+    }
+
+    let patch = serde_json::json!({
+        "status": {
+            "conditions": conditions,
+            "phase": if result.any_healthy { "Creating" } else { "WaitingForArchive" },
+            "message": result.summary()
+        }
+    });
+
     api.patch_status(
         &node.name_any(),
         &PatchParams::apply("stellar-operator"),

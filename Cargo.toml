@@ -35,6 +35,9 @@ chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
+# HTTP client for health checks
+reqwest = { version = "0.11", features = ["rustls-tls"] }
+
 # REST API (optional)
 axum = { version = "0.7", optional = true }
 tower = { version = "0.4", optional = true }

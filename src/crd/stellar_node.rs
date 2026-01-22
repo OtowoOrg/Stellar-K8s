@@ -118,6 +118,14 @@ impl StellarNodeSpec {
                 if self.validator_config.is_none() {
                     return Err("validatorConfig is required for Validator nodes".to_string());
                 }
+                if let Some(vc) = &self.validator_config {
+                    if vc.enable_history_archive && vc.history_archive_urls.is_empty() {
+                        return Err(
+                            "historyArchiveUrls must not be empty when enableHistoryArchive is true"
+                                .to_string(),
+                        );
+                    }
+                }
                 if self.replicas != 1 {
                     return Err("Validator nodes must have exactly 1 replica".to_string());
                 }

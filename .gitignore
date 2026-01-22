@@ -23,3 +23,13 @@ target
 # Stellar Wave Artifacts
 .github/WAVE_ISSUES.md
 scripts/
+
+# AI Agent & Planning Artifacts
+.claude/
+.agents/
+.cursor/
+.gemini/
+task_plan.md
+findings.md
+progress.md
+issue-10-requirement.md

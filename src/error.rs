@@ -43,6 +43,14 @@ pub enum Error {
     /// Missing required field in spec
     #[error("Missing required field: {field} for node type {node_type}")]
     MissingRequiredField { field: String, node_type: String },
+
+    /// History archive health check error
+    #[error("Archive health check failed: {0}")]
+    ArchiveHealthCheckError(String),
+
+    /// HTTP request error (from reqwest)
+    #[error("HTTP request error: {0}")]
+    HttpError(#[from] reqwest::Error),
 }
 
 /// Result type alias for operator operations
@@ -53,7 +61,10 @@ impl Error {
     pub fn is_retriable(&self) -> bool {
         matches!(
             self,
-            Error::KubeError(_) | Error::FinalizerError(_)
+            Error::KubeError(_) 
+            | Error::FinalizerError(_) 
+            | Error::ArchiveHealthCheckError(_)
+            | Error::HttpError(_)
         )
     }
 
@@ -65,6 +76,10 @@ impl Error {
             Error::MissingRequiredField { field, node_type } => {
                 format!("Missing {} for {} node", field, node_type)
             }
+            Error::ArchiveHealthCheckError(msg) => {
+                format!("Archive health check failed: {}", msg)
+            }
+            Error::HttpError(e) => format!("HTTP request failed: {}", e),
             _ => self.to_string(),
         }
     }

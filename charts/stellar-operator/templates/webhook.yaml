@@ -1,0 +1,272 @@
+---
+# Namespace for the webhook
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+    app.kubernetes.io/component: admission-webhook
+---
+# ServiceAccount for the webhook
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: stellar-webhook
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+---
+# ClusterRole for the webhook
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+rules:
+  # Read StellarNodes for validation context
+  - apiGroups: ["stellar.io"]
+    resources: ["stellarnodes"]
+    verbs: ["get", "list", "watch"]
+  # Read ConfigMaps and Secrets for plugin configuration
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+---
+# ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: stellar-webhook
+subjects:
+  - kind: ServiceAccount
+    name: stellar-webhook
+    namespace: stellar-webhook
+---
+# Deployment for the webhook server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stellar-webhook
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+    app.kubernetes.io/component: admission-webhook
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stellar-webhook
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: stellar-webhook
+        app.kubernetes.io/component: admission-webhook
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: stellar-webhook
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: webhook
+          image: stellar-k8s-webhook:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--webhook-port=8443"
+            - "--metrics-port=9090"
+            - "--cert-dir=/certs"
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+            - name: plugins
+              mountPath: /plugins
+              readOnly: true
+      volumes:
+        - name: certs
+          secret:
+            secretName: stellar-webhook-certs
+        - name: plugins
+          configMap:
+            name: stellar-webhook-plugins
+            optional: true
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: stellar-webhook
+                topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: stellar-webhook
+---
+# Service for the webhook
+apiVersion: v1
+kind: Service
+metadata:
+  name: stellar-webhook
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+spec:
+  type: ClusterIP
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: stellar-webhook
+---
+# ValidatingWebhookConfiguration
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+  annotations:
+    # cert-manager will inject the CA bundle
+    cert-manager.io/inject-ca-from: stellar-webhook/stellar-webhook-cert
+webhooks:
+  - name: stellarnode.stellar.io
+    clientConfig:
+      service:
+        name: stellar-webhook
+        namespace: stellar-webhook
+        path: /validate
+        port: 443
+      # CA bundle will be injected by cert-manager or manually set
+      # caBundle: <base64-encoded-ca-cert>
+    rules:
+      - apiGroups: ["stellar.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["stellarnodes"]
+        scope: Namespaced
+    admissionReviewVersions: ["v1", "v1beta1"]
+    sideEffects: None
+    timeoutSeconds: 10
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        # Skip kube-system and stellar-webhook namespaces
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - kube-system
+            - stellar-webhook
+---
+# Certificate for the webhook (cert-manager)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: stellar-webhook-cert
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+spec:
+  secretName: stellar-webhook-certs
+  dnsNames:
+    - stellar-webhook
+    - stellar-webhook.stellar-webhook
+    - stellar-webhook.stellar-webhook.svc
+    - stellar-webhook.stellar-webhook.svc.cluster.local
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+---
+# Self-signed ClusterIssuer (for development)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+# ConfigMap for plugin configuration (optional)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stellar-webhook-plugins
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+data:
+  # Plugin configurations can be added here
+  # Each entry should be a JSON file with the plugin config
+  plugins.json: |
+    {
+      "plugins": []
+    }
+---
+# PodDisruptionBudget for high availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: stellar-webhook
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stellar-webhook

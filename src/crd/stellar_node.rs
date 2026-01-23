@@ -102,7 +102,11 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ingress: Option<IngressConfig>,
 
-    /// Network Policy configuration
+    /// Maintenance mode (skips workload updates)
+    #[serde(default)]
+    pub maintenance_mode: bool,
+
+    /// Network Policy configuration for restricting ingress traffic
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_policy: Option<NetworkPolicyConfig>,
 

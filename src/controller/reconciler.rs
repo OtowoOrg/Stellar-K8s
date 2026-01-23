@@ -18,6 +18,17 @@ use kube::{
 };
 use tracing::{debug, error, info, instrument, warn};
 
+use crate::controller::archive_health::{
+    calculate_backoff, check_history_archive_health, ArchiveHealthResult,
+};
+use crate::crd::{Condition, NodeType, StellarNode, StellarNodeStatus};
+use crate::error::{Error, Result};
+
+const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-retries";
+
+use super::finalizers::STELLAR_NODE_FINALIZER;
+use super::health;
+use super::mtls;
 use crate::crd::{
     AutoscalingConfig, Condition, IngressConfig, NodeType, StellarNode, StellarNodeStatus,
 };
@@ -32,10 +43,14 @@ use super::health;
 use super::metrics;
 use super::remediation;
 use super::resources;
+use super::vsl;
 
 /// Shared state for the controller
 pub struct ControllerState {
     pub client: Client,
+    pub enable_mtls: bool,
+    pub operator_namespace: String,
+    pub mtls_config: Option<crate::MtlsConfig>,
 }
 
 /// Main entry point to start the controller
@@ -134,7 +149,7 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
     // Use kube-rs built-in finalizer helper for clean lifecycle management
     finalizer(&api, STELLAR_NODE_FINALIZER, obj, |event| async {
         match event {
-            FinalizerEvent::Apply(node) => apply_stellar_node(&client, &node).await,
+            FinalizerEvent::Apply(node) => apply_stellar_node(&client, &node, &ctx).await,
             FinalizerEvent::Cleanup(node) => cleanup_stellar_node(&client, &node).await,
         }
     })
@@ -143,8 +158,12 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
 }
 
 /// Apply/create/update the StellarNode resources
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Action> {
+#[instrument(skip(client, node, ctx), fields(name = %node.name_any(), namespace = node.namespace()))]
+async fn apply_stellar_node(
+    client: &Client,
+    node: &StellarNode,
+    ctx: &ControllerState,
+) -> Result<Action> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
 
@@ -157,13 +176,16 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
         return Err(Error::ValidationError(e));
     }
 
+    // 1. Core infrastructure (PVC and ConfigMap) always managed by operator
+    resources::ensure_pvc(client, node).await?;
+    resources::ensure_config_map(client, node, ctx.enable_mtls).await?;
     // 2. Handle suspension
     if node.spec.suspended {
         info!("Node {}/{} is suspended, scaling to 0", namespace, name);
 
         resources::ensure_pvc(client, node).await?;
-        resources::ensure_config_map(client, node).await?;
-
+        resources::ensure_config_map(client, node, None).await?;
+        
         match node.spec.node_type {
             NodeType::Validator => {
                 resources::ensure_statefulset(client, node).await?;
@@ -173,11 +195,36 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
             }
         }
 
-        resources::ensure_service(client, node).await?;
+        resources::ensure_service(client, node, ctx.enable_mtls).await?;
 
+        update_status(
+            client,
+            node,
+            "Maintenance",
+            Some("Manual maintenance mode active; workload management paused"),
+            0,
+            true,
+        )
+        .await?;
         update_suspended_status(client, node).await?;
 
         return Ok(Action::requeue(Duration::from_secs(60)));
+    }
+
+    // 3. Normal Mode: Handle suspension
+    // This only runs if NOT in maintenance mode.
+    if node.spec.suspended {
+        info!("Node {}/{} is suspended, scaling to 0", namespace, name);
+        update_status(
+            client,
+            node,
+            "Suspended",
+            Some("Node is suspended"),
+            0,
+            true,
+        )
+        .await?;
+        // Still create resources but with 0 replicas
     }
 
     // History Archive Health Check for Validators
@@ -229,6 +276,11 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
 
                         let delay = calculate_backoff(0, None, None);
                         info!(
+                            "Requeuing {}/{} in {:?} (retry attempt {})",
+                            namespace,
+                            name,
+                            delay,
+                            retries + 1
                             "Archive health check failed for {}/{}, requeuing in {:?}",
                             namespace, name, delay
                         );
@@ -264,20 +316,57 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
     info!("PVC ensured for {}/{}", namespace, name);
 
     // 2. Create/update the ConfigMap for node configuration
-    resources::ensure_config_map(client, node).await?;
+    resources::ensure_config_map(client, node, ctx.enable_mtls).await?;
+    // 2. Handle VSL Fetching for Validators
+    let mut quorum_override = None;
+    if node.spec.node_type == NodeType::Validator {
+        if let Some(config) = &node.spec.validator_config {
+            if let Some(vl_source) = &config.vl_source {
+                match vsl::fetch_vsl(vl_source).await {
+                    Ok(quorum) => {
+                        quorum_override = Some(quorum);
+                    }
+                    Err(e) => {
+                        warn!("Failed to fetch VSL for {}/{}: {}", namespace, name, e);
+                        emit_event(
+                            client,
+                            node,
+                            "Warning",
+                            "VSLFetchFailed",
+                            &format!("Failed to fetch VSL from {}: {}", vl_source, e),
+                        )
+                        .await?;
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Create/update the ConfigMap for node configuration
+    resources::ensure_config_map(client, node, quorum_override.clone()).await?;
     info!("ConfigMap ensured for {}/{}", namespace, name);
+
+    // 2.5 Ensure mTLS certificates (if strict mTLS will be handled at rest_api level)
+    // We always ensure them for now if the operator supports it
+    mtls::ensure_ca(client, &namespace).await?;
+    mtls::ensure_node_cert(client, node).await?;
+    info!("mTLS certificates ensured for {}/{}", namespace, name);
 
     // 3. Create/update the Deployment/StatefulSet based on node type
     match node.spec.node_type {
         NodeType::Validator => {
-            resources::ensure_statefulset(client, node).await?;
+            resources::ensure_statefulset(client, node, ctx.enable_mtls).await?;
         }
         NodeType::Horizon | NodeType::SorobanRpc => {
-            resources::ensure_deployment(client, node).await?;
+            resources::ensure_deployment(client, node, ctx.enable_mtls).await?;
         }
     }
 
     // 5. Ensure Service and finalize status
+    resources::ensure_service(client, node, ctx.enable_mtls).await?;
+
+    // 5. Perform health check to determine if node is ready
+    let health_result = health::check_node_health(client, node, ctx.mtls_config.as_ref()).await?;
     resources::ensure_service(client, node).await?;
 
     // 5. Perform health check to determine if node is ready
@@ -287,6 +376,26 @@ async fn apply_stellar_node(client: &Client, node: &StellarNode) -> Result<Actio
         "Health check result for {}/{}: healthy={}, synced={}, message={}",
         namespace, name, health_result.healthy, health_result.synced, health_result.message
     );
+
+    // 7. Trigger config-reload if VSL was updated and pod is ready
+    if let Some(_quorum) = quorum_override {
+        if health_result.healthy {
+            // Get pod IP to trigger reload
+            let pod_api: Api<k8s_openapi::api::core::v1::Pod> = Api::namespaced(client.clone(), &namespace);
+            let lp = kube::api::ListParams::default().labels(&format!("app.kubernetes.io/instance={}", name));
+            if let Ok(pods) = pod_api.list(&lp).await {
+                if let Some(pod) = pods.items.first() {
+                    if let Some(status) = &pod.status {
+                        if let Some(ip) = &status.pod_ip {
+                            if let Err(e) = vsl::trigger_config_reload(ip).await {
+                                warn!("Failed to trigger config-reload for {}/{}: {}", namespace, name, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // 6. Auto-remediation check for stale nodes
     // Only check if node is healthy but potentially stale (ledger not progressing)

@@ -154,6 +154,9 @@ pub struct ValidatorConfig {
     /// KMS configuration for fetching the validator seed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kms_config: Option<KmsConfig>,
+    /// Trusted source for Validator Selection List (VSL)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vl_source: Option<String>,
 }
 
 /// Source of security keys

@@ -57,12 +57,34 @@ tower-http = { version = "0.5", features = ["trace"], optional = true }
 
 # Metrics
 prometheus-client = { version = "0.22", optional = true }
-once_cell = { version = "1.19", optional = true }
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
+rustls-pemfile = "2.2.0"
+rcgen = "0.11"
+clap = { version = "4.5", features = ["derive", "env"] }
+rustls = "0.23"
+rustls-pki-types = "1.14.0"
+
+# Wasm runtime for custom validation plugins
+wasmtime = { version = "17", optional = true }
+wasmtime-wasi = { version = "17", optional = true }
+
+# Additional crypto for webhook TLS
+rustls = { version = "0.22", optional = true }
+rustls-pemfile = { version = "2", optional = true }
+tokio-rustls = { version = "0.25", optional = true }
+
+# Base64 for Wasm plugin loading
+base64 = { version = "0.21", optional = true }
+
+# SHA256 for plugin integrity verification
+sha2 = { version = "0.10", optional = true }
+hex = { version = "0.4", optional = true }
 
 [features]
 default = ["rest-api", "metrics"]
 rest-api = ["axum", "tower", "tower-http"]
 metrics = ["prometheus-client", "once_cell"]
+admission-webhook = ["wasmtime", "wasmtime-wasi", "rustls", "rustls-pemfile", "tokio-rustls", "base64", "sha2", "hex", "axum", "tower", "tower-http"]
 
 [dev-dependencies]
 tokio-test = "0.4"

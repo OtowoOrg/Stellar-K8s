@@ -55,6 +55,14 @@ pub enum Error {
     /// Remediation action failed
     #[error("Remediation failed: {0}")]
     RemediationError(String),
+
+    /// Wasm plugin error
+    #[error("Plugin error: {0}")]
+    PluginError(String),
+
+    /// Webhook server error
+    #[error("Webhook error: {0}")]
+    WebhookError(String),
 }
 
 /// Result type alias for operator operations
@@ -82,6 +90,8 @@ impl Error {
             }
             Error::HttpError(e) => format!("HTTP request failed: {}", e),
             Error::RemediationError(msg) => format!("Remediation failed: {}", msg),
+            Error::PluginError(msg) => format!("Plugin error: {}", msg),
+            Error::WebhookError(msg) => format!("Webhook error: {}", msg),
             _ => self.to_string(),
         }
     }

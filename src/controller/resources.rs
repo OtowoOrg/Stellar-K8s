@@ -107,11 +107,20 @@ fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
     let name = resource_name(node, "data");
 
     let mut requests = BTreeMap::new();
+    
+    // Logic: If user provides a size, use it. 
+    // If it's the default "500Gi" (from the example) and mode is Full, bump it to 1Ti.
+    use crate::crd::HistoryMode;
+    let storage_size = if node.spec.history_mode == HistoryMode::Full && node.spec.storage.size == "500Gi" {
+        "1Ti".to_string()
+    } else {
+        node.spec.storage.size.clone()
+    };
+
     requests.insert(
         "storage".to_string(),
-        Quantity(node.spec.storage.size.clone()),
+        Quantity(storage_size),
     );
-
     // Merge custom annotations from storage config with existing annotations
     let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
 
@@ -1251,6 +1260,24 @@ fn build_container(node: &StellarNode) -> Container {
         value: Some(node.spec.network.passphrase().to_string()),
         ..Default::default()
     }];
+
+    // Adjust catchup strategy based on HistoryMode
+    use crate::crd::HistoryMode;
+    let (complete, recent) = match node.spec.history_mode {
+        HistoryMode::Full => ("true", "0"),
+        HistoryMode::Recent => ("false", "1024"),
+    };
+
+    env_vars.push(EnvVar {
+        name: "CATCHUP_COMPLETE".to_string(),
+        value: Some(complete.to_string()),
+        ..Default::default()
+    });
+    env_vars.push(EnvVar {
+        name: "CATCHUP_RECENT".to_string(),
+        value: Some(recent.to_string()),
+        ..Default::default()
+    });
 
     // Source validator seed from Secret or shared RAM volume (KMS)
     if let NodeType::Validator = node.spec.node_type {

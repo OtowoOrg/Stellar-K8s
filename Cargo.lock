@@ -328,10 +328,10 @@ dependencies = [
  "hyper 1.8.1",
  "hyper-util",
  "pin-project-lite",
- "rustls 0.23.36",
+ "rustls",
  "rustls-pki-types",
  "tokio",
- "tokio-rustls 0.26.4",
+ "tokio-rustls",
  "tower-service",
 ]
 
@@ -1508,7 +1508,7 @@ dependencies = [
  "pin-project-lite",
  "rustls-native-certs 0.7.3",
  "tokio",
- "tokio-rustls 0.26.4",
+ "tokio-rustls",
  "tower-service",
 ]
 
@@ -1522,11 +1522,11 @@ dependencies = [
  "hyper 1.8.1",
  "hyper-util",
  "log",
- "rustls 0.23.36",
+ "rustls",
  "rustls-native-certs 0.8.3",
  "rustls-pki-types",
  "tokio",
- "tokio-rustls 0.26.4",
+ "tokio-rustls",
  "tower-service",
  "webpki-roots",
 ]
@@ -1590,7 +1590,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.2",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -1948,7 +1948,7 @@ dependencies = [
  "k8s-openapi",
  "kube-core",
  "pem",
- "rustls 0.23.36",
+ "rustls",
  "rustls-pemfile",
  "secrecy",
  "serde",
@@ -2622,8 +2622,8 @@ dependencies = [
  "quinn-proto",
  "quinn-udp",
  "rustc-hash 2.1.1",
- "rustls 0.23.36",
- "socket2 0.6.2",
+ "rustls",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -2642,7 +2642,7 @@ dependencies = [
  "rand 0.9.2",
  "ring 0.17.14",
  "rustc-hash 2.1.1",
- "rustls 0.23.36",
+ "rustls",
  "rustls-pki-types",
  "slab",
  "thiserror 2.0.18",
@@ -2660,7 +2660,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.2",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -2858,7 +2858,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "quinn",
- "rustls 0.23.36",
+ "rustls",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -2866,7 +2866,7 @@ dependencies = [
  "sync_wrapper 1.0.2",
  "tokio",
  "tokio-native-tls",
- "tokio-rustls 0.26.4",
+ "tokio-rustls",
  "tower 0.5.3",
  "tower-http 0.6.8",
  "tower-service",
@@ -2954,20 +2954,6 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.22.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf4ef73721ac7bcd79b2b315da7779d8fc09718c6b3d2d1b2d94850eb8c18432"
-dependencies = [
- "log",
- "ring 0.17.14",
- "rustls-pki-types",
- "rustls-webpki 0.102.8",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "rustls"
 version = "0.23.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c665f33d38cea657d9614f766881e4d510e0eda4239891eea56b4cadcf01801b"
@@ -2977,7 +2963,7 @@ dependencies = [
  "once_cell",
  "ring 0.17.14",
  "rustls-pki-types",
- "rustls-webpki 0.103.9",
+ "rustls-webpki",
  "subtle",
  "zeroize",
 ]
@@ -3024,17 +3010,6 @@ checksum = "be040f8b0a225e40375822a563fa9524378b9d63112f53e19ffff34df5d33fdd"
 dependencies = [
  "web-time 1.1.0",
  "zeroize",
-]
-
-[[package]]
-name = "rustls-webpki"
-version = "0.102.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64ca1bc8749bd4cf37b5ce386cc146580777b4e8572c7b97baf22c83f444bee9"
-dependencies = [
- "ring 0.17.14",
- "rustls-pki-types",
- "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -3387,7 +3362,7 @@ dependencies = [
  "prometheus-client",
  "rcgen",
  "reqwest",
- "rustls 0.23.36",
+ "rustls",
  "rustls-pemfile",
  "rustls-pki-types",
  "schemars",
@@ -3397,10 +3372,10 @@ dependencies = [
  "sha2",
  "thiserror 1.0.69",
  "tokio",
- "tokio-rustls 0.25.0",
+ "tokio-rustls",
  "tokio-test",
- "tower 0.4.13",
- "tower-http 0.5.2",
+ "tower 0.5.3",
+ "tower-http 0.6.8",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -3667,22 +3642,11 @@ dependencies = [
 
 [[package]]
 name = "tokio-rustls"
-version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "775e0c0f0adb3a2f22a00c4745d728b479985fc15ee7ca6a2608388c5569860f"
-dependencies = [
- "rustls 0.22.4",
- "rustls-pki-types",
- "tokio",
-]
-
-[[package]]
-name = "tokio-rustls"
 version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
 dependencies = [
- "rustls 0.23.36",
+ "rustls",
  "tokio",
 ]
 
@@ -3830,6 +3794,7 @@ dependencies = [
  "tower 0.5.3",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]

@@ -40,12 +40,12 @@ hostname = "0.4"
 # Logging and tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tracing-opentelemetry = "0.22"
+tracing-opentelemetry = "0.32"
 
 # OpenTelemetry for distributed tracing
-opentelemetry = { version = "0.21", features = ["trace"] }
-opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.14", features = ["grpc-tonic", "http-proto"] }
+opentelemetry = { version = "0.31", features = ["trace"] }
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-proto"] }
 
 # HTTP client for health checks
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }

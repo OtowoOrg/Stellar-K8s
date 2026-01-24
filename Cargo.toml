@@ -51,7 +51,7 @@ opentelemetry-otlp = { version = "0.14", features = ["grpc-tonic", "http-proto"]
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 
 # REST API (optional)
-axum = { version = "0.7", optional = true }
+axum = { version = "0.8", optional = true }
 tower = { version = "0.4", optional = true }
 tower-http = { version = "0.5", features = ["trace"], optional = true }
 

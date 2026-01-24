@@ -131,7 +131,7 @@ jobs:
           sha256sum ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.asset_name }}
           path: |
@@ -194,7 +194,7 @@ jobs:
           output-file: sbom-${{ needs.validate.outputs.version }}.spdx.json
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sbom
           path: sbom-${{ needs.validate.outputs.version }}.spdx.json
@@ -235,7 +235,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Upload security report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: security-report
           path: trivy-results.txt
@@ -270,7 +270,7 @@ jobs:
           helm package charts/stellar-operator/ -d .
 
       - name: Upload Helm chart
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: helm-chart
           path: stellar-operator-*.tgz
@@ -352,7 +352,7 @@ jobs:
           } >> $GITHUB_OUTPUT
 
       - name: Upload changelog
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: changelog
           path: changelog.md

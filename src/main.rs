@@ -132,6 +132,11 @@ async fn main() -> Result<(), Error> {
         mtls_config: mtls_config.clone(),
     });
 
+    // Create ReadOnlyPool controller state
+    let rop_state = Arc::new(controller::ReadOnlyPoolControllerState {
+        client: client.clone(),
+    });
+
     // Start the REST API server
     // Start the REST API server (always running if feature enabled)
     #[cfg(feature = "rest-api")]
@@ -145,11 +150,24 @@ async fn main() -> Result<(), Error> {
         });
     }
 
-    // Run the main controller loop
-    let result = controller::run_controller(state).await;
+    // Run both controllers concurrently
+    let stellar_node_controller = controller::run_controller(state);
+    let readonly_pool_controller = controller::run_read_only_pool_controller(rop_state);
+
+    // Wait for either controller to exit (they should run indefinitely)
+    tokio::select! {
+        result = stellar_node_controller => {
+            tracing::error!("StellarNode controller exited: {:?}", result);
+            result
+        }
+        result = readonly_pool_controller => {
+            tracing::error!("ReadOnlyPool controller exited: {:?}", result);
+            result
+        }
+    }?;
 
     // Flush any remaining traces
     stellar_k8s::telemetry::shutdown_telemetry();
 
-    result
+    Ok(())
 }

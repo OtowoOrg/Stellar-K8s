@@ -19,6 +19,17 @@ rules:
     resources: ["stellarnodes/finalizers"]
     verbs: ["update"]
 
+  # ReadOnlyPool CRD permissions
+  - apiGroups: ["stellar.org"]
+    resources: ["readonlypools"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["stellar.org"]
+    resources: ["readonlypools/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["stellar.org"]
+    resources: ["readonlypools/finalizers"]
+    verbs: ["update"]
+
   # Core resources managed by the operator
   - apiGroups: [""]
     resources: ["pods"]

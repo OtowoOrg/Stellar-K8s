@@ -1,0 +1,227 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: readonlypools.stellar.org
+  labels:
+    app.kubernetes.io/name: stellar-operator
+    app.kubernetes.io/instance: stellar-operator
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: helm
+spec:
+  group: stellar.org
+  names:
+    kind: ReadOnlyPool
+    listKind: ReadOnlyPoolList
+    plural: readonlypools
+    singular: readonlypool
+    shortNames:
+      - rop
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - network
+                - version
+              properties:
+                network:
+                  type: string
+                  description: Target Stellar network
+                version:
+                  type: string
+                  description: Container image version
+                minReplicas:
+                  type: integer
+                  minimum: 1
+                  default: 3
+                  description: Minimum number of replicas in the pool
+                maxReplicas:
+                  type: integer
+                  minimum: 1
+                  default: 20
+                  description: Maximum number of replicas in the pool
+                targetReplicas:
+                  type: integer
+                  minimum: 1
+                  default: 5
+                  description: Target number of replicas
+                resources:
+                  type: object
+                  properties:
+                    requests:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                        memory:
+                          type: string
+                    limits:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                        memory:
+                          type: string
+                storage:
+                  type: object
+                  properties:
+                    storageClass:
+                      type: string
+                    size:
+                      type: string
+                    retentionPolicy:
+                      type: string
+                      enum: [Delete, Retain]
+                      default: Delete
+                loadBalancing:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    freshNodeWeight:
+                      type: integer
+                      default: 100
+                      description: Weight for fresh (up-to-date) nodes
+                    laggingNodeWeight:
+                      type: integer
+                      default: 10
+                      description: Weight for lagging nodes
+                    lagThreshold:
+                      type: integer
+                      format: int64
+                      default: 1000
+                      description: Ledger lag threshold in sequence numbers
+                    updateIntervalSeconds:
+                      type: integer
+                      format: int64
+                      default: 30
+                      description: Update interval for weight recalculation
+                shardBalancing:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    shardCount:
+                      type: integer
+                      minimum: 1
+                      default: 4
+                      description: Number of shards to distribute data across
+                    strategy:
+                      type: string
+                      enum: [RoundRobin, HashBased, Manual]
+                      default: RoundRobin
+                    autoRebalance:
+                      type: boolean
+                      default: true
+                historyArchiveUrls:
+                  type: array
+                  items:
+                    type: string
+                  description: History archive URLs to sync from
+                coreConfigOverride:
+                  type: string
+                  description: Stellar Core configuration overrides (TOML format)
+                alerting:
+                  type: boolean
+                  default: false
+            status:
+              type: object
+              properties:
+                currentReplicas:
+                  type: integer
+                readyReplicas:
+                  type: integer
+                freshReplicas:
+                  type: integer
+                laggingReplicas:
+                  type: integer
+                observedGeneration:
+                  type: integer
+                  format: int64
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                replicaWeights:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      replicaName:
+                        type: string
+                      weight:
+                        type: integer
+                      ledgerSequence:
+                        type: integer
+                        format: int64
+                      lag:
+                        type: integer
+                        format: int64
+                      isFresh:
+                        type: boolean
+                      lastUpdated:
+                        type: string
+                shardAssignments:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      replicaName:
+                        type: string
+                      shardId:
+                        type: integer
+                      archiveUrl:
+                        type: string
+                      ledgerRange:
+                        type: object
+                        properties:
+                          start:
+                            type: integer
+                            format: int64
+                          end:
+                            type: integer
+                            format: int64
+                averageLedgerSequence:
+                  type: integer
+                  format: int64
+                networkLatestLedger:
+                  type: integer
+                  format: int64
+                averageLag:
+                  type: integer
+                  format: int64
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Network
+          type: string
+          jsonPath: .spec.network
+        - name: Replicas
+          type: integer
+          jsonPath: .status.currentReplicas
+        - name: Ready
+          type: string
+          jsonPath: .status.conditions[?(@.type=='Ready')].status
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

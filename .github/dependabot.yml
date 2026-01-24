@@ -7,33 +7,42 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       day: "monday"
       time: "09:00"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     labels:
       - "dependencies"
       - "github-actions"
     commit-message:
       prefix: "ci"
       include: "scope"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   # Cargo - Rust dependencies
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       day: "monday"
       time: "09:00"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
     labels:
       - "dependencies"
       - "rust"
     commit-message:
       prefix: "deps"
       include: "scope"
-    # Group non-security updates to reduce PR noise
+    # Group ALL non-security updates to reduce PR noise
     groups:
+      production-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
       kubernetes-client:
         patterns:
           - "kube*"
@@ -43,6 +52,7 @@ updates:
           - "tokio*"
           - "hyper*"
           - "tower*"
+          - "axum*"
       serialization:
         patterns:
           - "serde*"
@@ -51,33 +61,22 @@ updates:
         patterns:
           - "tracing*"
           - "opentelemetry*"
+      security:
+        patterns:
+          - "rcgen"
+          - "rustls*"
 
   # Docker - Base image updates
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       day: "monday"
       time: "09:00"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 1
     labels:
       - "dependencies"
       - "docker"
     commit-message:
       prefix: "build"
-      include: "scope"
-
-  # Helm Charts
-  - package-ecosystem: "docker"
-    directory: "/charts/stellar-operator"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-    open-pull-requests-limit: 3
-    labels:
-      - "dependencies"
-      - "helm"
-    commit-message:
-      prefix: "helm"
       include: "scope"

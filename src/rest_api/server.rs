@@ -13,8 +13,8 @@ use tracing::info;
 use crate::controller::ControllerState;
 use crate::{Error, MtlsConfig, Result};
 
-use super::handlers;
 use super::custom_metrics;
+use super::handlers;
 
 /// Metrics endpoint handler
 async fn metrics_handler() -> String {

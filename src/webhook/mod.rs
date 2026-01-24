@@ -44,7 +44,7 @@ pub mod server;
 pub mod types;
 
 pub use runtime::{WasmRuntime, WasmRuntimeBuilder};
-pub use server::{WebhookServer, TlsConfig, LoadPluginRequest, PluginListResponse, PluginInfo};
+pub use server::{LoadPluginRequest, PluginInfo, PluginListResponse, TlsConfig, WebhookServer};
 pub use types::{
     AggregatedValidationResult, ConfigMapRef, Operation, PluginConfig, PluginExecutionResult,
     PluginLimits, PluginMetadata, SecretRef, UserInfo, ValidationError, ValidationErrorType,

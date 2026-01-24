@@ -1,0 +1,199 @@
+# Example: Multi-Validator Cluster with Dynamic Peer Discovery
+#
+# This example demonstrates how to deploy a cluster of Stellar validators
+# that automatically discover each other through the peer discovery system.
+#
+# The operator will:
+# 1. Create a shared ConfigMap "stellar-peers" with peer addresses
+# 2. Inject peer information into each validator pod
+# 3. Restart validators when new peers are discovered
+# 4. Maintain a consistent view of the validator network
+
+---
+# Validator 1 - Seed Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: validator1-seed
+  namespace: default
+type: Opaque
+stringData:
+  STELLAR_CORE_SEED: "SBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+---
+# Validator 2 - Seed Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: validator2-seed
+  namespace: default
+type: Opaque
+stringData:
+  STELLAR_CORE_SEED: "SBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+
+---
+# Validator 3 - Seed Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: validator3-seed
+  namespace: default
+type: Opaque
+stringData:
+  STELLAR_CORE_SEED: "SBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+
+---
+# Validator 1
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-1
+  namespace: default
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  
+  # Resource requirements
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  
+  # Storage for validator database
+  storage:
+    storageClass: "standard"
+    size: "500Gi"
+    retentionPolicy: Retain
+  
+  # Validator-specific configuration
+  validatorConfig:
+    # Reference to the validator's signing key
+    seedSecretRef: validator1-seed
+    
+    # Enable history archive for full archive node
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org"
+      - "https://stellar-testnet-archive.s3.amazonaws.com"
+    
+    # Quorum set configuration
+    # Points to the other validators
+    quorumSet: |
+      [QUORUM_SET]
+      THRESHOLD_PERCENT = 66
+      VALIDATORS = [
+        "validator-2",
+        "validator-3"
+      ]
+    
+    # Custom peer port (optional, defaults to 11625)
+    peerPort: 11625
+
+---
+# Validator 2
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-2
+  namespace: default
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  
+  storage:
+    storageClass: "standard"
+    size: "500Gi"
+    retentionPolicy: Retain
+  
+  validatorConfig:
+    seedSecretRef: validator2-seed
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org"
+      - "https://stellar-testnet-archive.s3.amazonaws.com"
+    
+    quorumSet: |
+      [QUORUM_SET]
+      THRESHOLD_PERCENT = 66
+      VALIDATORS = [
+        "validator-1",
+        "validator-3"
+      ]
+    
+    peerPort: 11625
+
+---
+# Validator 3
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-3
+  namespace: default
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  
+  storage:
+    storageClass: "standard"
+    size: "500Gi"
+    retentionPolicy: Retain
+  
+  validatorConfig:
+    seedSecretRef: validator3-seed
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org"
+      - "https://stellar-testnet-archive.s3.amazonaws.com"
+    
+    quorumSet: |
+      [QUORUM_SET]
+      THRESHOLD_PERCENT = 66
+      VALIDATORS = [
+        "validator-1",
+        "validator-2"
+      ]
+    
+    peerPort: 11625
+
+---
+# Optional: ServiceMonitor for Prometheus (if Prometheus is installed)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: stellar-nodes
+  namespace: default
+  labels:
+    app.kubernetes.io/name: stellar-operator
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stellar-node
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

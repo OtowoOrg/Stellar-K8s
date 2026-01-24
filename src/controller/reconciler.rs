@@ -28,7 +28,8 @@ use super::finalizers::STELLAR_NODE_FINALIZER;
 use super::health;
 use super::remediation;
 use super::resources;
-use super::archive_health::{check_history_archive_health, calculate_backoff, ArchiveHealthResult};
+use super::peer_discovery;
+use super::metrics;
 
 /// Shared state for the controller
 pub struct ControllerState {
@@ -55,6 +56,17 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
             ));
         }
     }
+
+    // Get the operator's namespace for peer discovery
+    let namespace = std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "default".to_string());
+
+    // Spawn peer discovery watch task in background
+    let peer_discovery_client = client.clone();
+    let peer_discovery_namespace = namespace.clone();
+    tokio::spawn(async move {
+        info!("Starting peer discovery watcher for namespace: {}", peer_discovery_namespace);
+        peer_discovery::watch_peers(peer_discovery_client, peer_discovery_namespace).await;
+    });
 
     Controller::new(stellar_nodes, Config::default())
         // Watch owned resources for changes

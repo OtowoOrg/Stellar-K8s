@@ -154,6 +154,14 @@ pub struct ValidatorConfig {
     /// KMS configuration for fetching the validator seed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kms_config: Option<KmsConfig>,
+    /// Port number for peer-to-peer communication (default: 11625)
+    /// Used for dynamic peer discovery to advertise reachability
+    #[serde(default = "default_peer_port", skip_serializing_if = "Option::is_none")]
+    pub peer_port: Option<u16>,
+}
+
+fn default_peer_port() -> Option<u16> {
+    Some(11625)
 }
 
 /// Source of security keys

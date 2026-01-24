@@ -7,6 +7,9 @@ description = "Cloud-Native Kubernetes Operator for Stellar Infrastructure"
 license = "Apache-2.0"
 repository = "https://github.com/stellar/stellar-k8s"
 
+[build-dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+
 [dependencies]
 # Kubernetes client and operator framework
 kube = { version = "0.94", features = ["runtime", "derive", "unstable-runtime", "admission"] }

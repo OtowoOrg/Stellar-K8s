@@ -73,7 +73,7 @@ wasmtime-wasi = { version = "17", optional = true }
 tokio-rustls = { version = "0.25", optional = true }
 
 # Base64 for Wasm plugin loading
-base64 = { version = "0.21", optional = true }
+base64 = { version = "0.22", optional = true }
 
 # SHA256 for plugin integrity verification
 sha2 = { version = "0.10", optional = true }

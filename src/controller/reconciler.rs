@@ -1,4 +1,3 @@
-
 //! Main reconciler for StellarNode resources
 //!
 //! Implements the controller pattern using kube-rs runtime.
@@ -19,7 +18,6 @@
 //! 5. Handle node remediation if needed
 //! 6. Update StellarNode status with current state
 //! 7. Schedule requeue for periodic health checks
-
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -122,7 +120,10 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
     let peer_discovery_client = client.clone();
     let peer_discovery_namespace = namespace.clone();
     tokio::spawn(async move {
-        info!("Starting peer discovery watcher for namespace: {}", peer_discovery_namespace);
+        info!(
+            "Starting peer discovery watcher for namespace: {}",
+            peer_discovery_namespace
+        );
         peer_discovery::watch_peers(peer_discovery_client, peer_discovery_namespace).await;
     });
 

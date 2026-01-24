@@ -1,5 +1,3 @@
-
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -21,29 +19,21 @@ use tracing::{debug, error, info, instrument, warn};
 use crate::controller::archive_health::{
     calculate_backoff, check_history_archive_health, ArchiveHealthResult,
 };
-use crate::crd::{Condition, NodeType, StellarNode, StellarNodeStatus};
-use crate::error::{Error, Result};
-
-const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-retries";
-
-use super::finalizers::STELLAR_NODE_FINALIZER;
-use super::health;
-use super::mtls;
 use crate::crd::{
     AutoscalingConfig, Condition, IngressConfig, NodeType, StellarNode, StellarNodeStatus,
 };
 use crate::error::{Error, Result};
 
-// Constants
-const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-health-retries";
-
-use super::archive_health::{calculate_backoff, check_history_archive_health, ArchiveHealthResult};
 use super::finalizers::STELLAR_NODE_FINALIZER;
 use super::health;
 use super::metrics;
+use super::mtls;
 use super::remediation;
 use super::resources;
 use super::vsl;
+
+// Constants
+const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-health-retries";
 
 /// Shared state for the controller
 pub struct ControllerState {
@@ -185,7 +175,7 @@ async fn apply_stellar_node(
 
         resources::ensure_pvc(client, node).await?;
         resources::ensure_config_map(client, node, None).await?;
-        
+
         match node.spec.node_type {
             NodeType::Validator => {
                 resources::ensure_statefulset(client, node).await?;
@@ -276,13 +266,8 @@ async fn apply_stellar_node(
 
                         let delay = calculate_backoff(0, None, None);
                         info!(
-                            "Requeuing {}/{} in {:?} (retry attempt {})",
-                            namespace,
-                            name,
-                            delay,
-                            retries + 1
-                            "Archive health check failed for {}/{}, requeuing in {:?}",
-                            namespace, name, delay
+                            "Archive health check failed for {}/{}, requeuing in {:?} (retry attempt {})",
+                            namespace, name, delay, retries + 1
                         );
 
                         return Ok(Action::requeue(delay));
@@ -381,14 +366,19 @@ async fn apply_stellar_node(
     if let Some(_quorum) = quorum_override {
         if health_result.healthy {
             // Get pod IP to trigger reload
-            let pod_api: Api<k8s_openapi::api::core::v1::Pod> = Api::namespaced(client.clone(), &namespace);
-            let lp = kube::api::ListParams::default().labels(&format!("app.kubernetes.io/instance={}", name));
+            let pod_api: Api<k8s_openapi::api::core::v1::Pod> =
+                Api::namespaced(client.clone(), &namespace);
+            let lp = kube::api::ListParams::default()
+                .labels(&format!("app.kubernetes.io/instance={}", name));
             if let Ok(pods) = pod_api.list(&lp).await {
                 if let Some(pod) = pods.items.first() {
                     if let Some(status) = &pod.status {
                         if let Some(ip) = &status.pod_ip {
                             if let Err(e) = vsl::trigger_config_reload(ip).await {
-                                warn!("Failed to trigger config-reload for {}/{}: {}", namespace, name, e);
+                                warn!(
+                                    "Failed to trigger config-reload for {}/{}: {}",
+                                    namespace, name, e
+                                );
                             }
                         }
                     }
@@ -940,14 +930,23 @@ async fn get_latest_network_ledger(network: &crate::crd::StellarNetwork) -> Resu
         crate::crd::StellarNetwork::Mainnet => "https://horizon.stellar.org",
         crate::crd::StellarNetwork::Testnet => "https://horizon-testnet.stellar.org",
         crate::crd::StellarNetwork::Futurenet => "https://horizon-futurenet.stellar.org",
-        crate::crd::StellarNetwork::Custom(_) => return Err(Error::ConfigError("Custom network not supported for lag calculation yet".to_string())),
+        crate::crd::StellarNetwork::Custom(_) => {
+            return Err(Error::ConfigError(
+                "Custom network not supported for lag calculation yet".to_string(),
+            ))
+        }
     };
 
     let client = reqwest::Client::new();
     let resp = client.get(url).send().await.map_err(Error::HttpError)?;
-    let json: serde_json::Value = resp.json().await.map_err(|e| Error::ConfigError(e.to_string()))?;
-    
-    let ledger = json["history_latest_ledger"].as_u64().ok_or_else(|| Error::ConfigError("Failed to get latest ledger from horizon".to_string()))?;
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| Error::ConfigError(e.to_string()))?;
+
+    let ledger = json["history_latest_ledger"].as_u64().ok_or_else(|| {
+        Error::ConfigError("Failed to get latest ledger from horizon".to_string())
+    })?;
     Ok(ledger)
 }
 

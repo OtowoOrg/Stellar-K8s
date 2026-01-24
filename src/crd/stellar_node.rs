@@ -132,7 +132,16 @@ pub struct StellarNodeSpec {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "serde_json::Value")]
-    pub topology_spread_constraints: Option<Vec<k8s_openapi::api::core::v1::TopologySpreadConstraint>>,
+    pub topology_spread_constraints:
+        Option<Vec<k8s_openapi::api::core::v1::TopologySpreadConstraint>>,
+
+    /// Load Balancer configuration for external access via MetalLB
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_balancer: Option<LoadBalancerConfig>,
+
+    /// Global node discovery configuration for Stellar network peering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_discovery: Option<GlobalDiscoveryConfig>,
 }
 
 fn default_replicas() -> i32 {

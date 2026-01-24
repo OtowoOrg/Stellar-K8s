@@ -7,9 +7,9 @@ use std::collections::BTreeMap;
 
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec, StatefulSet, StatefulSetSpec};
 use k8s_openapi::api::autoscaling::v2::{
-    CrossVersionObjectReference, HorizontalPodAutoscaler, HorizontalPodAutoscalerSpec,
-    MetricSpec, MetricTarget, ObjectMetricSource, MetricIdentifier,
-    HPAScalingRules, HPAScalingPolicy, HorizontalPodAutoscalerBehavior,
+    CrossVersionObjectReference, HPAScalingPolicy, HPAScalingRules, HorizontalPodAutoscaler,
+    HorizontalPodAutoscalerBehavior, HorizontalPodAutoscalerSpec, MetricIdentifier, MetricSpec,
+    MetricTarget, ObjectMetricSource,
 };
 use k8s_openapi::api::core::v1::{
     ConfigMap, Container, ContainerPort, EnvVar, EnvVarSource, PersistentVolumeClaim,
@@ -167,9 +167,9 @@ pub async fn delete_pvc(client: &Client, node: &StellarNode) -> Result<()> {
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_config_map(
     enable_mtls: bool,
-    client: &Client, 
-    node: &StellarNode, 
-    quorum_override: Option<String>
+    client: &Client,
+    node: &StellarNode,
+    quorum_override: Option<String>,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
@@ -179,13 +179,16 @@ pub async fn ensure_config_map(
     let cm = build_config_map(node, quorum_override);
 
     let patch = Patch::Apply(&cm);
-    api.patch(&name, &PatchParams::apply("stellar-operator").force(), &patch)
-        .await?;
+    api.patch(
+        &name,
+        &PatchParams::apply("stellar-operator").force(),
+        &patch,
+    )
+    .await?;
 
     Ok(())
 }
 
-fn build_config_map(node: &StellarNode, enable_mtls: bool) -> ConfigMap {
 fn build_config_map(node: &StellarNode, quorum_override: Option<String>) -> ConfigMap {
     let labels = standard_labels(node);
     let name = resource_name(node, "config");
@@ -201,23 +204,11 @@ fn build_config_map(node: &StellarNode, quorum_override: Option<String>) -> Conf
     // Add node-type-specific configuration
     match &node.spec.node_type {
         NodeType::Validator => {
-            let mut core_cfg = String::new();
             if let Some(config) = &node.spec.validator_config {
-                if let Some(quorum) = &config.quorum_set {
-                    core_cfg.push_str(quorum);
                 let quorum = quorum_override.or_else(|| config.quorum_set.clone());
                 if let Some(q) = quorum {
                     data.insert("stellar-core.cfg".to_string(), q);
                 }
-            }
-            if enable_mtls {
-                core_cfg.push_str("\n# mTLS Configuration\n");
-                core_cfg.push_str("HTTP_PORT_SECURE=true\n");
-                core_cfg.push_str("TLS_CERT_FILE=\"/etc/stellar/tls/tls.crt\"\n");
-                core_cfg.push_str("TLS_KEY_FILE=\"/etc/stellar/tls/tls.key\"\n");
-            }
-            if !core_cfg.is_empty() {
-                data.insert("stellar-core.cfg".to_string(), core_cfg);
             }
         }
         NodeType::Horizon => {
@@ -1177,7 +1168,6 @@ fn build_pod_template(
                 }),
                 ..Default::default()
             },
-            
         ]),
         topology_spread_constraints: node.spec.topology_spread_constraints.clone(),
         ..Default::default()
@@ -1591,26 +1581,39 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
         // Add more custom metrics mapping here (e.g., request throughput)
     }
 
-    let behavior = autoscaling.behavior.as_ref().map(|b| HorizontalPodAutoscalerBehavior {
-        scale_up: b.scale_up.as_ref().map(|s| HPAScalingRules {
-            stabilization_window_seconds: s.stabilization_window_seconds,
-            policies: Some(s.policies.iter().map(|p| HPAScalingPolicy {
-                type_: p.policy_type.clone(),
-                value: p.value,
-                period_seconds: p.period_seconds,
-            }).collect()),
-            select_policy: Some("Max".to_string()),
-        }),
-        scale_down: b.scale_down.as_ref().map(|s| HPAScalingRules {
-            stabilization_window_seconds: s.stabilization_window_seconds,
-            policies: Some(s.policies.iter().map(|p| HPAScalingPolicy {
-                type_: p.policy_type.clone(),
-                value: p.value,
-                period_seconds: p.period_seconds,
-            }).collect()),
-            select_policy: Some("Min".to_string()),
-        }),
-    });
+    let behavior = autoscaling
+        .behavior
+        .as_ref()
+        .map(|b| HorizontalPodAutoscalerBehavior {
+            scale_up: b.scale_up.as_ref().map(|s| HPAScalingRules {
+                stabilization_window_seconds: s.stabilization_window_seconds,
+                policies: Some(
+                    s.policies
+                        .iter()
+                        .map(|p| HPAScalingPolicy {
+                            type_: p.policy_type.clone(),
+                            value: p.value,
+                            period_seconds: p.period_seconds,
+                        })
+                        .collect(),
+                ),
+                select_policy: Some("Max".to_string()),
+            }),
+            scale_down: b.scale_down.as_ref().map(|s| HPAScalingRules {
+                stabilization_window_seconds: s.stabilization_window_seconds,
+                policies: Some(
+                    s.policies
+                        .iter()
+                        .map(|p| HPAScalingPolicy {
+                            type_: p.policy_type.clone(),
+                            value: p.value,
+                            period_seconds: p.period_seconds,
+                        })
+                        .collect(),
+                ),
+                select_policy: Some("Min".to_string()),
+            }),
+        });
 
     let hpa = HorizontalPodAutoscaler {
         metadata: ObjectMeta {
@@ -1628,7 +1631,11 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
             },
             min_replicas: Some(autoscaling.min_replicas),
             max_replicas: autoscaling.max_replicas,
-            metrics: if metrics.is_empty() { None } else { Some(metrics) },
+            metrics: if metrics.is_empty() {
+                None
+            } else {
+                Some(metrics)
+            },
             behavior,
         }),
         status: None,

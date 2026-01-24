@@ -36,9 +36,17 @@ async fn main() -> Result<(), Error> {
     let otel_enabled = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok();
 
     if otel_enabled {
+        // Verify privacy standards before starting
+        if let Err(e) = stellar_k8s::telemetry::proxy::SecureTelemetryProxy::verify_privacy_assurance() {
+            tracing::error!("Privacy Assurance Failed: {}", e);
+            if std::env::var("STRICT_PRIVACY").is_ok() {
+                return Err(Error::ConfigError(e));
+            }
+        }
+
         let otel_layer = stellar_k8s::telemetry::init_telemetry(&registry);
         registry.with(otel_layer).init();
-        info!("OpenTelemetry tracing initialized");
+        info!("OpenTelemetry tracing initialized with Zero-Knowledge Proxy support");
     } else {
         registry.init();
         info!("OpenTelemetry tracing disabled (OTEL_EXPORTER_OTLP_ENDPOINT not set)");

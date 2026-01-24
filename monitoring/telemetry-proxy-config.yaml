@@ -1,0 +1,62 @@
+# Zero-Knowledge Telemetry Proxy Configuration for OpenTelemetry Collector
+# This configuration ensures all telemetry sent to public dashboards is scrubbed
+# of sensitive metadata like IPs and specific cluster names.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+  # Sensitive Data Scrubbing
+  transform:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          # Remove specific IP addresses
+          - delete_key(attributes, "ip")
+          - delete_key(attributes, "host.ip")
+          - delete_key(attributes, "k8s.pod.ip")
+          - delete_key(attributes, "net.host.ip")
+          - delete_key(attributes, "net.peer.ip")
+          # Anonymize cluster and pod names
+          - set(attributes["k8s.cluster.name"], "anonymized-stellar-cluster")
+          - set(attributes["k8s.pod.name"], "anonymized-node")
+          - set(attributes["k8s.namespace.name"], "stellar-system")
+          
+    metric_statements:
+      - context: datapoint
+        statements:
+          - delete_key(attributes, "ip")
+          - set(attributes["cluster_name"], "anonymized")
+          - set(attributes["node_name"], "anonymized")
+
+exporters:
+  # Public monitoring dashboard (e.g. Honeycomb, Lightstep, or a central Prometheus/Grafana)
+  otlp/public:
+    endpoint: ${PUBLIC_DASHBOARD_ENDPOINT}
+    headers:
+      "x-api-key": ${PUBLIC_DASHBOARD_API_KEY}
+    tls:
+      insecure: false # MUST use TLS for public transmission
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch, transform]
+      exporters: [otlp/public]
+    metrics:
+      receivers: [otlp]
+      processors: [batch, transform]
+      exporters: [otlp/public]
+
+  extensions: [health_check, zpages]

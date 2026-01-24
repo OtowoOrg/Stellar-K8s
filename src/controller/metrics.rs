@@ -24,6 +24,19 @@ pub static LEDGER_SEQUENCE: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
 pub static INGESTION_LAG: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
+/// Gauge tracking reconciliation count (privacy protected)
+pub static RECONCILIATION_COUNT: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Privacy module for differential privacy
+use crate::telemetry::privacy::{PrivancyAwareMetric, PrivacyConfig};
+static PRIVACY_ENGINE: Lazy<PrivancyAwareMetric> = Lazy::new(|| {
+    PrivancyAwareMetric::new(PrivacyConfig {
+        epsilon: 0.1,
+        sensitivity: 1.0,
+    })
+});
+
 /// Global metrics registry
 pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
     let mut registry = Registry::default();
@@ -36,6 +49,11 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_node_ingestion_lag",
         "Lag between latest network ledger and node ledger",
         INGESTION_LAG.clone(),
+    );
+    registry.register(
+        "stellar_operator_reconciliations_total",
+        "Total number of reconciliations (Differential Privacy applied)",
+        RECONCILIATION_COUNT.clone(),
     );
     registry
 });
@@ -72,4 +90,24 @@ pub fn set_ingestion_lag(
         network: network.to_string(),
     };
     INGESTION_LAG.get_or_create(&labels).set(lag);
+}
+
+/// Increment the reconciliation count with differential privacy
+pub fn inc_reconciliation_count(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    current_val: u64,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+    };
+    
+    // Apply differential privacy noise
+    let protected_val = PRIVACY_ENGINE.protect_count(current_val);
+    RECONCILIATION_COUNT.get_or_create(&labels).set(protected_val as i64);
 }

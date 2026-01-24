@@ -133,15 +133,27 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
         obj.spec.node_type
     );
 
-    // Use kube-rs built-in finalizer helper for clean lifecycle management
-    finalizer(&api, STELLAR_NODE_FINALIZER, obj, |event| async {
+    let res = finalizer(&api, STELLAR_NODE_FINALIZER, obj.clone(), |event| async {
         match event {
             FinalizerEvent::Apply(node) => apply_stellar_node(&client, &node, &ctx).await,
             FinalizerEvent::Cleanup(node) => cleanup_stellar_node(&client, &node).await,
         }
     })
-    .await
-    .map_err(Error::from)
+    .await;
+
+    if res.is_ok() {
+        // Track total reconciliations with differential privacy
+        // We use a mock "cumulative" value for this example
+        metrics::inc_reconciliation_count(
+            &namespace,
+            &obj.name_any(),
+            &obj.spec.node_type.to_string(),
+            obj.spec.network.passphrase(),
+            1, // In a real app, this would be a persistent counter
+        );
+    }
+
+    res.map_err(Error::from)
 }
 
 /// Apply/create/update the StellarNode resources

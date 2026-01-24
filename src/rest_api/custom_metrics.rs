@@ -68,9 +68,9 @@ pub async fn get_pod_metric(
 ) -> impl IntoResponse {
     // Logic to fetch pod metric from Prometheus family
     // For now, return a mock response to satisfy the structure
-    
+
     let now = chrono::Utc::now().to_rfc3339();
-    
+
     let items = vec![MetricValue {
         described_object: DescribedObject {
             kind: "Pod".to_string(),
@@ -101,10 +101,10 @@ pub async fn get_stellar_node_metric(
     Path((namespace, name, metric_name)): Path<(String, String, String)>,
 ) -> impl IntoResponse {
     let now = chrono::Utc::now().to_rfc3339();
-    
+
     // In a real implementation, we would look up the specific node's metric
     // From our internal INGESTION_LAG family.
-    
+
     let items = vec![MetricValue {
         described_object: DescribedObject {
             kind: "StellarNode".to_string(),

@@ -20,6 +20,10 @@ pub struct NodeLabels {
 pub static LEDGER_SEQUENCE: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
+/// Gauge tracking ledger ingestion lag per node
+pub static INGESTION_LAG: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
 /// Global metrics registry
 pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
     let mut registry = Registry::default();
@@ -27,6 +31,11 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_node_ledger_sequence",
         "Current ledger sequence number of the Stellar node",
         LEDGER_SEQUENCE.clone(),
+    );
+    registry.register(
+        "stellar_node_ingestion_lag",
+        "Lag between latest network ledger and node ledger",
+        INGESTION_LAG.clone(),
     );
     registry
 });
@@ -46,4 +55,15 @@ pub fn set_ledger_sequence(
         network: network.to_string(),
     };
     LEDGER_SEQUENCE.get_or_create(&labels).set(sequence as i64);
+}
+
+/// Update the ingestion lag metric for a node
+pub fn set_ingestion_lag(namespace: &str, name: &str, node_type: &str, network: &str, lag: i64) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+    };
+    INGESTION_LAG.get_or_create(&labels).set(lag);
 }

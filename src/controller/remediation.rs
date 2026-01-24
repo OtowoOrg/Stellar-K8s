@@ -290,7 +290,10 @@ pub async fn update_remediation_state(
             annotations.insert(LAST_LEDGER_TIME_ANNOTATION.to_string(), now.clone());
             // Reset remediation level on progress
             annotations.insert(REMEDIATION_LEVEL_ANNOTATION.to_string(), "0".to_string());
-            debug!("Ledger progressed to {}, resetting remediation state", ledger);
+            debug!(
+                "Ledger progressed to {}, resetting remediation state",
+                ledger
+            );
         }
     }
 
@@ -334,8 +337,14 @@ mod tests {
     fn test_remediation_level_conversion() {
         assert_eq!(RemediationLevel::from_u8(0), RemediationLevel::None);
         assert_eq!(RemediationLevel::from_u8(1), RemediationLevel::Restart);
-        assert_eq!(RemediationLevel::from_u8(2), RemediationLevel::ClearAndResync);
-        assert_eq!(RemediationLevel::from_u8(99), RemediationLevel::ClearAndResync);
+        assert_eq!(
+            RemediationLevel::from_u8(2),
+            RemediationLevel::ClearAndResync
+        );
+        assert_eq!(
+            RemediationLevel::from_u8(99),
+            RemediationLevel::ClearAndResync
+        );
     }
 
     #[test]

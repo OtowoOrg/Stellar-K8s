@@ -1,6 +1,19 @@
 //! Health check module for Stellar nodes
 //!
 //! Queries node endpoints to verify they are fully synced and operational.
+//! The health check logic differs by node type:
+//!
+//! - **Validators**: Check ledger progression via Stellar Core HTTP endpoint
+//! - **Horizon**: Check database synchronization and ingestion status
+//! - **Soroban RPC**: Check RPC endpoint availability and ledger sync
+//!
+//! # Health Check Result
+//!
+//! Returns [`HealthCheckResult`] containing:
+//! - `healthy` - Whether the node is running and accessible
+//! - `synced` - Whether the node is fully synchronized with the network
+//! - `message` - Human-readable status message
+//! - `ledger_sequence` - Current ledger number (if available)
 
 use std::time::Duration;
 
@@ -19,19 +32,19 @@ struct HorizonHealthResponse {
     /// Overall health status
     #[serde(default)]
     pub status: String,
-    
+
     /// Core sync status
     #[serde(default)]
     pub core_latest_ledger: u64,
-    
+
     /// Horizon's latest ingested ledger
     #[serde(default)]
     pub history_latest_ledger: u64,
-    
+
     /// Whether Horizon is synced with Core
     #[serde(default)]
     pub core_synced: bool,
-    
+
     /// Whether history ingestion is up to date
     #[serde(default)]
     pub history_elder_ledger: u64,
@@ -42,24 +55,38 @@ struct HorizonHealthResponse {
 struct SorobanHealthResponse {
     /// Health status
     pub status: String,
-    
+
     /// Latest ledger
     #[serde(default)]
     pub ledger: u64,
 }
 
 /// Result of a health check
+///
+/// Contains the outcome of a health check operation, including:
+/// - Whether the node is healthy and accessible
+/// - Whether the node is fully synchronized
+/// - Status message explaining the current condition
+/// - Current ledger sequence (if available)
+///
+/// # Variants
+///
+/// The result is typically created using helper methods:
+/// - [`HealthCheckResult::synced`] - Node is healthy and synced
+/// - [`HealthCheckResult::syncing`] - Node is healthy but still syncing
+/// - [`HealthCheckResult::unhealthy`] - Node is not responding or has errors
+/// - [`HealthCheckResult::pending`] - Pod not ready yet
 #[derive(Debug, Clone)]
 pub struct HealthCheckResult {
     /// Whether the node is healthy
     pub healthy: bool,
-    
+
     /// Whether the node is fully synced
     pub synced: bool,
-    
+
     /// Human-readable message
     pub message: String,
-    
+
     /// Current ledger sequence (if available)
     pub ledger_sequence: Option<u64>,
 }
@@ -74,7 +101,7 @@ impl HealthCheckResult {
             ledger_sequence: ledger,
         }
     }
-    
+
     /// Create a healthy but not synced result
     pub fn syncing(message: String, ledger: Option<u64>) -> Self {
         Self {
@@ -84,7 +111,7 @@ impl HealthCheckResult {
             ledger_sequence: ledger,
         }
     }
-    
+
     /// Create an unhealthy result
     pub fn unhealthy(message: String) -> Self {
         Self {
@@ -94,7 +121,7 @@ impl HealthCheckResult {
             ledger_sequence: None,
         }
     }
-    
+
     /// Create a pending result (pod not ready yet)
     pub fn pending(message: String) -> Self {
         Self {
@@ -107,33 +134,37 @@ impl HealthCheckResult {
 }
 
 /// Check the health of a StellarNode
-pub async fn check_node_health(client: &Client, node: &StellarNode) -> Result<HealthCheckResult> {
+pub async fn check_node_health(
+    client: &Client,
+    node: &StellarNode,
+    mtls_config: Option<&crate::MtlsConfig>,
+) -> Result<HealthCheckResult> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
-    
+
     debug!("Checking health for node {}/{}", namespace, name);
-    
+
     // Get the pod(s) for this node
     let pod_api: Api<Pod> = Api::namespaced(client.clone(), &namespace);
     let label_selector = format!(
         "app.kubernetes.io/instance={},app.kubernetes.io/name=stellar-node",
         name
     );
-    
+
     let pods = pod_api
         .list(&kube::api::ListParams::default().labels(&label_selector))
         .await
         .map_err(Error::KubeError)?;
-    
+
     if pods.items.is_empty() {
         return Ok(HealthCheckResult::pending(
             "No pods found for node".to_string(),
         ));
     }
-    
+
     // Check the first ready pod
     let ready_pod = pods.items.iter().find(|pod| is_pod_ready(pod));
-    
+
     let pod = match ready_pod {
         Some(p) => p,
         None => {
@@ -142,12 +173,12 @@ pub async fn check_node_health(client: &Client, node: &StellarNode) -> Result<He
             ));
         }
     };
-    
+
     let pod_ip = match &pod.status {
         Some(status) => status.pod_ip.as_ref(),
         None => None,
     };
-    
+
     let pod_ip = match pod_ip {
         Some(ip) => ip,
         None => {
@@ -156,17 +187,17 @@ pub async fn check_node_health(client: &Client, node: &StellarNode) -> Result<He
             ));
         }
     };
-    
+
     info!(
         "Checking health for pod {} at IP {}",
         pod.name_any(),
         pod_ip
     );
-    
+
     // Perform health check based on node type
     match node.spec.node_type {
-        NodeType::Horizon => check_horizon_health(pod_ip).await,
-        NodeType::SorobanRpc => check_soroban_health(pod_ip).await,
+        NodeType::Horizon => check_horizon_health(pod_ip, mtls_config).await,
+        NodeType::SorobanRpc => check_soroban_health(pod_ip, mtls_config).await,
         NodeType::Validator => {
             // Validators don't have a standard health endpoint
             // We consider them healthy if the pod is running
@@ -179,60 +210,90 @@ pub async fn check_node_health(client: &Client, node: &StellarNode) -> Result<He
 fn is_pod_ready(pod: &Pod) -> bool {
     if let Some(status) = &pod.status {
         if let Some(conditions) = &status.conditions {
-            return conditions.iter().any(|c| {
-                c.type_ == "Ready" && c.status == "True"
-            });
+            return conditions
+                .iter()
+                .any(|c| c.type_ == "Ready" && c.status == "True");
         }
     }
     false
 }
 
 /// Check Horizon node health
-async fn check_horizon_health(pod_ip: &str) -> Result<HealthCheckResult> {
-    let url = format!("http://{}:8000/health", pod_ip);
-    
+async fn check_horizon_health(
+    pod_ip: &str,
+    mtls_config: Option<&crate::MtlsConfig>,
+) -> Result<HealthCheckResult> {
+    let scheme = if mtls_config.is_some() {
+        "https"
+    } else {
+        "http"
+    };
+    let url = format!("{}://{}:8000/health", scheme, pod_ip);
+
     debug!("Querying Horizon health endpoint: {}", url);
-    
-    // Create HTTP client with timeout
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
+
+    // Create HTTP client with mTLS if enabled
+    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(5));
+
+    if let Some(config) = mtls_config {
+        let mut identity_pem = config.cert_pem.clone();
+        identity_pem.extend_from_slice(&config.key_pem);
+
+        let identity = reqwest::Identity::from_pem(&identity_pem)
+            .map_err(|e| Error::ConfigError(format!("Failed to create identity: {}", e)))?;
+
+        let ca_cert = reqwest::Certificate::from_pem(&config.ca_pem)
+            .map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {}", e)))?;
+
+        builder = builder
+            .identity(identity)
+            .add_root_certificate(ca_cert)
+            .danger_accept_invalid_hostnames(true);
+    }
+
+    let client = builder
         .build()
         .map_err(|e| Error::ConfigError(format!("Failed to create HTTP client: {}", e)))?;
-    
+
     match client.get(&url).send().await {
         Ok(response) => {
             if !response.status().is_success() {
-                warn!("Horizon health check returned status: {}", response.status());
+                warn!(
+                    "Horizon health check returned status: {}",
+                    response.status()
+                );
                 return Ok(HealthCheckResult::unhealthy(format!(
                     "Health endpoint returned status {}",
                     response.status()
                 )));
             }
-            
+
             // Try to parse the response
             match response.json::<HorizonHealthResponse>().await {
                 Ok(health) => {
                     debug!("Horizon health response: {:?}", health);
-                    
+
                     // Check if Horizon is synced
                     if health.core_synced {
                         info!(
                             "Horizon is synced at ledger {}",
                             health.history_latest_ledger
                         );
-                        Ok(HealthCheckResult::synced(Some(health.history_latest_ledger)))
+                        Ok(HealthCheckResult::synced(Some(
+                            health.history_latest_ledger,
+                        )))
                     } else {
                         let lag = if health.core_latest_ledger > health.history_latest_ledger {
                             health.core_latest_ledger - health.history_latest_ledger
                         } else {
                             0
                         };
-                        
+
                         let message = format!(
                             "Horizon is syncing: at ledger {}, core at {} (lag: {})",
                             health.history_latest_ledger, health.core_latest_ledger, lag
                         );
-                        
+
                         info!("{}", message);
                         Ok(HealthCheckResult::syncing(
                             message,
@@ -261,30 +322,58 @@ async fn check_horizon_health(pod_ip: &str) -> Result<HealthCheckResult> {
 }
 
 /// Check Soroban RPC node health
-async fn check_soroban_health(pod_ip: &str) -> Result<HealthCheckResult> {
-    let url = format!("http://{}:8000/health", pod_ip);
-    
+async fn check_soroban_health(
+    pod_ip: &str,
+    mtls_config: Option<&crate::MtlsConfig>,
+) -> Result<HealthCheckResult> {
+    let scheme = if mtls_config.is_some() {
+        "https"
+    } else {
+        "http"
+    };
+    let url = format!("{}://{}:8000/health", scheme, pod_ip);
+
     debug!("Querying Soroban RPC health endpoint: {}", url);
-    
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
+
+    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(5));
+
+    if let Some(config) = mtls_config {
+        let mut identity_pem = config.cert_pem.clone();
+        identity_pem.extend_from_slice(&config.key_pem);
+
+        let identity = reqwest::Identity::from_pem(&identity_pem)
+            .map_err(|e| Error::ConfigError(format!("Failed to create identity: {}", e)))?;
+
+        let ca_cert = reqwest::Certificate::from_pem(&config.ca_pem)
+            .map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {}", e)))?;
+
+        builder = builder
+            .identity(identity)
+            .add_root_certificate(ca_cert)
+            .danger_accept_invalid_hostnames(true);
+    }
+
+    let client = builder
         .build()
         .map_err(|e| Error::ConfigError(format!("Failed to create HTTP client: {}", e)))?;
-    
+
     match client.get(&url).send().await {
         Ok(response) => {
             if !response.status().is_success() {
-                warn!("Soroban health check returned status: {}", response.status());
+                warn!(
+                    "Soroban health check returned status: {}",
+                    response.status()
+                );
                 return Ok(HealthCheckResult::unhealthy(format!(
                     "Health endpoint returned status {}",
                     response.status()
                 )));
             }
-            
+
             match response.json::<SorobanHealthResponse>().await {
                 Ok(health) => {
                     debug!("Soroban health response: {:?}", health);
-                    
+
                     if health.status == "healthy" || health.status == "ready" {
                         info!("Soroban RPC is healthy at ledger {}", health.ledger);
                         Ok(HealthCheckResult::synced(Some(health.ledger)))

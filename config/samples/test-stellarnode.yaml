@@ -1,0 +1,29 @@
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: test-validator
+  namespace: default
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  serviceConfig:
+    peerNodePort: 30001
+    httpNodePort: 30002
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  storage:
+    storageClass: "standard"
+    size: "100Gi"
+    retentionPolicy: Delete
+  validatorConfig:
+    seedSecretRef: "validator-seed"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"

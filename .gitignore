@@ -24,12 +24,29 @@ target
 .github/WAVE_ISSUES.md
 scripts/
 
+# Development configs (may contain secrets)
+config/dev/*.kubeconfig
+config/dev/*-secret.yaml
+
 # AI Agent & Planning Artifacts
 .claude/
 .agents/
 .cursor/
 .gemini/
+.windsurf/
 task_plan.md
 findings.md
 progress.md
 issue-*-requirement.md
+requirements.md
+CI_CD_REVIEW.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

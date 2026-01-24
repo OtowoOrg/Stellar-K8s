@@ -26,7 +26,7 @@ impl ArchiveHealthResult {
     pub fn new(healthy: Vec<String>, unhealthy: Vec<(String, String)>) -> Self {
         let all_healthy = unhealthy.is_empty() && !healthy.is_empty();
         let any_healthy = !healthy.is_empty();
-        
+
         Self {
             healthy_urls: healthy,
             unhealthy_urls: unhealthy,
@@ -66,24 +66,15 @@ impl ArchiveHealthResult {
 /// Tries the following endpoints in order:
 /// 1. HEAD request to `.well-known/stellar-history.json` (lightweight)
 /// 2. GET request to root `/` (fallback)
-async fn check_single_archive(
-    client: &Client,
-    url: &str,
-    timeout: Duration,
-) -> Result<()> {
+async fn check_single_archive(client: &Client, url: &str, timeout: Duration) -> Result<()> {
     let base_url = url.trim_end_matches('/');
-    
+
     // Try the standard Stellar history metadata endpoint first
     let metadata_url = format!("{}/.well-known/stellar-history.json", base_url);
-    
+
     debug!("Checking archive health: {}", metadata_url);
-    
-    match client
-        .head(&metadata_url)
-        .timeout(timeout)
-        .send()
-        .await
-    {
+
+    match client.head(&metadata_url).timeout(timeout).send().await {
         Ok(resp) if resp.status().is_success() => {
             debug!("Archive healthy (metadata endpoint): {}", url);
             return Ok(());
@@ -99,14 +90,9 @@ async fn check_single_archive(
             debug!("Metadata endpoint failed ({}), trying root: {}", e, url);
         }
     }
-    
+
     // Fallback to root endpoint
-    match client
-        .head(base_url)
-        .timeout(timeout)
-        .send()
-        .await
-    {
+    match client.head(base_url).timeout(timeout).send().await {
         Ok(resp) if resp.status().is_success() => {
             debug!("Archive healthy (root endpoint): {}", url);
             Ok(())
@@ -142,7 +128,7 @@ pub async fn check_history_archive_health(
     }
 
     let timeout = timeout.unwrap_or(Duration::from_secs(10));
-    
+
     // Create HTTP client with reasonable defaults
     let client = Client::builder()
         .timeout(timeout)
@@ -170,9 +156,9 @@ pub async fn check_history_archive_health(
     }
 
     let health_result = ArchiveHealthResult::new(healthy, unhealthy);
-    
+
     debug!("Archive health check complete: {}", health_result.summary());
-    
+
     Ok(health_result)
 }
 
@@ -192,11 +178,11 @@ pub fn calculate_backoff(
 ) -> Duration {
     let base = base_delay_secs.unwrap_or(15);
     let max = max_delay_secs.unwrap_or(300);
-    
+
     // Exponential: base * 2^attempt, capped at max
     let delay_secs = base.saturating_mul(2_u64.saturating_pow(attempt.min(5)));
     let capped_delay = delay_secs.min(max);
-    
+
     Duration::from_secs(capped_delay)
 }
 
@@ -208,19 +194,19 @@ mod tests {
     fn test_backoff_calculation() {
         // Attempt 0: 15 seconds
         assert_eq!(calculate_backoff(0, None, None), Duration::from_secs(15));
-        
+
         // Attempt 1: 30 seconds
         assert_eq!(calculate_backoff(1, None, None), Duration::from_secs(30));
-        
+
         // Attempt 2: 60 seconds
         assert_eq!(calculate_backoff(2, None, None), Duration::from_secs(60));
-        
+
         // Attempt 3: 120 seconds
         assert_eq!(calculate_backoff(3, None, None), Duration::from_secs(120));
-        
+
         // Attempt 4: 240 seconds
         assert_eq!(calculate_backoff(4, None, None), Duration::from_secs(240));
-        
+
         // Attempt 5+: capped at 300 seconds (5 minutes)
         assert_eq!(calculate_backoff(5, None, None), Duration::from_secs(300));
         assert_eq!(calculate_backoff(10, None, None), Duration::from_secs(300));
@@ -228,10 +214,7 @@ mod tests {
 
     #[test]
     fn test_health_result_summary() {
-        let result = ArchiveHealthResult::new(
-            vec!["http://archive1.com".to_string()],
-            vec![],
-        );
+        let result = ArchiveHealthResult::new(vec!["http://archive1.com".to_string()], vec![]);
         assert!(result.all_healthy);
         assert!(result.any_healthy);
         assert_eq!(result.summary(), "All 1 archive(s) healthy");

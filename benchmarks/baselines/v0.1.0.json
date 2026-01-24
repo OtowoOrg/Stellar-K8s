@@ -1,0 +1,67 @@
+{
+  "version": "v0.1.0",
+  "baseline_created": "2024-01-01T00:00:00Z",
+  "description": "Initial baseline for Stellar-K8s operator performance",
+  "environment": {
+    "k8s_version": "1.28",
+    "nodes": 3,
+    "cpu_per_node": "4 cores",
+    "memory_per_node": "16Gi"
+  },
+  "metrics": {
+    "tps": {
+      "avg": 150.0
+    },
+    "http_req_duration": {
+      "avg": 45.0,
+      "p50": 35.0,
+      "p95": 120.0,
+      "p99": 250.0,
+      "max": 500.0
+    },
+    "reconciliation_duration": {
+      "avg": 450.0,
+      "p95": 1200.0,
+      "p99": 2500.0
+    },
+    "api_latency": {
+      "avg": 25.0,
+      "p95": 80.0,
+      "p99": 150.0
+    },
+    "health_check_latency": {
+      "p95": 15.0
+    },
+    "crd_operation_latency": {
+      "avg": 180.0,
+      "p95": 450.0
+    },
+    "error_rate": 0.001,
+    "total_requests": 50000,
+    "node_creations": 5000,
+    "node_updates": 3000,
+    "node_deletions": 5000
+  },
+  "thresholds": {
+    "http_req_duration_p95": {
+      "limit": 500,
+      "unit": "ms"
+    },
+    "http_req_duration_p99": {
+      "limit": 1000,
+      "unit": "ms"
+    },
+    "reconciliation_duration_p95": {
+      "limit": 3000,
+      "unit": "ms"
+    },
+    "error_rate": {
+      "limit": 0.01,
+      "unit": "percentage"
+    },
+    "tps_minimum": {
+      "limit": 100,
+      "unit": "req/s"
+    }
+  }
+}

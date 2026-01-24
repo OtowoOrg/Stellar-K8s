@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="Stellar-K8s Logo" width="200" />
+  <img src="assets/logo.png" alt="Stellar-K8s Logo" width="200" />
 </p>
 
 # Stellar-K8s: Cloud-Native Stellar Infrastructure 🚀

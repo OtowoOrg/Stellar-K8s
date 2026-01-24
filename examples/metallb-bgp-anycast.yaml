@@ -1,0 +1,223 @@
+# MetalLB/BGP Anycast Example for Global Stellar Node Discovery
+#
+# This example demonstrates how to configure a Stellar Horizon node with
+# MetalLB BGP anycast for global node discovery and automatic failover.
+#
+# Prerequisites:
+# 1. MetalLB installed in the cluster (metallb-system namespace)
+# 2. BGP peers configured on upstream routers
+# 3. Appropriate ASN and IP addresses coordinated with network team
+#
+# For MetalLB installation:
+#   helm repo add metallb https://metallb.github.io/metallb
+#   helm install metallb metallb/metallb -n metallb-system --create-namespace
+---
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-anycast-us-east
+  namespace: stellar-nodes
+  labels:
+    stellar.org/region: us-east
+    stellar.org/environment: production
+spec:
+  nodeType: Horizon
+  network: Mainnet
+  version: "v21.0.0"
+  replicas: 3
+
+  resources:
+    requests:
+      cpu: "4"
+      memory: "16Gi"
+    limits:
+      cpu: "8"
+      memory: "32Gi"
+
+  storage:
+    storageClass: "premium-rwo"
+    size: "1Ti"
+    retentionPolicy: Retain
+
+  horizonConfig:
+    databaseSecretRef: "horizon-db-credentials"
+    enableIngest: true
+    stellarCoreUrl: "http://stellar-core-svc:11626"
+    ingestWorkers: 4
+
+  # MetalLB LoadBalancer with BGP Anycast
+  loadBalancer:
+    enabled: true
+    mode: BGP
+    addressPool: "stellar-anycast-pool"
+    loadBalancerIP: "192.0.2.100"  # Your anycast IP
+    externalTrafficPolicy: Local   # Preserve source IP
+
+    bgp:
+      localASN: 64512              # Your cluster's ASN
+      peers:
+        - address: "192.168.1.1"   # Primary BGP router
+          asn: 64513
+          port: 179
+          holdTime: 90
+          keepaliveTime: 30
+          ebgpMultiHop: false
+          gracefulRestart: true
+          passwordSecretRef:
+            name: bgp-peer-secret
+            key: password
+        - address: "192.168.1.2"   # Secondary BGP router
+          asn: 64513
+          port: 179
+          holdTime: 90
+          keepaliveTime: 30
+          ebgpMultiHop: false
+          gracefulRestart: true
+
+      # BGP communities for traffic engineering
+      communities:
+        - "64512:100"              # Primary route
+        - "64512:1000"             # Stellar service tag
+
+      # Large communities (RFC 8092)
+      largeCommunities:
+        - "64512:1:100"            # Function: 1 = Production
+
+      # Advertisement configuration
+      advertisement:
+        aggregationLength: 32      # Host routes for anycast
+        aggregationLengthV6: 128
+        localPref: 100             # Route preference
+        nodeSelectors:
+          node.kubernetes.io/instance-type: "n2-standard-8"
+
+      # Enable BFD for fast failover (requires BFD profile in MetalLB)
+      bfdEnabled: true
+      bfdProfile: "stellar-bfd"
+
+    healthCheckEnabled: true
+    healthCheckPort: 9100
+
+    annotations:
+      metallb.universe.tf/allow-shared-ip: "stellar-anycast"
+
+  # Global discovery for cross-region peering
+  globalDiscovery:
+    enabled: true
+    region: "us-east"
+    zone: "us-east-1a"
+    priority: 100
+    topologyAwareHints: true
+
+    # External DNS for automatic DNS registration
+    externalDns:
+      hostname: "horizon.stellar.example.com"
+      ttl: 60
+      provider: "route53"
+      annotations:
+        external-dns.alpha.kubernetes.io/aws-weight: "100"
+
+  # Autoscaling for high availability
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 10
+    targetCpuUtilizationPercentage: 70
+
+  # Network policy for security
+  networkPolicy:
+    enabled: true
+    allowCidrs:
+      - "10.0.0.0/8"               # Internal cluster
+      - "192.168.0.0/16"           # Corporate network
+    allowMetricsScrape: true
+    metricsNamespace: "monitoring"
+
+---
+# Example MetalLB IPAddressPool for the anycast IP
+# Apply to metallb-system namespace
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: stellar-anycast-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 192.0.2.100/32              # Single anycast IP
+  autoAssign: true
+
+---
+# BGPAdvertisement for route announcement
+apiVersion: metallb.io/v1beta1
+kind: BGPAdvertisement
+metadata:
+  name: stellar-anycast-bgp
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - stellar-anycast-pool
+  aggregationLength: 32
+  communities:
+    - 64512:100
+    - 64512:1000
+
+---
+# BGPPeer for primary router
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: stellar-peer-primary
+  namespace: metallb-system
+spec:
+  myASN: 64512
+  peerASN: 64513
+  peerAddress: 192.168.1.1
+  peerPort: 179
+  holdTime: 90s
+  keepaliveTime: 30s
+  password:
+    secretRef:
+      name: bgp-peer-secret
+      key: password
+  bfdProfile: stellar-bfd
+
+---
+# BGPPeer for secondary router
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: stellar-peer-secondary
+  namespace: metallb-system
+spec:
+  myASN: 64512
+  peerASN: 64513
+  peerAddress: 192.168.1.2
+  peerPort: 179
+  holdTime: 90s
+  keepaliveTime: 30s
+  bfdProfile: stellar-bfd
+
+---
+# BFD Profile for fast failover detection
+apiVersion: metallb.io/v1beta1
+kind: BFDProfile
+metadata:
+  name: stellar-bfd
+  namespace: metallb-system
+spec:
+  receiveInterval: 300
+  transmitInterval: 300
+  detectMultiplier: 3
+  echoMode: false
+  passiveMode: false
+  minimumTtl: 254
+
+---
+# Secret for BGP peer authentication
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bgp-peer-secret
+  namespace: metallb-system
+type: Opaque
+stringData:
+  password: "your-bgp-password-here"  # Change this!

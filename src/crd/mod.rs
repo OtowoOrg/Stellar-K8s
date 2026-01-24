@@ -5,5 +5,5 @@
 mod stellar_node;
 mod types;
 
-pub use stellar_node::{StellarNode, StellarNodeSpec, StellarNodeStatus};
+pub use stellar_node::{BGPStatus, StellarNode, StellarNodeSpec, StellarNodeStatus};
 pub use types::*;

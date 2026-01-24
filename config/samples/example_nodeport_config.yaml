@@ -1,0 +1,44 @@
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: my-validator-with-nodeport
+  namespace: stellar-nodes
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  serviceConfig:
+    peerNodePort: 30001
+    httpNodePort: 30002
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  storage:
+    storageClass: "ssd"
+    size: "500Gi"
+    retentionPolicy: Retain
+  validatorConfig:
+    seedSecretRef: "validator-seed"
+    enableHistoryArchive: true
+---
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-with-invalid-port
+  namespace: stellar-nodes
+spec:
+  nodeType: Horizon
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 2
+  serviceConfig:
+    httpNodePort: 29999 # This should fail validation!
+  horizonConfig:
+    databaseSecretRef: "horizon-db-secret"
+    stellarCoreUrl: "http://core:11626"
+    enableIngest: true

@@ -9,8 +9,8 @@ repository = "https://github.com/stellar/stellar-k8s"
 
 [dependencies]
 # Kubernetes client and operator framework
-kube = { version = "0.94", features = ["runtime", "derive", "unstable-runtime", "admission"] }
-kube-runtime = { version = "0.94", features = ["unstable-runtime"] }
+kube = { version = "3.0", features = ["runtime", "derive", "unstable-runtime", "admission"] }
+kube-runtime = { version = "3.0", features = ["unstable-runtime"] }
 k8s-openapi = { version = "0.22", default-features = false, features = ["v1_30"] }
 # kube-leader-election temporarily disabled due to k8s-openapi version conflict
 # TODO: Re-enable once versions are aligned

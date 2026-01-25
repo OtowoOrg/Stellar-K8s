@@ -38,7 +38,7 @@ use kube::{
 };
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::crd::{NodeType, StellarNode, StellarNodeStatus};
+use crate::crd::{DisasterRecoveryStatus, NodeType, StellarNode, StellarNodeStatus};
 use crate::error::{Error, Result};
 
 use super::archive_health::{calculate_backoff, check_history_archive_health, ArchiveHealthResult};
@@ -460,6 +460,7 @@ async fn apply_stellar_node(
                 }
             }
         }
+    }
 
     // 8. Disaster Recovery reconciliation
     if let Some(dr_status) = dr::reconcile_dr(client, node).await? {

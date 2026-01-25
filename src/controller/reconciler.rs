@@ -403,11 +403,7 @@ async fn apply_stellar_node(
     // 5. Ensure Service and finalize status
     resources::ensure_service(client, node, ctx.enable_mtls).await?;
 
-    // 5. Perform health check to determine if node is ready
-    let health_result = health::check_node_health(client, node, ctx.mtls_config.as_ref()).await?;
-    resources::ensure_service(client, node, ctx.enable_mtls).await?;
-
-    // 5. Perform health check to determine if node is ready
+    // 6. Perform health check to determine if node is ready
     let health_result = health::check_node_health(client, node, ctx.mtls_config.as_ref()).await?;
 
     debug!(

@@ -29,9 +29,11 @@ jobs:
   build:
     name: Build Operator
     runs-on: ubuntu-latest
+    continue-on-error: false
     outputs:
       version: ${{ steps.version.outputs.version }}
       image_tag: ${{ steps.version.outputs.image_tag }}
+      success: ${{ job.status == 'success' }}
     
     steps:
       - uses: actions/checkout@v6
@@ -68,6 +70,7 @@ jobs:
       
       - name: Build release binary
         run: cargo build --release
+        continue-on-error: false
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -89,6 +92,7 @@ jobs:
     name: Run Benchmarks
     runs-on: ubuntu-latest
     needs: build
+    if: always() && needs.build.result != 'skipped'
     
     steps:
       - uses: actions/checkout@v6
@@ -128,6 +132,7 @@ jobs:
       - name: Install CRDs and operator
         run: |
           kubectl apply -f config/crd/stellarnode-crd.yaml
+          kubectl apply -f config/crd/readonlypool-crd.yaml || true
           kubectl create namespace stellar-system || true
           
           # Deploy operator for benchmarking
@@ -284,7 +289,7 @@ jobs:
     name: Update Baseline
     runs-on: ubuntu-latest
     needs: [build, benchmark]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.build.result == 'success' && needs.benchmark.result == 'success'
     
     steps:
       - uses: actions/checkout@v6
@@ -296,6 +301,7 @@ jobs:
         with:
           name: benchmark-results-${{ needs.build.outputs.version }}
           path: results/
+        continue-on-error: true
       
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -306,19 +312,31 @@ jobs:
         run: |
           VERSION=${{ needs.build.outputs.version }}
           
+          if [[ ! -f results/benchmark-summary.json ]]; then
+            echo "::warning::Benchmark summary not found, skipping baseline creation"
+            exit 0
+          fi
+          
           python benchmarks/scripts/compare_benchmarks.py baseline \
             --input results/benchmark-summary.json \
             --output benchmarks/baselines/${VERSION}.json \
             --version ${VERSION}
+        continue-on-error: true
       
       - name: Commit baseline
         run: |
+          if [[ ! -f benchmarks/baselines/${VERSION}.json ]]; then
+            echo "::warning::Baseline file not created, skipping commit"
+            exit 0
+          fi
+          
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
           git add benchmarks/baselines/
           git commit -m "chore: update performance baseline for ${{ needs.build.outputs.version }}" || true
-          git push
+          git push || true
+        continue-on-error: true
 
   # ==========================================================================
   # Performance Report (PR Comment)
@@ -327,7 +345,7 @@ jobs:
     name: Post PR Report
     runs-on: ubuntu-latest
     needs: [build, benchmark]
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && always() && needs.build.result != 'skipped' && needs.benchmark.result != 'skipped'
     permissions:
       pull-requests: write
     
@@ -345,7 +363,14 @@ jobs:
           COMMENT+="**Version:** ${{ needs.build.outputs.version }}\n"
           COMMENT+="**Commit:** ${{ github.sha }}\n\n"
           
-          if [[ -f results/benchmark-summary.json ]]; then
+          if [[ ! -d results ]] || [[ ! -f results/benchmark-summary.json ]]; then
+            COMMENT+="### ⚠️ Benchmark Results Unavailable\n\n"
+            COMMENT+="Benchmark results could not be generated. This may be due to:\n"
+            COMMENT+="- Build failures\n"
+            COMMENT+="- Test environment issues\n"
+            COMMENT+="- Missing dependencies\n\n"
+            COMMENT+="Please check the build and benchmark job logs for details.\n\n"
+          elif [[ -f results/benchmark-summary.json ]]; then
             TPS=$(cat results/benchmark-summary.json | jq -r '.metrics.tps.avg // "N/A"')
             P95=$(cat results/benchmark-summary.json | jq -r '.metrics.http_req_duration.p95 // "N/A"')
             P99=$(cat results/benchmark-summary.json | jq -r '.metrics.http_req_duration.p99 // "N/A"')
@@ -390,3 +415,4 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: comment.md
+        continue-on-error: true

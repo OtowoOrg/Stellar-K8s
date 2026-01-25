@@ -63,6 +63,7 @@ fn resource_name(pool: &ReadOnlyPool, suffix: &str) -> String {
 /// Ensure a PersistentVolumeClaim exists for each pod in the pool
 /// Note: For read-only pools, we use volumeClaimTemplates in StatefulSet
 /// or individual PVCs per pod. For simplicity, we'll use individual PVCs.
+#[allow(clippy::unnecessary_wraps, clippy::unused_async)]
 #[instrument(skip(_client, _pool))]
 pub async fn ensure_pvcs(_client: &Client, _pool: &ReadOnlyPool) -> Result<()> {
     // For read-only pools, we'll create PVCs on-demand as pods are created

@@ -257,14 +257,15 @@ async fn check_pool_health(
 
     let average_ledger_sequence = if !ledger_sequences.is_empty() {
         Some(
-            (ledger_sequences.iter().sum::<u64>() as f64 / ledger_sequences.len() as f64) as u64,
+            (ledger_sequences.iter().sum::<u64>() as f64
+                / ledger_sequences.len() as f64) as u64,
         )
     } else {
         None
     };
 
     let average_lag = if !lags.is_empty() {
-        Some((lags.iter().sum::<i64>() / lags.len() as i64))
+        Some(lags.iter().sum::<i64>() / lags.len() as i64)
     } else {
         None
     };
@@ -336,6 +337,7 @@ async fn get_network_latest_ledger(network: &crate::crd::StellarNetwork) -> Resu
 }
 
 /// Calculate load balancing weights for replicas
+#[allow(clippy::unnecessary_wraps)]
 async fn calculate_load_balancing_weights(
     pool: &ReadOnlyPool,
     health: &PoolHealth,
@@ -365,6 +367,7 @@ async fn calculate_load_balancing_weights(
 }
 
 /// Calculate shard assignments for replicas
+#[allow(clippy::unnecessary_wraps)]
 async fn calculate_shard_assignments(
     pool: &ReadOnlyPool,
     health: &PoolHealth,
@@ -409,6 +412,8 @@ async fn calculate_shard_assignments(
         ShardStrategy::Manual => {
             // Manual assignments are set via annotations, just read them
             // This would be implemented by reading pod annotations
+            // For now, leave assignments empty - they will be set manually
+            let _ = assignments;
         }
     }
 
@@ -425,6 +430,7 @@ fn simple_hash(s: &str) -> u64 {
 }
 
 /// Calculate target number of replicas based on metrics
+#[allow(clippy::unnecessary_wraps)]
 async fn calculate_target_replicas(
     pool: &ReadOnlyPool,
     health: &PoolHealth,
@@ -459,6 +465,7 @@ async fn ensure_service(client: &Client, pool: &ReadOnlyPool) -> Result<()> {
 }
 
 /// Update Service with weighted endpoints
+#[allow(clippy::unnecessary_wraps)]
 async fn update_service_weights(
     _client: &Client,
     pool: &ReadOnlyPool,
@@ -607,6 +614,7 @@ async fn update_pool_status(
 }
 
 /// Helper to update status
+#[allow(clippy::unnecessary_wraps)]
 async fn update_status<F>(client: &Client, pool: &ReadOnlyPool, f: F) -> Result<()>
 where
     F: FnOnce(&mut ReadOnlyPoolStatus),

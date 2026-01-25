@@ -15,6 +15,14 @@ use stellar_k8s::crd::StellarNode;
 use stellar_k8s::controller::check_node_health;
 use stellar_k8s::error::{Error, Result};
 
+/// Helper function to get phase from node status, deriving from conditions if needed
+fn get_node_phase(node: &StellarNode) -> String {
+    node.status
+        .as_ref()
+        .map(|s| s.derive_phase_from_conditions())
+        .unwrap_or_else(|| "Unknown".to_string())
+}
+
 #[derive(Parser)]
 #[command(name = "kubectl-stellar")]
 #[command(about = "A kubectl plugin for managing Stellar nodes", long_about = None)]
@@ -52,7 +60,7 @@ enum Commands {
         follow: bool,
         /// Number of lines to show from the end of logs
         #[arg(short, long, default_value = "100")]
-        tail: Option<i64>,
+        tail: i64,
     },
     /// Get sync status of StellarNode(s)
     Status {
@@ -135,18 +143,14 @@ fn format_nodes_yaml(nodes: &[StellarNode]) -> Result<String> {
 fn format_nodes_table(nodes: &[StellarNode], show_namespace: bool) {
     if show_namespace {
         println!("{:<30} {:<15} {:<15} {:<10} {:<15} {:<10}", "NAME", "TYPE", "NETWORK", "REPLICAS", "PHASE", "NAMESPACE");
-        println!("{}", "-".repeat(100));
+        println!("{}", "-".repeat(95));
         for node in nodes {
             let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
             let name = node.name_any();
             let node_type = format!("{:?}", node.spec.node_type);
             let network = format!("{:?}", node.spec.network);
             let replicas = node.spec.replicas;
-            let phase = node
-                .status
-                .as_ref()
-                .map(|s| s.phase.clone())
-                .unwrap_or_else(|| "Unknown".to_string());
+            let phase = get_node_phase(node);
             println!(
                 "{:<30} {:<15} {:<15} {:<10} {:<15} {:<10}",
                 name, node_type, network, replicas, phase, namespace
@@ -160,11 +164,7 @@ fn format_nodes_table(nodes: &[StellarNode], show_namespace: bool) {
             let node_type = format!("{:?}", node.spec.node_type);
             let network = format!("{:?}", node.spec.network);
             let replicas = node.spec.replicas;
-            let phase = node
-                .status
-                .as_ref()
-                .map(|s| s.phase.clone())
-                .unwrap_or_else(|| "Unknown".to_string());
+            let phase = get_node_phase(node);
             println!(
                 "{:<30} {:<15} {:<15} {:<10} {:<15}",
                 name, node_type, network, replicas, phase
@@ -206,7 +206,7 @@ async fn logs(
     node_name: &str,
     container: Option<&str>,
     follow: bool,
-    tail: Option<i64>,
+    tail: i64,
 ) -> Result<()> {
     // First, verify the StellarNode exists
     let node_api: Api<StellarNode> = Api::namespaced(client.clone(), namespace);
@@ -256,10 +256,7 @@ async fn logs(
         }
         
         cmd.arg("-f");
-        
-        if let Some(tail_lines) = tail {
-            cmd.arg("--tail").arg(tail_lines.to_string());
-        }
+        cmd.arg("--tail").arg(tail.to_string());
 
         let status = cmd.status().map_err(|e| {
             Error::ConfigError(format!(
@@ -295,9 +292,7 @@ async fn logs(
                 cmd.arg("-c").arg(container_name);
             }
             
-            if let Some(tail_lines) = tail {
-                cmd.arg("--tail").arg(tail_lines.to_string());
-            }
+            cmd.arg("--tail").arg(tail.to_string());
 
             let output = cmd.output().map_err(|e| {
                 Error::ConfigError(format!(
@@ -366,7 +361,7 @@ async fn status(
                     "namespace": node.namespace().unwrap_or_else(|| "default".to_string()),
                     "type": format!("{:?}", node.spec.node_type),
                     "network": format!("{:?}", node.spec.network),
-                    "phase": node.status.as_ref().map(|s| s.phase.clone()).unwrap_or_else(|| "Unknown".to_string()),
+                    "phase": get_node_phase(&node),
                     "healthy": health_result.healthy,
                     "synced": health_result.synced,
                     "ledger_sequence": health_result.ledger_sequence,
@@ -384,7 +379,7 @@ async fn status(
                     "namespace": node.namespace().unwrap_or_else(|| "default".to_string()),
                     "type": format!("{:?}", node.spec.node_type),
                     "network": format!("{:?}", node.spec.network),
-                    "phase": node.status.as_ref().map(|s| s.phase.clone()).unwrap_or_else(|| "Unknown".to_string()),
+                    "phase": get_node_phase(&node),
                     "healthy": health_result.healthy,
                     "synced": health_result.synced,
                     "ledger_sequence": health_result.ledger_sequence,
@@ -401,24 +396,24 @@ async fn status(
             if show_namespace {
                 println!("{:<30} {:<15} {:<15} {:<10} {:<10} {:<10} {:<15} {:<20}", 
                     "NAME", "NAMESPACE", "TYPE", "HEALTHY", "SYNCED", "LEDGER", "PHASE", "MESSAGE");
-                println!("{}", "-".repeat(135));
+                println!("{}", "-".repeat(125));
             } else {
                 println!("{:<30} {:<15} {:<10} {:<10} {:<15} {:<20}", 
                     "NAME", "TYPE", "HEALTHY", "SYNCED", "PHASE", "MESSAGE");
-                println!("{}", "-".repeat(110));
+                println!("{}", "-".repeat(100));
             }
 
             for node in nodes {
                 let health_result = check_node_health(client, &node, None).await?;
                 let name = node.name_any();
                 let node_type = format!("{:?}", node.spec.node_type);
-                let phase = node.status.as_ref().map(|s| s.phase.clone()).unwrap_or_else(|| "Unknown".to_string());
+                let phase = get_node_phase(&node);
                 let healthy = if health_result.healthy { "Yes" } else { "No" };
                 let synced = if health_result.synced { "Yes" } else { "No" };
                 let ledger = health_result.ledger_sequence
                     .map(|l| l.to_string())
                     .unwrap_or_else(|| "N/A".to_string());
-                let message = if health_result.message.len() > 20 {
+                let message = if health_result.message.len() > 17 {
                     format!("{}...", &health_result.message[..17])
                 } else {
                     health_result.message.clone()
@@ -443,10 +438,23 @@ async fn status(
 mod tests {
     use super::*;
     use kube::api::ObjectMeta;
-    use stellar_k8s::crd::{NodeType, StellarNodeSpec, StellarNodeStatus};
+    use stellar_k8s::crd::{Condition, NodeType, StellarNodeSpec, StellarNodeStatus};
+    use stellar_k8s::controller::conditions::{CONDITION_STATUS_TRUE, CONDITION_TYPE_READY};
 
     fn create_test_node(name: &str, namespace: &str, node_type: NodeType) -> StellarNode {
         use stellar_k8s::crd::StellarNetwork;
+        use chrono::Utc;
+        
+        // Create a Ready condition so derive_phase_from_conditions() returns "Ready"
+        let ready_condition = Condition {
+            type_: CONDITION_TYPE_READY.to_string(),
+            status: CONDITION_STATUS_TRUE.to_string(),
+            last_transition_time: Utc::now().to_rfc3339(),
+            reason: "AllSubresourcesHealthy".to_string(),
+            message: "All sub-resources are healthy and operational".to_string(),
+            observed_generation: None,
+        };
+        
         StellarNode {
             metadata: ObjectMeta {
                 name: Some(name.to_string()),
@@ -473,8 +481,9 @@ mod tests {
                 topology_spread_constraints: None,
             },
             status: Some(StellarNodeStatus {
-                phase: "Ready".to_string(),
-                conditions: vec![],
+                #[allow(deprecated)]
+                phase: "Ready".to_string(), // Keep for backward compatibility, but not used
+                conditions: vec![ready_condition],
                 observed_generation: None,
                 message: None,
                 ledger_sequence: None,

@@ -117,8 +117,8 @@ spec:
                       description: Number of shards to distribute data across
                     strategy:
                       type: string
-                      enum: [RoundRobin, HashBased, Manual]
-                      default: RoundRobin
+                      enum: [roundRobin, hashBased, manual]
+                      default: roundRobin
                     autoRebalance:
                       type: boolean
                       default: true

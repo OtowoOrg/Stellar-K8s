@@ -1,6 +1,19 @@
 //! Health check module for Stellar nodes
 //!
 //! Queries node endpoints to verify they are fully synced and operational.
+//! The health check logic differs by node type:
+//!
+//! - **Validators**: Check ledger progression via Stellar Core HTTP endpoint
+//! - **Horizon**: Check database synchronization and ingestion status
+//! - **Soroban RPC**: Check RPC endpoint availability and ledger sync
+//!
+//! # Health Check Result
+//!
+//! Returns [`HealthCheckResult`] containing:
+//! - `healthy` - Whether the node is running and accessible
+//! - `synced` - Whether the node is fully synchronized with the network
+//! - `message` - Human-readable status message
+//! - `ledger_sequence` - Current ledger number (if available)
 
 use std::time::Duration;
 
@@ -49,6 +62,20 @@ struct SorobanHealthResponse {
 }
 
 /// Result of a health check
+///
+/// Contains the outcome of a health check operation, including:
+/// - Whether the node is healthy and accessible
+/// - Whether the node is fully synchronized
+/// - Status message explaining the current condition
+/// - Current ledger sequence (if available)
+///
+/// # Variants
+///
+/// The result is typically created using helper methods:
+/// - [`HealthCheckResult::synced`] - Node is healthy and synced
+/// - [`HealthCheckResult::syncing`] - Node is healthy but still syncing
+/// - [`HealthCheckResult::unhealthy`] - Node is not responding or has errors
+/// - [`HealthCheckResult::pending`] - Pod not ready yet
 #[derive(Debug, Clone)]
 pub struct HealthCheckResult {
     /// Whether the node is healthy

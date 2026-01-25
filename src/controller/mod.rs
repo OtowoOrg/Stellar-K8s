@@ -4,6 +4,7 @@
 
 mod archive_health;
 pub mod conditions;
+pub mod dr;
 mod finalizers;
 mod health;
 #[cfg(test)]

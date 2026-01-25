@@ -1,0 +1,40 @@
+# CODEOWNERS - Define code ownership and required reviewers
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+# These owners will be requested for review when someone opens a pull request
+*       @stellar-k8s-maintainers
+
+# CI/CD & Infrastructure
+/.github/workflows/     @stellar-k8s-maintainers @devops-team
+/Dockerfile            @stellar-k8s-maintainers @devops-team
+/charts/               @stellar-k8s-maintainers @devops-team
+/.github/dependabot.yml @devops-team
+
+# Core operator code
+/src/controller/       @stellar-k8s-maintainers @kubernetes-experts
+/src/crd/              @stellar-k8s-maintainers @kubernetes-experts
+/src/webhook/          @stellar-k8s-maintainers @kubernetes-experts
+
+# Security-sensitive files
+/src/controller/mtls.rs @security-team
+/src/webhook/          @security-team
+
+# Documentation
+/docs/                 @stellar-k8s-maintainers @docs-team
+README.md              @stellar-k8s-maintainers @docs-team
+
+# Monitoring & Observability
+/src/telemetry.rs      @observability-team
+/monitoring/           @observability-team
+/src/controller/metrics.rs @observability-team
+
+# Backup & Archive
+/src/backup/           @data-team
+
+# API & REST
+/src/rest_api/         @api-team
+
+# Benchmarking
+/benchmarks/           @performance-team
+/.github/workflows/benchmark.yml @performance-team

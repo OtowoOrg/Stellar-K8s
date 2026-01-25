@@ -9,9 +9,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::types::{
-    AutoscalingConfig, Condition, ExternalDatabaseConfig, GlobalDiscoveryConfig, HorizonConfig,
-    IngressConfig, LoadBalancerConfig, NetworkPolicyConfig, NodeType, ResourceRequirements,
-    RetentionPolicy, SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig,
+    AutoscalingConfig, Condition, DisasterRecoveryConfig, DisasterRecoveryStatus,
+    ExternalDatabaseConfig, GlobalDiscoveryConfig, HorizonConfig, IngressConfig,
+    LoadBalancerConfig, NetworkPolicyConfig, NodeType, ResourceRequirements, RetentionPolicy,
+    SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig,
 };
 
 /// The StellarNode CRD represents a managed Stellar infrastructure node.
@@ -131,6 +132,10 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_policy: Option<NetworkPolicyConfig>,
 
+    /// Configuration for cross-region multi-cluster disaster recovery (DR)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dr_config: Option<DisasterRecoveryConfig>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "serde_json::Value")]
     pub topology_spread_constraints:
@@ -143,6 +148,45 @@ fn default_replicas() -> i32 {
 
 impl StellarNodeSpec {
     /// Validate the spec based on node type
+    ///
+    /// Performs comprehensive validation of the StellarNodeSpec including:
+    /// - Checking that required config for node type is present
+    /// - Validating replica counts
+    /// - Ensuring node-type-specific constraints (e.g., Validators can't autoscale)
+    /// - Validating ingress configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the spec fails validation.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use stellar_k8s::crd::StellarNodeSpec;
+    ///
+    /// let spec = StellarNodeSpec {
+    ///     // ... configuration
+    /// # node_type: Default::default(),
+    /// # network: Default::default(),
+    /// # version: "v21".to_string(),
+    /// # resources: Default::default(),
+    /// # storage: Default::default(),
+    /// # validator_config: None,
+    /// # horizon_config: None,
+    /// # soroban_config: None,
+    /// # replicas: 1,
+    /// # suspended: false,
+    /// # alerting: false,
+    /// # database: None,
+    /// # autoscaling: None,
+    /// # ingress: None,
+    /// # network_policy: None,
+    /// };
+    /// match spec.validate() {
+    ///     Ok(_) => println!("Valid spec"),
+    ///     Err(e) => eprintln!("Validation error: {}", e),
+    /// }
+    /// ```
     pub fn validate(&self) -> Result<(), String> {
         match self.node_type {
             NodeType::Validator => {
@@ -221,6 +265,41 @@ impl StellarNodeSpec {
     }
 
     /// Get the container image for this node type and version
+    ///
+    /// Constructs the fully qualified container image URI based on the node type and version.
+    /// The operator uses this image when creating Kubernetes Deployments and StatefulSets.
+    ///
+    /// # Returns
+    ///
+    /// A string in the format `stellar/{component}:{version}` where component is:
+    /// - `stellar-core` for Validator nodes
+    /// - `stellar-horizon` for Horizon nodes  
+    /// - `soroban-rpc` for SorobanRpc nodes
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use stellar_k8s::crd::{StellarNodeSpec, NodeType};
+    ///
+    /// let spec = StellarNodeSpec {
+    ///     node_type: NodeType::Validator,
+    ///     version: "v21.0.0".to_string(),
+    /// # network: Default::default(),
+    /// # resources: Default::default(),
+    /// # storage: Default::default(),
+    /// # validator_config: None,
+    /// # horizon_config: None,
+    /// # soroban_config: None,
+    /// # replicas: 1,
+    /// # suspended: false,
+    /// # alerting: false,
+    /// # database: None,
+    /// # autoscaling: None,
+    /// # ingress: None,
+    /// # network_policy: None,
+    /// };
+    /// assert_eq!(spec.container_image(), "stellar/stellar-core:v21.0.0");
+    /// ```
     pub fn container_image(&self) -> String {
         match self.node_type {
             NodeType::Validator => format!("stellar/stellar-core:{}", self.version),
@@ -230,6 +309,44 @@ impl StellarNodeSpec {
     }
 
     /// Check if PVC should be deleted on node deletion
+    ///
+    /// Returns true if the storage retention policy is set to Delete,
+    /// indicating that the PersistentVolumeClaim should be deleted when the StellarNode is deleted.
+    ///
+    /// # Returns
+    ///
+    /// - `true` if `retention_policy == RetentionPolicy::Delete`
+    /// - `false` if `retention_policy == RetentionPolicy::Retain`
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use stellar_k8s::crd::{StellarNodeSpec, RetentionPolicy, StorageConfig};
+    ///
+    /// let spec = StellarNodeSpec {
+    ///     storage: StorageConfig {
+    ///         retention_policy: RetentionPolicy::Delete,
+    /// # storage_class: "standard".to_string(),
+    /// # size: "100Gi".to_string(),
+    /// # annotations: None,
+    ///     },
+    /// # node_type: Default::default(),
+    /// # network: Default::default(),
+    /// # version: "v21".to_string(),
+    /// # resources: Default::default(),
+    /// # validator_config: None,
+    /// # horizon_config: None,
+    /// # soroban_config: None,
+    /// # replicas: 1,
+    /// # suspended: false,
+    /// # alerting: false,
+    /// # database: None,
+    /// # autoscaling: None,
+    /// # ingress: None,
+    /// # network_policy: None,
+    /// };
+    /// assert!(spec.should_delete_pvc());
+    /// ```
     pub fn should_delete_pvc(&self) -> bool {
         self.storage.retention_policy == RetentionPolicy::Delete
     }
@@ -335,7 +452,20 @@ fn validate_global_discovery(gd: &GlobalDiscoveryConfig) -> Result<(), String> {
 
 /// Status subresource for StellarNode
 ///
-/// Reports the current state of the managed Stellar node.
+/// Reports the current state of the managed Stellar node using Kubernetes conventions.
+/// The operator continuously updates this status as the node progresses through its lifecycle.
+///
+/// # Node Phases
+///
+/// - `Pending` - Resource creation is queued but not started
+/// - `Creating` - Infrastructure (Pod, Service, etc.) is being created
+/// - `Running` - Pod is running but not yet synced
+/// - `Syncing` - Node is syncing blockchain data (validators)
+/// - `Ready` - Node is fully synced and operational
+/// - `Failed` - Node encountered an unrecoverable error
+/// - `Degraded` - Node is running but not fully healthy
+/// - `Remediating` - Operator is attempting to recover the node
+/// - `Terminating` - Node resources are being cleaned up
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StellarNodeStatus {
@@ -357,6 +487,10 @@ pub struct StellarNodeStatus {
     /// Observed generation for status sync detection
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_generation: Option<i64>,
+
+    /// Status of the cross-region disaster recovery setup (if enabled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dr_status: Option<DisasterRecoveryStatus>,
 
     /// Readiness conditions following Kubernetes conventions
     ///
@@ -414,8 +548,23 @@ pub struct BGPStatus {
 impl StellarNodeStatus {
     /// Create a new status with the given phase
     ///
+
+    /// Initializes a StellarNodeStatus with the provided phase and all other fields
+    /// set to their defaults (empty message, no conditions, etc.).
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use stellar_k8s::crd::StellarNodeStatus;
+    ///
+    /// let status = StellarNodeStatus::with_phase("Creating");
+    /// assert_eq!(status.phase, "Creating");
+    /// assert_eq!(status.message, None);
+    /// ```
+
     /// DEPRECATED: Use `with_conditions` instead
     #[deprecated(since = "0.2.0", note = "Use with_conditions instead")]
+
     pub fn with_phase(phase: &str) -> Self {
         Self {
             phase: phase.to_string(),
@@ -425,18 +574,65 @@ impl StellarNodeStatus {
 
     /// Update the phase and message
     ///
+
+    /// Updates both the phase and message fields atomically.
+    /// This is typically called during reconciliation to report progress.
+    ///
+    /// # Arguments
+    ///
+    /// * `phase` - The new phase name (e.g., "Ready", "Syncing", "Failed")
+    /// * `message` - Optional human-readable message explaining the phase
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use stellar_k8s::crd::StellarNodeStatus;
+    ///
+    /// let mut status = StellarNodeStatus::with_phase("Creating");
+    /// status.update("Ready", Some("Node is fully synced"));
+    /// assert_eq!(status.phase, "Ready");
+    /// assert_eq!(status.message, Some("Node is fully synced".to_string()));
+    /// ```
+
     /// DEPRECATED: Use condition helpers instead
     #[deprecated(since = "0.2.0", note = "Use set_condition helpers instead")]
+
     pub fn update(&mut self, phase: &str, message: Option<&str>) {
         self.phase = phase.to_string();
         self.message = message.map(String::from);
     }
+
+
+    /// Check if the node is ready
+    ///
+    /// Returns true only if both:
+    /// - The node phase is "Ready"
+    /// - All desired replicas are reporting ready
+    ///
+    /// This is used by controllers and monitoring systems to determine if the node
+    /// is fully operational.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use stellar_k8s::crd::StellarNodeStatus;
+    ///
+    /// let mut status = StellarNodeStatus::with_phase("Ready");
+    /// status.ready_replicas = 1;
+    /// status.replicas = 1;
+    /// assert!(status.is_ready());
+    ///
+    /// // Not ready if replicas don't match
+    /// status.ready_replicas = 0;
+    /// assert!(!status.is_ready());
+    /// ```
 
     /// Check if the node is ready based on conditions
     ///
     /// A node is considered ready when:
     /// - Ready condition is True
     /// - ready_replicas >= replicas (all replicas are ready)
+
     pub fn is_ready(&self) -> bool {
         let has_ready_condition = self
             .conditions

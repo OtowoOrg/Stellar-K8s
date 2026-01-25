@@ -64,6 +64,8 @@ rcgen = "0.11"
 clap = { version = "4.5", features = ["derive", "env"] }
 rustls = "0.23"
 rustls-pki-types = "1.14.0"
+rand = "0.8"
+rand_distr = "0.4"
 
 # Wasm runtime for custom validation plugins
 wasmtime = { version = "17", optional = true }

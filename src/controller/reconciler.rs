@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 
 //! Main reconciler for StellarNode resources
 //!
@@ -53,6 +54,7 @@ use super::resources;
 use super::vsl;
 
 // Constants
+#[allow(dead_code)]
 const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-health-retries";
 
 /// Shared state for the controller
@@ -191,15 +193,25 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
         obj.spec.node_type
     );
 
-    // Use kube-rs built-in finalizer helper for clean lifecycle management
-    finalizer(&api, STELLAR_NODE_FINALIZER, obj, |event| async {
+    let res = finalizer(&api, STELLAR_NODE_FINALIZER, obj.clone(), |event| async {
         match event {
             FinalizerEvent::Apply(node) => apply_stellar_node(&client, &node, &ctx).await,
             FinalizerEvent::Cleanup(node) => cleanup_stellar_node(&client, &node).await,
         }
     })
-    .await
-    .map_err(Error::from)
+    .await;
+
+    if res.is_ok() {
+        // Track total reconciliations with differential privacy
+        metrics::set_reconciliation_count(
+            &namespace,
+            &obj.name_any(),
+            &obj.spec.node_type.to_string(),
+            obj.spec.network.passphrase(),
+        );
+    }
+
+    res.map_err(Error::from)
 }
 
 /// Apply/create/update the StellarNode resources
@@ -522,6 +534,37 @@ async fn apply_stellar_node(
     let ready_replicas = get_ready_replicas(client, node).await.unwrap_or(0);
     update_status(client, node, phase, Some(&message), ready_replicas, true).await?;
 
+    // 9. Update status to Running with ready replica count
+    // 9. Update ledger sequence metric if available
+    if let Some(ref status) = node.status {
+        if let Some(seq) = status.ledger_sequence {
+            metrics::set_ledger_sequence(
+                &namespace,
+                &name,
+                &node.spec.node_type.to_string(),
+                node.spec.network.passphrase(),
+                seq,
+            );
+
+            // Calculate ingestion lag if we can get the latest network ledger
+            // For now we assume we have a way to track the "latest" known ledger across the cluster
+            // or fetch it from a public horizon.
+            if let Ok(network_latest) = get_latest_network_ledger(&node.spec.network).await {
+                let lag = (network_latest as i64) - (seq as i64);
+                metrics::set_ingestion_lag(
+                    &namespace,
+                    &name,
+                    &node.spec.node_type.to_string(),
+                    node.spec.network.passphrase(),
+                    lag.max(0),
+                );
+            }
+        }
+    }
+
+    // 10. Update status to Running with ready replica count
+    let phase = if node.spec.suspended {
+        "Suspended"
     Ok(Action::requeue(Duration::from_secs(if phase == "Ready" {
         60
     } else {

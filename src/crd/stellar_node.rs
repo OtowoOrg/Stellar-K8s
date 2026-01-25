@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! StellarNode Custom Resource Definition
 //!
 //! The StellarNode CRD represents a managed Stellar infrastructure node.
@@ -382,6 +383,7 @@ fn validate_ingress(ingress: &IngressConfig) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn validate_load_balancer(lb: &LoadBalancerConfig) -> Result<(), String> {
     use super::types::LoadBalancerMode;
 
@@ -429,6 +431,7 @@ fn validate_load_balancer(lb: &LoadBalancerConfig) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn validate_global_discovery(gd: &GlobalDiscoveryConfig) -> Result<(), String> {
     if !gd.enabled {
         return Ok(());

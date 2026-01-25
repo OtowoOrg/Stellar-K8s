@@ -3,6 +3,7 @@
 //! This module creates and manages the underlying Kubernetes resources
 //! (Deployments, StatefulSets, Services, PVCs, ConfigMaps) for each StellarNode.
 
+#![allow(deprecated)]
 use std::collections::BTreeMap;
 
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec, StatefulSet, StatefulSetSpec};
@@ -523,8 +524,9 @@ fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
 // ============================================================================
 
 /// Ensure a LoadBalancer Service exists for external access via MetalLB
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_load_balancer_service(client: &Client, node: &StellarNode) -> Result<()> {
+#[allow(dead_code)]
+#[instrument(skip(_client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_load_balancer_service(_client: &Client, node: &StellarNode) -> Result<()> {
     // TODO: load_balancer field not yet implemented in StellarNodeSpec
     // Uncomment when LoadBalancerConfig is added to the spec
     /*
@@ -559,6 +561,15 @@ pub async fn ensure_load_balancer_service(client: &Client, node: &StellarNode) -
     */
 }
 
+#[allow(dead_code)]
+fn validate_load_balancer(_lb: &LoadBalancerConfig) -> Result<(), String> {
+    // Placeholder for validation logic
+    // This function is currently unused and marked with #[allow(dead_code)]
+    // It will be implemented when the LoadBalancerConfig is fully integrated.
+    Ok(())
+}
+
+#[allow(dead_code)]
 fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) -> Service {
     let labels = standard_labels(node);
     let name = resource_name(node, "lb");
@@ -714,8 +725,9 @@ fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) 
 }
 
 /// Delete the LoadBalancer Service for a node
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_load_balancer_service(client: &Client, node: &StellarNode) -> Result<()> {
+#[allow(dead_code)]
+#[instrument(skip(_client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn delete_load_balancer_service(_client: &Client, node: &StellarNode) -> Result<()> {
     // TODO: load_balancer field not yet implemented in StellarNodeSpec
     #[allow(unreachable_code)]
     {
@@ -749,8 +761,9 @@ pub async fn delete_load_balancer_service(client: &Client, node: &StellarNode) -
 /// Ensure MetalLB BGPAdvertisement and IPAddressPool ConfigMaps are documented
 /// Note: MetalLB CRDs must be created manually or via Helm; this function
 /// creates the recommended ConfigMap for cluster operators to reference.
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_metallb_config(client: &Client, node: &StellarNode) -> Result<()> {
+#[allow(dead_code)]
+#[instrument(skip(_client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_metallb_config(_client: &Client, node: &StellarNode) -> Result<()> {
     // TODO: load_balancer field not yet implemented in StellarNodeSpec
     #[allow(unreachable_code)]
     {
@@ -783,6 +796,7 @@ pub async fn ensure_metallb_config(client: &Client, node: &StellarNode) -> Resul
     */
 }
 
+#[allow(dead_code)]
 fn build_metallb_config_map(node: &StellarNode, config: &LoadBalancerConfig) -> ConfigMap {
     let labels = standard_labels(node);
     let name = resource_name(node, "metallb-config");
@@ -1016,6 +1030,7 @@ spec:
 
 /// Delete the MetalLB configuration ConfigMap
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[allow(dead_code)]
 pub async fn delete_metallb_config(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
@@ -1139,7 +1154,6 @@ fn build_ingress(node: &StellarNode, config: &IngressConfig) -> Ingress {
         vec![IngressTLS {
             hosts: Some(config.hosts.iter().map(|h| h.host.clone()).collect()),
             secret_name: Some(secret.clone()),
-            ..Default::default()
         }]
     });
 
@@ -1352,7 +1366,6 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
                             }),
                             ..Default::default()
                         }),
-                        ..Default::default()
                     });
                 }
                 KeySource::KMS => {

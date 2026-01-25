@@ -134,7 +134,7 @@ pub async fn check_history_archive_health(
         .timeout(timeout)
         .user_agent("stellar-k8s-operator/0.1.0")
         .build()
-        .map_err(|e| Error::HttpError(e))?;
+        .map_err(Error::HttpError)?;
 
     // Check all URLs in parallel
     let checks: Vec<_> = urls

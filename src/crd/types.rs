@@ -1129,3 +1129,84 @@ pub struct ExternalDNSConfig {
 fn default_dns_ttl() -> u32 {
     300
 }
+
+// ============================================================================
+// Cross-Region Disaster Recovery Configuration
+// ============================================================================
+
+/// Configuration for multi-cluster disaster recovery (DR)
+///
+/// Manages "hot standby" nodes in remote clusters and automated failover
+/// using external DNS providers (Route53, Cloudflare).
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DisasterRecoveryConfig {
+    /// Whether DR is enabled for this node
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Role of this cluster in the DR pairing
+    pub role: DRRole,
+
+    /// Identifier of the peer cluster/region
+    pub peer_cluster_id: String,
+
+    /// Strategy for state synchronization
+    #[serde(default)]
+    pub sync_strategy: DRSyncStrategy,
+
+    /// DNS failover configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failover_dns: Option<ExternalDNSConfig>,
+
+    /// Check interval for health of the other region (seconds)
+    #[serde(default = "default_dr_check_interval")]
+    pub health_check_interval: u32,
+}
+
+fn default_dr_check_interval() -> u32 {
+    30
+}
+
+/// Role of a node in a DR configuration
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DRRole {
+    /// Primary node serving active traffic
+    Primary,
+    /// Standby node ready to take over if primary fails
+    Standby,
+}
+
+/// Synchronization strategy for hot standby nodes
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DRSyncStrategy {
+    /// Follow the network consensus normally
+    #[default]
+    Consensus,
+    /// Actively track the peer node's ledger sequence
+    PeerTracking,
+    /// Continuous history archive sync
+    ArchiveSync,
+}
+
+/// Status of the Disaster Recovery setup
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DisasterRecoveryStatus {
+    /// Current effective role (may differ from spec during failover)
+    pub current_role: Option<DRRole>,
+
+    /// Health status of the peer cluster
+    pub peer_health: Option<String>,
+
+    /// Last time the peer was reachable
+    pub last_peer_contact: Option<String>,
+
+    /// Sync lag between primary and standby (in ledgers)
+    pub sync_lag: Option<u64>,
+
+    /// Whether failover is currently active
+    pub failover_active: bool,
+}

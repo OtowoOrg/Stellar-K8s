@@ -8,9 +8,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::types::{
-    AutoscalingConfig, Condition, ExternalDatabaseConfig, GlobalDiscoveryConfig, HorizonConfig,
-    IngressConfig, LoadBalancerConfig, NetworkPolicyConfig, NodeType, ResourceRequirements,
-    RetentionPolicy, SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig,
+    AutoscalingConfig, Condition, DisasterRecoveryConfig, DisasterRecoveryStatus,
+    ExternalDatabaseConfig, GlobalDiscoveryConfig, HorizonConfig, IngressConfig,
+    LoadBalancerConfig, NetworkPolicyConfig, NodeType, ResourceRequirements, RetentionPolicy,
+    SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig,
 };
 
 /// The StellarNode CRD represents a managed Stellar infrastructure node.
@@ -129,6 +130,10 @@ pub struct StellarNodeSpec {
     /// for peer-to-peer (Validators), API access (Horizon/Soroban), and metrics
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_policy: Option<NetworkPolicyConfig>,
+
+    /// Configuration for cross-region multi-cluster disaster recovery (DR)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dr_config: Option<DisasterRecoveryConfig>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "serde_json::Value")]
@@ -479,6 +484,10 @@ pub struct StellarNodeStatus {
     /// Observed generation for status sync detection
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_generation: Option<i64>,
+
+    /// Status of the cross-region disaster recovery setup (if enabled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dr_status: Option<DisasterRecoveryStatus>,
 
     /// Readiness conditions following Kubernetes conventions
     ///

@@ -212,11 +212,23 @@ fn build_config_map(
     // Add node-type-specific configuration
     match &node.spec.node_type {
         NodeType::Validator => {
+            let mut core_cfg = String::new();
             if let Some(config) = &node.spec.validator_config {
                 let quorum = quorum_override.or_else(|| config.quorum_set.clone());
                 if let Some(q) = quorum {
-                    data.insert("stellar-core.cfg".to_string(), q);
+                    core_cfg.push_str(&q);
                 }
+            }
+
+            if enable_mtls {
+                core_cfg.push_str("\n# mTLS Configuration\n");
+                core_cfg.push_str("HTTP_PORT_SECURE=true\n");
+                core_cfg.push_str("TLS_CERT_FILE=\"/etc/stellar/tls/tls.crt\"\n");
+                core_cfg.push_str("TLS_KEY_FILE=\"/etc/stellar/tls/tls.key\"\n");
+            }
+
+            if !core_cfg.is_empty() {
+                data.insert("stellar-core.cfg".to_string(), core_cfg);
             }
         }
         NodeType::Horizon => {

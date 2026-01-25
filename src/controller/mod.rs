@@ -11,8 +11,9 @@ mod health;
 mod health_test;
 pub mod metrics;
 pub mod mtls;
-mod read_only_pool;
-mod read_only_pool_resources;
+// TODO: Re-enable once compilation issues are resolved
+// mod read_only_pool;
+// mod read_only_pool_resources;
 mod reconciler;
 mod remediation;
 mod resources;
@@ -21,8 +22,9 @@ mod vsl;
 pub use archive_health::{calculate_backoff, check_history_archive_health, ArchiveHealthResult};
 pub use finalizers::STELLAR_NODE_FINALIZER;
 pub use health::{check_node_health, HealthCheckResult};
-pub use read_only_pool::{
-    run_read_only_pool_controller, ReadOnlyPoolControllerState,
-};
+// TODO: Re-enable once compilation issues are resolved
+// pub use read_only_pool::{
+//     run_read_only_pool_controller, ReadOnlyPoolControllerState,
+// };
 pub use reconciler::{run_controller, ControllerState};
 pub use remediation::{can_remediate, check_stale_node, RemediationLevel, StaleCheckResult};

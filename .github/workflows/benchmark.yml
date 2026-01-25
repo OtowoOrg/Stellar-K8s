@@ -132,7 +132,8 @@ jobs:
       - name: Install CRDs and operator
         run: |
           kubectl apply -f config/crd/stellarnode-crd.yaml
-          kubectl apply -f config/crd/readonlypool-crd.yaml || true
+          # ReadOnlyPool CRD temporarily disabled
+          # kubectl apply -f config/crd/readonlypool-crd.yaml || true
           kubectl create namespace stellar-system || true
           
           # Deploy operator for benchmarking

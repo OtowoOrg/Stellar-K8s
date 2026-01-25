@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,6 +31,7 @@ use super::resources;
 use super::vsl;
 
 // Constants
+#[allow(dead_code)]
 const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-health-retries";
 
 /// Shared state for the controller
@@ -143,13 +145,11 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
 
     if res.is_ok() {
         // Track total reconciliations with differential privacy
-        // We use a mock "cumulative" value for this example
-        metrics::inc_reconciliation_count(
+        metrics::set_reconciliation_count(
             &namespace,
             &obj.name_any(),
             &obj.spec.node_type.to_string(),
             obj.spec.network.passphrase(),
-            1, // In a real app, this would be a persistent counter
         );
     }
 
@@ -359,10 +359,6 @@ async fn apply_stellar_node(
 
     // 5. Perform health check to determine if node is ready
     let health_result = health::check_node_health(client, node, ctx.mtls_config.as_ref()).await?;
-    resources::ensure_service(client, node, ctx.enable_mtls).await?;
-
-    // 5. Perform health check to determine if node is ready
-    let health_result = health::check_node_health(client, node, ctx.mtls_config.as_ref()).await?;
 
     debug!(
         "Health check result for {}/{}: healthy={}, synced={}, message={}",
@@ -568,7 +564,7 @@ async fn apply_stellar_node(
             // Calculate ingestion lag if we can get the latest network ledger
             // For now we assume we have a way to track the "latest" known ledger across the cluster
             // or fetch it from a public horizon.
-            if let Some(network_latest) = get_latest_network_ledger(&node.spec.network).await.ok() {
+            if let Ok(network_latest) = get_latest_network_ledger(&node.spec.network).await {
                 let lag = (network_latest as i64) - (seq as i64);
                 metrics::set_ingestion_lag(
                     &namespace,

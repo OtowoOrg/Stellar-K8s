@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! HTTP handlers for the REST API
 
 use std::sync::Arc;

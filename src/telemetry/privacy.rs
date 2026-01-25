@@ -26,8 +26,24 @@ impl Default for PrivacyConfig {
 
 /// Apply Laplace noise to a count using the difference of two Exponential distributions
 pub fn add_laplace_noise(value: f64, config: &PrivacyConfig) -> f64 {
+    // Guard against invalid privacy configuration: epsilon and sensitivity must be positive.
+    if config.epsilon <= 0.0 || config.sensitivity <= 0.0 {
+        return value;
+    }
+
     let b = config.sensitivity / config.epsilon;
-    let exp = Exp::new(1.0 / b).expect("Invalid Exponential parameters");
+
+    // Ensure the scale parameter is valid and finite.
+    if !b.is_finite() || b <= 0.0 {
+        return value;
+    }
+
+    // Construct the exponential distribution, handling any error gracefully.
+    let exp = match Exp::new(1.0 / b) {
+        Ok(d) => d,
+        Err(_) => return value,
+    };
+
     let mut rng = rand::thread_rng();
     // Laplace(0, b) is equivalent to Exp(1/b) - Exp(1/b)
     let noise = exp.sample(&mut rng) - exp.sample(&mut rng);
@@ -35,18 +51,24 @@ pub fn add_laplace_noise(value: f64, config: &PrivacyConfig) -> f64 {
 }
 
 /// A wrapper for metrics that applies differential privacy
-pub struct PrivancyAwareMetric {
+pub struct PrivacyAwareMetric {
     config: PrivacyConfig,
 }
 
-impl PrivancyAwareMetric {
+impl PrivacyAwareMetric {
     pub fn new(config: PrivacyConfig) -> Self {
         Self { config }
     }
 
     /// Scrub sensitive labels from a metric
     pub fn scrub_labels(labels: &mut std::collections::HashMap<String, String>) {
-        let sensitive_keys = ["ip", "host.ip", "k8s.cluster.name", "cluster_name", "pod_name"];
+        let sensitive_keys = [
+            "ip",
+            "host.ip",
+            "k8s.cluster.name",
+            "cluster_name",
+            "pod_name",
+        ];
         for key in sensitive_keys {
             if labels.contains_key(key) {
                 labels.insert(key.to_string(), "REDACTED".to_string());
@@ -57,11 +79,11 @@ impl PrivancyAwareMetric {
     /// Protect a count value
     pub fn protect_count(&self, value: u64) -> u64 {
         let noisy_value = add_laplace_noise(value as f64, &self.config);
-        if noisy_value < 0.0 {
-            0
-        } else {
-            noisy_value.round() as u64
-        }
+
+        // Clamping to absolute value as suggested to avoid biasing small counts to zero
+        // while maintaining non-negativity for counts.
+        let non_negative = noisy_value.abs();
+        non_negative.round() as u64
     }
 }
 
@@ -71,10 +93,13 @@ mod tests {
 
     #[test]
     fn test_laplace_noise_adds_noise() {
-        let config = PrivacyConfig { epsilon: 0.1, sensitivity: 1.0 };
+        let config = PrivacyConfig {
+            epsilon: 0.1,
+            sensitivity: 1.0,
+        };
         let original = 100.0;
         let mut different = false;
-        
+
         // With epsilon 0.1, noise should be non-zero most of the time
         for _ in 0..10 {
             let noisy = add_laplace_noise(original, &config);
@@ -88,9 +113,12 @@ mod tests {
 
     #[test]
     fn test_protect_count_is_non_negative() {
-        let config = PrivacyConfig { epsilon: 10.0, sensitivity: 1.0 };
-        let engine = PrivancyAwareMetric::new(config);
-        
+        let config = PrivacyConfig {
+            epsilon: 10.0,
+            sensitivity: 1.0,
+        };
+        let engine = PrivacyAwareMetric::new(config);
+
         for _ in 0..100 {
             let protected = engine.protect_count(0);
             assert!(protected >= 0, "Protected count must be non-negative");
@@ -103,11 +131,28 @@ mod tests {
         labels.insert("ip".to_string(), "1.2.3.4".to_string());
         labels.insert("cluster_name".to_string(), "prod-cluster".to_string());
         labels.insert("service".to_string(), "stellar".to_string());
-        
-        PrivancyAwareMetric::scrub_labels(&mut labels);
-        
+
+        PrivacyAwareMetric::scrub_labels(&mut labels);
+
         assert_eq!(labels.get("ip").unwrap(), "REDACTED");
         assert_eq!(labels.get("cluster_name").unwrap(), "REDACTED");
         assert_eq!(labels.get("service").unwrap(), "stellar");
+    }
+
+    #[test]
+    fn test_invalid_config_does_not_panic() {
+        let config = PrivacyConfig {
+            epsilon: 0.0,
+            sensitivity: 1.0,
+        };
+        let val = add_laplace_noise(10.0, &config);
+        assert_eq!(val, 10.0);
+
+        let config_inf = PrivacyConfig {
+            epsilon: 0.1,
+            sensitivity: f64::INFINITY,
+        };
+        let val_inf = add_laplace_noise(10.0, &config_inf);
+        assert_eq!(val_inf, 10.0);
     }
 }

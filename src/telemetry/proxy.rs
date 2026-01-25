@@ -17,7 +17,10 @@ impl SecureTelemetryProxy {
 
     /// Returns whether the proxy is configured securely
     pub fn is_secure(&self) -> bool {
-        self.use_tls || self.endpoint.contains("localhost") || self.endpoint.contains("127.0.0.1")
+        self.use_tls
+            || self.endpoint.contains("localhost")
+            || self.endpoint.contains("127.0.0.1")
+            || self.endpoint.contains("::1")
     }
 
     /// Verify the telemetry configuration meets privacy standards
@@ -27,8 +30,12 @@ impl SecureTelemetryProxy {
             return Ok(()); // Disabled is safe
         }
 
-        if endpoint.starts_with("http://") && !endpoint.contains("localhost") {
-            return Err("INSECURE: Telemetry endpoint must use HTTPS or be local for privacy assurance.".into());
+        if endpoint.starts_with("http://")
+            && !endpoint.contains("localhost")
+            && !endpoint.contains("127.0.0.1")
+            && !endpoint.contains("::1")
+        {
+            return Err("INSECURE: Telemetry endpoint must use HTTPS or be local (localhost, 127.0.0.1, ::1) for privacy assurance.".into());
         }
 
         Ok(())
@@ -78,5 +85,39 @@ service:
       processors: [batch, transform]
       exporters: [otlp/public]
 "#
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_is_secure() {
+        assert!(SecureTelemetryProxy::new("https://tracing.stellar.org".to_string()).is_secure());
+        assert!(SecureTelemetryProxy::new("http://localhost:4317".to_string()).is_secure());
+        assert!(SecureTelemetryProxy::new("http://127.0.0.1:4317".to_string()).is_secure());
+        assert!(SecureTelemetryProxy::new("http://[::1]:4317".to_string()).is_secure());
+        assert!(!SecureTelemetryProxy::new("http://tracing.stellar.org".to_string()).is_secure());
+    }
+
+    #[test]
+    fn test_verify_privacy_assurance() {
+        // Test local
+        env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
+        assert!(SecureTelemetryProxy::verify_privacy_assurance().is_ok());
+
+        // Test secure remote
+        env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "https://remote:4317");
+        assert!(SecureTelemetryProxy::verify_privacy_assurance().is_ok());
+
+        // Test insecure remote
+        env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "http://remote:4317");
+        assert!(SecureTelemetryProxy::verify_privacy_assurance().is_err());
+
+        // Test empty
+        env::remove_var("OTEL_EXPORTER_OTLP_ENDPOINT");
+        assert!(SecureTelemetryProxy::verify_privacy_assurance().is_ok());
     }
 }

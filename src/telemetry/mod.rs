@@ -30,8 +30,12 @@ where
 
     // Requirement: End-to-end encryption for telemetry data.
     // Ensure that if we are sending to a remote endpoint, we use TLS.
-    if otlp_endpoint.starts_with("http://") && !otlp_endpoint.contains("localhost") && !otlp_endpoint.contains("127.0.0.1") {
-        tracing::warn!("Unencrypted telemetry endpoint detected for remote host. Privacy may be compromised.");
+    if otlp_endpoint.starts_with("http://")
+        && !otlp_endpoint.contains("localhost")
+        && !otlp_endpoint.contains("127.0.0.1")
+        && !otlp_endpoint.contains("::1")
+    {
+        tracing::warn!("Unencrypted telemetry endpoint detected for remote host {} (Privacy may be compromised)", otlp_endpoint);
     }
 
     let mut resource_attributes = vec![
@@ -39,11 +43,10 @@ where
         KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
     ];
 
-    // Privacy awareness: Do not include host IP or cluster name by default here.
+    // Privacy awareness: Do not include specific host IP or cluster name by default here.
     // These will be scrubbed/anonymized by the collector proxy.
-    if let Ok(cluster) = env::var("K8S_CLUSTER_NAME") {
-        // We only add a hashed version or a pseudonym if needed locally, 
-        // but for ZK proxy we prefer REDACTED.
+    if env::var("K8S_CLUSTER_NAME").is_ok() {
+        // We set the cluster name to a generic value to avoid leaking the real name
         resource_attributes.push(KeyValue::new("k8s.cluster.name", "hidden"));
     }
 

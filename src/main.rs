@@ -37,7 +37,9 @@ async fn main() -> Result<(), Error> {
 
     if otel_enabled {
         // Verify privacy standards before starting
-        if let Err(e) = stellar_k8s::telemetry::proxy::SecureTelemetryProxy::verify_privacy_assurance() {
+        if let Err(e) =
+            stellar_k8s::telemetry::proxy::SecureTelemetryProxy::verify_privacy_assurance()
+        {
             tracing::error!("Privacy Assurance Failed: {}", e);
             if std::env::var("STRICT_PRIVACY").is_ok() {
                 return Err(Error::ConfigError(e));

@@ -28,10 +28,15 @@ pub static INGESTION_LAG: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
 pub static RECONCILIATION_COUNT: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
+/// Internal store for actual (not noisy) reconciliation counts
+static ACTUAL_RECONCILIATION_COUNTS: Lazy<
+    std::sync::Mutex<std::collections::HashMap<String, u64>>,
+> = Lazy::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
 /// Privacy module for differential privacy
-use crate::telemetry::privacy::{PrivancyAwareMetric, PrivacyConfig};
-static PRIVACY_ENGINE: Lazy<PrivancyAwareMetric> = Lazy::new(|| {
-    PrivancyAwareMetric::new(PrivacyConfig {
+use crate::telemetry::privacy::{PrivacyAwareMetric, PrivacyConfig};
+static PRIVACY_ENGINE: Lazy<PrivacyAwareMetric> = Lazy::new(|| {
+    PrivacyAwareMetric::new(PrivacyConfig {
         epsilon: 0.1,
         sensitivity: 1.0,
     })
@@ -51,7 +56,7 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         INGESTION_LAG.clone(),
     );
     registry.register(
-        "stellar_operator_reconciliations_total",
+        "stellar_operator_reconciliations",
         "Total number of reconciliations (Differential Privacy applied)",
         RECONCILIATION_COUNT.clone(),
     );
@@ -76,13 +81,7 @@ pub fn set_ledger_sequence(
 }
 
 /// Update the ingestion lag metric for a node
-pub fn set_ingestion_lag(
-    namespace: &str,
-    name: &str,
-    node_type: &str,
-    network: &str,
-    lag: i64,
-) {
+pub fn set_ingestion_lag(namespace: &str, name: &str, node_type: &str, network: &str, lag: i64) {
     let labels = NodeLabels {
         namespace: namespace.to_string(),
         name: name.to_string(),
@@ -92,22 +91,28 @@ pub fn set_ingestion_lag(
     INGESTION_LAG.get_or_create(&labels).set(lag);
 }
 
-/// Increment the reconciliation count with differential privacy
-pub fn inc_reconciliation_count(
-    namespace: &str,
-    name: &str,
-    node_type: &str,
-    network: &str,
-    current_val: u64,
-) {
+/// Update the reconciliation count with differential privacy
+pub fn set_reconciliation_count(namespace: &str, name: &str, node_type: &str, network: &str) {
     let labels = NodeLabels {
         namespace: namespace.to_string(),
         name: name.to_string(),
         node_type: node_type.to_string(),
         network: network.to_string(),
     };
-    
-    // Apply differential privacy noise
+
+    // Create a unique key for the counter
+    let key = format!("{}:{}:{}:{}", namespace, name, node_type, network);
+
+    let current_val = {
+        let mut counts = ACTUAL_RECONCILIATION_COUNTS.lock().unwrap();
+        let count = counts.entry(key).or_insert(0);
+        *count += 1;
+        *count
+    };
+
+    // Apply differential privacy noise to the CUMULATIVE count
     let protected_val = PRIVACY_ENGINE.protect_count(current_val);
-    RECONCILIATION_COUNT.get_or_create(&labels).set(protected_val as i64);
+    RECONCILIATION_COUNT
+        .get_or_create(&labels)
+        .set(protected_val as i64);
 }

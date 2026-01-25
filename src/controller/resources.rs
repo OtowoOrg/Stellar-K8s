@@ -7,9 +7,9 @@ use std::collections::BTreeMap;
 
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec, StatefulSet, StatefulSetSpec};
 use k8s_openapi::api::autoscaling::v2::{
-    CrossVersionObjectReference, HorizontalPodAutoscaler, HorizontalPodAutoscalerSpec,
-    MetricSpec, MetricTarget, ObjectMetricSource, MetricIdentifier,
-    HPAScalingRules, HPAScalingPolicy, HorizontalPodAutoscalerBehavior,
+    CrossVersionObjectReference, HPAScalingPolicy, HPAScalingRules, HorizontalPodAutoscaler,
+    HorizontalPodAutoscalerBehavior, HorizontalPodAutoscalerSpec, MetricIdentifier, MetricSpec,
+    MetricTarget, ObjectMetricSource,
 };
 use k8s_openapi::api::core::v1::{
     ConfigMap, Container, ContainerPort, EnvVar, EnvVarSource, PersistentVolumeClaim,
@@ -175,27 +175,33 @@ pub async fn delete_pvc(client: &Client, node: &StellarNode) -> Result<()> {
 /// Ensure a ConfigMap exists with node configuration
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_config_map(
+    client: &Client,
+    node: &StellarNode,
+    quorum_override: Option<String>,
     enable_mtls: bool,
-    client: &Client, 
-    node: &StellarNode, 
-    quorum_override: Option<String>
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "config");
 
-    let cm = build_config_map(node, enable_mtls);
-    let cm = build_config_map(node, quorum_override);
+    let cm = build_config_map(node, quorum_override, enable_mtls);
 
     let patch = Patch::Apply(&cm);
-    api.patch(&name, &PatchParams::apply("stellar-operator").force(), &patch)
-        .await?;
+    api.patch(
+        &name,
+        &PatchParams::apply("stellar-operator").force(),
+        &patch,
+    )
+    .await?;
 
     Ok(())
 }
 
-fn build_config_map(node: &StellarNode, enable_mtls: bool) -> ConfigMap {
-fn build_config_map(node: &StellarNode, quorum_override: Option<String>) -> ConfigMap {
+fn build_config_map(
+    node: &StellarNode,
+    quorum_override: Option<String>,
+    enable_mtls: bool,
+) -> ConfigMap {
     let labels = standard_labels(node);
     let name = resource_name(node, "config");
 
@@ -207,24 +213,29 @@ fn build_config_map(node: &StellarNode, quorum_override: Option<String>) -> Conf
         node.spec.network.passphrase().to_string(),
     );
 
+    // Add mTLS configuration if enabled
+    if enable_mtls {
+        data.insert("MTLS_ENABLED".to_string(), "true".to_string());
+    }
+
     // Add node-type-specific configuration
     match &node.spec.node_type {
         NodeType::Validator => {
             let mut core_cfg = String::new();
             if let Some(config) = &node.spec.validator_config {
-                if let Some(quorum) = &config.quorum_set {
-                    core_cfg.push_str(quorum);
                 let quorum = quorum_override.or_else(|| config.quorum_set.clone());
                 if let Some(q) = quorum {
-                    data.insert("stellar-core.cfg".to_string(), q);
+                    core_cfg.push_str(&q);
                 }
             }
+
             if enable_mtls {
                 core_cfg.push_str("\n# mTLS Configuration\n");
                 core_cfg.push_str("HTTP_PORT_SECURE=true\n");
                 core_cfg.push_str("TLS_CERT_FILE=\"/etc/stellar/tls/tls.crt\"\n");
                 core_cfg.push_str("TLS_KEY_FILE=\"/etc/stellar/tls/tls.key\"\n");
             }
+
             if !core_cfg.is_empty() {
                 data.insert("stellar-core.cfg".to_string(), core_cfg);
             }
@@ -521,13 +532,25 @@ fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
 // ============================================================================
 
 /// Ensure a LoadBalancer Service exists for external access via MetalLB
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_load_balancer_service(client: &Client, node: &StellarNode) -> Result<()> {
+#[instrument(skip(_client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[allow(dead_code)]
+pub async fn ensure_load_balancer_service(_client: &Client, node: &StellarNode) -> Result<()> {
+    // TODO: load_balancer field not yet implemented in StellarNodeSpec
+    // Uncomment when LoadBalancerConfig is added to the spec
+    /*
     let lb_cfg = match &node.spec.load_balancer {
         Some(cfg) if cfg.enabled => cfg,
         _ => return Ok(()),
     };
+    */
 
+    // Function is disabled until load_balancer field is implemented
+    #[allow(unreachable_code)]
+    {
+        return Ok(());
+    }
+
+    /*
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "lb");
@@ -543,8 +566,10 @@ pub async fn ensure_load_balancer_service(client: &Client, node: &StellarNode) -
 
     info!("LoadBalancer Service ensured for {}/{}", namespace, name);
     Ok(())
+    */
 }
 
+#[allow(dead_code)]
 fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) -> Service {
     let labels = standard_labels(node);
     let name = resource_name(node, "lb");
@@ -631,6 +656,8 @@ fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) 
     }
 
     // Add global discovery annotations
+    // TODO: global_discovery field not yet implemented in StellarNodeSpec
+    /*
     if let Some(gd) = &node.spec.global_discovery {
         if gd.enabled {
             if let Some(region) = &gd.region {
@@ -665,6 +692,7 @@ fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) 
             }
         }
     }
+    */
 
     let external_traffic_policy = match config.external_traffic_policy {
         ExternalTrafficPolicy::Cluster => "Cluster".to_string(),
@@ -697,8 +725,15 @@ fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) 
 }
 
 /// Delete the LoadBalancer Service for a node
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_load_balancer_service(client: &Client, node: &StellarNode) -> Result<()> {
+#[instrument(skip(_client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[allow(dead_code)]
+pub async fn delete_load_balancer_service(_client: &Client, node: &StellarNode) -> Result<()> {
+    // TODO: load_balancer field not yet implemented in StellarNodeSpec
+    #[allow(unreachable_code)]
+    {
+        return Ok(());
+    }
+    /*
     if node.spec.load_balancer.is_none() {
         return Ok(());
     }
@@ -716,6 +751,7 @@ pub async fn delete_load_balancer_service(client: &Client, node: &StellarNode) -
     }
 
     Ok(())
+    */
 }
 
 // ============================================================================
@@ -725,8 +761,15 @@ pub async fn delete_load_balancer_service(client: &Client, node: &StellarNode) -
 /// Ensure MetalLB BGPAdvertisement and IPAddressPool ConfigMaps are documented
 /// Note: MetalLB CRDs must be created manually or via Helm; this function
 /// creates the recommended ConfigMap for cluster operators to reference.
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_metallb_config(client: &Client, node: &StellarNode) -> Result<()> {
+#[instrument(skip(_client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[allow(dead_code)]
+pub async fn ensure_metallb_config(_client: &Client, node: &StellarNode) -> Result<()> {
+    // TODO: load_balancer field not yet implemented in StellarNodeSpec
+    #[allow(unreachable_code)]
+    {
+        return Ok(());
+    }
+    /*
     let lb_cfg = match &node.spec.load_balancer {
         Some(cfg) if cfg.enabled && cfg.mode == LoadBalancerMode::BGP => cfg,
         _ => return Ok(()),
@@ -750,8 +793,10 @@ pub async fn ensure_metallb_config(client: &Client, node: &StellarNode) -> Resul
         namespace, name
     );
     Ok(())
+    */
 }
 
+#[allow(dead_code)]
 fn build_metallb_config_map(node: &StellarNode, config: &LoadBalancerConfig) -> ConfigMap {
     let labels = standard_labels(node);
     let name = resource_name(node, "metallb-config");
@@ -985,6 +1030,7 @@ spec:
 
 /// Delete the MetalLB configuration ConfigMap
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[allow(dead_code)]
 pub async fn delete_metallb_config(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
@@ -1108,7 +1154,6 @@ fn build_ingress(node: &StellarNode, config: &IngressConfig) -> Ingress {
         vec![IngressTLS {
             hosts: Some(config.hosts.iter().map(|h| h.host.clone()).collect()),
             secret_name: Some(secret.clone()),
-            ..Default::default()
         }]
     });
 
@@ -1186,11 +1231,20 @@ fn build_pod_template(
                 }),
                 ..Default::default()
             },
-            
         ]),
         topology_spread_constraints: node.spec.topology_spread_constraints.clone(),
         ..Default::default()
     };
+
+    // Add Horizon database migration init container
+    if let NodeType::Horizon = node.spec.node_type {
+        if let Some(horizon_config) = &node.spec.horizon_config {
+            if horizon_config.auto_migration {
+                let init_containers = pod_spec.init_containers.get_or_insert_with(Vec::new);
+                init_containers.push(build_horizon_migration_container(node));
+            }
+        }
+    }
 
     // Add KMS init container if needed (Validator nodes only)
     if let NodeType::Validator = node.spec.node_type {
@@ -1340,7 +1394,6 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
                             }),
                             ..Default::default()
                         }),
-                        ..Default::default()
                     });
                 }
                 KeySource::KMS => {
@@ -1364,7 +1417,7 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
                 secret_key_ref: Some(SecretKeySelector {
                     name: Some(db_config.secret_key_ref.name.clone()),
                     key: db_config.secret_key_ref.key.clone(),
-                    optional: None,
+                    ..Default::default()
                 }),
                 ..Default::default()
             }),
@@ -1447,6 +1500,28 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
         volume_mounts: Some(volume_mounts),
         ..Default::default()
     }
+}
+
+/// Build the migration container for Horizon
+fn build_horizon_migration_container(node: &StellarNode) -> Container {
+    let mut container = build_container(node, false);
+    container.name = "horizon-db-migration".to_string();
+    // Use a shell to try upgrade then init if needed, ensuring the DB is ready
+    container.command = Some(vec!["/bin/sh".to_string()]);
+    container.args = Some(vec![
+        "-c".to_string(),
+        "horizon db upgrade || horizon db init".to_string(),
+    ]);
+
+    // Migration doesn't need ports or probes
+    container.ports = None;
+    container.liveness_probe = None;
+    container.readiness_probe = None;
+    container.startup_probe = None;
+    container.lifecycle = None;
+
+    // Use slightly less resources for migration if desired, but reusing main ones is safer
+    container
 }
 // ============================================================================
 // HorizontalPodAutoscaler
@@ -1618,26 +1693,39 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
         // Add more custom metrics mapping here (e.g., request throughput)
     }
 
-    let behavior = autoscaling.behavior.as_ref().map(|b| HorizontalPodAutoscalerBehavior {
-        scale_up: b.scale_up.as_ref().map(|s| HPAScalingRules {
-            stabilization_window_seconds: s.stabilization_window_seconds,
-            policies: Some(s.policies.iter().map(|p| HPAScalingPolicy {
-                type_: p.policy_type.clone(),
-                value: p.value,
-                period_seconds: p.period_seconds,
-            }).collect()),
-            select_policy: Some("Max".to_string()),
-        }),
-        scale_down: b.scale_down.as_ref().map(|s| HPAScalingRules {
-            stabilization_window_seconds: s.stabilization_window_seconds,
-            policies: Some(s.policies.iter().map(|p| HPAScalingPolicy {
-                type_: p.policy_type.clone(),
-                value: p.value,
-                period_seconds: p.period_seconds,
-            }).collect()),
-            select_policy: Some("Min".to_string()),
-        }),
-    });
+    let behavior = autoscaling
+        .behavior
+        .as_ref()
+        .map(|b| HorizontalPodAutoscalerBehavior {
+            scale_up: b.scale_up.as_ref().map(|s| HPAScalingRules {
+                stabilization_window_seconds: s.stabilization_window_seconds,
+                policies: Some(
+                    s.policies
+                        .iter()
+                        .map(|p| HPAScalingPolicy {
+                            type_: p.policy_type.clone(),
+                            value: p.value,
+                            period_seconds: p.period_seconds,
+                        })
+                        .collect(),
+                ),
+                select_policy: Some("Max".to_string()),
+            }),
+            scale_down: b.scale_down.as_ref().map(|s| HPAScalingRules {
+                stabilization_window_seconds: s.stabilization_window_seconds,
+                policies: Some(
+                    s.policies
+                        .iter()
+                        .map(|p| HPAScalingPolicy {
+                            type_: p.policy_type.clone(),
+                            value: p.value,
+                            period_seconds: p.period_seconds,
+                        })
+                        .collect(),
+                ),
+                select_policy: Some("Min".to_string()),
+            }),
+        });
 
     let hpa = HorizontalPodAutoscaler {
         metadata: ObjectMeta {
@@ -1655,7 +1743,11 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
             },
             min_replicas: Some(autoscaling.min_replicas),
             max_replicas: autoscaling.max_replicas,
-            metrics: if metrics.is_empty() { None } else { Some(metrics) },
+            metrics: if metrics.is_empty() {
+                None
+            } else {
+                Some(metrics)
+            },
             behavior,
         }),
         status: None,

@@ -1,6 +1,17 @@
 //! Shared types for Stellar node specifications
 //!
 //! These types are used across the CRD definitions and controller logic.
+//! They define the configuration for different Stellar node types, resource requirements,
+//! storage policies, and advanced features like autoscaling, ingress, and network policies.
+//!
+//! # Type Hierarchy
+//!
+//! - [`NodeType`] - Specifies the type of Stellar infrastructure (Validator, Horizon, SorobanRpc)
+//! - [`StellarNetwork`] - Target Stellar network (Mainnet, Testnet, Futurenet, or Custom)
+//! - [`ResourceRequirements`] - CPU and memory requests/limits following Kubernetes conventions
+//! - [`StorageConfig`] - Persistent storage configuration with retention policies
+//! - Node-specific configs: [`ValidatorConfig`], [`HorizonConfig`], [`SorobanConfig`]
+//! - Advanced features: [`AutoscalingConfig`], [`IngressConfig`], [`NetworkPolicyConfig`]
 
 use std::collections::BTreeMap;
 
@@ -8,10 +19,23 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Supported Stellar node types
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+///
+/// Determines which Stellar service is deployed (Stellar Core, Horizon API, or Soroban RPC).
+/// Each type has different resource requirements, network roles, and configuration options.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use stellar_k8s::crd::NodeType;
+///
+/// let node_type = NodeType::Validator;
+/// println!("Deploying {} node", node_type);
+/// ```
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum NodeType {
     /// Full validator node running Stellar Core
     /// Participates in consensus and validates transactions
+    #[default]
     Validator,
 
     /// Horizon API server for REST access to the Stellar network
@@ -34,11 +58,25 @@ impl std::fmt::Display for NodeType {
 }
 
 /// Target Stellar network
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+///
+/// Specifies which Stellar network the node connects to.
+/// This determines the network passphrase, peer addresses, and historical data sources.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use stellar_k8s::crd::StellarNetwork;
+///
+/// let network = StellarNetwork::Testnet;
+/// let passphrase = network.passphrase();
+/// assert_eq!(passphrase, "Test SDF Network ; September 2015");
+/// ```
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum StellarNetwork {
     /// Stellar public mainnet
     Mainnet,
     /// Stellar testnet for testing
+    #[default]
     Testnet,
     /// Futurenet for bleeding-edge features
     Futurenet,
@@ -59,6 +97,24 @@ impl StellarNetwork {
 }
 
 /// Kubernetes-style resource requirements
+///
+/// Specifies CPU and memory resource requests and limits for the node.
+/// Follows Kubernetes conventions for resource quantities.
+///
+/// Resource quantities use the following formats:
+/// - CPU: `"500m"` (millicores), `"2"` (cores), `"1.5"`
+/// - Memory: `"512Mi"`, `"1Gi"`, `"2Gi"`
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use stellar_k8s::crd::ResourceRequirements;
+///
+/// let resources = ResourceRequirements {
+///     requests: Default::default(),
+///     limits: Default::default(),
+/// };
+/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceRequirements {
@@ -92,7 +148,32 @@ pub struct ResourceSpec {
     pub memory: String,
 }
 
+impl Default for ResourceSpec {
+    fn default() -> Self {
+        Self {
+            cpu: "500m".to_string(),
+            memory: "1Gi".to_string(),
+        }
+    }
+}
+
 /// Storage configuration for persistent data
+///
+/// Configures how node data is persisted to disk, including storage class selection,
+/// size allocation, and cleanup behavior on node deletion.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use stellar_k8s::crd::{StorageConfig, RetentionPolicy};
+///
+/// let storage = StorageConfig {
+///     storage_class: "ssd".to_string(),
+///     size: "500Gi".to_string(),
+///     retention_policy: RetentionPolicy::Delete,
+///     annotations: None,
+/// };
+/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageConfig {
@@ -121,6 +202,14 @@ impl Default for StorageConfig {
 }
 
 /// PVC retention policy on node deletion
+///
+/// Determines whether the Persistent Volume Claim (PVC) is deleted or retained
+/// when the StellarNode resource is deleted.
+///
+/// # Variants
+///
+/// - `Delete` (default) - PVC is deleted along with the node resource
+/// - `Retain` - PVC persists for manual cleanup or data recovery
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum RetentionPolicy {
     /// Delete the PVC when the node is deleted
@@ -131,6 +220,30 @@ pub enum RetentionPolicy {
 }
 
 /// Validator-specific configuration
+///
+/// Configuration for Stellar Core validator nodes, including seed management,
+/// quorum set configuration, history archive setup, and key source preferences.
+///
+/// Validators authenticate network participants and validate transactions.
+/// A validator must be configured with a seed key and optionally with a quorum set
+/// to participate in consensus.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use stellar_k8s::crd::{ValidatorConfig, KeySource};
+///
+/// let config = ValidatorConfig {
+///     seed_secret_ref: "my-validator-seed".to_string(),
+///     quorum_set: None,
+///     enable_history_archive: true,
+///     history_archive_urls: vec!["https://archive.example.com".to_string()],
+///     catchup_complete: false,
+///     key_source: KeySource::Secret,
+///     kms_config: None,
+///     vl_source: None,
+/// };
+/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidatorConfig {
@@ -160,6 +273,13 @@ pub struct ValidatorConfig {
 }
 
 /// Source of security keys
+///
+/// Specifies where the validator seed key is stored and retrieved from.
+///
+/// # Variants
+///
+/// - `Secret` (default) - Use a standard Kubernetes Secret resource
+/// - `KMS` - Fetch keys from a cloud KMS or Vault via an init container
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum KeySource {
@@ -171,6 +291,25 @@ pub enum KeySource {
 }
 
 /// Configuration for cloud-native KMS or Vault
+///
+/// Specifies cloud KMS (AWS KMS, GCP Cloud KMS, HashiCorp Vault) parameters
+/// for securely fetching validator seeds.
+///
+/// When `KeySource::KMS` is selected, an init container runs to fetch the key
+/// from the specified KMS before the main container starts.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use stellar_k8s::crd::KmsConfig;
+///
+/// let kms = KmsConfig {
+///     key_id: "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012".to_string(),
+///     provider: "aws".to_string(),
+///     region: Some("us-east-1".to_string()),
+///     fetcher_image: Some("stellar/kms-fetcher:latest".to_string()),
+/// };
+/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct KmsConfig {
@@ -187,6 +326,24 @@ pub struct KmsConfig {
 }
 
 /// Horizon API server configuration
+///
+/// Configuration for Horizon nodes that provide a REST API to query the Stellar ledger.
+/// Horizon ingests data from Stellar Core and indexes it for fast queries.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use stellar_k8s::crd::HorizonConfig;
+///
+/// let config = HorizonConfig {
+///     database_secret_ref: "horizon-db-secret".to_string(),
+///     enable_ingest: true,
+///     stellar_core_url: "http://core.default:11626".to_string(),
+///     ingest_workers: 4,
+///     enable_experimental_ingestion: false,
+///     auto_migration: true,
+/// };
+/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HorizonConfig {
@@ -203,6 +360,9 @@ pub struct HorizonConfig {
     /// Enable experimental features
     #[serde(default)]
     pub enable_experimental_ingestion: bool,
+    /// Automatically run database migrations on startup or upgrade
+    #[serde(default = "default_true")]
+    pub auto_migration: bool,
 }
 
 fn default_true() -> bool {
@@ -214,6 +374,22 @@ fn default_ingest_workers() -> u32 {
 }
 
 /// Soroban RPC server configuration
+///
+/// Configuration for Soroban RPC nodes that handle smart contract simulation
+/// and transaction submission on Stellar's smart contract platform.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use stellar_k8s::crd::SorobanConfig;
+///
+/// let config = SorobanConfig {
+///     stellar_core_url: "http://core.default:11626".to_string(),
+///     captive_core_config: None,
+///     enable_preflight: true,
+///     max_events_per_request: 10000,
+/// };
+/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SorobanConfig {
@@ -231,7 +407,24 @@ pub struct SorobanConfig {
 }
 
 /// External database configuration for managed Postgres databases
-/// Supports RDS, Cloud SQL, CockroachDB, and other managed database services
+///
+/// Specifies how to reference database credentials for external managed databases.
+/// Supports AWS RDS, Google Cloud SQL, CockroachDB, and other managed services.
+///
+/// The operator injects database credentials as environment variables into the container.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use stellar_k8s::crd::{ExternalDatabaseConfig, SecretKeyRef};
+///
+/// let config = ExternalDatabaseConfig {
+///     secret_key_ref: SecretKeyRef {
+///         name: "postgres-credentials".to_string(),
+///         key: "DATABASE_URL".to_string(),
+///     },
+/// };
+/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExternalDatabaseConfig {
@@ -240,6 +433,9 @@ pub struct ExternalDatabaseConfig {
 }
 
 /// Reference to a key within a Kubernetes Secret
+///
+/// Used to reference database credentials, KMS keys, and other sensitive data
+/// stored in Kubernetes Secrets.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretKeyRef {
@@ -252,6 +448,30 @@ pub struct SecretKeyRef {
 }
 
 /// Ingress configuration for exposing Horizon or Soroban RPC over HTTPS
+///
+/// Configures Kubernetes Ingress for external HTTP/HTTPS access to Horizon or Soroban RPC nodes.
+/// Supports multiple hosts, path-based routing, TLS termination, and cert-manager integration.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use stellar_k8s::crd::{IngressConfig, IngressHost, IngressPath};
+///
+/// let config = IngressConfig {
+///     class_name: Some("nginx".to_string()),
+///     hosts: vec![IngressHost {
+///         host: "horizon.example.com".to_string(),
+///         paths: vec![IngressPath {
+///             path: "/".to_string(),
+///             path_type: Some("Prefix".to_string()),
+///         }],
+///     }],
+///     tls_secret_name: None,
+///     cert_manager_issuer: Some("letsencrypt-prod".to_string()),
+///     cert_manager_cluster_issuer: None,
+///     annotations: None,
+/// };
+/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct IngressConfig {
@@ -281,6 +501,8 @@ pub struct IngressConfig {
 }
 
 /// Ingress host entry
+///
+/// Defines a single DNS host and the HTTP paths served for that host.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct IngressHost {
@@ -296,6 +518,8 @@ pub struct IngressHost {
 }
 
 /// Ingress path mapping
+///
+/// Defines a single HTTP path prefix or exact path for routing traffic to the service.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct IngressPath {
@@ -323,6 +547,24 @@ fn default_max_events() -> u32 {
 }
 
 /// Horizontal Pod Autoscaling configuration for Horizon and SorobanRpc nodes
+///
+/// Configures Kubernetes Horizontal Pod Autoscaler (HPA) for automatic scaling
+/// of Horizon and Soroban RPC nodes based on CPU or custom metrics.
+/// Validators do not support autoscaling.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use stellar_k8s::crd::AutoscalingConfig;
+///
+/// let config = AutoscalingConfig {
+///     min_replicas: 2,
+///     max_replicas: 10,
+///     target_cpu_utilization_percentage: Some(70),
+///     custom_metrics: vec![],
+///     behavior: None,
+/// };
+/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoscalingConfig {
@@ -348,6 +590,9 @@ pub struct AutoscalingConfig {
 }
 
 /// Scaling behavior configuration for HPA
+///
+/// Defines scale-up and scale-down policies with stabilization windows
+/// to control the rate and timing of replica changes.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScalingBehavior {
@@ -361,6 +606,8 @@ pub struct ScalingBehavior {
 }
 
 /// Scaling policy for scale up/down
+///
+/// Specifies a scaling policy with stabilization window and multiple policy options.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScalingPolicy {
@@ -373,6 +620,9 @@ pub struct ScalingPolicy {
 }
 
 /// Individual HPA policy
+///
+/// Defines a single scaling policy with a type (percentage or number of pods),
+/// value, and time period.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HPAPolicy {
@@ -387,6 +637,17 @@ pub struct HPAPolicy {
 }
 
 /// Condition for status reporting (Kubernetes convention)
+///
+/// Reports the status of a condition on the StellarNode resource.
+/// Follows Kubernetes convention for condition reporting.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use stellar_k8s::crd::Condition;
+///
+/// let condition = Condition::ready(true, "Ready", "Node is ready");
+/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Condition {
@@ -401,6 +662,10 @@ pub struct Condition {
     pub reason: String,
     /// Human-readable message
     pub message: String,
+    /// ObservedGeneration represents the .metadata.generation that the condition was set based upon
+    /// This field is optional and should be set by controllers to track which generation was observed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_generation: Option<i64>,
 }
 
 impl Condition {
@@ -412,6 +677,7 @@ impl Condition {
             last_transition_time: chrono::Utc::now().to_rfc3339(),
             reason: reason.to_string(),
             message: message.to_string(),
+            observed_generation: None,
         }
     }
 
@@ -423,7 +689,26 @@ impl Condition {
             last_transition_time: chrono::Utc::now().to_rfc3339(),
             reason: reason.to_string(),
             message: message.to_string(),
+            observed_generation: None,
         }
+    }
+
+    /// Create a new Degraded condition
+    pub fn degraded(reason: &str, message: &str) -> Self {
+        Self {
+            type_: "Degraded".to_string(),
+            status: "True".to_string(),
+            last_transition_time: chrono::Utc::now().to_rfc3339(),
+            reason: reason.to_string(),
+            message: message.to_string(),
+            observed_generation: None,
+        }
+    }
+
+    /// Set the observed generation for this condition
+    pub fn with_observed_generation(mut self, generation: i64) -> Self {
+        self.observed_generation = Some(generation);
+        self
     }
 }
 
@@ -838,7 +1123,7 @@ pub enum MTLSMode {
 }
 
 /// ExternalDNS configuration for automatic DNS record management
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ExternalDNSConfig {
     /// DNS hostname to register (e.g., "stellar-node.example.com")
@@ -859,4 +1144,85 @@ pub struct ExternalDNSConfig {
 
 fn default_dns_ttl() -> u32 {
     300
+}
+
+// ============================================================================
+// Cross-Region Disaster Recovery Configuration
+// ============================================================================
+
+/// Configuration for multi-cluster disaster recovery (DR)
+///
+/// Manages "hot standby" nodes in remote clusters and automated failover
+/// using external DNS providers (Route53, Cloudflare).
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DisasterRecoveryConfig {
+    /// Whether DR is enabled for this node
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Role of this cluster in the DR pairing
+    pub role: DRRole,
+
+    /// Identifier of the peer cluster/region
+    pub peer_cluster_id: String,
+
+    /// Strategy for state synchronization
+    #[serde(default)]
+    pub sync_strategy: DRSyncStrategy,
+
+    /// DNS failover configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failover_dns: Option<ExternalDNSConfig>,
+
+    /// Check interval for health of the other region (seconds)
+    #[serde(default = "default_dr_check_interval")]
+    pub health_check_interval: u32,
+}
+
+fn default_dr_check_interval() -> u32 {
+    30
+}
+
+/// Role of a node in a DR configuration
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DRRole {
+    /// Primary node serving active traffic
+    Primary,
+    /// Standby node ready to take over if primary fails
+    Standby,
+}
+
+/// Synchronization strategy for hot standby nodes
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DRSyncStrategy {
+    /// Follow the network consensus normally
+    #[default]
+    Consensus,
+    /// Actively track the peer node's ledger sequence
+    PeerTracking,
+    /// Continuous history archive sync
+    ArchiveSync,
+}
+
+/// Status of the Disaster Recovery setup
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DisasterRecoveryStatus {
+    /// Current effective role (may differ from spec during failover)
+    pub current_role: Option<DRRole>,
+
+    /// Health status of the peer cluster
+    pub peer_health: Option<String>,
+
+    /// Last time the peer was reachable
+    pub last_peer_contact: Option<String>,
+
+    /// Sync lag between primary and standby (in ledgers)
+    pub sync_lag: Option<u64>,
+
+    /// Whether failover is currently active
+    pub failover_active: bool,
 }

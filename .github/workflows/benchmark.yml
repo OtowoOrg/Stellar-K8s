@@ -34,7 +34,7 @@ jobs:
       image_tag: ${{ steps.version.outputs.image_tag }}
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       
@@ -50,16 +50,21 @@ jobs:
           echo "image_tag=ghcr.io/${{ github.repository }}:benchmark-$VERSION" >> $GITHUB_OUTPUT
       
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
       
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/bin
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
             target
           key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-bench-
+            ${{ runner.os }}-cargo-
       
       - name: Build release binary
         run: cargo build --release
@@ -68,7 +73,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
       
       - name: Build Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: false
@@ -85,19 +90,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     
-    services:
-      # Use k3s for lightweight Kubernetes
-      k3s:
-        image: rancher/k3s:v1.28.4-k3s2
-        options: --privileged
-    
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests jq pyyaml
       
       - name: Install k6
         run: |
@@ -110,7 +114,7 @@ jobs:
           sudo apt-get install -y k6
       
       - name: Setup kind cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@v1.13.0
         with:
           cluster_name: benchmark-cluster
           config: |
@@ -123,7 +127,7 @@ jobs:
       
       - name: Install CRDs and operator
         run: |
-          kubectl apply -f stellarnode-crd.yaml
+          kubectl apply -f config/crd/stellarnode-crd.yaml
           kubectl create namespace stellar-system || true
           
           # Deploy operator for benchmarking
@@ -230,7 +234,7 @@ jobs:
           kubectl get events -n stellar-benchmark --sort-by='.lastTimestamp' > results/events.txt || true
       
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: benchmark-results-${{ needs.build.outputs.version }}
           path: results/
@@ -283,18 +287,18 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Download benchmark results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: benchmark-results-${{ needs.build.outputs.version }}
           path: results/
       
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       
@@ -329,7 +333,7 @@ jobs:
     
     steps:
       - name: Download benchmark results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: benchmark-results-${{ needs.build.outputs.version }}
           path: results/
@@ -382,7 +386,7 @@ jobs:
           echo -e "$COMMENT" > comment.md
       
       - name: Post comment
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: comment.md

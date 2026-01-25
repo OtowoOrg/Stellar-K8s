@@ -10,7 +10,8 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, warn};
 use wasmtime::*;
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
+use wasmtime_wasi::preview1::{self, WasiP1Ctx};
+use wasmtime_wasi::WasiCtxBuilder;
 
 use super::types::{
     PluginConfig, PluginExecutionResult, PluginLimits, PluginMetadata, ValidationInput,
@@ -40,8 +41,7 @@ struct CachedModule {
 
 /// Store state for Wasm execution
 struct PluginState {
-    wasi: WasiCtx,
-    limits: StoreLimits,
+    wasi: WasiP1Ctx,
     input_buffer: Vec<u8>,
     output_buffer: Vec<u8>,
 }
@@ -75,8 +75,8 @@ impl WasmRuntime {
         config.wasm_multi_value(true);
         config.wasm_reference_types(false);
 
-        let engine =
-            Engine::new(&config).map_err(|e| Error::PluginError(format!("Engine creation failed: {}", e)))?;
+        let engine = Engine::new(&config)
+            .map_err(|e| Error::PluginError(format!("Engine creation failed: {}", e)))?;
 
         Ok(Self {
             engine,
@@ -101,8 +101,9 @@ impl WasmRuntime {
         }
 
         // Compile the module
-        let module = Module::new(&self.engine, wasm_bytes)
-            .map_err(|e| Error::PluginError(format!("Failed to compile plugin {}: {}", metadata.name, e)))?;
+        let module = Module::new(&self.engine, wasm_bytes).map_err(|e| {
+            Error::PluginError(format!("Failed to compile plugin {}: {}", metadata.name, e))
+        })?;
 
         // Validate the module exports the required function
         Self::validate_module_exports(&module, &metadata.name)?;
@@ -207,9 +208,7 @@ impl WasmRuntime {
             let input = input.clone();
             let runtime = self.clone_for_execution();
 
-            let handle = tokio::spawn(async move {
-                runtime.execute(&name, &input, limits).await
-            });
+            let handle = tokio::spawn(async move { runtime.execute(&name, &input, limits).await });
 
             handles.push((plugin.clone(), handle));
         }
@@ -237,7 +236,10 @@ impl WasmRuntime {
                 }
                 Err(e) => {
                     if plugin.fail_open {
-                        warn!("Plugin {} panicked (fail-open): {}", plugin.metadata.name, e);
+                        warn!(
+                            "Plugin {} panicked (fail-open): {}",
+                            plugin.metadata.name, e
+                        );
                         results.push(Ok(PluginExecutionResult {
                             plugin_name: plugin.metadata.name.clone(),
                             output: ValidationOutput::allowed_with_warnings(vec![format!(
@@ -269,17 +271,15 @@ impl WasmRuntime {
         limits: &PluginLimits,
     ) -> Result<ExecutionResult> {
         // Create store with limits
-        let store_limits = StoreLimitsBuilder::new()
+        let _store_limits = StoreLimitsBuilder::new()
             .memory_size(limits.max_memory_bytes as usize)
             .build();
 
         // Create WASI context (sandboxed, no filesystem or network access)
-        let wasi = WasiCtxBuilder::new()
-            .build();
+        let wasi = WasiCtxBuilder::new().build_p1();
 
         let state = PluginState {
             wasi,
-            limits: store_limits,
             input_buffer: input_json,
             output_buffer: Vec::with_capacity(4096),
         };
@@ -287,9 +287,9 @@ impl WasmRuntime {
         let mut store = Store::new(engine, state);
 
         // Set fuel limit
-        store.set_fuel(limits.max_fuel).map_err(|e| {
-            Error::PluginError(format!("Failed to set fuel: {}", e))
-        })?;
+        store
+            .set_fuel(limits.max_fuel)
+            .map_err(|e| Error::PluginError(format!("Failed to set fuel: {}", e)))?;
 
         // Set epoch deadline for timeout
         store.epoch_deadline_trap();
@@ -297,14 +297,15 @@ impl WasmRuntime {
 
         // Create linker with WASI
         let mut linker = Linker::new(engine);
-        wasmtime_wasi::add_to_linker(&mut linker, |state: &mut PluginState| &mut state.wasi)
+        preview1::add_to_linker_sync(&mut linker, |state: &mut PluginState| &mut state.wasi)
             .map_err(|e| Error::PluginError(format!("Failed to add WASI to linker: {}", e)))?;
 
         // Add host functions for input/output
         Self::add_host_functions(&mut linker)?;
 
         // Instantiate the module
-        let instance = linker.instantiate(&mut store, module)
+        let instance = linker
+            .instantiate(&mut store, module)
             .map_err(|e| Error::PluginError(format!("Failed to instantiate module: {}", e)))?;
 
         // Get the validate function
@@ -313,16 +314,15 @@ impl WasmRuntime {
             .map_err(|e| Error::PluginError(format!("Failed to get validate function: {}", e)))?;
 
         // Call the validate function
-        let result_code = validate_fn.call(&mut store, ())
-            .map_err(|e| {
-                if e.to_string().contains("fuel") {
-                    Error::PluginError("Plugin exceeded instruction limit".to_string())
-                } else if e.to_string().contains("epoch") {
-                    Error::PluginError("Plugin execution timeout".to_string())
-                } else {
-                    Error::PluginError(format!("Plugin execution failed: {}", e))
-                }
-            })?;
+        let result_code = validate_fn.call(&mut store, ()).map_err(|e| {
+            if e.to_string().contains("fuel") {
+                Error::PluginError("Plugin exceeded instruction limit".to_string())
+            } else if e.to_string().contains("epoch") {
+                Error::PluginError("Plugin execution timeout".to_string())
+            } else {
+                Error::PluginError(format!("Plugin execution failed: {}", e))
+            }
+        })?;
 
         // Get fuel consumed
         let fuel_remaining = store.get_fuel().unwrap_or(0);
@@ -353,9 +353,13 @@ impl WasmRuntime {
     fn add_host_functions(linker: &mut Linker<PluginState>) -> Result<()> {
         // Function to get input length
         linker
-            .func_wrap("env", "get_input_len", |caller: Caller<'_, PluginState>| -> i32 {
-                caller.data().input_buffer.len() as i32
-            })
+            .func_wrap(
+                "env",
+                "get_input_len",
+                |caller: Caller<'_, PluginState>| -> i32 {
+                    caller.data().input_buffer.len() as i32
+                },
+            )
             .map_err(|e| Error::PluginError(format!("Failed to add get_input_len: {}", e)))?;
 
         // Function to read input into Wasm memory
@@ -373,7 +377,10 @@ impl WasmRuntime {
                     let input = caller.data().input_buffer.clone();
                     let read_len = std::cmp::min(len as usize, input.len());
 
-                    if let Err(_) = memory.write(&mut caller, ptr as usize, &input[..read_len]) {
+                    if memory
+                        .write(&mut caller, ptr as usize, &input[..read_len])
+                        .is_err()
+                    {
                         return -1;
                     }
 
@@ -394,7 +401,7 @@ impl WasmRuntime {
                     };
 
                     let mut buffer = vec![0u8; len as usize];
-                    if let Err(_) = memory.read(&caller, ptr as usize, &mut buffer) {
+                    if memory.read(&caller, ptr as usize, &mut buffer).is_err() {
                         return -1;
                     }
 

@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+docs/
+README.md
+LICENSE
+SECURITY.md
+
+# CI/CD artifacts
+.github/
+benchmarks/
+scripts/
+
+# Development files
+config/dev/
+kubeconfig*.yaml
+*.kubeconfig
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Build artifacts
+target/
+debug/
+release/
+Cargo.lock
+
+# Test files
+tests/
+test-*.yaml
+examples/
+
+# Monitoring
+monitoring/
+
+# Assets
+assets/
+logo.png
+*.png
+*.jpg
+*.svg

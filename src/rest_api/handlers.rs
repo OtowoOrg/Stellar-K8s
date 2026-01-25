@@ -46,7 +46,7 @@ pub async fn list_nodes(
                     phase: n
                         .status
                         .as_ref()
-                        .map(|s| s.phase.clone())
+                        .map(|s| s.derive_phase_from_conditions())
                         .unwrap_or_else(|| "Unknown".to_string()),
                     replicas: n.spec.replicas,
                     ready_replicas: n.status.as_ref().map(|s| s.ready_replicas).unwrap_or(0),

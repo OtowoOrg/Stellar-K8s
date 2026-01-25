@@ -58,13 +58,7 @@ pub fn set_ledger_sequence(
 }
 
 /// Update the ingestion lag metric for a node
-pub fn set_ingestion_lag(
-    namespace: &str,
-    name: &str,
-    node_type: &str,
-    network: &str,
-    lag: i64,
-) {
+pub fn set_ingestion_lag(namespace: &str, name: &str, node_type: &str, network: &str, lag: i64) {
     let labels = NodeLabels {
         namespace: namespace.to_string(),
         name: name.to_string(),

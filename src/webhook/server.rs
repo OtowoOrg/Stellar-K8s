@@ -21,8 +21,8 @@ use tracing::{error, info, instrument, warn};
 
 use super::runtime::WasmRuntime;
 use super::types::{
-    Operation, PluginConfig, PluginExecutionResult, PluginMetadata,
-    UserInfo, ValidationInput, ValidationOutput,
+    Operation, PluginConfig, PluginExecutionResult, PluginMetadata, UserInfo, ValidationInput,
+    ValidationOutput,
 };
 use crate::crd::StellarNode;
 use crate::error::{Error, Result};
@@ -124,22 +124,25 @@ impl WebhookServer {
 
     /// Configure TLS
     pub fn with_tls(mut self, cert_path: String, key_path: String) -> Self {
-        self.tls_config = Some(TlsConfig { cert_path, key_path });
+        self.tls_config = Some(TlsConfig {
+            cert_path,
+            key_path,
+        });
         self
     }
 
     /// Add a plugin
     pub async fn add_plugin(&self, config: PluginConfig) -> Result<()> {
         // Decode base64 wasm_binary
-        let wasm_binary_str = config.wasm_binary.as_ref().ok_or_else(|| {
-            Error::PluginError("Plugin wasm_binary is required".to_string())
-        })?;
-        
-        let wasm_bytes = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            wasm_binary_str,
-        ).map_err(|e| Error::PluginError(format!("Invalid base64 wasm_binary: {}", e)))?;
-        
+        let wasm_binary_str = config
+            .wasm_binary
+            .as_ref()
+            .ok_or_else(|| Error::PluginError("Plugin wasm_binary is required".to_string()))?;
+
+        let wasm_bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, wasm_binary_str)
+                .map_err(|e| Error::PluginError(format!("Invalid base64 wasm_binary: {}", e)))?;
+
         // Load into runtime
         self.runtime
             .load_plugin(&wasm_bytes, config.metadata.clone())
@@ -147,10 +150,10 @@ impl WebhookServer {
 
         // Add to plugins list
         let mut plugins = self.plugins.write().await;
-        
+
         // Remove existing plugin with same name
         plugins.retain(|p| p.metadata.name != config.metadata.name);
-        
+
         plugins.push(config);
 
         Ok(())
@@ -237,7 +240,7 @@ impl WebhookServer {
     pub async fn start(self, addr: SocketAddr) -> Result<()> {
         // Check TLS config before moving self into Arc
         let has_tls = self.tls_config.is_some();
-        
+
         let state = Arc::new(self);
 
         let app = Router::new()
@@ -248,7 +251,10 @@ impl WebhookServer {
             .route("/mutate", post(mutate_handler))
             .route("/plugins", get(list_plugins_handler))
             .route("/plugins", post(add_plugin_handler))
-            .route("/plugins/:name", axum::routing::delete(remove_plugin_handler))
+            .route(
+                "/plugins/:name",
+                axum::routing::delete(remove_plugin_handler),
+            )
             .with_state(state);
 
         info!("Starting webhook server on {}", addr);
@@ -285,15 +291,21 @@ async fn health_handler(State(state): State<Arc<WebhookServer>>) -> impl IntoRes
 async fn ready_handler(State(state): State<Arc<WebhookServer>>) -> impl IntoResponse {
     let plugins = state.plugins.read().await;
     if plugins.is_empty() {
-        (StatusCode::SERVICE_UNAVAILABLE, Json(HealthResponse {
-            status: "no plugins loaded".to_string(),
-            plugins_loaded: 0,
-        }))
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(HealthResponse {
+                status: "no plugins loaded".to_string(),
+                plugins_loaded: 0,
+            }),
+        )
     } else {
-        (StatusCode::OK, Json(HealthResponse {
-            status: "ready".to_string(),
-            plugins_loaded: plugins.len(),
-        }))
+        (
+            StatusCode::OK,
+            Json(HealthResponse {
+                status: "ready".to_string(),
+                plugins_loaded: plugins.len(),
+            }),
+        )
     }
 }
 
@@ -308,17 +320,16 @@ async fn validate_handler(
             error!("Failed to parse admission request: {}", e);
             return (
                 StatusCode::BAD_REQUEST,
-                Json(AdmissionResponse::invalid(format!(
-                    "Invalid admission request: {}",
-                    e
-                ))
-                .into_review()),
+                Json(
+                    AdmissionResponse::invalid(format!("Invalid admission request: {}", e))
+                        .into_review(),
+                ),
             );
         }
     };
 
     let req: AdmissionRequest<StellarNode> = request;
-    
+
     // Build validation input
     let input = build_validation_input(&req);
 
@@ -329,7 +340,11 @@ async fn validate_handler(
     let mut response = if result.allowed {
         AdmissionResponse::from(&req)
     } else {
-        AdmissionResponse::from(&req).deny(result.message.unwrap_or_else(|| "Validation failed".to_string()))
+        AdmissionResponse::from(&req).deny(
+            result
+                .message
+                .unwrap_or_else(|| "Validation failed".to_string()),
+        )
     };
 
     // Add warnings if any
@@ -352,7 +367,7 @@ async fn mutate_handler(
 ) -> impl IntoResponse {
     // For now, mutation is not supported - just pass through
     let request: Result<AdmissionRequest<StellarNode>, _> = review.try_into();
-    
+
     match request {
         Ok(req) => {
             let response = AdmissionResponse::from(&req);
@@ -362,11 +377,10 @@ async fn mutate_handler(
             error!("Failed to parse admission request: {}", e);
             (
                 StatusCode::BAD_REQUEST,
-                Json(AdmissionResponse::invalid(format!(
-                    "Invalid admission request: {}",
-                    e
-                ))
-                .into_review()),
+                Json(
+                    AdmissionResponse::invalid(format!("Invalid admission request: {}", e))
+                        .into_review(),
+                ),
             )
         }
     }
@@ -397,7 +411,7 @@ async fn add_plugin_handler(
         &base64::engine::general_purpose::STANDARD,
         &request.wasm_binary,
     );
-    
+
     let config = PluginConfig {
         metadata: request.metadata,
         wasm_binary: Some(wasm_binary_base64),
@@ -411,7 +425,10 @@ async fn add_plugin_handler(
     };
 
     match state.add_plugin(config).await {
-        Ok(_) => (StatusCode::CREATED, Json(serde_json::json!({"status": "created"}))),
+        Ok(_) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({"status": "created"})),
+        ),
         Err(e) => {
             error!("Failed to add plugin: {}", e);
             (
@@ -427,7 +444,10 @@ async fn remove_plugin_handler(
     axum::extract::Path(name): axum::extract::Path<String>,
 ) -> impl IntoResponse {
     match state.remove_plugin(&name).await {
-        Ok(_) => (StatusCode::OK, Json(serde_json::json!({"status": "removed"}))),
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"status": "removed"})),
+        ),
         Err(e) => {
             error!("Failed to remove plugin: {}", e);
             (
@@ -456,8 +476,14 @@ fn build_validation_input(req: &AdmissionRequest<StellarNode>) -> ValidationInpu
 
     ValidationInput {
         operation,
-        object: req.object.as_ref().map(|o| serde_json::to_value(o).unwrap_or_default()),
-        old_object: req.old_object.as_ref().map(|o| serde_json::to_value(o).unwrap_or_default()),
+        object: req
+            .object
+            .as_ref()
+            .map(|o| serde_json::to_value(o).unwrap_or_default()),
+        old_object: req
+            .old_object
+            .as_ref()
+            .map(|o| serde_json::to_value(o).unwrap_or_default()),
         namespace: req.namespace.clone().unwrap_or_default(),
         name: req.name.clone(),
         user_info,
@@ -470,6 +496,7 @@ mod base64_serde {
     use base64::{engine::general_purpose::STANDARD, Engine};
     use serde::{Deserialize, Deserializer, Serializer};
 
+    #[allow(dead_code)]
     pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -482,9 +509,7 @@ mod base64_serde {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        STANDARD
-            .decode(&s)
-            .map_err(serde::de::Error::custom)
+        STANDARD.decode(&s).map_err(serde::de::Error::custom)
     }
 }
 

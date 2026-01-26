@@ -141,6 +141,8 @@ jobs:
           echo "Checking cluster status..."
           kubectl cluster-info
           kubectl get nodes -o wide
+      
+      - name: Install CRDs and operator
         run: |
           kubectl apply -f config/crd/stellarnode-crd.yaml
           kubectl create namespace stellar-system || true

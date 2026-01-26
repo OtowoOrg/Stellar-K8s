@@ -173,9 +173,29 @@ jobs:
       
       - name: Setup port forwarding
         run: |
-          kubectl port-forward -n stellar-system svc/stellar-operator 8080:8080 &
-          kubectl proxy --port=8001 &
-          sleep 5
+          # Start port forwarding in the background with proper logging
+          kubectl port-forward -n stellar-system svc/stellar-operator 8080:8080 > /tmp/pf-8080.log 2>&1 &
+          PF_PID=$!
+          echo $PF_PID > /tmp/pf-8080.pid
+          
+          # Start kubectl proxy in the background
+          kubectl proxy --port=8001 > /tmp/proxy-8001.log 2>&1 &
+          PROXY_PID=$!
+          echo $PROXY_PID > /tmp/proxy-8001.pid
+          
+          # Wait for services to be ready
+          sleep 10
+          
+          # Verify connectivity
+          if ! timeout 30 bash -c 'while ! curl -s http://localhost:8080/api/v1/namespaces 2>/dev/null | grep -q "namespaces"; do sleep 1; done'; then
+            echo "⚠️ Warning: Could not verify operator API connectivity"
+            echo "Port forward log:"
+            cat /tmp/pf-8080.log
+            echo "Proxy log:"
+            cat /tmp/proxy-8001.log
+          else
+            echo "✓ Operator API is accessible"
+          fi
       
       - name: Download baseline
         id: baseline
@@ -204,6 +224,17 @@ jobs:
         id: k6
         run: |
           mkdir -p results
+          
+          # Verify connectivity before running benchmarks
+          echo "Checking operator connectivity..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8080/api/v1/namespaces > /dev/null 2>&1; then
+              echo "✓ Operator is accessible"
+              break
+            fi
+            echo "Attempt $i/30: Waiting for operator..."
+            sleep 1
+          done
           
           k6 run \
             --env BASE_URL=http://localhost:8080 \

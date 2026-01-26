@@ -121,15 +121,26 @@ jobs:
         uses: helm/kind-action@v1.13.0
         with:
           cluster_name: benchmark-cluster
+          wait: 300s
           config: |
             kind: Cluster
             apiVersion: kind.x-k8s.io/v1alpha4
+            networking:
+              apiServerAddress: "127.0.0.1"
+              apiServerPort: 6443
             nodes:
               - role: control-plane
               - role: worker
               - role: worker
       
-      - name: Install CRDs and operator
+      - name: Wait for cluster to be ready
+        run: |
+          echo "Waiting for cluster nodes..."
+          kubectl wait --for=condition=Ready node --all --timeout=120s || true
+          
+          echo "Checking cluster status..."
+          kubectl cluster-info
+          kubectl get nodes -o wide
         run: |
           kubectl apply -f config/crd/stellarnode-crd.yaml
           kubectl create namespace stellar-system || true

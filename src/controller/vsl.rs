@@ -7,13 +7,8 @@ use reqwest;
 use tracing::{debug, info};
 
 /// Fetch and parse a VSL from a given URL
-pub async fn fetch_vsl(url: &str) -> Result<String> {
+pub async fn fetch_vsl(client: &reqwest::Client, url: &str) -> Result<String> {
     debug!("Fetching VSL from {}", url);
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| Error::ConfigError(format!("Failed to build HTTP client: {}", e)))?;
 
     let response = client.get(url).send().await.map_err(Error::HttpError)?;
 
@@ -35,7 +30,7 @@ pub async fn fetch_vsl(url: &str) -> Result<String> {
 }
 
 /// Trigger a configuration reload in Stellar Core if it's already running
-pub async fn trigger_config_reload(pod_ip: &str) -> Result<()> {
+pub async fn trigger_config_reload(client: &reqwest::Client, pod_ip: &str) -> Result<()> {
     let url = format!(
         "http://{}:11626/http-command?admin=true&command=config-reload",
         pod_ip
@@ -43,12 +38,12 @@ pub async fn trigger_config_reload(pod_ip: &str) -> Result<()> {
 
     debug!("Triggering config-reload via {}", url);
 
-    let client = reqwest::Client::builder()
+    let response = client
+        .get(&url)
         .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .map_err(|e| Error::ConfigError(format!("Failed to build HTTP client: {}", e)))?;
-
-    let response = client.get(&url).send().await.map_err(Error::HttpError)?;
+        .send()
+        .await
+        .map_err(Error::HttpError)?;
 
     if !response.status().is_success() {
         return Err(Error::ConfigError(format!(

@@ -155,11 +155,12 @@ impl StellarNodeSpec {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use stellar_k8s::crd::StellarNodeSpec;
+    /// use stellar_k8s::crd::{StellarNodeSpec, HistoryMode};
     ///
     /// let spec = StellarNodeSpec {
     ///     // ... configuration
     /// # node_type: Default::default(),
+    /// # history_mode: HistoryMode::Recent,
     /// # network: Default::default(),
     /// # version: "v21".to_string(),
     /// # resources: Default::default(),
@@ -175,6 +176,8 @@ impl StellarNodeSpec {
     /// # ingress: None,
     /// # maintenance_mode: false,
     /// # network_policy: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
     /// };
@@ -269,10 +272,11 @@ impl StellarNodeSpec {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use stellar_k8s::crd::{StellarNodeSpec, NodeType};
+    /// use stellar_k8s::crd::{StellarNodeSpec, NodeType, HistoryMode};
     ///
     /// let spec = StellarNodeSpec {
     ///     node_type: NodeType::Validator,
+    ///     history_mode: HistoryMode::Recent,
     ///     version: "v21.0.0".to_string(),
     /// # network: Default::default(),
     /// # resources: Default::default(),
@@ -288,6 +292,8 @@ impl StellarNodeSpec {
     /// # ingress: None,
     /// # maintenance_mode: false,
     /// # network_policy: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
     /// };
@@ -314,7 +320,7 @@ impl StellarNodeSpec {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use stellar_k8s::crd::{StellarNodeSpec, RetentionPolicy, StorageConfig};
+    /// use stellar_k8s::crd::{StellarNodeSpec, RetentionPolicy, StorageConfig, HistoryMode};
     ///
     /// let spec = StellarNodeSpec {
     ///     storage: StorageConfig {
@@ -324,6 +330,7 @@ impl StellarNodeSpec {
     /// # annotations: None,
     ///     },
     /// # node_type: Default::default(),
+    /// # history_mode: HistoryMode::Recent,
     /// # network: Default::default(),
     /// # version: "v21".to_string(),
     /// # resources: Default::default(),
@@ -338,6 +345,8 @@ impl StellarNodeSpec {
     /// # ingress: None,
     /// # maintenance_mode: false,
     /// # network_policy: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
     /// };

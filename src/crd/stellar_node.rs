@@ -53,7 +53,6 @@ pub struct StellarNodeSpec {
     #[serde(default = "default_history_mode")]
     pub history_mode: HistoryMode,
     // -----------------
-
     /// Target Stellar network (Mainnet, Testnet, Futurenet, or Custom)
     pub network: StellarNetwork,
 
@@ -386,7 +385,8 @@ fn validate_ingress(ingress: &IngressConfig) -> Result<(), String> {
                 let allowed = path_type == "Prefix" || path_type == "Exact";
                 if !allowed {
                     return Err(
-                        "ingress.hosts[].paths[].pathType must be either Prefix or Exact".to_string(),
+                        "ingress.hosts[].paths[].pathType must be either Prefix or Exact"
+                            .to_string(),
                     );
                 }
             }
@@ -411,14 +411,22 @@ fn validate_load_balancer(lb: &LoadBalancerConfig) -> Result<(), String> {
                 );
             }
             if bgp.peers.is_empty() {
-                return Err("loadBalancer.bgp.peers must not be empty when using BGP mode".to_string());
+                return Err(
+                    "loadBalancer.bgp.peers must not be empty when using BGP mode".to_string(),
+                );
             }
             for (i, peer) in bgp.peers.iter().enumerate() {
                 if peer.address.trim().is_empty() {
-                    return Err(format!("loadBalancer.bgp.peers[{}].address must not be empty", i));
+                    return Err(format!(
+                        "loadBalancer.bgp.peers[{}].address must not be empty",
+                        i
+                    ));
                 }
                 if peer.asn == 0 {
-                    return Err(format!("loadBalancer.bgp.peers[{}].asn must be a valid ASN", i));
+                    return Err(format!(
+                        "loadBalancer.bgp.peers[{}].asn must be a valid ASN",
+                        i
+                    ));
                 }
             }
         } else {

@@ -107,20 +107,18 @@ fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
     let name = resource_name(node, "data");
 
     let mut requests = BTreeMap::new();
-    
-    // Logic: If user provides a size, use it. 
+
+    // Logic: If user provides a size, use it.
     // If it's the default "500Gi" (from the example) and mode is Full, bump it to 1Ti.
     use crate::crd::HistoryMode;
-    let storage_size = if node.spec.history_mode == HistoryMode::Full && node.spec.storage.size == "500Gi" {
-        "1Ti".to_string()
-    } else {
-        node.spec.storage.size.clone()
-    };
+    let storage_size =
+        if node.spec.history_mode == HistoryMode::Full && node.spec.storage.size == "500Gi" {
+            "1Ti".to_string()
+        } else {
+            node.spec.storage.size.clone()
+        };
 
-    requests.insert(
-        "storage".to_string(),
-        Quantity(storage_size),
-    );
+    requests.insert("storage".to_string(), Quantity(storage_size));
     // Merge custom annotations from storage config with existing annotations
     let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
 

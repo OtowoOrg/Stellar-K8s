@@ -124,12 +124,19 @@ async fn main() -> Result<(), Error> {
     // let lease_name = "stellar-operator-leader";
     // let lock = LeaseLock::new(...);
 
+    // Create shared HTTP client
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| Error::ConfigError(format!("Failed to build HTTP client: {}", e)))?;
+
     // Create shared controller state
     let state = Arc::new(controller::ControllerState {
         client: client.clone(),
         enable_mtls: args.enable_mtls,
         operator_namespace: args.namespace.clone(),
         mtls_config: mtls_config.clone(),
+        http_client,
     });
 
     // Start the REST API server

@@ -498,7 +498,7 @@ mod tests {
     use super::*;
     use kube::api::ObjectMeta;
     use stellar_k8s::controller::conditions::{CONDITION_STATUS_TRUE, CONDITION_TYPE_READY};
-    use stellar_k8s::crd::{Condition, NodeType, StellarNodeSpec, StellarNodeStatus};
+    use stellar_k8s::crd::{Condition, HistoryMode, NodeType, StellarNodeSpec, StellarNodeStatus};
 
     fn create_test_node(name: &str, namespace: &str, node_type: NodeType) -> StellarNode {
         use chrono::Utc;
@@ -522,6 +522,7 @@ mod tests {
             },
             spec: StellarNodeSpec {
                 node_type,
+                history_mode: HistoryMode::Recent,
                 network: StellarNetwork::Testnet,
                 version: "v21.0.0".to_string(),
                 replicas: 1,
@@ -537,6 +538,8 @@ mod tests {
                 ingress: None,
                 maintenance_mode: false,
                 network_policy: None,
+                load_balancer: None,
+                global_discovery: None,
                 dr_config: None,
                 topology_spread_constraints: None,
             },

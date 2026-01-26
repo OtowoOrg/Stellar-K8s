@@ -180,9 +180,6 @@ impl StellarNodeSpec {
     /// # global_discovery: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
-    /// # load_balancer: None,
-    /// # global_discovery: None,
-    /// # history_mode: Default::default(),
     /// };
     /// match spec.validate() {
     ///     Ok(_) => println!("Valid spec"),
@@ -299,9 +296,6 @@ impl StellarNodeSpec {
     /// # global_discovery: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
-    /// # load_balancer: None,
-    /// # global_discovery: None,
-    /// # history_mode: Default::default(),
     /// };
     /// assert_eq!(spec.container_image(), "stellar/stellar-core:v21.0.0");
     /// ```
@@ -355,9 +349,6 @@ impl StellarNodeSpec {
     /// # global_discovery: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
-    /// # load_balancer: None,
-    /// # global_discovery: None,
-    /// # history_mode: Default::default(),
     /// };
     /// assert!(spec.should_delete_pvc());
     /// ```

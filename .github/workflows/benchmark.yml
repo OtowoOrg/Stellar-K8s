@@ -133,6 +133,14 @@ jobs:
           kubectl cluster-info
           kubectl get nodes -o wide
       
+      - name: Load operator image into kind
+        run: |
+          echo "Loading operator image into kind cluster..."
+          kind load docker-image ${{ needs.build.outputs.image_tag }} --name benchmark-cluster
+          
+          echo "Verifying image is loaded..."
+          docker exec benchmark-cluster-control-plane crictl images | grep stellar || echo "Image may still be loading"
+      
       - name: Install CRDs and operator
         run: |
           kubectl apply -f config/crd/stellarnode-crd.yaml
@@ -173,7 +181,19 @@ jobs:
                         memory: 2Gi
           EOF
           
-          kubectl wait --for=condition=available deployment/stellar-operator -n stellar-system --timeout=120s
+          echo "Waiting for operator deployment to be available..."
+          if ! kubectl wait --for=condition=available deployment/stellar-operator -n stellar-system --timeout=120s; then
+            echo "⚠️ Deployment did not become available in time. Debugging info:"
+            echo "Pod status:"
+            kubectl get pods -n stellar-system -o wide
+            echo "Pod logs:"
+            kubectl logs -n stellar-system -l app=stellar-operator --tail=50 || true
+            echo "Pod events:"
+            kubectl describe pods -n stellar-system -l app=stellar-operator || true
+            exit 1
+          fi
+          
+          echo "✓ Operator deployment is available"
       
       - name: Setup port forwarding
         run: |

@@ -85,6 +85,19 @@ jobs:
           tags: ${{ steps.version.outputs.image_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      
+      - name: Save Docker image
+        run: |
+          mkdir -p /tmp/docker-images
+          docker save ${{ steps.version.outputs.image_tag }} -o /tmp/docker-images/operator-image.tar
+          ls -lh /tmp/docker-images/operator-image.tar
+      
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: operator-docker-image
+          path: /tmp/docker-images/operator-image.tar
+          retention-days: 1
 
   # ==========================================================================
   # Performance Benchmark Suite
@@ -124,6 +137,18 @@ jobs:
           config: .github/kind-config.yaml
           wait: 300s
       
+      - name: Download operator image artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: operator-docker-image
+          path: /tmp/docker-images
+      
+      - name: Load operator image into kind
+        run: |
+          echo "Loading operator image from artifact..."
+          kind load image-archive /tmp/docker-images/operator-image.tar --name benchmark-cluster
+          echo "✓ Image loaded successfully"
+      
       - name: Wait for cluster to be ready
         run: |
           echo "Waiting for cluster nodes..."
@@ -132,14 +157,6 @@ jobs:
           echo "Checking cluster status..."
           kubectl cluster-info
           kubectl get nodes -o wide
-      
-      - name: Load operator image into kind
-        run: |
-          echo "Loading operator image into kind cluster..."
-          kind load docker-image ${{ needs.build.outputs.image_tag }} --name benchmark-cluster
-          
-          echo "Verifying image is loaded..."
-          docker exec benchmark-cluster-control-plane crictl images | grep stellar || echo "Image may still be loading"
       
       - name: Install CRDs and operator
         run: |

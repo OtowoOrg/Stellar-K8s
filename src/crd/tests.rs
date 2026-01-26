@@ -44,6 +44,9 @@ mod stellar_node_spec_validation {
             global_discovery: None,
             dr_config: None,
             topology_spread_constraints: None,
+            load_balancer: None,
+            global_discovery: None,
+            history_mode: HistoryMode::Recent,
         }
     }
 
@@ -78,6 +81,9 @@ mod stellar_node_spec_validation {
             global_discovery: None,
             dr_config: None,
             topology_spread_constraints: None,
+            load_balancer: None,
+            global_discovery: None,
+            history_mode: HistoryMode::Recent,
         }
     }
 
@@ -110,6 +116,9 @@ mod stellar_node_spec_validation {
             global_discovery: None,
             dr_config: None,
             topology_spread_constraints: None,
+            load_balancer: None,
+            global_discovery: None,
+            history_mode: HistoryMode::Recent,
         }
     }
 

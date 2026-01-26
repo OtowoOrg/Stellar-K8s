@@ -542,6 +542,9 @@ mod tests {
                 global_discovery: None,
                 dr_config: None,
                 topology_spread_constraints: None,
+                load_balancer: None,
+                global_discovery: None,
+                history_mode: stellar_k8s::crd::HistoryMode::Recent,
             },
             status: Some(StellarNodeStatus {
                 #[allow(deprecated)]

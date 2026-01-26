@@ -121,17 +121,8 @@ jobs:
         uses: helm/kind-action@v1.13.0
         with:
           cluster_name: benchmark-cluster
+          config: .github/kind-config.yaml
           wait: 300s
-          config: |
-            kind: Cluster
-            apiVersion: kind.x-k8s.io/v1alpha4
-            networking:
-              apiServerAddress: "127.0.0.1"
-              apiServerPort: 6443
-            nodes:
-              - role: control-plane
-              - role: worker
-              - role: worker
       
       - name: Wait for cluster to be ready
         run: |

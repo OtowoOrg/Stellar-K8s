@@ -38,6 +38,10 @@ jobs:
         with:
           fetch-depth: 0
       
+      - name: Convert repository to lowercase
+        id: repo-lower
+        run: echo "repo_lc=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      
       - name: Determine version
         id: version
         run: |
@@ -47,7 +51,7 @@ jobs:
             VERSION="sha-$(git rev-parse --short HEAD)"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "image_tag=ghcr.io/${{ github.repository }}:benchmark-$VERSION" >> $GITHUB_OUTPUT
+          echo "image_tag=ghcr.io/${{ steps.repo-lower.outputs.repo_lc }}:benchmark-$VERSION" >> $GITHUB_OUTPUT
       
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

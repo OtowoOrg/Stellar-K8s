@@ -1,0 +1,71 @@
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: stellar
+spec:
+  version: v0.1.0
+  shortDescription: Manage Stellar nodes in Kubernetes
+  description: |
+    A kubectl plugin for managing StellarNode resources in Kubernetes clusters.
+    Provides commands to list nodes, view logs, and check sync status.
+    
+    Features:
+    - List all StellarNode resources across namespaces
+    - View logs from pods associated with StellarNode resources
+    - Check sync status and health of Stellar nodes
+    
+    Requires the Stellar-K8s operator to be installed in your cluster.
+  homepage: https://github.com/stellar/stellar-k8s
+  # NOTE: SHA256 placeholders must be replaced with actual hashes before publishing to Krew.
+  # These should be calculated during the CI/CD release process and updated automatically
+  # when creating GitHub releases. See .github/workflows/release.yml for automation.
+  platforms:
+    - uri: https://github.com/stellar/stellar-k8s/releases/download/v0.1.0/kubectl-stellar-linux-amd64.tar.gz
+      sha256: PLACEHOLDER_SHA256_LINUX_AMD64
+      bin: kubectl-stellar
+      files:
+        - from: kubectl-stellar
+          to: .
+      selector:
+        matchLabels:
+          os: linux
+          arch: amd64
+    - uri: https://github.com/stellar/stellar-k8s/releases/download/v0.1.0/kubectl-stellar-darwin-amd64.tar.gz
+      sha256: PLACEHOLDER_SHA256_DARWIN_AMD64
+      bin: kubectl-stellar
+      files:
+        - from: kubectl-stellar
+          to: .
+      selector:
+        matchLabels:
+          os: darwin
+          arch: amd64
+    - uri: https://github.com/stellar/stellar-k8s/releases/download/v0.1.0/kubectl-stellar-darwin-arm64.tar.gz
+      sha256: PLACEHOLDER_SHA256_DARWIN_ARM64
+      bin: kubectl-stellar
+      files:
+        - from: kubectl-stellar
+          to: .
+      selector:
+        matchLabels:
+          os: darwin
+          arch: arm64
+    - uri: https://github.com/stellar/stellar-k8s/releases/download/v0.1.0/kubectl-stellar-windows-amd64.zip
+      sha256: PLACEHOLDER_SHA256_WINDOWS_AMD64
+      bin: kubectl-stellar.exe
+      files:
+        - from: kubectl-stellar.exe
+          to: .
+      selector:
+        matchLabels:
+          os: windows
+          arch: amd64
+  caveats: |
+    This plugin requires:
+    1. The Stellar-K8s operator to be installed in your cluster
+    2. StellarNode CRD to be available
+    3. kubectl to be installed and configured
+    
+    To install the operator:
+      helm repo add stellar-k8s https://stellar.github.io/stellar-k8s
+      helm install stellar-operator stellar-k8s/stellar-operator --namespace stellar-system --create-namespace

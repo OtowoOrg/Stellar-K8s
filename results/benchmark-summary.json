@@ -1,0 +1,20 @@
+{
+  "timestamp": "2026-01-22T14:30:00Z",
+  "runId": "local-simulated",
+  "version": "0.1.0",
+  "metrics": {
+    "tps": { "avg": 120.5 },
+    "http_req_duration": {
+      "avg": 45.2,
+      "p50": 40.1,
+      "p95": 85.4,
+      "p99": 150.2
+    },
+    "reconciliation_duration": {
+      "avg": 1200.5,
+      "p95": 2500.4,
+      "p99": 4200.1
+    },
+    "error_rate": 0.002
+  }
+}

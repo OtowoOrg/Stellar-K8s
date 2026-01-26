@@ -7,10 +7,8 @@
 mod stellar_node;
 mod types;
 
-// TODO: Re-enable once compilation issues are resolved
-// pub use read_only_pool::{
-//     LedgerRange, ReadOnlyPool, ReadOnlyPoolSpec, ReadOnlyPoolStatus, ReplicaWeight,
-//     ShardAssignment, ShardBalancingConfig, ShardStrategy, LoadBalancingConfig,
-// };
+#[cfg(test)]
+mod tests;
+
 pub use stellar_node::{BGPStatus, StellarNode, StellarNodeSpec, StellarNodeStatus};
 pub use types::*;

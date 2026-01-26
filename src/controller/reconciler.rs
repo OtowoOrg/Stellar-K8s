@@ -1,4 +1,3 @@
-
 //! Main reconciler for StellarNode resources
 //!
 //! Implements the controller pattern using kube-rs runtime.
@@ -53,6 +52,7 @@ use super::resources;
 use super::vsl;
 
 // Constants
+#[allow(dead_code)]
 const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-health-retries";
 
 /// Shared state for the controller
@@ -94,7 +94,12 @@ pub struct ControllerState {
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     let client = Client::try_default().await?;
-///     let state = Arc::new(ControllerState { client });
+///     let state = Arc::new(ControllerState {
+///         client,
+///         enable_mtls: false,
+///         mtls_config: None,
+///         operator_namespace: "stellar-operator".to_string(),
+///     });
 ///     run_controller(state).await?;
 ///     Ok(())
 /// }
@@ -272,6 +277,38 @@ async fn apply_stellar_node(
         // Still create resources but with 0 replicas
     }
 
+    // Handle Horizon database migrations
+    if node.spec.node_type == NodeType::Horizon {
+        if let Some(horizon_config) = &node.spec.horizon_config {
+            if horizon_config.auto_migration {
+                let current_version = &node.spec.version;
+                let last_migrated = node
+                    .status
+                    .as_ref()
+                    .and_then(|s| s.last_migrated_version.as_ref());
+
+                if last_migrated.map(|v| v != current_version).unwrap_or(true) {
+                    info!(
+                        "Database migration required for Horizon {}/{} (version: {})",
+                        namespace, name, current_version
+                    );
+
+                    emit_event(
+                        client,
+                        node,
+                        "Normal",
+                        "DatabaseMigrationRequired",
+                        &format!(
+                            "Database migration will be performed via InitContainer for version {}",
+                            current_version
+                        ),
+                    )
+                    .await?;
+                }
+            }
+        }
+    }
+
     // History Archive Health Check for Validators
     if node.spec.node_type == NodeType::Validator {
         if let Some(validator_config) = &node.spec.validator_config {
@@ -431,6 +468,7 @@ async fn apply_stellar_node(
 
     // 6. Perform health check to determine if node is ready
     let health_result = health::check_node_health(client, node, ctx.mtls_config.as_ref()).await?;
+    resources::ensure_service(client, node, ctx.enable_mtls).await?;
 
     debug!(
         "Health check result for {}/{}: healthy={}, synced={}, message={}",
@@ -471,27 +509,24 @@ async fn apply_stellar_node(
     if health_result.healthy && !node.spec.suspended {
         let stale_check = remediation::check_stale_node(node, health_result.ledger_sequence);
         if stale_check.is_stale && remediation::can_remediate(node) {
-            match stale_check.recommended_action {
-                remediation::RemediationLevel::Restart => {
-                    remediation::emit_remediation_event(
-                        client,
-                        node,
-                        remediation::RemediationLevel::Restart,
-                        "Stale ledger",
-                    )
-                    .await?;
-                    remediation::restart_pod(client, node).await?;
-                    remediation::update_remediation_state(
-                        client,
-                        node,
-                        stale_check.current_ledger,
-                        remediation::RemediationLevel::Restart,
-                        true,
-                    )
-                    .await?;
-                    return Ok(Action::requeue(Duration::from_secs(30)));
-                }
-                _ => {}
+            if stale_check.recommended_action == remediation::RemediationLevel::Restart {
+                remediation::emit_remediation_event(
+                    client,
+                    node,
+                    remediation::RemediationLevel::Restart,
+                    "Stale ledger",
+                )
+                .await?;
+                remediation::restart_pod(client, node).await?;
+                remediation::update_remediation_state(
+                    client,
+                    node,
+                    stale_check.current_ledger,
+                    remediation::RemediationLevel::Restart,
+                    true,
+                )
+                .await?;
+                return Ok(Action::requeue(Duration::from_secs(30)));
             }
         } else {
             remediation::update_remediation_state(
@@ -521,6 +556,35 @@ async fn apply_stellar_node(
     let ready_replicas = get_ready_replicas(client, node).await.unwrap_or(0);
     update_status(client, node, phase, Some(&message), ready_replicas, true).await?;
 
+    // 9. Update status to Running with ready replica count
+    // 9. Update ledger sequence metric if available
+    if let Some(ref status) = node.status {
+        if let Some(seq) = status.ledger_sequence {
+            metrics::set_ledger_sequence(
+                &namespace,
+                &name,
+                &node.spec.node_type.to_string(),
+                node.spec.network.passphrase(),
+                seq,
+            );
+
+            // Calculate ingestion lag if we can get the latest network ledger
+            // For now we assume we have a way to track the "latest" known ledger across the cluster
+            // or fetch it from a public horizon.
+            if let Ok(network_latest) = get_latest_network_ledger(&node.spec.network).await {
+                let lag = (network_latest as i64) - (seq as i64);
+                metrics::set_ingestion_lag(
+                    &namespace,
+                    &name,
+                    &node.spec.node_type.to_string(),
+                    node.spec.network.passphrase(),
+                    lag.max(0),
+                );
+            }
+        }
+    }
+
+    // 10. Update status to Running with ready replica count
     Ok(Action::requeue(Duration::from_secs(if phase == "Ready" {
         60
     } else {
@@ -675,6 +739,7 @@ async fn update_suspended_status(client: &Client, node: &StellarNode) -> Result<
     }
 
     let status = StellarNodeStatus {
+        #[allow(deprecated)]
         phase: "Suspended".to_string(),
         message: Some("Node suspended - scaled to 0 replicas".to_string()),
         observed_generation: node.metadata.generation,
@@ -1065,6 +1130,7 @@ async fn update_status_with_health(
     }
 
     let status = StellarNodeStatus {
+        #[allow(deprecated)]
         phase: phase.to_string(),
         message: message.map(String::from),
         observed_generation: node.metadata.generation,
@@ -1079,6 +1145,13 @@ async fn update_status_with_health(
             0
         },
         ledger_sequence: health.ledger_sequence,
+        last_migrated_version: if health.synced && node.spec.node_type == NodeType::Horizon {
+            Some(node.spec.version.clone())
+        } else {
+            node.status
+                .as_ref()
+                .and_then(|s| s.last_migrated_version.clone())
+        },
         conditions,
         ..Default::default()
     };

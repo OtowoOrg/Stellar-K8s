@@ -31,10 +31,11 @@ use serde::{Deserialize, Serialize};
 /// let node_type = NodeType::Validator;
 /// println!("Deploying {} node", node_type);
 /// ```
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum NodeType {
     /// Full validator node running Stellar Core
     /// Participates in consensus and validates transactions
+    #[default]
     Validator,
 
     /// Horizon API server for REST access to the Stellar network
@@ -70,11 +71,12 @@ impl std::fmt::Display for NodeType {
 /// let passphrase = network.passphrase();
 /// assert_eq!(passphrase, "Test SDF Network ; September 2015");
 /// ```
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum StellarNetwork {
     /// Stellar public mainnet
     Mainnet,
     /// Stellar testnet for testing
+    #[default]
     Testnet,
     /// Futurenet for bleeding-edge features
     Futurenet,
@@ -144,6 +146,15 @@ pub struct ResourceSpec {
     pub cpu: String,
     /// Memory (e.g., "1Gi", "4Gi")
     pub memory: String,
+}
+
+impl Default for ResourceSpec {
+    fn default() -> Self {
+        Self {
+            cpu: "500m".to_string(),
+            memory: "1Gi".to_string(),
+        }
+    }
 }
 
 /// Storage configuration for persistent data
@@ -230,6 +241,7 @@ pub enum RetentionPolicy {
 ///     catchup_complete: false,
 ///     key_source: KeySource::Secret,
 ///     kms_config: None,
+///     vl_source: None,
 /// };
 /// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -329,6 +341,7 @@ pub struct KmsConfig {
 ///     stellar_core_url: "http://core.default:11626".to_string(),
 ///     ingest_workers: 4,
 ///     enable_experimental_ingestion: false,
+///     auto_migration: true,
 /// };
 /// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -347,6 +360,9 @@ pub struct HorizonConfig {
     /// Enable experimental features
     #[serde(default)]
     pub enable_experimental_ingestion: bool,
+    /// Automatically run database migrations on startup or upgrade
+    #[serde(default = "default_true")]
+    pub auto_migration: bool,
 }
 
 fn default_true() -> bool {
@@ -391,7 +407,7 @@ pub struct SorobanConfig {
 }
 
 /// External database configuration for managed Postgres databases
-/// 
+///
 /// Specifies how to reference database credentials for external managed databases.
 /// Supports AWS RDS, Google Cloud SQL, CockroachDB, and other managed services.
 ///
@@ -1107,7 +1123,7 @@ pub enum MTLSMode {
 }
 
 /// ExternalDNS configuration for automatic DNS record management
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ExternalDNSConfig {
     /// DNS hostname to register (e.g., "stellar-node.example.com")

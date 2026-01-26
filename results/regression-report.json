@@ -1,0 +1,27 @@
+{
+  "overall_passed": false,
+  "summary": "3 regressions detected.",
+  "regressions": [
+    {
+      "metric": "TPS",
+      "current": 120.5,
+      "baseline": 150.0,
+      "threshold": 135.0,
+      "decrease_pct": 19.666666666666664
+    },
+    {
+      "metric": "Reconciliation Duration (p95)",
+      "current": 2500.4,
+      "baseline": 1200.0,
+      "threshold": 1320.0,
+      "increase_pct": 108.36666666666667
+    },
+    {
+      "metric": "Error Rate",
+      "current": 0.002,
+      "baseline": 0.001,
+      "threshold": 0.0011,
+      "increase_pct": 100.0
+    }
+  ]
+}

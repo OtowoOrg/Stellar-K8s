@@ -179,7 +179,10 @@ impl StellarNodeSpec {
     /// # database: None,
     /// # autoscaling: None,
     /// # ingress: None,
+    /// # maintenance_mode: false,
     /// # network_policy: None,
+    /// # dr_config: None,
+    /// # topology_spread_constraints: None,
     /// };
     /// match spec.validate() {
     ///     Ok(_) => println!("Valid spec"),
@@ -295,7 +298,10 @@ impl StellarNodeSpec {
     /// # database: None,
     /// # autoscaling: None,
     /// # ingress: None,
+    /// # maintenance_mode: false,
     /// # network_policy: None,
+    /// # dr_config: None,
+    /// # topology_spread_constraints: None,
     /// };
     /// assert_eq!(spec.container_image(), "stellar/stellar-core:v21.0.0");
     /// ```
@@ -342,7 +348,10 @@ impl StellarNodeSpec {
     /// # database: None,
     /// # autoscaling: None,
     /// # ingress: None,
+    /// # maintenance_mode: false,
     /// # network_policy: None,
+    /// # dr_config: None,
+    /// # topology_spread_constraints: None,
     /// };
     /// assert!(spec.should_delete_pvc());
     /// ```
@@ -382,6 +391,7 @@ fn validate_ingress(ingress: &IngressConfig) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn validate_load_balancer(lb: &LoadBalancerConfig) -> Result<(), String> {
     use super::types::LoadBalancerMode;
 
@@ -429,6 +439,7 @@ fn validate_load_balancer(lb: &LoadBalancerConfig) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn validate_global_discovery(gd: &GlobalDiscoveryConfig) -> Result<(), String> {
     if !gd.enabled {
         return Ok(());
@@ -521,6 +532,10 @@ pub struct StellarNodeStatus {
     /// Total number of desired replicas
     #[serde(default)]
     pub replicas: i32,
+
+    /// Version of the database schema after last successful migration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_migrated_version: Option<String>,
 }
 
 /// BGP advertisement status information
@@ -545,7 +560,6 @@ pub struct BGPStatus {
 impl StellarNodeStatus {
     /// Create a new status with the given phase
     ///
-
     /// Initializes a StellarNodeStatus with the provided phase and all other fields
     /// set to their defaults (empty message, no conditions, etc.).
     ///
@@ -558,11 +572,10 @@ impl StellarNodeStatus {
     /// assert_eq!(status.phase, "Creating");
     /// assert_eq!(status.message, None);
     /// ```
-
     /// DEPRECATED: Use `with_conditions` instead
     #[deprecated(since = "0.2.0", note = "Use with_conditions instead")]
-
     pub fn with_phase(phase: &str) -> Self {
+        #[allow(deprecated)]
         Self {
             phase: phase.to_string(),
             ..Default::default()
@@ -571,7 +584,6 @@ impl StellarNodeStatus {
 
     /// Update the phase and message
     ///
-
     /// Updates both the phase and message fields atomically.
     /// This is typically called during reconciliation to report progress.
     ///
@@ -590,16 +602,14 @@ impl StellarNodeStatus {
     /// assert_eq!(status.phase, "Ready");
     /// assert_eq!(status.message, Some("Node is fully synced".to_string()));
     /// ```
-
     /// DEPRECATED: Use condition helpers instead
+    #[allow(deprecated)]
     #[deprecated(since = "0.2.0", note = "Use set_condition helpers instead")]
-
     pub fn update(&mut self, phase: &str, message: Option<&str>) {
         self.phase = phase.to_string();
         self.message = message.map(String::from);
     }
-
-
+    #[allow(clippy::empty_line_after_doc_comments)]
     /// Check if the node is ready
     ///
     /// Returns true only if both:
@@ -623,13 +633,11 @@ impl StellarNodeStatus {
     /// status.ready_replicas = 0;
     /// assert!(!status.is_ready());
     /// ```
-
     /// Check if the node is ready based on conditions
     ///
     /// A node is considered ready when:
     /// - Ready condition is True
     /// - ready_replicas >= replicas (all replicas are ready)
-
     pub fn is_ready(&self) -> bool {
         let has_ready_condition = self
             .conditions

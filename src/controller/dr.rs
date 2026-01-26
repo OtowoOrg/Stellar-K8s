@@ -4,17 +4,11 @@
 //! detects regional failures, and performs automated failover using external DNS.
 
 use chrono::Utc;
-use kube::{
-    api::{Api, Patch, PatchParams},
-    Client, ResourceExt,
-};
-use serde_json::json;
-use std::collections::BTreeMap;
-use std::time::Duration;
-use tracing::{error, info, instrument, warn};
+use kube::{Client, ResourceExt};
+use tracing::{info, instrument, warn};
 
 use crate::crd::{DRRole, DRSyncStrategy, DisasterRecoveryStatus, StellarNode};
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 /// Key for the annotation that tracks the current failover state
 pub const DR_FAILOVER_ANNOTATION: &str = "stellar.org/dr-failover-active";
@@ -31,7 +25,7 @@ pub async fn reconcile_dr(
         _ => return Ok(None),
     };
 
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let _namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
 
     info!("Processing DR for {} in role {:?}", name, dr_config.role);
@@ -126,7 +120,7 @@ async fn fetch_peer_ledger_sequence(_peer_id: &str) -> Result<u64> {
 /// Update external DNS for failover
 async fn update_failover_dns(
     _client: &Client,
-    node: &StellarNode,
+    _node: &StellarNode,
     dns_config: &crate::crd::ExternalDNSConfig,
 ) -> Result<()> {
     info!(

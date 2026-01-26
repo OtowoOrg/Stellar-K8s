@@ -6,9 +6,9 @@
 #[cfg(test)]
 mod stellar_node_spec_validation {
     use crate::crd::{
-        AutoscalingConfig, HorizonConfig, IngressConfig, IngressHost, IngressPath, NodeType,
-        ResourceRequirements, ResourceSpec, SorobanConfig, StellarNetwork, StellarNodeSpec,
-        StorageConfig, ValidatorConfig,
+        AutoscalingConfig, HistoryMode, HorizonConfig, IngressConfig, IngressHost, IngressPath,
+        NodeType, ResourceRequirements, ResourceSpec, SorobanConfig, StellarNetwork,
+        StellarNodeSpec, StorageConfig, ValidatorConfig,
     };
 
     /// Helper to create a minimal valid StellarNodeSpec for a Validator
@@ -41,6 +41,9 @@ mod stellar_node_spec_validation {
             network_policy: None,
             dr_config: None,
             topology_spread_constraints: None,
+            load_balancer: None,
+            global_discovery: None,
+            history_mode: HistoryMode::Recent,
         }
     }
 
@@ -72,6 +75,9 @@ mod stellar_node_spec_validation {
             network_policy: None,
             dr_config: None,
             topology_spread_constraints: None,
+            load_balancer: None,
+            global_discovery: None,
+            history_mode: HistoryMode::Recent,
         }
     }
 
@@ -101,6 +107,9 @@ mod stellar_node_spec_validation {
             network_policy: None,
             dr_config: None,
             topology_spread_constraints: None,
+            load_balancer: None,
+            global_discovery: None,
+            history_mode: HistoryMode::Recent,
         }
     }
 

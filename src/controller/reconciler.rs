@@ -457,6 +457,8 @@ async fn apply_stellar_node(
 
     resources::ensure_service(client, node, ctx.enable_mtls).await?;
     resources::ensure_ingress(client, node).await?;
+    resources::ensure_load_balancer_service(client, node).await?;
+    resources::ensure_metallb_config(client, node).await?;
 
     // 6. Autoscaling and Monitoring
     if node.spec.autoscaling.is_some() {
@@ -620,6 +622,14 @@ async fn cleanup_stellar_node(client: &Client, node: &StellarNode) -> Result<Act
     // 3. Delete Ingress
     if let Err(e) = resources::delete_ingress(client, node).await {
         warn!("Failed to delete Ingress: {:?}", e);
+    }
+
+    if let Err(e) = resources::delete_load_balancer_service(client, node).await {
+        warn!("Failed to delete LoadBalancer Service: {:?}", e);
+    }
+
+    if let Err(e) = resources::delete_metallb_config(client, node).await {
+        warn!("Failed to delete MetalLB ConfigMap: {:?}", e);
     }
 
     // 3a. Delete NetworkPolicy

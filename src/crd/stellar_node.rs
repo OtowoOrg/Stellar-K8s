@@ -16,12 +16,13 @@ use super::types::{
 
 // --- NEW ENUM DEFINITION ---
 /// Determines if the node keeps full history (Archival) or just recent ledgers.
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum HistoryMode {
     /// Keeps complete history (High storage requirement, used for Archive Nodes)
     Full,
     /// Keeps only recent history (Lower storage, standard Validator/Horizon behavior)
+    #[default]
     Recent,
 }
 // ---------------------------
@@ -177,6 +178,9 @@ impl StellarNodeSpec {
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
+    /// # history_mode: Default::default(),
     /// };
     /// match spec.validate() {
     ///     Ok(_) => println!("Valid spec"),
@@ -290,6 +294,9 @@ impl StellarNodeSpec {
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
+    /// # history_mode: Default::default(),
     /// };
     /// assert_eq!(spec.container_image(), "stellar/stellar-core:v21.0.0");
     /// ```
@@ -340,6 +347,9 @@ impl StellarNodeSpec {
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
+    /// # history_mode: Default::default(),
     /// };
     /// assert!(spec.should_delete_pvc());
     /// ```

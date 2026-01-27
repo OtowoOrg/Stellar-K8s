@@ -1,0 +1,145 @@
+# Example: Cross-cluster Stellar validator using Istio multi-cluster
+# This configuration uses Istio service mesh for cross-cluster communication
+#
+# Prerequisites:
+# - Istio installed in multi-cluster mode
+# - Clusters connected via Istio multi-cluster setup
+# - ServiceEntry CRD available
+#
+# Istio provides advanced traffic management, observability, and security
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-primary
+  namespace: stellar-nodes
+  labels:
+    cluster: "primary"
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  
+  cluster: "primary"
+  
+  resources:
+    requests:
+      cpu: "4"
+      memory: "16Gi"
+    limits:
+      cpu: "8"
+      memory: "32Gi"
+  
+  storage:
+    storageClass: "fast-ssd"
+    size: "1Ti"
+    retentionPolicy: Retain
+  
+  validatorConfig:
+    seedSecretRef: "validator-seed-primary"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+  
+  # Cross-cluster with Istio
+  crossCluster:
+    enabled: true
+    mode: ServiceMesh
+    
+    serviceMesh:
+      meshType: istio
+      clusterSetId: "stellar-mesh"
+      mtlsEnabled: true
+      
+      serviceExport:
+        enabled: true
+        serviceName: "validator-primary-service"
+        namespace: "stellar-nodes"
+      
+      # Latency-based routing for optimal performance
+      trafficPolicy: LatencyBased
+    
+    peerClusters:
+      - clusterId: "remote-1"
+        # Istio multi-cluster DNS format
+        endpoint: "validator-remote-1-service.stellar-nodes.svc.cluster.local"
+        latencyThresholdMs: 100
+        region: "us-west"
+        priority: 100
+        enabled: true
+      
+      - clusterId: "remote-2"
+        endpoint: "validator-remote-2-service.stellar-nodes.svc.cluster.local"
+        latencyThresholdMs: 150
+        region: "eu-central"
+        priority: 90
+        enabled: true
+    
+    latencyThresholdMs: 200
+    
+    healthCheck:
+      enabled: true
+      intervalSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+      
+      latencyMeasurement:
+        enabled: true
+        method: grpc
+        sampleCount: 10
+        percentile: 95
+
+---
+# Istio DestinationRule for traffic policy
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: validator-primary
+  namespace: stellar-nodes
+spec:
+  host: validator-primary-service.stellar-nodes.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 100
+    outlierDetection:
+      consecutiveErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+
+---
+# Istio VirtualService for cross-cluster routing
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: validator-cross-cluster
+  namespace: stellar-nodes
+spec:
+  hosts:
+    - validator-primary-service.stellar-nodes.svc.cluster.local
+  http:
+    - match:
+        - sourceLabels:
+            cluster: remote-1
+      route:
+        - destination:
+            host: validator-primary-service.stellar-nodes.svc.cluster.local
+            port:
+              number: 11626
+          weight: 100
+    - match:
+        - sourceLabels:
+            cluster: remote-2
+      route:
+        - destination:
+            host: validator-primary-service.stellar-nodes.svc.cluster.local
+            port:
+              number: 11626
+          weight: 100

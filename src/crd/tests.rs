@@ -47,6 +47,8 @@ mod stellar_node_spec_validation {
             global_discovery: None,
             dr_config: None,
             topology_spread_constraints: None,
+            cluster: None,
+            cross_cluster: None,
         }
     }
 
@@ -84,6 +86,8 @@ mod stellar_node_spec_validation {
             global_discovery: None,
             dr_config: None,
             topology_spread_constraints: None,
+            cluster: None,
+            cross_cluster: None,
         }
     }
 
@@ -119,6 +123,8 @@ mod stellar_node_spec_validation {
             global_discovery: None,
             dr_config: None,
             topology_spread_constraints: None,
+            cluster: None,
+            cross_cluster: None,
         }
     }
 

@@ -131,7 +131,6 @@ spec:
                   type: string
                 observedGeneration:
                   type: integer
-                  format: int64
                 conditions:
                   type: array
                   items:
@@ -149,7 +148,6 @@ spec:
                         type: string
                 ledgerSequence:
                   type: integer
-                  format: int64
                 endpoint:
                   type: string
                 readyReplicas:

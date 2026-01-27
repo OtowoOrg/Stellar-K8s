@@ -1122,7 +1122,6 @@ spec:
 /// Delete the MetalLB configuration ConfigMap
 #[allow(dead_code)]
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-#[allow(dead_code)]
 pub async fn delete_metallb_config(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);

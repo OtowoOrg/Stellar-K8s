@@ -28,19 +28,23 @@ RUN cargo build --release --bin stellar-operator
 RUN strip /app/target/release/stellar-operator
 
 # ==============================================================================
-# Stage 4: Runtime - Minimal distroless image (~15-20MB total)
+# Stage 4: Runtime - Minimal distroless image with updated glibc
 # ==============================================================================
-FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
+FROM debian:12-slim AS runtime
 
 # Labels for container registry
 LABEL org.opencontainers.image.source="https://github.com/stellar/stellar-k8s"
 LABEL org.opencontainers.image.description="Stellar-K8s Kubernetes Operator"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
-# Copy the stripped binary
-COPY --from=builder /app/target/release/stellar-operator /stellar-operator
+# Create non-root user for running the operator
+RUN groupadd -r nonroot && useradd -r -g nonroot nonroot
 
-# Run as non-root user (UID 65532 is the nonroot user in distroless)
+# Copy the stripped binary
+COPY --from=builder /app/target/release/stellar-operator /usr/local/bin/stellar-operator
+RUN chmod +x /usr/local/bin/stellar-operator
+
+# Run as non-root user
 USER nonroot:nonroot
 
 # Expose metrics and REST API ports
@@ -48,6 +52,6 @@ EXPOSE 8080 9090
 
 # Health check endpoint
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD ["/stellar-operator", "--health-check"] || exit 1
+  CMD ["/usr/local/bin/stellar-operator", "--health-check"] || exit 1
 
-ENTRYPOINT ["/stellar-operator"]
+ENTRYPOINT ["/usr/local/bin/stellar-operator"]

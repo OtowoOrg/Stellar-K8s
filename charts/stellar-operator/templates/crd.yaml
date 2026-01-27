@@ -200,7 +200,6 @@ spec:
                         type: string
                 ledgerSequence:
                   type: integer
-                  format: int64
                 endpoint:
                   type: string
                 readyReplicas:

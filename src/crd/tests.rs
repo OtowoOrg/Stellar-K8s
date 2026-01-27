@@ -6,15 +6,16 @@
 #[cfg(test)]
 mod stellar_node_spec_validation {
     use crate::crd::{
-        AutoscalingConfig, HorizonConfig, IngressConfig, IngressHost, IngressPath, NodeType,
-        ResourceRequirements, ResourceSpec, SorobanConfig, StellarNetwork, StellarNodeSpec,
-        StorageConfig, ValidatorConfig,
+        AutoscalingConfig, HistoryMode, HorizonConfig, IngressConfig, IngressHost, IngressPath,
+        NodeType, ResourceRequirements, ResourceSpec, SorobanConfig, StellarNetwork,
+        StellarNodeSpec, StorageConfig, ValidatorConfig,
     };
 
     /// Helper to create a minimal valid StellarNodeSpec for a Validator
     fn valid_validator_spec() -> StellarNodeSpec {
         StellarNodeSpec {
             node_type: NodeType::Validator,
+            history_mode: HistoryMode::Recent,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
             resources: default_resources(),
@@ -43,6 +44,8 @@ mod stellar_node_spec_validation {
             strategy: Default::default(),
             maintenance_mode: false,
             network_policy: None,
+            load_balancer: None,
+            global_discovery: None,
             dr_config: None,
             topology_spread_constraints: None,
             cluster: None,
@@ -54,6 +57,7 @@ mod stellar_node_spec_validation {
     fn valid_horizon_spec() -> StellarNodeSpec {
         StellarNodeSpec {
             node_type: NodeType::Horizon,
+            history_mode: HistoryMode::Recent,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
             resources: default_resources(),
@@ -79,6 +83,8 @@ mod stellar_node_spec_validation {
             strategy: Default::default(),
             maintenance_mode: false,
             network_policy: None,
+            load_balancer: None,
+            global_discovery: None,
             dr_config: None,
             topology_spread_constraints: None,
             cluster: None,
@@ -90,6 +96,7 @@ mod stellar_node_spec_validation {
     fn valid_soroban_spec() -> StellarNodeSpec {
         StellarNodeSpec {
             node_type: NodeType::SorobanRpc,
+            history_mode: HistoryMode::Recent,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
             resources: default_resources(),
@@ -113,6 +120,8 @@ mod stellar_node_spec_validation {
             strategy: Default::default(),
             maintenance_mode: false,
             network_policy: None,
+            load_balancer: None,
+            global_discovery: None,
             dr_config: None,
             topology_spread_constraints: None,
             cluster: None,

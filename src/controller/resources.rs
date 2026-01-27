@@ -109,11 +109,18 @@ fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
     let name = resource_name(node, "data");
 
     let mut requests = BTreeMap::new();
-    requests.insert(
-        "storage".to_string(),
-        Quantity(node.spec.storage.size.clone()),
-    );
 
+    // Logic: If user provides a size, use it.
+    // If it's the default "500Gi" (from the example) and mode is Full, bump it to 1Ti.
+    use crate::crd::HistoryMode;
+    let storage_size =
+        if node.spec.history_mode == HistoryMode::Full && node.spec.storage.size == "500Gi" {
+            "1Ti".to_string()
+        } else {
+            node.spec.storage.size.clone()
+        };
+
+    requests.insert("storage".to_string(), Quantity(storage_size));
     // Merge custom annotations from storage config with existing annotations
     let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
 
@@ -623,25 +630,13 @@ fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
 // ============================================================================
 
 /// Ensure a LoadBalancer Service exists for external access via MetalLB
-#[allow(dead_code)]
-#[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
-pub async fn ensure_load_balancer_service(_client: &Client, _node: &StellarNode) -> Result<()> {
-    // TODO: load_balancer field not yet implemented in StellarNodeSpec
-    // Uncomment when LoadBalancerConfig is added to the spec
-    /*
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_load_balancer_service(client: &Client, node: &StellarNode) -> Result<()> {
     let lb_cfg = match &node.spec.load_balancer {
         Some(cfg) if cfg.enabled => cfg,
         _ => return Ok(()),
     };
-    */
 
-    // Function is disabled until load_balancer field is implemented
-    #[allow(unreachable_code)]
-    {
-        return Ok(());
-    }
-
-    /*
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "lb");
@@ -657,10 +652,8 @@ pub async fn ensure_load_balancer_service(_client: &Client, _node: &StellarNode)
 
     info!("LoadBalancer Service ensured for {}/{}", namespace, name);
     Ok(())
-    */
 }
 
-#[allow(dead_code)]
 fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) -> Service {
     let labels = standard_labels(node);
     let name = resource_name(node, "lb");
@@ -747,8 +740,6 @@ fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) 
     }
 
     // Add global discovery annotations
-    // TODO: global_discovery field not yet implemented in StellarNodeSpec
-    /*
     if let Some(gd) = &node.spec.global_discovery {
         if gd.enabled {
             if let Some(region) = &gd.region {
@@ -783,7 +774,6 @@ fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) 
             }
         }
     }
-    */
 
     let external_traffic_policy = match config.external_traffic_policy {
         ExternalTrafficPolicy::Cluster => "Cluster".to_string(),
@@ -816,15 +806,8 @@ fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) 
 }
 
 /// Delete the LoadBalancer Service for a node
-#[allow(dead_code)]
-#[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
-pub async fn delete_load_balancer_service(_client: &Client, _node: &StellarNode) -> Result<()> {
-    // TODO: load_balancer field not yet implemented in StellarNodeSpec
-    #[allow(unreachable_code)]
-    {
-        return Ok(());
-    }
-    /*
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn delete_load_balancer_service(client: &Client, node: &StellarNode) -> Result<()> {
     if node.spec.load_balancer.is_none() {
         return Ok(());
     }
@@ -842,7 +825,6 @@ pub async fn delete_load_balancer_service(_client: &Client, _node: &StellarNode)
     }
 
     Ok(())
-    */
 }
 
 // ============================================================================
@@ -852,15 +834,8 @@ pub async fn delete_load_balancer_service(_client: &Client, _node: &StellarNode)
 /// Ensure MetalLB BGPAdvertisement and IPAddressPool ConfigMaps are documented
 /// Note: MetalLB CRDs must be created manually or via Helm; this function
 /// creates the recommended ConfigMap for cluster operators to reference.
-#[allow(dead_code)]
-#[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
-pub async fn ensure_metallb_config(_client: &Client, _node: &StellarNode) -> Result<()> {
-    // TODO: load_balancer field not yet implemented in StellarNodeSpec
-    #[allow(unreachable_code)]
-    {
-        return Ok(());
-    }
-    /*
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_metallb_config(client: &Client, node: &StellarNode) -> Result<()> {
     let lb_cfg = match &node.spec.load_balancer {
         Some(cfg) if cfg.enabled && cfg.mode == LoadBalancerMode::BGP => cfg,
         _ => return Ok(()),
@@ -884,10 +859,8 @@ pub async fn ensure_metallb_config(_client: &Client, _node: &StellarNode) -> Res
         namespace, name
     );
     Ok(())
-    */
 }
 
-#[allow(dead_code)]
 fn build_metallb_config_map(node: &StellarNode, config: &LoadBalancerConfig) -> ConfigMap {
     let labels = standard_labels(node);
     let name = resource_name(node, "metallb-config");
@@ -1120,7 +1093,6 @@ spec:
 }
 
 /// Delete the MetalLB configuration ConfigMap
-#[allow(dead_code)]
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn delete_metallb_config(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
@@ -1553,6 +1525,24 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
         value: Some(node.spec.network.passphrase().to_string()),
         ..Default::default()
     }];
+
+    // Adjust catchup strategy based on HistoryMode
+    use crate::crd::HistoryMode;
+    let (complete, recent) = match node.spec.history_mode {
+        HistoryMode::Full => ("true", "0"),
+        HistoryMode::Recent => ("false", "1024"),
+    };
+
+    env_vars.push(EnvVar {
+        name: "CATCHUP_COMPLETE".to_string(),
+        value: Some(complete.to_string()),
+        ..Default::default()
+    });
+    env_vars.push(EnvVar {
+        name: "CATCHUP_RECENT".to_string(),
+        value: Some(recent.to_string()),
+        ..Default::default()
+    });
 
     // Source validator seed from Secret or shared RAM volume (KMS)
     if let NodeType::Validator = node.spec.node_type {
@@ -2009,400 +1999,4 @@ pub async fn delete_hpa(client: &Client, node: &StellarNode) -> Result<()> {
 
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
-            info!("HPA deleted for {}/{}", namespace, name);
-        }
-        Err(kube::Error::Api(api_err)) if api_err.code == 404 => {
-            info!("HPA {}/{} not found (already deleted)", namespace, name);
-        }
-        Err(e) => {
-            warn!("Failed to delete HPA {}/{}: {:?}", namespace, name, e);
-        }
-    }
-
-    Ok(())
-}
-
-// ============================================================================
-// ServiceMonitor (Prometheus Operator)
-// ============================================================================
-
-/// Ensure a ServiceMonitor exists for Prometheus scraping (Prometheus Operator)
-///
-/// ServiceMonitor is a custom resource from the Prometheus Operator.
-/// Users should manually create ServiceMonitor resources or use a tool like
-/// kustomize/helm to generate them. This function documents the capability.
-pub async fn ensure_service_monitor(_client: &Client, node: &StellarNode) -> Result<()> {
-    // Only log for Horizon and SorobanRpc nodes with autoscaling config
-    if !matches!(
-        node.spec.node_type,
-        NodeType::Horizon | NodeType::SorobanRpc
-    ) || node.spec.autoscaling.is_none()
-    {
-        return Ok(());
-    }
-
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let name = resource_name(node, "service-monitor");
-
-    info!(
-        "ServiceMonitor configuration available for {}/{}. Users should manually create the ServiceMonitor resource.",
-        namespace, name
-    );
-
-    info!(
-        "ServiceMonitor should scrape metrics on port 'http' at path '/metrics' from service: {}",
-        node.name_any()
-    );
-
-    Ok(())
-}
-
-/// Delete the ServiceMonitor when node is deleted
-pub async fn delete_service_monitor(_client: &Client, node: &StellarNode) -> Result<()> {
-    // Only delete ServiceMonitor if autoscaling was configured
-    if node.spec.autoscaling.is_none() {
-        return Ok(());
-    }
-
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let name = resource_name(node, "service-monitor");
-
-    info!(
-        "Note: ServiceMonitor {}/{} must be manually deleted if it was created",
-        namespace, name
-    );
-
-    Ok(())
-}
-
-/// Delete alerting resources
-pub async fn delete_alerting(client: &Client, node: &StellarNode) -> Result<()> {
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let name = resource_name(node, "alerts");
-
-    let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
-    match api.delete(&name, &DeleteParams::default()).await {
-        Ok(_) => info!("Deleted alerting ConfigMap {}", name),
-        Err(kube::Error::Api(e)) if e.code == 404 => {
-            // Already gone
-        }
-        Err(e) => return Err(Error::KubeError(e)),
-    }
-
-    Ok(())
-}
-
-/// Delete canary resources specifically
-pub async fn delete_canary_resources(client: &Client, node: &StellarNode) -> Result<()> {
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let name = node.name_any();
-    let canary_name = format!("{}-canary", name);
-
-    // 1. Delete Canary Ingress
-    if node.spec.ingress.is_some() {
-        let api: Api<Ingress> = Api::namespaced(client.clone(), &namespace);
-        let _ = api.delete(&canary_name, &DeleteParams::default()).await;
-    }
-
-    // 2. Delete Canary Service
-    let api_svc: Api<Service> = Api::namespaced(client.clone(), &namespace);
-    let _ = api_svc.delete(&canary_name, &DeleteParams::default()).await;
-
-    // 3. Delete Canary Deployment
-    let api_deploy: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
-    let _ = api_deploy
-        .delete(&canary_name, &DeleteParams::default())
-        .await;
-
-    Ok(())
-}
-
-// ============================================================================
-// NetworkPolicy
-// ============================================================================
-
-/// Ensure a NetworkPolicy exists for the node when configured
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_network_policy(client: &Client, node: &StellarNode) -> Result<()> {
-    let policy_cfg = match &node.spec.network_policy {
-        Some(cfg) if cfg.enabled => cfg,
-        _ => return Ok(()),
-    };
-
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let api: Api<NetworkPolicy> = Api::namespaced(client.clone(), &namespace);
-    let name = resource_name(node, "netpol");
-
-    let network_policy = build_network_policy(node, policy_cfg);
-
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &Patch::Apply(&network_policy),
-    )
-    .await?;
-
-    info!("NetworkPolicy ensured for {}/{}", namespace, name);
-    Ok(())
-}
-
-fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> NetworkPolicy {
-    let labels = standard_labels(node);
-    let name = resource_name(node, "netpol");
-
-    let mut ingress_rules: Vec<NetworkPolicyIngressRule> = Vec::new();
-
-    // Determine ports based on node type
-    let app_ports = match node.spec.node_type {
-        NodeType::Validator => vec![
-            NetworkPolicyPort {
-                port: Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(11625)),
-                protocol: Some("TCP".to_string()),
-                ..Default::default()
-            },
-            NetworkPolicyPort {
-                port: Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(11626)),
-                protocol: Some("TCP".to_string()),
-                ..Default::default()
-            },
-        ],
-        NodeType::Horizon | NodeType::SorobanRpc => vec![NetworkPolicyPort {
-            port: Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(8000)),
-            protocol: Some("TCP".to_string()),
-            ..Default::default()
-        }],
-    };
-
-    // Allow from specified namespaces
-    if !config.allow_namespaces.is_empty() {
-        let peers: Vec<NetworkPolicyPeer> = config
-            .allow_namespaces
-            .iter()
-            .map(|ns| NetworkPolicyPeer {
-                namespace_selector: Some(LabelSelector {
-                    match_labels: Some(BTreeMap::from([(
-                        "kubernetes.io/metadata.name".to_string(),
-                        ns.clone(),
-                    )])),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
-            .collect();
-
-        ingress_rules.push(NetworkPolicyIngressRule {
-            from: Some(peers),
-            ports: Some(app_ports.clone()),
-        });
-    }
-
-    // Allow from specified pod selectors
-    if let Some(pod_labels) = &config.allow_pod_selector {
-        ingress_rules.push(NetworkPolicyIngressRule {
-            from: Some(vec![NetworkPolicyPeer {
-                pod_selector: Some(LabelSelector {
-                    match_labels: Some(pod_labels.clone()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }]),
-            ports: Some(app_ports.clone()),
-        });
-    }
-
-    // Allow from specified CIDRs
-    if !config.allow_cidrs.is_empty() {
-        let peers: Vec<NetworkPolicyPeer> = config
-            .allow_cidrs
-            .iter()
-            .map(|cidr| NetworkPolicyPeer {
-                ip_block: Some(IPBlock {
-                    cidr: cidr.clone(),
-                    except: None,
-                }),
-                ..Default::default()
-            })
-            .collect();
-
-        ingress_rules.push(NetworkPolicyIngressRule {
-            from: Some(peers),
-            ports: Some(app_ports.clone()),
-        });
-    }
-
-    // Allow metrics scraping from monitoring namespace
-    if config.allow_metrics_scrape {
-        ingress_rules.push(NetworkPolicyIngressRule {
-            from: Some(vec![NetworkPolicyPeer {
-                namespace_selector: Some(LabelSelector {
-                    match_labels: Some(BTreeMap::from([(
-                        "kubernetes.io/metadata.name".to_string(),
-                        config.metrics_namespace.clone(),
-                    )])),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }]),
-            ports: Some(vec![NetworkPolicyPort {
-                port: Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(9090)),
-                protocol: Some("TCP".to_string()),
-                ..Default::default()
-            }]),
-        });
-    }
-
-    // For Validators, allow peer-to-peer from other validators in the same namespace
-    if node.spec.node_type == NodeType::Validator {
-        ingress_rules.push(NetworkPolicyIngressRule {
-            from: Some(vec![NetworkPolicyPeer {
-                pod_selector: Some(LabelSelector {
-                    match_labels: Some(BTreeMap::from([(
-                        "app.kubernetes.io/name".to_string(),
-                        "stellar-node".to_string(),
-                    )])),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }]),
-            ports: Some(vec![NetworkPolicyPort {
-                port: Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(11625)),
-                protocol: Some("TCP".to_string()),
-                ..Default::default()
-            }]),
-        });
-    }
-
-    NetworkPolicy {
-        metadata: ObjectMeta {
-            name: Some(name),
-            namespace: node.namespace(),
-            labels: Some(labels),
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
-        spec: Some(NetworkPolicySpec {
-            pod_selector: LabelSelector {
-                match_labels: Some(BTreeMap::from([
-                    ("app.kubernetes.io/instance".to_string(), node.name_any()),
-                    (
-                        "app.kubernetes.io/name".to_string(),
-                        "stellar-node".to_string(),
-                    ),
-                ])),
-                ..Default::default()
-            },
-            policy_types: Some(vec!["Ingress".to_string()]),
-            ingress: if ingress_rules.is_empty() {
-                None
-            } else {
-                Some(ingress_rules)
-            },
-            egress: None,
-        }),
-    }
-}
-
-/// Delete the NetworkPolicy for a node
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_network_policy(client: &Client, node: &StellarNode) -> Result<()> {
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let api: Api<NetworkPolicy> = Api::namespaced(client.clone(), &namespace);
-    let name = resource_name(node, "netpol");
-
-    match api.delete(&name, &DeleteParams::default()).await {
-        Ok(_) => info!("NetworkPolicy {} deleted", name),
-        Err(kube::Error::Api(e)) if e.code == 404 => {
-            info!("NetworkPolicy {} not found, skipping delete", name);
-        }
-        Err(e) => return Err(Error::KubeError(e)),
-    }
-
-    Ok(())
-}
-
-// ============================================================================
-// PodDisruptionBudget (PDB)
-// ============================================================================
-
-/// Internal builder for the PodDisruptionBudget resource
-fn build_pdb(node: &StellarNode) -> Option<PodDisruptionBudget> {
-    // PDBs are only applicable if there are multiple replicas to protect
-    if node.spec.replicas <= 1 {
-        return None;
-    }
-
-    let labels = standard_labels(node);
-    let name = node.name_any();
-
-    // Determine disruption constraints: default to maxUnavailable: 1 if not specified
-    let (min_available, max_unavailable) =
-        if node.spec.min_available.is_none() && node.spec.max_unavailable.is_none() {
-            (None, Some(IntOrString::Int(1)))
-        } else {
-            (
-                node.spec.min_available.clone(),
-                node.spec.max_unavailable.clone(),
-            )
-        };
-
-    Some(PodDisruptionBudget {
-        metadata: ObjectMeta {
-            name: Some(name),
-            namespace: node.namespace(),
-            labels: Some(labels.clone()),
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
-        spec: Some(PodDisruptionBudgetSpec {
-            selector: Some(LabelSelector {
-                match_labels: Some(labels),
-                ..Default::default()
-            }),
-            min_available,
-            max_unavailable,
-            ..Default::default()
-        }),
-        status: None,
-    })
-}
-
-/// Ensure a PodDisruptionBudget exists for multi-replica nodes
-pub async fn ensure_pdb(client: &Client, node: &StellarNode) -> Result<()> {
-    // If replicas <= 1, we ensure the PDB is deleted (cleanup)
-    if node.spec.replicas <= 1 {
-        return delete_pdb(client, node).await;
-    }
-
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let api: Api<PodDisruptionBudget> = Api::namespaced(client.clone(), &namespace);
-
-    if let Some(pdb) = build_pdb(node) {
-        let name = pdb.metadata.name.clone().unwrap();
-
-        info!("Reconciling PodDisruptionBudget {}/{}", namespace, name);
-        let params = PatchParams::apply("stellar-operator").force();
-        api.patch(&name, &params, &Patch::Apply(&pdb))
-            .await
-            .map_err(Error::KubeError)?;
-    }
-
-    Ok(())
-}
-
-/// Delete the PodDisruptionBudget
-pub async fn delete_pdb(client: &Client, node: &StellarNode) -> Result<()> {
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let name = node.name_any();
-
-    let api: Api<PodDisruptionBudget> = Api::namespaced(client.clone(), &namespace);
-
-    match api.delete(&name, &DeleteParams::default()).await {
-        Ok(_) => info!("Deleted PodDisruptionBudget {}/{}", namespace, name),
-        Err(kube::Error::Api(e)) if e.code == 404 => {
-            // Resource doesn't exist, ignore
-        }
-        Err(e) => return Err(Error::KubeError(e)),
-    }
-
-    Ok(())
-}
+            info!("HPA deleted for {}/{}", namespace,

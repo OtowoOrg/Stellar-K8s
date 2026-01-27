@@ -14,7 +14,6 @@ use super::types::{
     SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig,
 };
 
-// --- NEW ENUM DEFINITION ---
 /// Determines if the node keeps full history (Archival) or just recent ledgers.
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
@@ -25,7 +24,6 @@ pub enum HistoryMode {
     #[default]
     Recent,
 }
-// ---------------------------
 
 /// The StellarNode CRD represents a managed Stellar infrastructure node.
 #[derive(CustomResource, Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -47,12 +45,10 @@ pub struct StellarNodeSpec {
     /// Type of Stellar node to deploy (Validator, Horizon, or SorobanRpc)
     pub node_type: NodeType,
 
-    // --- NEW FIELD ---
     /// History retention mode (Full vs Recent)
     /// Defaults to Recent if not specified.
-    #[serde(default = "default_history_mode")]
+    #[serde(default)]
     pub history_mode: HistoryMode,
-    // -----------------
     /// Target Stellar network (Mainnet, Testnet, Futurenet, or Custom)
     pub network: StellarNetwork,
 
@@ -133,11 +129,6 @@ fn default_replicas() -> i32 {
     1
 }
 
-// --- NEW DEFAULT FUNCTION ---
-fn default_history_mode() -> HistoryMode {
-    HistoryMode::Recent
-}
-// ---------------------------
 
 impl StellarNodeSpec {
     /// Validate the spec based on node type

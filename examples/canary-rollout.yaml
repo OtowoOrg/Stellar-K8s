@@ -1,0 +1,18 @@
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-canary-demo
+  namespace: default
+spec:
+  nodeType: Horizon
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 3
+  horizonConfig:
+    databaseSecretRef: "horizon-db"
+    stellarCoreUrl: "http://stellar-core:11626"
+  # New Canary rollout strategy
+  strategy:
+    canary:
+      weight: 25 # 25% of traffic will be routed to the canary pods
+      checkIntervalSeconds: 60

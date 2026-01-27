@@ -761,6 +761,38 @@ impl Default for NetworkPolicyConfig {
     }
 }
 
+/// Rollout strategy for updates
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RolloutStrategy {
+    /// Standard Kubernetes rolling update
+    #[default]
+    RollingUpdate,
+    /// Canary deployment with traffic weighting
+    Canary(CanaryConfig),
+}
+
+/// Configuration for Canary rollout
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanaryConfig {
+    /// Percentage of traffic to route to the canary (0-100)
+    #[serde(default = "default_canary_weight")]
+    pub weight: i32,
+
+    /// Interval in seconds to wait before increasing weight or finalizing (e.g., 300)
+    #[serde(default = "default_canary_interval")]
+    pub check_interval_seconds: i32,
+}
+
+fn default_canary_weight() -> i32 {
+    10
+}
+
+fn default_canary_interval() -> i32 {
+    300
+}
+
 // ============================================================================
 // MetalLB / BGP Anycast Configuration
 // ============================================================================

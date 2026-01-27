@@ -49,6 +49,22 @@ spec:
                   type: boolean
                   default: false
                   description: Suspend the node without deleting resources
+                strategy:
+                  type: object
+                  properties:
+                    rollingUpdate:
+                      type: object
+                    canary:
+                      type: object
+                      properties:
+                        weight:
+                          type: integer
+                          minimum: 0
+                          maximum: 100
+                          default: 10
+                        checkIntervalSeconds:
+                          type: integer
+                          default: 300
                 resources:
                   type: object
                   properties:
@@ -132,6 +148,10 @@ spec:
                 observedGeneration:
                   type: integer
                   format: int64
+                canaryVersion:
+                  type: string
+                canaryReadyReplicas:
+                  type: integer
                 conditions:
                   type: array
                   items:

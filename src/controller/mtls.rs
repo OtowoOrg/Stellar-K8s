@@ -12,7 +12,7 @@ use kube::{
     Client, Resource, ResourceExt,
 };
 use rcgen::{
-    Certificate, CertificateParams, DistinguishedName, ExtendedKeyUsagePurpose, IsCa, KeyPair,
+    CertificateParams, DistinguishedName, ExtendedKeyUsagePurpose, Ia5String, IsCa, KeyPair,
     KeyUsagePurpose, SanType,
 };
 use std::collections::BTreeMap;
@@ -39,19 +39,14 @@ pub async fn ensure_ca(client: &Client, namespace: &str) -> Result<()> {
     params.key_usages.push(KeyUsagePurpose::KeyCertSign);
     params.key_usages.push(KeyUsagePurpose::CrlSign);
 
-    let cert = Certificate::from_params(params).map_err(|e| Error::ConfigError(e.to_string()))?;
+    let key_pair = KeyPair::generate().map_err(|e| Error::ConfigError(e.to_string()))?;
+    let cert = params
+        .self_signed(&key_pair)
+        .map_err(|e| Error::ConfigError(e.to_string()))?;
 
     let mut data = BTreeMap::new();
-    data.insert(
-        "tls.crt".to_string(),
-        cert.serialize_pem()
-            .map_err(|e| Error::ConfigError(e.to_string()))?
-            .into_bytes(),
-    );
-    data.insert(
-        "tls.key".to_string(),
-        cert.serialize_private_key_pem().into_bytes(),
-    );
+    data.insert("tls.crt".to_string(), cert.pem().into_bytes());
+    data.insert("tls.key".to_string(), key_pair.serialize_pem().into_bytes());
 
     let secret = Secret {
         metadata: ObjectMeta {
@@ -120,19 +115,11 @@ pub async fn ensure_server_cert(
 
     let ca_key_pair =
         KeyPair::from_pem(&ca_key_pem).map_err(|e| Error::ConfigError(e.to_string()))?;
-
-    // In rcgen 0.11, loading CA from PEM is tricky.
-    // We'll reconstruct the CA Certificate object using the known params and the loaded key.
-    let mut ca_params = CertificateParams::default();
-    ca_params.is_ca = IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-    ca_params.distinguished_name = DistinguishedName::new();
-    ca_params
-        .distinguished_name
-        .push(rcgen::DnType::CommonName, "stellar-operator-ca");
-    ca_params.key_pair = Some(ca_key_pair);
-
-    let ca_cert =
-        Certificate::from_params(ca_params).map_err(|e| Error::ConfigError(e.to_string()))?;
+    let ca_params = CertificateParams::from_ca_cert_pem(&ca_cert_pem)
+        .map_err(|e| Error::ConfigError(e.to_string()))?;
+    let ca_cert = ca_params
+        .self_signed(&ca_key_pair)
+        .map_err(|e| Error::ConfigError(e.to_string()))?;
 
     let mut params = CertificateParams::default();
     params.distinguished_name = DistinguishedName::new();
@@ -140,7 +127,9 @@ pub async fn ensure_server_cert(
         .distinguished_name
         .push(rcgen::DnType::CommonName, "stellar-operator");
     for dns in dns_names {
-        params.subject_alt_names.push(SanType::DnsName(dns));
+        params.subject_alt_names.push(SanType::DnsName(
+            Ia5String::try_from(dns).map_err(|e| Error::ConfigError(e.to_string()))?,
+        ));
     }
     params.key_usages.push(KeyUsagePurpose::DigitalSignature);
     params
@@ -150,17 +139,14 @@ pub async fn ensure_server_cert(
         .extended_key_usages
         .push(ExtendedKeyUsagePurpose::ClientAuth);
 
-    let cert = Certificate::from_params(params).map_err(|e| Error::ConfigError(e.to_string()))?;
-    let signed_cert = cert
-        .serialize_pem_with_signer(&ca_cert)
+    let key_pair = KeyPair::generate().map_err(|e| Error::ConfigError(e.to_string()))?;
+    let cert = params
+        .signed_by(&key_pair, &ca_cert, &ca_key_pair)
         .map_err(|e| Error::ConfigError(e.to_string()))?;
 
     let mut data = BTreeMap::new();
-    data.insert("tls.crt".to_string(), signed_cert.into_bytes());
-    data.insert(
-        "tls.key".to_string(),
-        cert.serialize_private_key_pem().into_bytes(),
-    );
+    data.insert("tls.crt".to_string(), cert.pem().into_bytes());
+    data.insert("tls.key".to_string(), key_pair.serialize_pem().into_bytes());
     data.insert("ca.crt".to_string(), ca_cert_pem.into_bytes());
 
     let secret = Secret {
@@ -229,16 +215,11 @@ pub async fn ensure_node_cert(client: &Client, node: &StellarNode) -> Result<()>
 
     let ca_key_pair =
         KeyPair::from_pem(&ca_key_pem).map_err(|e| Error::ConfigError(e.to_string()))?;
-    let mut ca_params = CertificateParams::default();
-    ca_params.is_ca = IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-    ca_params.distinguished_name = DistinguishedName::new();
-    ca_params
-        .distinguished_name
-        .push(rcgen::DnType::CommonName, "stellar-operator-ca");
-    ca_params.key_pair = Some(ca_key_pair);
-
-    let ca_cert =
-        Certificate::from_params(ca_params).map_err(|e| Error::ConfigError(e.to_string()))?;
+    let ca_params = CertificateParams::from_ca_cert_pem(&ca_cert_pem)
+        .map_err(|e| Error::ConfigError(e.to_string()))?;
+    let ca_cert = ca_params
+        .self_signed(&ca_key_pair)
+        .map_err(|e| Error::ConfigError(e.to_string()))?;
 
     let mut params = CertificateParams::default();
     params.distinguished_name = DistinguishedName::new();
@@ -254,17 +235,14 @@ pub async fn ensure_node_cert(client: &Client, node: &StellarNode) -> Result<()>
         .extended_key_usages
         .push(ExtendedKeyUsagePurpose::ServerAuth);
 
-    let cert = Certificate::from_params(params).map_err(|e| Error::ConfigError(e.to_string()))?;
-    let signed_cert = cert
-        .serialize_pem_with_signer(&ca_cert)
+    let key_pair = KeyPair::generate().map_err(|e| Error::ConfigError(e.to_string()))?;
+    let cert = params
+        .signed_by(&key_pair, &ca_cert, &ca_key_pair)
         .map_err(|e| Error::ConfigError(e.to_string()))?;
 
     let mut data = BTreeMap::new();
-    data.insert("tls.crt".to_string(), signed_cert.into_bytes());
-    data.insert(
-        "tls.key".to_string(),
-        cert.serialize_private_key_pem().into_bytes(),
-    );
+    data.insert("tls.crt".to_string(), cert.pem().into_bytes());
+    data.insert("tls.key".to_string(), key_pair.serialize_pem().into_bytes());
     data.insert("ca.crt".to_string(), ca_cert_pem.into_bytes());
 
     let secret = Secret {

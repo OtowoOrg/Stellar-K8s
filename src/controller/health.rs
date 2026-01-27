@@ -283,11 +283,9 @@ async fn check_horizon_health(
                             health.history_latest_ledger,
                         )))
                     } else {
-                        let lag = if health.core_latest_ledger > health.history_latest_ledger {
-                            health.core_latest_ledger - health.history_latest_ledger
-                        } else {
-                            0
-                        };
+                        let lag = health
+                            .core_latest_ledger
+                            .saturating_sub(health.history_latest_ledger);
 
                         let message = format!(
                             "Horizon is syncing: at ledger {}, core at {} (lag: {})",

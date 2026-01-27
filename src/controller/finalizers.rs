@@ -31,7 +31,7 @@ pub async fn add_finalizer(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
 
-    let finalizers: Vec<String> = node.finalizers().iter().cloned().collect();
+    let finalizers: Vec<String> = node.finalizers().to_vec();
     if !finalizers.contains(&STELLAR_NODE_FINALIZER.to_string()) {
         let mut new_finalizers = finalizers;
         new_finalizers.push(STELLAR_NODE_FINALIZER.to_string());

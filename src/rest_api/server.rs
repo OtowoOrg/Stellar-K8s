@@ -7,6 +7,8 @@ use axum::{routing::get, Router};
 use axum_server::tls_rustls::RustlsConfig;
 use rustls::server::WebPkiClientVerifier;
 use rustls::RootCertStore;
+use rustls_pki_types::pem::PemObject;
+use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
@@ -45,23 +47,21 @@ pub async fn run_server(
         info!("REST API server listening on {} with mTLS", addr);
 
         // Load certificates
-        let mut cert_reader = std::io::BufReader::new(&config.cert_pem[..]);
-        let certs = rustls_pemfile::certs(&mut cert_reader)
-            .collect::<std::io::Result<Vec<_>>>()
+        let certs = CertificateDer::pem_slice_iter(&config.cert_pem)
+            .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::ConfigError(format!("Failed to parse certificates: {}", e)))?;
 
         // Load private key
-        let mut key_reader = std::io::BufReader::new(&config.key_pem[..]);
-        let key = rustls_pemfile::private_key(&mut key_reader)
-            .map_err(|e| Error::ConfigError(format!("Failed to parse private key: {}", e)))?
-            .ok_or_else(|| Error::ConfigError("No private key found in PEM".to_string()))?;
+        let key = PrivateKeyDer::from_pem_slice(&config.key_pem)
+            .map_err(|e| Error::ConfigError(format!("Failed to parse private key: {}", e)))?;
 
         // Load CA for client verification
         let mut roots = RootCertStore::empty();
-        let mut ca_reader = std::io::BufReader::new(&config.ca_pem[..]);
-        for cert in rustls_pemfile::certs(&mut ca_reader) {
+        for cert_res in CertificateDer::pem_slice_iter(&config.ca_pem) {
+            let cert = cert_res
+                .map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {}", e)))?;
             roots
-                .add(cert.map_err(|e| Error::ConfigError(e.to_string()))?)
+                .add(cert)
                 .map_err(|e| Error::ConfigError(format!("Failed to add CA cert: {}", e)))?;
         }
 

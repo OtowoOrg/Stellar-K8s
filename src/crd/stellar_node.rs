@@ -3,14 +3,16 @@
 //! The StellarNode CRD represents a managed Stellar infrastructure node.
 //! Supports Validator (Core), Horizon API, and Soroban RPC node types.
 
+use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::types::{
-    AutoscalingConfig, Condition, ExternalDatabaseConfig, GlobalDiscoveryConfig, HorizonConfig,
-    IngressConfig, LoadBalancerConfig, NetworkPolicyConfig, NodeType, ResourceRequirements,
-    RetentionPolicy, SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig,
+    AutoscalingConfig, Condition, DisasterRecoveryConfig, DisasterRecoveryStatus,
+    ExternalDatabaseConfig, GlobalDiscoveryConfig, HorizonConfig, IngressConfig,
+    LoadBalancerConfig, NetworkPolicyConfig, NodeType, ResourceRequirements, RetentionPolicy,
+    SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig,
 };
 
 /// The StellarNode CRD represents a managed Stellar infrastructure node.
@@ -96,6 +98,18 @@ pub struct StellarNodeSpec {
     #[serde(default = "default_replicas")]
     pub replicas: i32,
 
+    /// Minimum available replicas during disruptions.
+    /// Only applicable for Horizon and SorobanRpc nodes with replicas > 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<serde_json::Value>")] // Add this line
+    pub min_available: Option<IntOrString>,
+
+    /// Maximum unavailable replicas during disruptions.
+    /// Only applicable for Horizon and SorobanRpc nodes with replicas > 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<serde_json::Value>")] // Add this line
+    pub max_unavailable: Option<IntOrString>,
+
     /// Suspend the node (scale to 0 without deleting resources)
     /// The operator still manages the resources, but keeps them inactive.
     #[serde(default)]
@@ -129,6 +143,10 @@ pub struct StellarNodeSpec {
     /// for peer-to-peer (Validators), API access (Horizon/Soroban), and metrics
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_policy: Option<NetworkPolicyConfig>,
+
+    /// Configuration for cross-region multi-cluster disaster recovery (DR)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dr_config: Option<DisasterRecoveryConfig>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "serde_json::Value")]
@@ -174,7 +192,10 @@ impl StellarNodeSpec {
     /// # database: None,
     /// # autoscaling: None,
     /// # ingress: None,
+    /// # maintenance_mode: false,
     /// # network_policy: None,
+    /// # dr_config: None,
+    /// # topology_spread_constraints: None,
     /// };
     /// match spec.validate() {
     ///     Ok(_) => println!("Valid spec"),
@@ -182,6 +203,12 @@ impl StellarNodeSpec {
     /// }
     /// ```
     pub fn validate(&self) -> Result<(), String> {
+        if self.min_available.is_some() && self.max_unavailable.is_some() {
+            return Err(
+                "Cannot specify both minAvailable and maxUnavailable in PDB configuration"
+                    .to_string(),
+            );
+        }
         match self.node_type {
             NodeType::Validator => {
                 if self.validator_config.is_none() {
@@ -197,6 +224,9 @@ impl StellarNodeSpec {
                 }
                 if self.replicas != 1 {
                     return Err("Validator nodes must have exactly 1 replica".to_string());
+                }
+                if self.min_available.is_some() || self.max_unavailable.is_some() {
+                    return Err("PDB configuration is not supported for Validator nodes (replicas must be 1)".to_string());
                 }
                 if self.autoscaling.is_some() {
                     return Err("autoscaling is not supported for Validator nodes".to_string());
@@ -290,7 +320,10 @@ impl StellarNodeSpec {
     /// # database: None,
     /// # autoscaling: None,
     /// # ingress: None,
+    /// # maintenance_mode: false,
     /// # network_policy: None,
+    /// # dr_config: None,
+    /// # topology_spread_constraints: None,
     /// };
     /// assert_eq!(spec.container_image(), "stellar/stellar-core:v21.0.0");
     /// ```
@@ -337,7 +370,10 @@ impl StellarNodeSpec {
     /// # database: None,
     /// # autoscaling: None,
     /// # ingress: None,
+    /// # maintenance_mode: false,
     /// # network_policy: None,
+    /// # dr_config: None,
+    /// # topology_spread_constraints: None,
     /// };
     /// assert!(spec.should_delete_pvc());
     /// ```
@@ -377,6 +413,7 @@ fn validate_ingress(ingress: &IngressConfig) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn validate_load_balancer(lb: &LoadBalancerConfig) -> Result<(), String> {
     use super::types::LoadBalancerMode;
 
@@ -424,6 +461,7 @@ fn validate_load_balancer(lb: &LoadBalancerConfig) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn validate_global_discovery(gd: &GlobalDiscoveryConfig) -> Result<(), String> {
     if !gd.enabled {
         return Ok(());
@@ -480,6 +518,10 @@ pub struct StellarNodeStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_generation: Option<i64>,
 
+    /// Status of the cross-region disaster recovery setup (if enabled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dr_status: Option<DisasterRecoveryStatus>,
+
     /// Readiness conditions following Kubernetes conventions
     ///
     /// Standard conditions include:
@@ -512,6 +554,10 @@ pub struct StellarNodeStatus {
     /// Total number of desired replicas
     #[serde(default)]
     pub replicas: i32,
+
+    /// Version of the database schema after last successful migration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_migrated_version: Option<String>,
 }
 
 /// BGP advertisement status information
@@ -536,7 +582,6 @@ pub struct BGPStatus {
 impl StellarNodeStatus {
     /// Create a new status with the given phase
     ///
-
     /// Initializes a StellarNodeStatus with the provided phase and all other fields
     /// set to their defaults (empty message, no conditions, etc.).
     ///
@@ -549,11 +594,10 @@ impl StellarNodeStatus {
     /// assert_eq!(status.phase, "Creating");
     /// assert_eq!(status.message, None);
     /// ```
-
     /// DEPRECATED: Use `with_conditions` instead
     #[deprecated(since = "0.2.0", note = "Use with_conditions instead")]
-
     pub fn with_phase(phase: &str) -> Self {
+        #[allow(deprecated)]
         Self {
             phase: phase.to_string(),
             ..Default::default()
@@ -562,7 +606,6 @@ impl StellarNodeStatus {
 
     /// Update the phase and message
     ///
-
     /// Updates both the phase and message fields atomically.
     /// This is typically called during reconciliation to report progress.
     ///
@@ -581,15 +624,15 @@ impl StellarNodeStatus {
     /// assert_eq!(status.phase, "Ready");
     /// assert_eq!(status.message, Some("Node is fully synced".to_string()));
     /// ```
-
     /// DEPRECATED: Use condition helpers instead
+    #[allow(deprecated)]
     #[deprecated(since = "0.2.0", note = "Use set_condition helpers instead")]
-
     pub fn update(&mut self, phase: &str, message: Option<&str>) {
         self.phase = phase.to_string();
         self.message = message.map(String::from);
     }
 
+    #[allow(clippy::empty_line_after_doc_comments)]
     /// Check if the node is ready
     ///
     /// Returns true only if both:
@@ -613,13 +656,11 @@ impl StellarNodeStatus {
     /// status.ready_replicas = 0;
     /// assert!(!status.is_ready());
     /// ```
-
     /// Check if the node is ready based on conditions
     ///
     /// A node is considered ready when:
     /// - Ready condition is True
     /// - ready_replicas >= replicas (all replicas are ready)
-
     pub fn is_ready(&self) -> bool {
         let has_ready_condition = self
             .conditions

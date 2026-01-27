@@ -590,7 +590,6 @@ impl StellarNodeStatus {
         self.message = message.map(String::from);
     }
 
-
     /// Check if the node is ready
     ///
     /// Returns true only if both:

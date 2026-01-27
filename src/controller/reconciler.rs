@@ -1,4 +1,3 @@
-
 //! Main reconciler for StellarNode resources
 //!
 //! Implements the controller pattern using kube-rs runtime.
@@ -19,7 +18,6 @@
 //! 5. Handle node remediation if needed
 //! 6. Update StellarNode status with current state
 //! 7. Schedule requeue for periodic health checks
-
 
 use std::sync::Arc;
 use std::time::Duration;

@@ -391,7 +391,7 @@ pub struct SorobanConfig {
 }
 
 /// External database configuration for managed Postgres databases
-/// 
+///
 /// Specifies how to reference database credentials for external managed databases.
 /// Supports AWS RDS, Google Cloud SQL, CockroachDB, and other managed services.
 ///

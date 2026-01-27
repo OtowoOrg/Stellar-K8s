@@ -63,6 +63,10 @@ pub enum Error {
     /// Webhook server error
     #[error("Webhook error: {0}")]
     WebhookError(String),
+
+    /// Network connectivity error
+    #[error("Network error: {0}")]
+    NetworkError(String),
 }
 
 /// Result type alias for operator operations

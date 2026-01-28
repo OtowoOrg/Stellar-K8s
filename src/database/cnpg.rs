@@ -1,8 +1,5 @@
 use kube::{Api, Client, ResourceExt};
-use kube::runtime::controller::Action;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use std::time::Duration;
 use anyhow::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

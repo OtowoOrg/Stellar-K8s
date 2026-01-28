@@ -1,0 +1,112 @@
+# Example: Cross-cluster Stellar validator using Direct IP
+# This configuration uses LoadBalancer services with static IPs
+#
+# Prerequisites:
+# - LoadBalancer controller (MetalLB, cloud provider LB)
+# - Static IP addresses allocated
+# - Network connectivity between clusters
+#
+# This is the simplest approach but requires manual IP management
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-cluster-a
+  namespace: stellar-nodes
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  
+  cluster: "cluster-a"
+  
+  resources:
+    requests:
+      cpu: "4"
+      memory: "16Gi"
+    limits:
+      cpu: "8"
+      memory: "32Gi"
+  
+  storage:
+    storageClass: "fast-ssd"
+    size: "1Ti"
+    retentionPolicy: Retain
+  
+  validatorConfig:
+    seedSecretRef: "validator-seed-cluster-a"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+  
+  # LoadBalancer configuration for external access
+  loadBalancer:
+    enabled: true
+    mode: L2
+    addressPool: "stellar-pool"
+    loadBalancerIP: "203.0.113.10"
+    externalTrafficPolicy: Local
+    healthCheckEnabled: true
+    healthCheckPort: 9100
+  
+  # Cross-cluster using Direct IP
+  crossCluster:
+    enabled: true
+    mode: DirectIP
+    
+    # Peer clusters with static IPs
+    peerClusters:
+      - clusterId: "cluster-b"
+        # Direct IP address of the peer's LoadBalancer
+        endpoint: "203.0.113.20"
+        latencyThresholdMs: 50
+        region: "us-west"
+        priority: 100
+        port: 11625
+        enabled: true
+      
+      - clusterId: "cluster-c"
+        endpoint: "203.0.113.30"
+        latencyThresholdMs: 100
+        region: "eu-central"
+        priority: 90
+        port: 11625
+        enabled: true
+    
+    latencyThresholdMs: 150
+    
+    healthCheck:
+      enabled: true
+      intervalSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+      
+      latencyMeasurement:
+        enabled: true
+        method: tcp
+        sampleCount: 10
+        percentile: 95
+
+---
+# MetalLB IPAddressPool for static IP allocation
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: stellar-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 203.0.113.10-203.0.113.50
+  autoAssign: false
+
+---
+# MetalLB L2Advertisement for IP announcement
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: stellar-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - stellar-pool

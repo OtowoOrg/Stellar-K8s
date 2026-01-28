@@ -3,16 +3,43 @@
 //! The StellarNode CRD represents a managed Stellar infrastructure node.
 //! Supports Validator (Core), Horizon API, and Soroban RPC node types.
 
+use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::types::{
-    AutoscalingConfig, Condition, DisasterRecoveryConfig, DisasterRecoveryStatus,
-    ExternalDatabaseConfig, GlobalDiscoveryConfig, HorizonConfig, IngressConfig,
-    LoadBalancerConfig, NetworkPolicyConfig, NodeType, ResourceRequirements, RetentionPolicy,
-    SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig,
+    AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
+    DisasterRecoveryStatus, ExternalDatabaseConfig, GlobalDiscoveryConfig, HorizonConfig,
+    IngressConfig, LoadBalancerConfig, NetworkPolicyConfig, NodeType, ResourceRequirements,
+    RetentionPolicy, RolloutStrategy, SorobanConfig, StellarNetwork, StorageConfig,
+    ValidatorConfig,
 };
+
+/// Structured validation error for `StellarNodeSpec`
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpecValidationError {
+    /// JSON-style path to the invalid field (e.g., "spec.replicas")
+    pub field: String,
+    /// Human-readable description of what is wrong
+    pub message: String,
+    /// Clear guidance on how to fix the issue
+    pub how_to_fix: String,
+}
+
+impl SpecValidationError {
+    pub fn new(
+        field: impl Into<String>,
+        message: impl Into<String>,
+        how_to_fix: impl Into<String>,
+    ) -> Self {
+        Self {
+            field: field.into(),
+            message: message.into(),
+            how_to_fix: how_to_fix.into(),
+        }
+    }
+}
 
 /// The StellarNode CRD represents a managed Stellar infrastructure node.
 ///
@@ -97,6 +124,18 @@ pub struct StellarNodeSpec {
     #[serde(default = "default_replicas")]
     pub replicas: i32,
 
+    /// Minimum available replicas during disruptions.
+    /// Only applicable for Horizon and SorobanRpc nodes with replicas > 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<serde_json::Value>")] // Add this line
+    pub min_available: Option<IntOrString>,
+
+    /// Maximum unavailable replicas during disruptions.
+    /// Only applicable for Horizon and SorobanRpc nodes with replicas > 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<serde_json::Value>")] // Add this line
+    pub max_unavailable: Option<IntOrString>,
+
     /// Suspend the node (scale to 0 without deleting resources)
     /// The operator still manages the resources, but keeps them inactive.
     #[serde(default)]
@@ -122,9 +161,14 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ingress: Option<IngressConfig>,
 
+    /// Rollout strategy for updates (RollingUpdate or Canary)
+    #[serde(default)]
+    pub strategy: RolloutStrategy,
+
     /// Maintenance mode (skips workload updates)
     #[serde(default)]
     pub maintenance_mode: bool,
+
     /// Network Policy configuration for restricting ingress traffic
     /// When enabled, creates a deny-all policy with explicit allow rules
     /// for peer-to-peer (Validators), API access (Horizon/Soroban), and metrics
@@ -139,6 +183,25 @@ pub struct StellarNodeSpec {
     #[schemars(with = "serde_json::Value")]
     pub topology_spread_constraints:
         Option<Vec<k8s_openapi::api::core::v1::TopologySpreadConstraint>>,
+
+    /// Load Balancer configuration for external access via MetalLB
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_balancer: Option<LoadBalancerConfig>,
+
+    /// Global node discovery configuration for Stellar network peering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_discovery: Option<GlobalDiscoveryConfig>,
+
+    /// Cluster identifier for multi-cluster deployments
+    /// Used to identify which cluster this node belongs to for cross-cluster communication
+    /// Example: "us-east-1", "eu-west-1", "ap-south-1"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster: Option<String>,
+
+    /// Cross-cluster communication configuration
+    /// Enables service mesh or ExternalName services for multi-cluster networking
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cross_cluster: Option<CrossClusterConfig>,
 }
 
 fn default_replicas() -> i32 {
@@ -174,96 +237,181 @@ impl StellarNodeSpec {
     /// # horizon_config: None,
     /// # soroban_config: None,
     /// # replicas: 1,
+    /// # min_available: None,
+    /// # max_unavailable: None,
     /// # suspended: false,
     /// # alerting: false,
     /// # database: None,
     /// # autoscaling: None,
     /// # ingress: None,
+    /// # strategy: Default::default(),
     /// # maintenance_mode: false,
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
+    /// # cluster: None,
+    /// # cross_cluster: None,
     /// };
     /// match spec.validate() {
     ///     Ok(_) => println!("Valid spec"),
-    ///     Err(e) => eprintln!("Validation error: {}", e),
+    ///     Err(errors) => {
+    ///         for e in errors {
+    ///             eprintln!("Validation error in {}: {}", e.field, e.message);
+    ///         }
+    ///     }
     /// }
     /// ```
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), Vec<SpecValidationError>> {
+        let mut errors: Vec<SpecValidationError> = Vec::new();
+
+        if self.min_available.is_some() && self.max_unavailable.is_some() {
+            errors.push(SpecValidationError::new(
+                "spec.minAvailable / spec.maxUnavailable",
+                "Cannot specify both minAvailable and maxUnavailable in PDB configuration",
+                "Set either spec.minAvailable or spec.maxUnavailable in the spec, but not both at the same time.",
+            ));
+        }
+
+        if self.min_available.is_some() && self.max_unavailable.is_some() {
+            errors.push(SpecValidationError::new(
+                "spec.minAvailable / spec.maxUnavailable",
+                "Cannot specify both minAvailable and maxUnavailable in PDB configuration",
+                "Set either spec.minAvailable or spec.maxUnavailable in the spec, but not both at the same time.",
+            ));
+        }
         match self.node_type {
             NodeType::Validator => {
                 if self.validator_config.is_none() {
-                    return Err("validatorConfig is required for Validator nodes".to_string());
-                }
-                if let Some(vc) = &self.validator_config {
+                    errors.push(SpecValidationError::new(
+                        "spec.validatorConfig",
+                        "validatorConfig is required for Validator nodes",
+                        "Add a spec.validatorConfig section with the required validator settings when nodeType is Validator.",
+                    ));
+                } else if let Some(vc) = &self.validator_config {
                     if vc.enable_history_archive && vc.history_archive_urls.is_empty() {
-                        return Err(
-                            "historyArchiveUrls must not be empty when enableHistoryArchive is true"
-                                .to_string(),
-                        );
+                        errors.push(SpecValidationError::new(
+                            "spec.validatorConfig.historyArchiveUrls",
+                            "historyArchiveUrls must not be empty when enableHistoryArchive is true",
+                            "Provide at least one valid history archive URL in spec.validatorConfig.historyArchiveUrls when enableHistoryArchive is true.",
+                        ));
                     }
                 }
                 if self.replicas != 1 {
-                    return Err("Validator nodes must have exactly 1 replica".to_string());
+                    errors.push(SpecValidationError::new(
+                        "spec.replicas",
+                        "Validator nodes must have exactly 1 replica",
+                        "Set spec.replicas to 1 for Validator nodes.",
+                    ));
+                }
+                if self.min_available.is_some() || self.max_unavailable.is_some() {
+                    errors.push(SpecValidationError::new(
+                        "spec.minAvailable / spec.maxUnavailable",
+                        "PDB configuration is not supported for Validator nodes (replicas must be 1)",
+                        "Remove PodDisruptionBudget fields (minAvailable/maxUnavailable) for Validator nodes; they must always have exactly 1 replica.",
+                    ));
                 }
                 if self.autoscaling.is_some() {
-                    return Err("autoscaling is not supported for Validator nodes".to_string());
+                    errors.push(SpecValidationError::new(
+                        "spec.autoscaling",
+                        "autoscaling is not supported for Validator nodes",
+                        "Remove spec.autoscaling when nodeType is Validator; autoscaling is only supported for Horizon and SorobanRpc.",
+                    ));
                 }
                 if self.ingress.is_some() {
-                    return Err("ingress is not supported for Validator nodes".to_string());
+                    errors.push(SpecValidationError::new(
+                        "spec.ingress",
+                        "ingress is not supported for Validator nodes",
+                        "Remove spec.ingress for Validator nodes; expose Validator nodes using peer discovery or other supported mechanisms.",
+                    ));
+                }
+                if matches!(self.strategy, RolloutStrategy::Canary(_)) {
+                    errors.push(SpecValidationError::new(
+                        "spec.strategy",
+                        "Canary rollout is not supported for Validator nodes",
+                        "Use a non-canary rollout strategy (e.g., RollingUpdate) for Validator nodes.",
+                    ));
                 }
             }
             NodeType::Horizon => {
                 if self.horizon_config.is_none() {
-                    return Err("horizonConfig is required for Horizon nodes".to_string());
+                    errors.push(SpecValidationError::new(
+                        "spec.horizonConfig",
+                        "horizonConfig is required for Horizon nodes",
+                        "Add a spec.horizonConfig section with the required Horizon settings when nodeType is Horizon.",
+                    ));
                 }
                 if let Some(ref autoscaling) = self.autoscaling {
                     if autoscaling.min_replicas < 1 {
-                        return Err("autoscaling.minReplicas must be at least 1".to_string());
+                        errors.push(SpecValidationError::new(
+                            "spec.autoscaling.minReplicas",
+                            "autoscaling.minReplicas must be at least 1",
+                            "Set spec.autoscaling.minReplicas to 1 or greater.",
+                        ));
                     }
                     if autoscaling.max_replicas < autoscaling.min_replicas {
-                        return Err("autoscaling.maxReplicas must be >= minReplicas".to_string());
+                        errors.push(SpecValidationError::new(
+                            "spec.autoscaling.maxReplicas",
+                            "autoscaling.maxReplicas must be >= minReplicas",
+                            "Set spec.autoscaling.maxReplicas to be greater than or equal to minReplicas.",
+                        ));
                     }
                 }
                 if let Some(ingress) = &self.ingress {
-                    validate_ingress(ingress)?;
+                    validate_ingress(ingress, &mut errors);
                 }
             }
             NodeType::SorobanRpc => {
                 if self.soroban_config.is_none() {
-                    return Err("sorobanConfig is required for SorobanRpc nodes".to_string());
+                    errors.push(SpecValidationError::new(
+                        "spec.sorobanConfig",
+                        "sorobanConfig is required for SorobanRpc nodes",
+                        "Add a spec.sorobanConfig section with the required Soroban RPC settings when nodeType is SorobanRpc.",
+                    ));
                 }
                 if let Some(ref autoscaling) = self.autoscaling {
                     if autoscaling.min_replicas < 1 {
-                        return Err("autoscaling.minReplicas must be at least 1".to_string());
+                        errors.push(SpecValidationError::new(
+                            "spec.autoscaling.minReplicas",
+                            "autoscaling.minReplicas must be at least 1",
+                            "Set spec.autoscaling.minReplicas to 1 or greater.",
+                        ));
                     }
                     if autoscaling.max_replicas < autoscaling.min_replicas {
-                        return Err("autoscaling.maxReplicas must be >= minReplicas".to_string());
+                        errors.push(SpecValidationError::new(
+                            "spec.autoscaling.maxReplicas",
+                            "autoscaling.maxReplicas must be >= minReplicas",
+                            "Set spec.autoscaling.maxReplicas to be greater than or equal to minReplicas.",
+                        ));
                     }
                 }
                 if let Some(ingress) = &self.ingress {
-                    validate_ingress(ingress)?;
+                    validate_ingress(ingress, &mut errors);
                 }
             }
         }
 
         // Validate load balancer configuration (all node types)
-        // TODO: load_balancer field not yet implemented in StellarNodeSpec
-        /*
         if let Some(lb) = &self.load_balancer {
-            validate_load_balancer(lb)?;
+            validate_load_balancer(lb, &mut errors);
         }
-        */
 
         // Validate global discovery configuration
-        // TODO: global_discovery field not yet implemented in StellarNodeSpec
-        /*
         if let Some(gd) = &self.global_discovery {
-            validate_global_discovery(gd)?;
+            validate_global_discovery(gd, &mut errors);
         }
-        */
 
-        Ok(())
+        // Validate cross-cluster configuration
+        if let Some(cc) = &self.cross_cluster {
+            validate_cross_cluster(cc, &mut errors);
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 
     /// Get the container image for this node type and version
@@ -293,15 +441,22 @@ impl StellarNodeSpec {
     /// # horizon_config: None,
     /// # soroban_config: None,
     /// # replicas: 1,
+    /// # min_available: None,
+    /// # max_unavailable: None,
     /// # suspended: false,
     /// # alerting: false,
     /// # database: None,
     /// # autoscaling: None,
     /// # ingress: None,
+    /// # strategy: Default::default(),
     /// # maintenance_mode: false,
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
+    /// # cluster: None,
+    /// # cross_cluster: None,
     /// };
     /// assert_eq!(spec.container_image(), "stellar/stellar-core:v21.0.0");
     /// ```
@@ -343,15 +498,22 @@ impl StellarNodeSpec {
     /// # horizon_config: None,
     /// # soroban_config: None,
     /// # replicas: 1,
+    /// # min_available: None,
+    /// # max_unavailable: None,
     /// # suspended: false,
     /// # alerting: false,
     /// # database: None,
     /// # autoscaling: None,
     /// # ingress: None,
+    /// # strategy: Default::default(),
     /// # maintenance_mode: false,
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
+    /// # cluster: None,
+    /// # cross_cluster: None,
     /// };
     /// assert!(spec.should_delete_pvc());
     /// ```
@@ -360,102 +522,288 @@ impl StellarNodeSpec {
     }
 }
 
-fn validate_ingress(ingress: &IngressConfig) -> Result<(), String> {
+fn validate_ingress(ingress: &IngressConfig, errors: &mut Vec<SpecValidationError>) {
     if ingress.hosts.is_empty() {
-        return Err("ingress.hosts must not be empty".to_string());
+        errors.push(SpecValidationError::new(
+            "spec.ingress.hosts",
+            "ingress.hosts must not be empty",
+            "Provide at least one host entry under spec.ingress.hosts.",
+        ));
+        return;
     }
 
     for host in &ingress.hosts {
         if host.host.trim().is_empty() {
-            return Err("ingress.hosts[].host must not be empty".to_string());
+            errors.push(SpecValidationError::new(
+                "spec.ingress.hosts[].host",
+                "ingress.hosts[].host must not be empty",
+                "Set a non-empty hostname for each ingress host entry.",
+            ));
+            continue;
         }
         if host.paths.is_empty() {
-            return Err("ingress.hosts[].paths must not be empty".to_string());
+            errors.push(SpecValidationError::new(
+                "spec.ingress.hosts[].paths",
+                "ingress.hosts[].paths must not be empty",
+                "Provide at least one path under spec.ingress.hosts[].paths for each host.",
+            ));
+            continue;
         }
         for path in &host.paths {
             if path.path.trim().is_empty() {
-                return Err("ingress.hosts[].paths[].path must not be empty".to_string());
+                errors.push(SpecValidationError::new(
+                    "spec.ingress.hosts[].paths[].path",
+                    "ingress.hosts[].paths[].path must not be empty",
+                    "Set a non-empty HTTP path for each ingress path entry.",
+                ));
             }
             if let Some(path_type) = &path.path_type {
                 let allowed = path_type == "Prefix" || path_type == "Exact";
                 if !allowed {
-                    return Err(
-                        "ingress.hosts[].paths[].pathType must be either Prefix or Exact"
-                            .to_string(),
-                    );
+                    errors.push(SpecValidationError::new(
+                        "spec.ingress.hosts[].paths[].pathType",
+                        "ingress.hosts[].paths[].pathType must be either Prefix or Exact",
+                        "Set pathType to either \"Prefix\" or \"Exact\" for each ingress path.",
+                    ));
                 }
             }
         }
     }
-
-    Ok(())
 }
 
 #[allow(dead_code)]
-fn validate_load_balancer(lb: &LoadBalancerConfig) -> Result<(), String> {
+fn validate_load_balancer(lb: &LoadBalancerConfig, errors: &mut Vec<SpecValidationError>) {
     use super::types::LoadBalancerMode;
 
     if !lb.enabled {
-        return Ok(());
+        return;
     }
 
     // BGP mode requires peers configuration
     if lb.mode == LoadBalancerMode::BGP {
         if let Some(bgp) = &lb.bgp {
             if bgp.local_asn == 0 {
-                return Err(
-                    "loadBalancer.bgp.localASN must be a valid ASN (1-4294967295)".to_string(),
-                );
+                errors.push(SpecValidationError::new(
+                    "spec.loadBalancer.bgp.localASN",
+                    "loadBalancer.bgp.localASN must be a valid ASN (1-4294967295)",
+                    "Set spec.loadBalancer.bgp.localASN to a value between 1 and 4294967295.",
+                ));
             }
             if bgp.peers.is_empty() {
-                return Err(
-                    "loadBalancer.bgp.peers must not be empty when using BGP mode".to_string(),
-                );
+                errors.push(SpecValidationError::new(
+                    "spec.loadBalancer.bgp.peers",
+                    "loadBalancer.bgp.peers must not be empty when using BGP mode",
+                    "Provide at least one BGP peer under spec.loadBalancer.bgp.peers when mode is BGP.",
+                ));
             }
             for (i, peer) in bgp.peers.iter().enumerate() {
                 if peer.address.trim().is_empty() {
-                    return Err(format!(
-                        "loadBalancer.bgp.peers[{}].address must not be empty",
-                        i
+                    errors.push(SpecValidationError::new(
+                        format!("spec.loadBalancer.bgp.peers[{}].address", i),
+                        "loadBalancer.bgp.peers[].address must not be empty",
+                        "Set a valid IP or hostname for each BGP peer address.",
                     ));
                 }
                 if peer.asn == 0 {
-                    return Err(format!(
-                        "loadBalancer.bgp.peers[{}].asn must be a valid ASN",
-                        i
+                    errors.push(SpecValidationError::new(
+                        format!("spec.loadBalancer.bgp.peers[{}].asn", i),
+                        "loadBalancer.bgp.peers[].asn must be a valid ASN",
+                        "Set spec.loadBalancer.bgp.peers[].asn to a value between 1 and 4294967295.",
                     ));
                 }
             }
         } else {
-            return Err("loadBalancer.bgp configuration is required when mode is BGP".to_string());
+            errors.push(SpecValidationError::new(
+                "spec.loadBalancer.bgp",
+                "loadBalancer.bgp configuration is required when mode is BGP",
+                "Add a spec.loadBalancer.bgp section when using BGP load balancer mode.",
+            ));
         }
     }
 
     // Validate health check port range
     if lb.health_check_enabled && (lb.health_check_port < 1 || lb.health_check_port > 65535) {
-        return Err("loadBalancer.healthCheckPort must be between 1 and 65535".to_string());
+        errors.push(SpecValidationError::new(
+            "spec.loadBalancer.healthCheckPort",
+            "loadBalancer.healthCheckPort must be between 1 and 65535",
+            "Set spec.loadBalancer.healthCheckPort to a value between 1 and 65535.",
+        ));
     }
-
-    Ok(())
 }
 
 #[allow(dead_code)]
-fn validate_global_discovery(gd: &GlobalDiscoveryConfig) -> Result<(), String> {
+fn validate_global_discovery(gd: &GlobalDiscoveryConfig, errors: &mut Vec<SpecValidationError>) {
     if !gd.enabled {
-        return Ok(());
+        return;
     }
 
     // Validate external DNS if configured
     if let Some(dns) = &gd.external_dns {
         if dns.hostname.trim().is_empty() {
-            return Err("globalDiscovery.externalDns.hostname must not be empty".to_string());
+            errors.push(SpecValidationError::new(
+                "spec.globalDiscovery.externalDns.hostname",
+                "globalDiscovery.externalDns.hostname must not be empty",
+                "Set a non-empty hostname for spec.globalDiscovery.externalDns.hostname.",
+            ));
         }
         if dns.ttl == 0 {
-            return Err("globalDiscovery.externalDns.ttl must be greater than 0".to_string());
+            errors.push(SpecValidationError::new(
+                "spec.globalDiscovery.externalDns.ttl",
+                "globalDiscovery.externalDns.ttl must be greater than 0",
+                "Set spec.globalDiscovery.externalDns.ttl to a value greater than 0.",
+            ));
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn validate_cross_cluster(cc: &CrossClusterConfig, errors: &mut Vec<SpecValidationError>) {
+    use super::types::{CrossClusterMeshType, CrossClusterMode};
+
+    if !cc.enabled {
+        return;
+    }
+
+    // Validate service mesh configuration
+    if cc.mode == CrossClusterMode::ServiceMesh {
+        if let Some(mesh) = &cc.service_mesh {
+            if mesh.cluster_set_id.is_none()
+                && (mesh.mesh_type == CrossClusterMeshType::Submariner
+                    || mesh.mesh_type == CrossClusterMeshType::Istio)
+            {
+                errors.push(SpecValidationError::new(
+                    "spec.crossCluster.serviceMesh.clusterSetId",
+                    "crossCluster.serviceMesh.clusterSetId is required for Submariner and Istio",
+                    "Set spec.crossCluster.serviceMesh.clusterSetId when using Submariner or Istio mesh types.",
+                ));
+            }
+        } else {
+            errors.push(SpecValidationError::new(
+                "spec.crossCluster.serviceMesh",
+                "crossCluster.serviceMesh configuration is required when mode is ServiceMesh",
+                "Add a spec.crossCluster.serviceMesh section when crossCluster.mode is ServiceMesh.",
+            ));
         }
     }
 
-    Ok(())
+    // Validate ExternalName configuration
+    if cc.mode == CrossClusterMode::ExternalName {
+        if let Some(ext) = &cc.external_name {
+            if ext.external_dns_name.trim().is_empty() {
+                errors.push(SpecValidationError::new(
+                    "spec.crossCluster.externalName.externalDnsName",
+                    "crossCluster.externalName.externalDnsName must not be empty",
+                    "Set a non-empty DNS name for spec.crossCluster.externalName.externalDnsName.",
+                ));
+            }
+        } else {
+            errors.push(SpecValidationError::new(
+                "spec.crossCluster.externalName",
+                "crossCluster.externalName configuration is required when mode is ExternalName",
+                "Add a spec.crossCluster.externalName section when crossCluster.mode is ExternalName.",
+            ));
+        }
+    }
+
+    // Validate peer clusters
+    for (i, peer) in cc.peer_clusters.iter().enumerate() {
+        if peer.cluster_id.trim().is_empty() {
+            errors.push(SpecValidationError::new(
+                format!("spec.crossCluster.peerClusters[{}].clusterId", i),
+                "crossCluster.peerClusters[].clusterId must not be empty",
+                "Set a non-empty identifier for each entry in spec.crossCluster.peerClusters[].clusterId.",
+            ));
+        }
+        if peer.endpoint.trim().is_empty() {
+            errors.push(SpecValidationError::new(
+                format!("spec.crossCluster.peerClusters[{}].endpoint", i),
+                "crossCluster.peerClusters[].endpoint must not be empty",
+                "Set a non-empty endpoint URL for each entry in spec.crossCluster.peerClusters[].endpoint.",
+            ));
+        }
+        if let Some(threshold) = peer.latency_threshold_ms {
+            if threshold == 0 {
+                errors.push(SpecValidationError::new(
+                    format!(
+                        "spec.crossCluster.peerClusters[{}].latencyThresholdMs",
+                        i
+                    ),
+                    "crossCluster.peerClusters[].latencyThresholdMs must be greater than 0",
+                    "Set spec.crossCluster.peerClusters[].latencyThresholdMs to a value greater than 0.",
+                ));
+            }
+        }
+    }
+
+    // Validate latency threshold
+    if cc.latency_threshold_ms == 0 {
+        errors.push(SpecValidationError::new(
+            "spec.crossCluster.latencyThresholdMs",
+            "crossCluster.latencyThresholdMs must be greater than 0",
+            "Set spec.crossCluster.latencyThresholdMs to a value greater than 0.",
+        ));
+    }
+
+    // Validate health check configuration
+    if let Some(hc) = &cc.health_check {
+        if hc.enabled {
+            if hc.interval_seconds == 0 {
+                errors.push(SpecValidationError::new(
+                    "spec.crossCluster.healthCheck.intervalSeconds",
+                    "crossCluster.healthCheck.intervalSeconds must be greater than 0",
+                    "Set spec.crossCluster.healthCheck.intervalSeconds to a value greater than 0.",
+                ));
+            }
+            if hc.timeout_seconds == 0 {
+                errors.push(SpecValidationError::new(
+                    "spec.crossCluster.healthCheck.timeoutSeconds",
+                    "crossCluster.healthCheck.timeoutSeconds must be greater than 0",
+                    "Set spec.crossCluster.healthCheck.timeoutSeconds to a value greater than 0.",
+                ));
+            }
+            if hc.timeout_seconds >= hc.interval_seconds {
+                errors.push(SpecValidationError::new(
+                    "spec.crossCluster.healthCheck.timeoutSeconds",
+                    "crossCluster.healthCheck.timeoutSeconds must be less than intervalSeconds",
+                    "Set spec.crossCluster.healthCheck.timeoutSeconds to a value lower than intervalSeconds.",
+                ));
+            }
+            if hc.failure_threshold == 0 {
+                errors.push(SpecValidationError::new(
+                    "spec.crossCluster.healthCheck.failureThreshold",
+                    "crossCluster.healthCheck.failureThreshold must be greater than 0",
+                    "Set spec.crossCluster.healthCheck.failureThreshold to a value greater than 0.",
+                ));
+            }
+            if hc.success_threshold == 0 {
+                errors.push(SpecValidationError::new(
+                    "spec.crossCluster.healthCheck.successThreshold",
+                    "crossCluster.healthCheck.successThreshold must be greater than 0",
+                    "Set spec.crossCluster.healthCheck.successThreshold to a value greater than 0.",
+                ));
+            }
+
+            // Validate latency measurement
+            if let Some(lm) = &hc.latency_measurement {
+                if lm.enabled {
+                    if lm.sample_count == 0 {
+                        errors.push(SpecValidationError::new(
+                            "spec.crossCluster.healthCheck.latencyMeasurement.sampleCount",
+                            "crossCluster.healthCheck.latencyMeasurement.sampleCount must be greater than 0",
+                            "Set sampleCount to a value greater than 0 in spec.crossCluster.healthCheck.latencyMeasurement.",
+                        ));
+                    }
+                    if lm.percentile == 0 || lm.percentile > 100 {
+                        errors.push(SpecValidationError::new(
+                            "spec.crossCluster.healthCheck.latencyMeasurement.percentile",
+                            "crossCluster.healthCheck.latencyMeasurement.percentile must be between 1 and 100",
+                            "Set percentile to a value between 1 and 100 in spec.crossCluster.healthCheck.latencyMeasurement.",
+                        ));
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Status subresource for StellarNode
@@ -533,6 +881,14 @@ pub struct StellarNodeStatus {
     #[serde(default)]
     pub replicas: i32,
 
+    /// Current number of ready canary replicas (for canary deployments)
+    #[serde(default)]
+    pub canary_ready_replicas: i32,
+
+    /// Version deployed in the canary deployment (if active)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub canary_version: Option<String>,
+
     /// Version of the database schema after last successful migration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_migrated_version: Option<String>,
@@ -574,8 +930,8 @@ impl StellarNodeStatus {
     /// ```
     /// DEPRECATED: Use `with_conditions` instead
     #[deprecated(since = "0.2.0", note = "Use with_conditions instead")]
+    #[allow(deprecated)]
     pub fn with_phase(phase: &str) -> Self {
-        #[allow(deprecated)]
         Self {
             phase: phase.to_string(),
             ..Default::default()
@@ -605,6 +961,7 @@ impl StellarNodeStatus {
     /// DEPRECATED: Use condition helpers instead
     #[allow(deprecated)]
     #[deprecated(since = "0.2.0", note = "Use set_condition helpers instead")]
+    #[allow(deprecated)]
     pub fn update(&mut self, phase: &str, message: Option<&str>) {
         self.phase = phase.to_string();
         self.message = message.map(String::from);
@@ -693,5 +1050,100 @@ impl StellarNodeStatus {
                 "Pending".to_string()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crd::types::{CanaryConfig, RolloutStrategy};
+
+    #[test]
+    fn test_validator_with_canary_should_fail() {
+        let spec = StellarNodeSpec {
+            node_type: NodeType::Validator,
+            network: StellarNetwork::Testnet,
+            version: "v21.0.0".to_string(),
+            resources: Default::default(),
+            storage: Default::default(),
+            validator_config: Some(ValidatorConfig {
+                seed_secret_ref: "test".to_string(),
+                quorum_set: None,
+                enable_history_archive: false,
+                history_archive_urls: vec![],
+                catchup_complete: false,
+                key_source: Default::default(),
+                kms_config: None,
+                vl_source: None,
+                hsm_config: None,
+            }),
+            horizon_config: None,
+            soroban_config: None,
+            replicas: 1,
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            autoscaling: None,
+            ingress: None,
+            strategy: RolloutStrategy::Canary(CanaryConfig {
+                weight: 10,
+                check_interval_seconds: 300,
+            }),
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            topology_spread_constraints: None,
+            load_balancer: None,
+            global_discovery: None,
+            cluster: None,
+            cross_cluster: None,
+        };
+
+        assert!(spec.validate().is_err());
+    }
+
+    #[test]
+    fn test_horizon_with_canary_should_pass() {
+        let spec = StellarNodeSpec {
+            node_type: NodeType::Horizon,
+            network: StellarNetwork::Testnet,
+            version: "v21.0.0".to_string(),
+            resources: Default::default(),
+            storage: Default::default(),
+            validator_config: None,
+            horizon_config: Some(HorizonConfig {
+                database_secret_ref: "test".to_string(),
+                enable_ingest: true,
+                stellar_core_url: "http://core".to_string(),
+                ingest_workers: 1,
+                enable_experimental_ingestion: false,
+                auto_migration: false,
+            }),
+            soroban_config: None,
+            replicas: 3,
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            autoscaling: None,
+            ingress: None,
+            strategy: RolloutStrategy::Canary(CanaryConfig {
+                weight: 20,
+                check_interval_seconds: 300,
+            }),
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            topology_spread_constraints: None,
+            load_balancer: None,
+            global_discovery: None,
+            cluster: None,
+            cross_cluster: None,
+        };
+
+        assert!(spec.validate().is_ok());
     }
 }

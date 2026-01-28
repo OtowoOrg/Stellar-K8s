@@ -1,0 +1,123 @@
+# Example: Cross-cluster Stellar validator using ExternalName services
+# This configuration uses external DNS for cross-cluster communication
+#
+# Prerequisites:
+# - External DNS controller installed in each cluster
+# - DNS provider configured (Route53, Cloudflare, etc.)
+# - LoadBalancer services with external IPs
+#
+# This approach is simpler than service mesh but requires external DNS management
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-us-east-1
+  namespace: stellar-nodes
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  
+  # Cluster identifier
+  cluster: "us-east-1"
+  
+  resources:
+    requests:
+      cpu: "4"
+      memory: "16Gi"
+    limits:
+      cpu: "8"
+      memory: "32Gi"
+  
+  storage:
+    storageClass: "fast-ssd"
+    size: "1Ti"
+    retentionPolicy: Retain
+  
+  validatorConfig:
+    seedSecretRef: "validator-seed-us-east-1"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+  
+  # Cross-cluster communication using ExternalName
+  crossCluster:
+    enabled: true
+    mode: ExternalName
+    
+    # ExternalName service configuration
+    externalName:
+      # This node's external DNS name
+      externalDnsName: "validator-us-east-1.stellar.example.com"
+      dnsProvider: "route53"
+      ttl: 60
+      createExternalNameServices: true
+    
+    # Peer clusters with external DNS names
+    peerClusters:
+      - clusterId: "us-west-1"
+        # External DNS name for the peer
+        endpoint: "validator-us-west-1.stellar.example.com"
+        latencyThresholdMs: 100
+        region: "us-west"
+        priority: 100
+        port: 11625
+        enabled: true
+      
+      - clusterId: "eu-central-1"
+        endpoint: "validator-eu-central-1.stellar.example.com"
+        latencyThresholdMs: 150
+        region: "eu-central"
+        priority: 90
+        port: 11625
+        enabled: true
+      
+      - clusterId: "ap-south-1"
+        endpoint: "validator-ap-south-1.stellar.example.com"
+        latencyThresholdMs: 250
+        region: "ap-south"
+        priority: 80
+        port: 11625
+        enabled: true
+    
+    latencyThresholdMs: 300
+    
+    healthCheck:
+      enabled: true
+      intervalSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+      
+      latencyMeasurement:
+        enabled: true
+        method: http
+        sampleCount: 10
+        percentile: 95
+
+---
+# LoadBalancer service for external access
+# This will be assigned an external IP and registered in DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: validator-us-east-1-external
+  namespace: stellar-nodes
+  annotations:
+    # External DNS annotations
+    external-dns.alpha.kubernetes.io/hostname: "validator-us-east-1.stellar.example.com"
+    external-dns.alpha.kubernetes.io/ttl: "60"
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/instance: validator-us-east-1
+  ports:
+    - name: peer
+      port: 11625
+      targetPort: 11625
+      protocol: TCP
+    - name: http
+      port: 11626
+      targetPort: 11626
+      protocol: TCP

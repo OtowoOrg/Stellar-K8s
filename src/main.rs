@@ -14,6 +14,18 @@ struct Args {
     /// Operator namespace
     #[arg(long, env = "OPERATOR_NAMESPACE", default_value = "default")]
     namespace: String,
+
+    /// Run in dry-run mode (calculate changes without applying them)
+    #[arg(long, env = "DRY_RUN")]
+    dry_run: bool,
+
+    /// Run the latency-aware scheduler instead of the operator
+    #[arg(long, env = "RUN_SCHEDULER")]
+    scheduler: bool,
+
+    /// Custom scheduler name (used when --scheduler is set)
+    #[arg(long, env = "SCHEDULER_NAME", default_value = "stellar-scheduler")]
+    scheduler_name: String,
 }
 
 #[tokio::main]
@@ -55,6 +67,19 @@ async fn main() -> Result<(), Error> {
         .map_err(Error::KubeError)?;
 
     info!("Connected to Kubernetes cluster");
+
+    // If --scheduler flag is set, run the latency-aware scheduler instead
+    if args.scheduler {
+        info!(
+            "Running in scheduler mode with name: {}",
+            args.scheduler_name
+        );
+        let scheduler = stellar_k8s::scheduler::core::Scheduler::new(client, args.scheduler_name);
+        return scheduler
+            .run()
+            .await
+            .map_err(|e| Error::ConfigError(e.to_string()));
+    }
 
     let client_clone = client.clone();
     let namespace = args.namespace.clone();
@@ -130,6 +155,18 @@ async fn main() -> Result<(), Error> {
         enable_mtls: args.enable_mtls,
         operator_namespace: args.namespace.clone(),
         mtls_config: mtls_config.clone(),
+        dry_run: args.dry_run,
+    });
+
+    // Start the peer discovery manager
+    let peer_discovery_client = client.clone();
+    let peer_discovery_config = controller::PeerDiscoveryConfig::default();
+    tokio::spawn(async move {
+        let manager =
+            controller::PeerDiscoveryManager::new(peer_discovery_client, peer_discovery_config);
+        if let Err(e) = manager.run().await {
+            tracing::error!("Peer discovery manager error: {:?}", e);
+        }
     });
 
     // Start the REST API server

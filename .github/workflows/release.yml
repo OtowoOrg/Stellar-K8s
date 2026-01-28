@@ -3,90 +3,75 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
 
 permissions:
   contents: write
   packages: write
-  pull-requests: read
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # ==========================================================================
-  # Validate Release Tag
-  # ==========================================================================
   validate:
-    name: Validate Release
+    name: Validate
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Validate and extract version
+      - name: Extract version
         id: version
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           VERSION=${TAG#v}
-          
-          # Validate semver format
+
           if ! [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
-            echo "::error::Invalid version format: $VERSION (expected: X.Y.Z or X.Y.Z-prerelease)"
+            echo "::error::Invalid version: $VERSION"
             exit 1
           fi
-          
-          # Check if this is a pre-release
+
           IS_PRERELEASE=false
-          if [[ $VERSION =~ -[a-zA-Z] ]]; then
-            IS_PRERELEASE=true
-          fi
-          
-          # Verify version in Cargo.toml matches
+          [[ $VERSION =~ -[a-zA-Z] ]] && IS_PRERELEASE=true
+
           CARGO_VERSION=$(grep '^version = ' Cargo.toml | head -1 | cut -d'"' -f2)
           if [[ "$VERSION" != "$CARGO_VERSION" ]]; then
             echo "::warning::Version mismatch: tag=$VERSION, Cargo.toml=$CARGO_VERSION"
           fi
-          
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
-          echo "Release version: $VERSION (prerelease: $IS_PRERELEASE)"
 
-  # ==========================================================================
-  # Build Release Artifacts
-  # ==========================================================================
-  build:
-    name: Build Release Artifacts
+  build-artifacts:
+    name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     needs: validate
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: stellar-operator
-            asset_name: stellar-operator-linux-amd64
+            name: stellar-operator-linux-amd64
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            artifact_name: stellar-operator
-            asset_name: stellar-operator-linux-arm64
+            name: stellar-operator-linux-arm64
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: stellar-operator
-            asset_name: stellar-operator-darwin-amd64
+            name: stellar-operator-darwin-amd64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: stellar-operator
-            asset_name: stellar-operator-darwin-arm64
+            name: stellar-operator-darwin-arm64
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -110,43 +95,37 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-release-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build release binary
-        run: |
-          cargo build --release --target ${{ matrix.target }} --bin stellar-operator
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "release-${{ matrix.target }}"
 
-      - name: Strip binary (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+      - name: Build release
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin stellar-operator
 
-      - name: Strip binary (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+      - name: Strip binary
+        run: strip target/${{ matrix.target }}/release/stellar-operator
 
       - name: Create tarball
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
-          sha256sum ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
+          tar czf ${{ matrix.name }}.tar.gz stellar-operator
+          sha256sum ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.tar.gz.sha256
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset_name }}
+          name: ${{ matrix.name }}
           path: |
-            target/${{ matrix.target }}/release/${{ matrix.asset_name }}.tar.gz
-            target/${{ matrix.target }}/release/${{ matrix.asset_name }}.tar.gz.sha256
+            target/${{ matrix.target }}/release/${{ matrix.name }}.tar.gz
+            target/${{ matrix.target }}/release/${{ matrix.name }}.tar.gz.sha256
 
-  # ==========================================================================
-  # Build and Push Container Images
-  # ==========================================================================
   container:
-    name: Build & Push Container Images
+    name: Container
     runs-on: ubuntu-latest
     needs: validate
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -154,7 +133,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -169,8 +148,8 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}},enable=${{ !needs.validate.outputs.is_prerelease }}
-            type=raw,value=latest,enable=${{ !needs.validate.outputs.is_prerelease }}
+            type=semver,pattern={{major}},enable=${{ needs.validate.outputs.is_prerelease == 'false' }}
+            type=raw,value=latest,enable=${{ needs.validate.outputs.is_prerelease == 'false' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -182,224 +161,113 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            VERSION=${{ needs.validate.outputs.version }}
-            GIT_COMMIT=${{ github.sha }}
 
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
-        with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}
-          format: spdx-json
-          output-file: sbom-${{ needs.validate.outputs.version }}.spdx.json
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@v6
-        with:
-          name: sbom
-          path: sbom-${{ needs.validate.outputs.version }}.spdx.json
-
-  # ==========================================================================
-  # Security Scan
-  # ==========================================================================
   security:
-    name: Security Scan
+    name: Security
     runs-on: ubuntu-latest
     needs: [validate, container]
     permissions:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.33.1
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
 
       - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: trivy-results.sarif
 
-      - name: Run Trivy for release notes
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}'
-          format: 'table'
-          output: 'trivy-results.txt'
-          severity: 'CRITICAL,HIGH'
-
-      - name: Upload security report
-        uses: actions/upload-artifact@v6
-        with:
-          name: security-report
-          path: trivy-results.txt
-
-  # ==========================================================================
-  # Package Helm Chart
-  # ==========================================================================
   helm:
-    name: Package Helm Chart
+    name: Helm
     runs-on: ubuntu-latest
     needs: validate
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Helm
         uses: azure/setup-helm@v4
         with:
-          version: 'v3.14.0'
+          version: v3.16.0
 
       - name: Update chart version
         run: |
           VERSION=${{ needs.validate.outputs.version }}
           sed -i "s/^version:.*/version: $VERSION/" charts/stellar-operator/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: $VERSION/" charts/stellar-operator/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"$VERSION\"/" charts/stellar-operator/Chart.yaml
 
-      - name: Lint Helm chart
-        run: |
-          helm lint charts/stellar-operator/
+      - name: Lint chart
+        run: helm lint charts/stellar-operator/
 
-      - name: Package Helm chart
-        run: |
-          helm package charts/stellar-operator/ -d .
+      - name: Package chart
+        run: helm package charts/stellar-operator/ -d .
 
-      - name: Upload Helm chart
-        uses: actions/upload-artifact@v6
+      - name: Upload chart
+        uses: actions/upload-artifact@v4
         with:
           name: helm-chart
           path: stellar-operator-*.tgz
 
-  # ==========================================================================
-  # Generate Release Notes
-  # ==========================================================================
-  changelog:
-    name: Generate Changelog
+  release:
+    name: Release
     runs-on: ubuntu-latest
-    needs: validate
-    outputs:
-      changelog: ${{ steps.changelog.outputs.changelog }}
+    needs: [validate, build-artifacts, container, security, helm]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Generate changelog
-        id: changelog
-        run: |
-          VERSION=${{ needs.validate.outputs.version }}
-          
-          # Get previous tag
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          
-          echo "## What's Changed" > changelog.md
-          echo "" >> changelog.md
-          
-          if [[ -n "$PREV_TAG" ]]; then
-            echo "### Commits since $PREV_TAG" >> changelog.md
-            echo "" >> changelog.md
-            
-            # Group commits by type
-            git log $PREV_TAG..HEAD --pretty=format:"%s" | \
-              sed -E 's/^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: (.+)/\1: \3/' | \
-              sort > commits.txt
-            
-            # Features
-            if grep -q "^feat:" commits.txt; then
-              echo "#### ✨ Features" >> changelog.md
-              grep "^feat:" commits.txt | sed 's/^feat: /- /' >> changelog.md
-              echo "" >> changelog.md
-            fi
-            
-            # Fixes
-            if grep -q "^fix:" commits.txt; then
-              echo "#### 🐛 Bug Fixes" >> changelog.md
-              grep "^fix:" commits.txt | sed 's/^fix: /- /' >> changelog.md
-              echo "" >> changelog.md
-            fi
-            
-            # Performance
-            if grep -q "^perf:" commits.txt; then
-              echo "#### ⚡ Performance" >> changelog.md
-              grep "^perf:" commits.txt | sed 's/^perf: /- /' >> changelog.md
-              echo "" >> changelog.md
-            fi
-            
-            # Documentation
-            if grep -q "^docs:" commits.txt; then
-              echo "#### 📚 Documentation" >> changelog.md
-              grep "^docs:" commits.txt | sed 's/^docs: /- /' >> changelog.md
-              echo "" >> changelog.md
-            fi
-            
-            # Other changes
-            echo "#### 🔧 Other Changes" >> changelog.md
-            grep -v "^feat:\|^fix:\|^perf:\|^docs:" commits.txt | sed 's/^/- /' >> changelog.md || echo "- Minor updates and improvements" >> changelog.md
-          else
-            echo "Initial release" >> changelog.md
-          fi
-          
-          # Output for GitHub Actions
-          {
-            echo 'changelog<<EOF'
-            cat changelog.md
-            echo EOF
-          } >> $GITHUB_OUTPUT
-
-      - name: Upload changelog
-        uses: actions/upload-artifact@v6
-        with:
-          name: changelog
-          path: changelog.md
-
-  # ==========================================================================
-  # Create GitHub Release
-  # ==========================================================================
-  release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    needs: [validate, build, container, security, helm, changelog]
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v7
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
         with:
           path: artifacts/
 
-      - name: Prepare release assets
+      - name: Prepare assets
         run: |
           mkdir -p release-assets
           find artifacts/ -name "*.tar.gz" -exec cp {} release-assets/ \;
           find artifacts/ -name "*.sha256" -exec cp {} release-assets/ \;
           find artifacts/ -name "*.tgz" -exec cp {} release-assets/ \;
-          find artifacts/ -name "*.spdx.json" -exec cp {} release-assets/ \;
-          
-          # Create checksums file
-          cd release-assets
-          sha256sum * > SHA256SUMS
-          cd ..
+          cd release-assets && sha256sum * > SHA256SUMS
 
-      - name: Create Release
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION=${{ needs.validate.outputs.version }}
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          {
+            echo "## Release v${VERSION}"
+            echo ""
+            echo "### Container Images"
+            echo '```'
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+            echo '```'
+            echo ""
+            
+            if [[ -n "$PREV_TAG" ]]; then
+              echo "### Changes since ${PREV_TAG}"
+              echo ""
+              git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges
+            else
+              echo "### Initial Release"
+            fi
+          } > changelog.md
+
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          name: Release v${{ needs.validate.outputs.version }}
-          body_path: artifacts/changelog/changelog.md
+          name: v${{ needs.validate.outputs.version }}
+          body_path: changelog.md
           draft: false
           prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
-          files: |
-            release-assets/*
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-
-      - name: Notify release
-        run: |
-          echo "::notice::Release v${{ needs.validate.outputs.version }} created successfully"
-          echo "Container images:"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          files: release-assets/*
+          fail_on_unmatched_files: false

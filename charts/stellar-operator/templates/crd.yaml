@@ -49,6 +49,22 @@ spec:
                   type: boolean
                   default: false
                   description: Suspend the node without deleting resources
+                strategy:
+                  type: object
+                  properties:
+                    rollingUpdate:
+                      type: object
+                    canary:
+                      type: object
+                      properties:
+                        weight:
+                          type: integer
+                          minimum: 0
+                          maximum: 100
+                          default: 10
+                        checkIntervalSeconds:
+                          type: integer
+                          default: 300
                 resources:
                   type: object
                   properties:
@@ -98,6 +114,24 @@ spec:
                         type: string
                     catchupComplete:
                       type: boolean
+                    hsmConfig:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                          enum: [AWS, Azure]
+                        pkcs11LibPath:
+                          type: string
+                          description: Path to the PKCS#11 library (e.g. /opt/cloudhsm/lib/libcloudhsm_pkcs11.so)
+                        hsmIp:
+                          type: string
+                          nullable: true
+                        hsmCredentialsSecretRef:
+                          type: string
+                          nullable: true
+                      required:
+                        - provider
+                        - pkcs11LibPath
                 horizonConfig:
                   type: object
                   properties:
@@ -122,6 +156,19 @@ spec:
                       type: boolean
                     maxEventsPerRequest:
                       type: integer
+                serviceConfig:
+                  type: object
+                  properties:
+                    peerNodePort:
+                      type: integer
+                      minimum: 30000
+                      maximum: 32767
+                      description: NodePort for peer connections (validators only)
+                    httpNodePort:
+                      type: integer
+                      minimum: 30000
+                      maximum: 32767
+                      description: NodePort for HTTP API access
             status:
               type: object
               properties:
@@ -132,6 +179,10 @@ spec:
                 observedGeneration:
                   type: integer
                   format: int64
+                canaryVersion:
+                  type: string
+                canaryReadyReplicas:
+                  type: integer
                 conditions:
                   type: array
                   items:

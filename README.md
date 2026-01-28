@@ -2,7 +2,7 @@
   <img src="assets/logo.png" alt="Stellar-K8s Logo" width="200" />
 </p>
 
-# Stellar-K8s: Cloud-Native Stellar Infrastructure 🚀
+# Stellar-K8s: Cloud-Native Stellar Infrastructure
 
 ![Rust](https://img.shields.io/badge/Built%20with-Rust-orange?style=for-the-badge&logo=rust) ![Kubernetes](https://img.shields.io/badge/Kubernetes-Operator-blue?style=for-the-badge&logo=kubernetes) ![License](https://img.shields.io/badge/License-Apache%202.0-green?style=for-the-badge) ![CI/CD](https://img.shields.io/github/actions/workflow/status/stellar/stellar-k8s/ci.yml?style=for-the-badge&label=Build)
 
@@ -20,7 +20,7 @@ Designed for high availability, type safety, and minimal footprint.
 - **🛡️ Enterprise Reliability**: Type-safe error handling prevents runtime failures. Built-in `Finalizers` ensure clean PVC and resource cleanup.
 - **🏥 Auto-Sync Health Checks**: Automatically monitors Horizon and Soroban RPC nodes, only marking them Ready when fully synced with the network.
 - **GitOps Ready**: Fully compatible with ArgoCD and Flux for declarative infrastructure management.
-- **🔭 Observable by Default**: Native Prometheus metrics integration for monitoring node health, ledger sync status, and resource usage.
+- **📈 Observable by Default**: Native Prometheus metrics integration for monitoring node health, ledger sync status, and resource usage.
 - **⚡ Soroban Ready**: First-class support for Soroban RPC nodes with captive core configuration.
 
 ---
@@ -32,6 +32,17 @@ Stellar-K8s follows the **Operator Pattern**, extending Kubernetes with a `Stell
 1.  **CRD Source of Truth**: You define your node requirements (Network, Type, Resources) in a `StellarNode` manifest.
 2.  **Reconciliation Loop**: The Rust-based controller watches for changes and drives the cluster state to match your desired specification.
 3.  **Stateful Management**: Automatically handles complex lifecycle events for Validators (StatefulSets) and RPC nodes (Deployments), including persistent storage and configuration.
+
+---
+
+## 📋 Prerequisites
+
+- **Kubernetes cluster** (1.28+)
+- **kubectl** configured
+- **Helm 3.x** (for operator installation)
+- **Rust 1.88+** (for local development)
+  - CI/CD and Docker builds use Rust 1.93 for consistency
+  - Contributors can use any Rust 1.88+ version locally
 
 ---
 
@@ -110,9 +121,10 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 ### Phase 1: Core Operator & Helm Charts (Current)
+
 - [x] `StellarNode` CRD with Validator support
 - [x] Basic Controller logic with `kube-rs`
 - [x] Helm Chart for easy deployment
@@ -121,22 +133,53 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - [x] kubectl-stellar plugin for node management
 
 ### Phase 2: Soroban & Observability (Month 2)
+
 - [ ] Full Soroban RPC node support with captive core
 - [ ] Comprehensive Prometheus metrics export (Ledger age, peer count)
 - [ ] Dedicated Grafana Dashboards
 - [ ] Automated history archive management
 
 ### Phase 3: High Availability & DR (Month 3)
+
 - [ ] Automated failover for high-availability setups
 - [ ] Disaster Recovery automation (backup/restore from history)
 - [ ] Multi-region federation support
 
 ---
 
-## 👨‍💻 Maintainer
+## �️ Development
+
+### Prerequisites
+
+- Rust (latest stable)
+- Docker & Kubernetes cluster
+- Make
+
+### Quick Start
+
+```bash
+# Setup development environment
+make dev-setup
+
+# Quick pre-commit check
+make quick
+
+# Full CI validation
+make ci-local
+
+# Build and run
+make build
+make run
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines.
+
+---
+
+## �👨‍💻 Maintainer
 
 **Otowo Samuel**  
-*DevOps Engineer & Protocol Developer*
+_DevOps Engineer & Protocol Developer_
 
 Bringing nearly 5 years of DevOps experience and a deep background in blockchain infrastructure tools (core contributor of `starknetnode-kit`). Passionate about building robust, type-safe tooling for the decentralized web.
 

@@ -22,15 +22,17 @@ use k8s_openapi::api::networking::v1::{
     IngressServiceBackend, IngressSpec, IngressTLS, NetworkPolicy, NetworkPolicyIngressRule,
     NetworkPolicyPeer, NetworkPolicyPort, NetworkPolicySpec, ServiceBackendPort,
 };
+use k8s_openapi::api::policy::v1::{PodDisruptionBudget, PodDisruptionBudgetSpec};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta, OwnerReference};
+use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::api::{Api, DeleteParams, Patch, PatchParams, PostParams};
 use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
 use crate::crd::{
-    ExternalTrafficPolicy, IngressConfig, KeySource, LoadBalancerConfig, LoadBalancerMode,
-    NetworkPolicyConfig, NodeType, StellarNode,
+    ExternalTrafficPolicy, HsmProvider, IngressConfig, KeySource, LoadBalancerConfig,
+    LoadBalancerMode, NetworkPolicyConfig, NodeType, RolloutStrategy, StellarNode,
 };
 use crate::error::{Error, Result};
 
@@ -312,6 +314,60 @@ pub async fn ensure_deployment(
     Ok(())
 }
 
+/// Ensure a canary Deployment exists if needed
+pub async fn ensure_canary_deployment(
+    client: &Client,
+    node: &StellarNode,
+    enable_mtls: bool,
+) -> Result<()> {
+    let canary_version = match node
+        .status
+        .as_ref()
+        .and_then(|status| status.canary_version.as_ref())
+    {
+        Some(v) => v,
+        None => return Ok(()),
+    };
+
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
+    let name = format!("{}-canary", node.name_any());
+
+    let mut canary_node = node.clone();
+    canary_node.spec.version = canary_version.clone();
+
+    let mut deployment = build_deployment(&canary_node, enable_mtls);
+    deployment.metadata.name = Some(name.clone());
+
+    // Update labels and selectors to include canary label
+    if let Some(spec) = &mut deployment.spec {
+        let mut labels = spec
+            .template
+            .metadata
+            .as_ref()
+            .and_then(|m| m.labels.clone())
+            .unwrap_or_default();
+        labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
+        spec.template.metadata.as_mut().unwrap().labels = Some(labels.clone());
+        spec.selector.match_labels = Some(labels.clone());
+
+        let meta = &mut deployment.metadata;
+        let mut meta_labels = meta.labels.clone().unwrap_or_default();
+        meta_labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
+        meta.labels = Some(meta_labels);
+    }
+
+    let patch = Patch::Apply(&deployment);
+    api.patch(
+        &name,
+        &PatchParams::apply("stellar-operator").force(),
+        &patch,
+    )
+    .await?;
+
+    Ok(())
+}
+
 fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deployment {
     let labels = standard_labels(node);
     let name = node.name_any();
@@ -470,6 +526,50 @@ pub async fn ensure_service(client: &Client, node: &StellarNode, enable_mtls: bo
     Ok(())
 }
 
+/// Ensure a canary Service exists if needed
+pub async fn ensure_canary_service(
+    client: &Client,
+    node: &StellarNode,
+    enable_mtls: bool,
+) -> Result<()> {
+    if node
+        .status
+        .as_ref()
+        .and_then(|status| status.canary_version.as_ref())
+        .is_none()
+    {
+        return Ok(());
+    }
+
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
+    let name = format!("{}-canary", node.name_any());
+
+    let mut service = build_service(node, enable_mtls);
+    service.metadata.name = Some(name.clone());
+
+    if let Some(spec) = &mut service.spec {
+        let mut selector = spec.selector.clone().unwrap_or_default();
+        selector.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
+        spec.selector = Some(selector);
+
+        let meta = &mut service.metadata;
+        let mut labels = meta.labels.clone().unwrap_or_default();
+        labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
+        meta.labels = Some(labels);
+    }
+
+    let patch = Patch::Apply(&service);
+    api.patch(
+        &name,
+        &PatchParams::apply("stellar-operator").force(),
+        &patch,
+    )
+    .await?;
+
+    Ok(())
+}
+
 fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
     let labels = standard_labels(node);
     let name = node.name_any();
@@ -523,44 +623,31 @@ fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
 // ============================================================================
 
 /// Ensure a LoadBalancer Service exists for external access via MetalLB
-#[instrument(skip(_client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-#[allow(dead_code)]
-pub async fn ensure_load_balancer_service(_client: &Client, node: &StellarNode) -> Result<()> {
-    // TODO: load_balancer field not yet implemented in StellarNodeSpec
-    // Uncomment when LoadBalancerConfig is added to the spec
-    /*
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_load_balancer_service(client: &Client, node: &StellarNode) -> Result<()> {
     let lb_cfg = match &node.spec.load_balancer {
         Some(cfg) if cfg.enabled => cfg,
         _ => return Ok(()),
     };
-    */
 
-    // Function is disabled until load_balancer field is implemented
-    #[allow(unreachable_code)]
-    {
-        return Ok(());
-    }
-
-    /*
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "lb");
 
     let service = build_load_balancer_service(node, lb_cfg);
 
+    let patch = Patch::Apply(&service);
     api.patch(
         &name,
         &PatchParams::apply("stellar-operator").force(),
-        &Patch::Apply(&service),
+        &patch,
     )
     .await?;
 
     info!("LoadBalancer Service ensured for {}/{}", namespace, name);
     Ok(())
-    */
 }
 
-#[allow(dead_code)]
 fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) -> Service {
     let labels = standard_labels(node);
     let name = resource_name(node, "lb");
@@ -716,15 +803,8 @@ fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) 
 }
 
 /// Delete the LoadBalancer Service for a node
-#[instrument(skip(_client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-#[allow(dead_code)]
-pub async fn delete_load_balancer_service(_client: &Client, node: &StellarNode) -> Result<()> {
-    // TODO: load_balancer field not yet implemented in StellarNodeSpec
-    #[allow(unreachable_code)]
-    {
-        return Ok(());
-    }
-    /*
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn delete_load_balancer_service(client: &Client, node: &StellarNode) -> Result<()> {
     if node.spec.load_balancer.is_none() {
         return Ok(());
     }
@@ -742,7 +822,6 @@ pub async fn delete_load_balancer_service(_client: &Client, node: &StellarNode) 
     }
 
     Ok(())
-    */
 }
 
 // ============================================================================
@@ -752,15 +831,8 @@ pub async fn delete_load_balancer_service(_client: &Client, node: &StellarNode) 
 /// Ensure MetalLB BGPAdvertisement and IPAddressPool ConfigMaps are documented
 /// Note: MetalLB CRDs must be created manually or via Helm; this function
 /// creates the recommended ConfigMap for cluster operators to reference.
-#[instrument(skip(_client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-#[allow(dead_code)]
-pub async fn ensure_metallb_config(_client: &Client, node: &StellarNode) -> Result<()> {
-    // TODO: load_balancer field not yet implemented in StellarNodeSpec
-    #[allow(unreachable_code)]
-    {
-        return Ok(());
-    }
-    /*
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_metallb_config(client: &Client, node: &StellarNode) -> Result<()> {
     let lb_cfg = match &node.spec.load_balancer {
         Some(cfg) if cfg.enabled && cfg.mode == LoadBalancerMode::BGP => cfg,
         _ => return Ok(()),
@@ -772,10 +844,11 @@ pub async fn ensure_metallb_config(_client: &Client, node: &StellarNode) -> Resu
 
     let config = build_metallb_config_map(node, lb_cfg);
 
+    let patch = Patch::Apply(&config);
     api.patch(
         &name,
         &PatchParams::apply("stellar-operator").force(),
-        &Patch::Apply(&config),
+        &patch,
     )
     .await?;
 
@@ -784,10 +857,8 @@ pub async fn ensure_metallb_config(_client: &Client, node: &StellarNode) -> Resu
         namespace, name
     );
     Ok(())
-    */
 }
 
-#[allow(dead_code)]
 fn build_metallb_config_map(node: &StellarNode, config: &LoadBalancerConfig) -> ConfigMap {
     let labels = standard_labels(node);
     let name = resource_name(node, "metallb-config");
@@ -1021,7 +1092,6 @@ spec:
 
 /// Delete the MetalLB configuration ConfigMap
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-#[allow(dead_code)]
 pub async fn delete_metallb_config(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
@@ -1089,6 +1159,71 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
     .await?;
 
     info!("Ingress ensured for {}/{}", namespace, name);
+
+    // If canary is active, ensure canary ingress as well
+    if let RolloutStrategy::Canary(ref cfg) = node.spec.strategy {
+        if node
+            .status
+            .as_ref()
+            .and_then(|status| status.canary_version.as_ref())
+            .is_some()
+        {
+            let canary_name = format!("{}-canary", name);
+            let mut canary_ingress = build_ingress(node, ingress_cfg);
+            canary_ingress.metadata.name = Some(canary_name.clone());
+
+            // Add canary annotations
+            let mut annotations = canary_ingress
+                .metadata
+                .annotations
+                .clone()
+                .unwrap_or_default();
+            annotations.insert(
+                "nginx.ingress.kubernetes.io/canary".to_string(),
+                "true".to_string(),
+            );
+            annotations.insert(
+                "nginx.ingress.kubernetes.io/canary-weight".to_string(),
+                cfg.weight.to_string(),
+            );
+
+            // Support for Traefik and Istio (Istio usually needs VirtualService, but some setups use Ingress annotations)
+            annotations.insert(
+                "traefik.ingress.kubernetes.io/service.weights".to_string(),
+                format!("{}:{}", node.name_any(), cfg.weight),
+            );
+
+            canary_ingress.metadata.annotations = Some(annotations);
+
+            // Update backend to point to canary service
+            if let Some(spec) = &mut canary_ingress.spec {
+                if let Some(rules) = &mut spec.rules {
+                    for rule in rules {
+                        if let Some(http) = &mut rule.http {
+                            for path in &mut http.paths {
+                                if let Some(backend) = &mut path.backend.service {
+                                    backend.name = format!("{}-canary", node.name_any());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            api.patch(
+                &canary_name,
+                &PatchParams::apply("stellar-operator").force(),
+                &Patch::Apply(&canary_ingress),
+            )
+            .await?;
+            info!("Canary Ingress ensured for {}/{}", namespace, canary_name);
+        } else {
+            // Delete canary ingress if no longer active
+            let canary_name = format!("{}-canary", name);
+            let _ = api.delete(&canary_name, &DeleteParams::default()).await;
+        }
+    }
+
     Ok(())
 }
 
@@ -1308,6 +1443,44 @@ fn build_pod_template(
         ..Default::default()
     });
 
+    // Add Cloud HSM sidecar and volumes
+    if let NodeType::Validator = node.spec.node_type {
+        if let Some(validator_config) = &node.spec.validator_config {
+            if let Some(hsm_config) = &validator_config.hsm_config {
+                // If using AWS CloudHSM, add sidecar and shared volume
+                if hsm_config.provider == HsmProvider::AWS {
+                    // Shared socket volume
+                    volumes.push(Volume {
+                        name: "cloudhsm-socket".to_string(),
+                        empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource {
+                            medium: Some("Memory".to_string()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    });
+
+                    // Sidecar container running CloudHSM client daemon
+                    let containers = &mut pod_spec.containers;
+                    containers.push(Container {
+                        name: "cloudhsm-client".to_string(),
+                        // Use a standard image or user-provided one.
+                        // In reality, user would likely build this or we'd default to a known working one.
+                        // For now, using a placeholder that needs to be valid.
+                        image: Some("amazon/cloudhsm-client:latest".to_string()),
+                        command: Some(vec!["/opt/cloudhsm/bin/cloudhsm_client".to_string()]),
+                        args: Some(vec!["--foreground".to_string()]),
+                        volume_mounts: Some(vec![VolumeMount {
+                            name: "cloudhsm-socket".to_string(),
+                            mount_path: "/var/run/cloudhsm".to_string(),
+                            ..Default::default()
+                        }]),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+
     PodTemplateSpec {
         metadata: Some(ObjectMeta {
             labels: Some(labels.clone()),
@@ -1421,6 +1594,67 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
         }
     }
 
+    // Add HSM environment variables and mounts
+    let mut extra_volume_mounts = Vec::new();
+    if let NodeType::Validator = node.spec.node_type {
+        if let Some(validator_config) = &node.spec.validator_config {
+            if let Some(hsm_config) = &validator_config.hsm_config {
+                // PKCS#11 Module Path
+                env_vars.push(EnvVar {
+                    name: "PKCS11_MODULE_PATH".to_string(),
+                    value: Some(hsm_config.pkcs11_lib_path.clone()),
+                    ..Default::default()
+                });
+
+                // HSM IP (for Azure/Network)
+                if let Some(ip) = &hsm_config.hsm_ip {
+                    env_vars.push(EnvVar {
+                        name: "HSM_IP_ADDRESS".to_string(),
+                        value: Some(ip.clone()),
+                        ..Default::default()
+                    });
+                }
+
+                // HSM Credentials (PIN/User)
+                if let Some(secret_ref) = &hsm_config.hsm_credentials_secret_ref {
+                    env_vars.push(EnvVar {
+                        name: "HSM_PIN".to_string(),
+                        value: None,
+                        value_from: Some(EnvVarSource {
+                            secret_key_ref: Some(SecretKeySelector {
+                                name: Some(secret_ref.clone()),
+                                key: "HSM_PIN".to_string(),
+                                optional: Some(true),
+                            }),
+                            ..Default::default()
+                        }),
+                    });
+                    env_vars.push(EnvVar {
+                        name: "HSM_USER".to_string(),
+                        value: None,
+                        value_from: Some(EnvVarSource {
+                            secret_key_ref: Some(SecretKeySelector {
+                                name: Some(secret_ref.clone()),
+                                key: "HSM_USER".to_string(),
+                                optional: Some(true),
+                            }),
+                            ..Default::default()
+                        }),
+                    });
+                }
+
+                // Mount socket for AWS CloudHSM
+                if hsm_config.provider == HsmProvider::AWS {
+                    extra_volume_mounts.push(VolumeMount {
+                        name: "cloudhsm-socket".to_string(),
+                        mount_path: "/var/run/cloudhsm".to_string(),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+
     let mut volume_mounts = vec![
         VolumeMount {
             name: "data".to_string(),
@@ -1456,6 +1690,9 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
         read_only: Some(true),
         ..Default::default()
     });
+
+    // Add extra mounts (HSM)
+    volume_mounts.extend(extra_volume_mounts);
 
     Container {
         name: "stellar-node".to_string(),
@@ -1825,6 +2062,31 @@ pub async fn delete_alerting(client: &Client, node: &StellarNode) -> Result<()> 
     Ok(())
 }
 
+/// Delete canary resources specifically
+pub async fn delete_canary_resources(client: &Client, node: &StellarNode) -> Result<()> {
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let name = node.name_any();
+    let canary_name = format!("{}-canary", name);
+
+    // 1. Delete Canary Ingress
+    if node.spec.ingress.is_some() {
+        let api: Api<Ingress> = Api::namespaced(client.clone(), &namespace);
+        let _ = api.delete(&canary_name, &DeleteParams::default()).await;
+    }
+
+    // 2. Delete Canary Service
+    let api_svc: Api<Service> = Api::namespaced(client.clone(), &namespace);
+    let _ = api_svc.delete(&canary_name, &DeleteParams::default()).await;
+
+    // 3. Delete Canary Deployment
+    let api_deploy: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
+    let _ = api_deploy
+        .delete(&canary_name, &DeleteParams::default())
+        .await;
+
+    Ok(())
+}
+
 // ============================================================================
 // NetworkPolicy
 // ============================================================================
@@ -2021,6 +2283,93 @@ pub async fn delete_network_policy(client: &Client, node: &StellarNode) -> Resul
         Ok(_) => info!("NetworkPolicy {} deleted", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {
             info!("NetworkPolicy {} not found, skipping delete", name);
+        }
+        Err(e) => return Err(Error::KubeError(e)),
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// PodDisruptionBudget (PDB)
+// ============================================================================
+
+/// Internal builder for the PodDisruptionBudget resource
+fn build_pdb(node: &StellarNode) -> Option<PodDisruptionBudget> {
+    // PDBs are only applicable if there are multiple replicas to protect
+    if node.spec.replicas <= 1 {
+        return None;
+    }
+
+    let labels = standard_labels(node);
+    let name = node.name_any();
+
+    // Determine disruption constraints: default to maxUnavailable: 1 if not specified
+    let (min_available, max_unavailable) =
+        if node.spec.min_available.is_none() && node.spec.max_unavailable.is_none() {
+            (None, Some(IntOrString::Int(1)))
+        } else {
+            (
+                node.spec.min_available.clone(),
+                node.spec.max_unavailable.clone(),
+            )
+        };
+
+    Some(PodDisruptionBudget {
+        metadata: ObjectMeta {
+            name: Some(name),
+            namespace: node.namespace(),
+            labels: Some(labels.clone()),
+            owner_references: Some(vec![owner_reference(node)]),
+            ..Default::default()
+        },
+        spec: Some(PodDisruptionBudgetSpec {
+            selector: Some(LabelSelector {
+                match_labels: Some(labels),
+                ..Default::default()
+            }),
+            min_available,
+            max_unavailable,
+            ..Default::default()
+        }),
+        status: None,
+    })
+}
+
+/// Ensure a PodDisruptionBudget exists for multi-replica nodes
+pub async fn ensure_pdb(client: &Client, node: &StellarNode) -> Result<()> {
+    // If replicas <= 1, we ensure the PDB is deleted (cleanup)
+    if node.spec.replicas <= 1 {
+        return delete_pdb(client, node).await;
+    }
+
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let api: Api<PodDisruptionBudget> = Api::namespaced(client.clone(), &namespace);
+
+    if let Some(pdb) = build_pdb(node) {
+        let name = pdb.metadata.name.clone().unwrap();
+
+        info!("Reconciling PodDisruptionBudget {}/{}", namespace, name);
+        let params = PatchParams::apply("stellar-operator").force();
+        api.patch(&name, &params, &Patch::Apply(&pdb))
+            .await
+            .map_err(Error::KubeError)?;
+    }
+
+    Ok(())
+}
+
+/// Delete the PodDisruptionBudget
+pub async fn delete_pdb(client: &Client, node: &StellarNode) -> Result<()> {
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let name = node.name_any();
+
+    let api: Api<PodDisruptionBudget> = Api::namespaced(client.clone(), &namespace);
+
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => info!("Deleted PodDisruptionBudget {}/{}", namespace, name),
+        Err(kube::Error::Api(e)) if e.code == 404 => {
+            // Resource doesn't exist, ignore
         }
         Err(e) => return Err(Error::KubeError(e)),
     }

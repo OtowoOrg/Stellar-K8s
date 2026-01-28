@@ -1,0 +1,198 @@
+# Example: Cross-cluster Stellar validator using Submariner
+# This configuration enables multi-cluster communication using Submariner service mesh
+#
+# Prerequisites:
+# - Submariner installed and configured across clusters
+# - ClusterSet created with multiple clusters joined
+# - ServiceExport CRD available
+#
+# Deploy this in multiple clusters (us-east-1, us-west-1, eu-central-1)
+# Each cluster will have its own validator that can communicate with peers
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-us-east-1
+  namespace: stellar-nodes
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  
+  # Cluster identifier for this deployment
+  cluster: "us-east-1"
+  
+  # Resource requirements
+  resources:
+    requests:
+      cpu: "4"
+      memory: "16Gi"
+    limits:
+      cpu: "8"
+      memory: "32Gi"
+  
+  # Storage configuration
+  storage:
+    storageClass: "fast-ssd"
+    size: "1Ti"
+    retentionPolicy: Retain
+  
+  # Validator configuration
+  validatorConfig:
+    seedSecretRef: "validator-seed-us-east-1"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+    quorumSet: |
+      [QUORUM_SET]
+      THRESHOLD_PERCENT=67
+      VALIDATORS=[
+        "$validator-us-east-1",
+        "$validator-us-west-1",
+        "$validator-eu-central-1"
+      ]
+  
+  # Cross-cluster communication configuration
+  crossCluster:
+    enabled: true
+    mode: ServiceMesh
+    
+    # Submariner service mesh configuration
+    serviceMesh:
+      meshType: submariner
+      clusterSetId: "stellar-global"
+      mtlsEnabled: true
+      
+      # Export this service to other clusters
+      serviceExport:
+        enabled: true
+        serviceName: "validator-us-east-1-service"
+        namespace: "stellar-nodes"
+        # Empty targetClusters means export to all clusters in ClusterSet
+        targetClusters: []
+      
+      # Traffic policy for cross-cluster routing
+      trafficPolicy: LocalPreferred
+    
+    # Peer clusters configuration
+    peerClusters:
+      - clusterId: "us-west-1"
+        # Submariner DNS format: <service>.<namespace>.svc.clusterset.local
+        endpoint: "validator-us-west-1-service.stellar-nodes.svc.clusterset.local"
+        latencyThresholdMs: 100
+        region: "us-west"
+        priority: 100
+        port: 11625
+        enabled: true
+      
+      - clusterId: "eu-central-1"
+        endpoint: "validator-eu-central-1-service.stellar-nodes.svc.clusterset.local"
+        latencyThresholdMs: 150
+        region: "eu-central"
+        priority: 90
+        port: 11625
+        enabled: true
+    
+    # Global latency threshold (can be overridden per peer)
+    latencyThresholdMs: 200
+    
+    # Enable automatic peer discovery
+    autoDiscovery: false
+    
+    # Health check configuration
+    healthCheck:
+      enabled: true
+      intervalSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+      
+      # Latency measurement configuration
+      latencyMeasurement:
+        enabled: true
+        method: tcp
+        sampleCount: 10
+        percentile: 95
+
+---
+# Deploy the same configuration in us-west-1 cluster
+# Just change the cluster identifier and peer endpoints
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-us-west-1
+  namespace: stellar-nodes
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  
+  cluster: "us-west-1"
+  
+  resources:
+    requests:
+      cpu: "4"
+      memory: "16Gi"
+    limits:
+      cpu: "8"
+      memory: "32Gi"
+  
+  storage:
+    storageClass: "fast-ssd"
+    size: "1Ti"
+    retentionPolicy: Retain
+  
+  validatorConfig:
+    seedSecretRef: "validator-seed-us-west-1"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+    quorumSet: |
+      [QUORUM_SET]
+      THRESHOLD_PERCENT=67
+      VALIDATORS=[
+        "$validator-us-east-1",
+        "$validator-us-west-1",
+        "$validator-eu-central-1"
+      ]
+  
+  crossCluster:
+    enabled: true
+    mode: ServiceMesh
+    
+    serviceMesh:
+      meshType: submariner
+      clusterSetId: "stellar-global"
+      mtlsEnabled: true
+      serviceExport:
+        enabled: true
+      trafficPolicy: LocalPreferred
+    
+    peerClusters:
+      - clusterId: "us-east-1"
+        endpoint: "validator-us-east-1-service.stellar-nodes.svc.clusterset.local"
+        latencyThresholdMs: 100
+        region: "us-east"
+        priority: 100
+        enabled: true
+      
+      - clusterId: "eu-central-1"
+        endpoint: "validator-eu-central-1-service.stellar-nodes.svc.clusterset.local"
+        latencyThresholdMs: 120
+        region: "eu-central"
+        priority: 95
+        enabled: true
+    
+    latencyThresholdMs: 200
+    
+    healthCheck:
+      enabled: true
+      intervalSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+      latencyMeasurement:
+        enabled: true
+        method: tcp
+        sampleCount: 10
+        percentile: 95

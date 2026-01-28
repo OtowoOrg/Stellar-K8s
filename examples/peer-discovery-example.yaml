@@ -1,0 +1,305 @@
+# Example: Dynamic Peer Discovery with Multiple Validators
+#
+# This example demonstrates how the peer discovery system automatically
+# discovers and connects multiple validators in a cluster.
+#
+# The operator will:
+# 1. Discover all validator nodes
+# 2. Maintain a shared ConfigMap with peer information
+# 3. Trigger config-reload when peers change
+# 4. Validators automatically connect to discovered peers
+
+---
+# Namespace for Stellar nodes
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stellar-nodes
+
+---
+# Namespace for operator system components
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stellar-system
+
+---
+# First Validator - will discover other validators automatically
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-1
+  namespace: stellar-nodes
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  storage:
+    storageClass: "standard"
+    size: "500Gi"
+    retentionPolicy: Retain
+  validatorConfig:
+    seedSecretRef: "validator-1-seed"
+    # Quorum set will be dynamically updated with discovered peers
+    quorum_set: |
+      [VALIDATORS]
+      vALiDaTor1 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX2"
+      vALiDaTor2 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX3"
+      vALiDaTor3 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX4"
+      
+      [VALIDATORS.vALiDaTor1]
+      HOME_DOMAIN = "validator1.example.com"
+      
+      [VALIDATORS.vALiDaTor2]
+      HOME_DOMAIN = "validator2.example.com"
+      
+      [VALIDATORS.vALiDaTor3]
+      HOME_DOMAIN = "validator3.example.com"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001/"
+      - "https://history.stellar.org/prd/core-live/core_live_002/"
+
+---
+# Second Validator - will be discovered by validator-1
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-2
+  namespace: stellar-nodes
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  storage:
+    storageClass: "standard"
+    size: "500Gi"
+    retentionPolicy: Retain
+  validatorConfig:
+    seedSecretRef: "validator-2-seed"
+    quorum_set: |
+      [VALIDATORS]
+      vALiDaTor1 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX2"
+      vALiDaTor2 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX3"
+      vALiDaTor3 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX4"
+      
+      [VALIDATORS.vALiDaTor1]
+      HOME_DOMAIN = "validator1.example.com"
+      
+      [VALIDATORS.vALiDaTor2]
+      HOME_DOMAIN = "validator2.example.com"
+      
+      [VALIDATORS.vALiDaTor3]
+      HOME_DOMAIN = "validator3.example.com"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001/"
+      - "https://history.stellar.org/prd/core-live/core_live_002/"
+
+---
+# Third Validator - will be discovered by validator-1 and validator-2
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-3
+  namespace: stellar-nodes
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  storage:
+    storageClass: "standard"
+    size: "500Gi"
+    retentionPolicy: Retain
+  validatorConfig:
+    seedSecretRef: "validator-3-seed"
+    quorum_set: |
+      [VALIDATORS]
+      vALiDaTor1 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX2"
+      vALiDaTor2 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX3"
+      vALiDaTor3 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX4"
+      
+      [VALIDATORS.vALiDaTor1]
+      HOME_DOMAIN = "validator1.example.com"
+      
+      [VALIDATORS.vALiDaTor2]
+      HOME_DOMAIN = "validator2.example.com"
+      
+      [VALIDATORS.vALiDaTor3]
+      HOME_DOMAIN = "validator3.example.com"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001/"
+      - "https://history.stellar.org/prd/core-live/core_live_002/"
+
+---
+# Secrets for validator seeds (in production, use sealed-secrets or external-secrets)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: validator-1-seed
+  namespace: stellar-nodes
+type: Opaque
+stringData:
+  STELLAR_CORE_SEED: "SBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: validator-2-seed
+  namespace: stellar-nodes
+type: Opaque
+stringData:
+  STELLAR_CORE_SEED: "SBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: validator-3-seed
+  namespace: stellar-nodes
+type: Opaque
+stringData:
+  STELLAR_CORE_SEED: "SBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+
+---
+# Shared Peers ConfigMap (created by peer discovery manager)
+# This is automatically maintained by the operator
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stellar-peers
+  namespace: stellar-system
+  labels:
+    app: stellar-operator
+    component: peer-discovery
+data:
+  # These will be automatically populated by the peer discovery manager
+  peers.json: |
+    [
+      {
+        "name": "validator-1",
+        "namespace": "stellar-nodes",
+        "nodeType": "Validator",
+        "ip": "10.0.1.5",
+        "port": 11625,
+        "peerString": "10.0.1.5:11625"
+      },
+      {
+        "name": "validator-2",
+        "namespace": "stellar-nodes",
+        "nodeType": "Validator",
+        "ip": "10.0.1.6",
+        "port": 11625,
+        "peerString": "10.0.1.6:11625"
+      },
+      {
+        "name": "validator-3",
+        "namespace": "stellar-nodes",
+        "nodeType": "Validator",
+        "ip": "10.0.1.7",
+        "port": 11625,
+        "peerString": "10.0.1.7:11625"
+      }
+    ]
+  peers.txt: |
+    10.0.1.5:11625
+    10.0.1.6:11625
+    10.0.1.7:11625
+  peer_count: "3"
+
+---
+# Example: How to use peer discovery in your validator configuration
+# This shows how to mount the peers ConfigMap in a validator pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: validator-with-peers
+  namespace: stellar-nodes
+spec:
+  containers:
+  - name: stellar-core
+    image: stellar/stellar-core:v21.0.0
+    volumeMounts:
+    # Mount the shared peers ConfigMap
+    - name: peers
+      mountPath: /etc/stellar/peers
+      readOnly: true
+    # Mount the validator configuration
+    - name: config
+      mountPath: /etc/stellar/config
+      readOnly: true
+    env:
+    - name: STELLAR_CORE_CONFIG_FILE
+      value: /etc/stellar/config/stellar-core.cfg
+  volumes:
+  # Shared peers ConfigMap
+  - name: peers
+    configMap:
+      name: stellar-peers
+      items:
+      - key: peers.txt
+        path: peers.txt
+      - key: peers.json
+        path: peers.json
+  # Validator configuration
+  - name: config
+    configMap:
+      name: validator-1-config
+
+---
+# Example: Monitoring peer discovery
+# This shows how to query peer information
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: check-peers
+  namespace: stellar-nodes
+spec:
+  template:
+    spec:
+      containers:
+      - name: check-peers
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "=== Peer Discovery Status ==="
+          echo ""
+          echo "Peer Count:"
+          kubectl get configmap stellar-peers -n stellar-system -o jsonpath='{.data.peer_count}'
+          echo ""
+          echo ""
+          echo "Peers (JSON):"
+          kubectl get configmap stellar-peers -n stellar-system -o jsonpath='{.data.peers\.json}' | jq
+          echo ""
+          echo "Peers (Text):"
+          kubectl get configmap stellar-peers -n stellar-system -o jsonpath='{.data.peers\.txt}'
+      restartPolicy: Never
+  backoffLimit: 1

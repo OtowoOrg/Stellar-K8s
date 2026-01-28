@@ -7,8 +7,8 @@
 mod stellar_node_spec_validation {
     use crate::crd::{
         AutoscalingConfig, HorizonConfig, IngressConfig, IngressHost, IngressPath, NodeType,
-        ResourceRequirements, ResourceSpec, SorobanConfig, StellarNetwork, StellarNodeSpec,
-        StorageConfig, ValidatorConfig,
+        ResourceRequirements, ResourceSpec, SorobanConfig, SpecValidationError, StellarNetwork,
+        StellarNodeSpec, StorageConfig, ValidatorConfig,
     };
 
     /// Helper to create a minimal valid StellarNodeSpec for a Validator
@@ -28,6 +28,7 @@ mod stellar_node_spec_validation {
                 key_source: Default::default(),
                 kms_config: None,
                 vl_source: None,
+                hsm_config: None,
             }),
             horizon_config: None,
             soroban_config: None,
@@ -39,10 +40,15 @@ mod stellar_node_spec_validation {
             database: None,
             autoscaling: None,
             ingress: None,
+            strategy: Default::default(),
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
             topology_spread_constraints: None,
+            load_balancer: None,
+            global_discovery: None,
+            cluster: None,
+            cross_cluster: None,
         }
     }
 
@@ -72,10 +78,15 @@ mod stellar_node_spec_validation {
             database: None,
             autoscaling: None,
             ingress: None,
+            strategy: Default::default(),
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
             topology_spread_constraints: None,
+            load_balancer: None,
+            global_discovery: None,
+            cluster: None,
+            cross_cluster: None,
         }
     }
 
@@ -103,10 +114,15 @@ mod stellar_node_spec_validation {
             database: None,
             autoscaling: None,
             ingress: None,
+            strategy: Default::default(),
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
             topology_spread_constraints: None,
+            load_balancer: None,
+            global_discovery: None,
+            cluster: None,
+            cross_cluster: None,
         }
     }
 
@@ -149,10 +165,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "validatorConfig is required for Validator nodes"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.validatorConfig",
+                "validatorConfig is required for Validator nodes",
+                "Add a spec.validatorConfig section with the required validator settings when nodeType is Validator.",
+            )
+        }));
     }
 
     #[test]
@@ -162,10 +182,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "Validator nodes must have exactly 1 replica"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.replicas",
+                "Validator nodes must have exactly 1 replica",
+                "Set spec.replicas to 1 for Validator nodes.",
+            )
+        }));
     }
 
     #[test]
@@ -175,10 +199,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "Validator nodes must have exactly 1 replica"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.replicas",
+                "Validator nodes must have exactly 1 replica",
+                "Set spec.replicas to 1 for Validator nodes.",
+            )
+        }));
     }
 
     #[test]
@@ -194,10 +222,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "autoscaling is not supported for Validator nodes"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.autoscaling",
+                "autoscaling is not supported for Validator nodes",
+                "Remove spec.autoscaling when nodeType is Validator; autoscaling is only supported for Horizon and SorobanRpc.",
+            )
+        }));
     }
 
     #[test]
@@ -220,10 +252,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "ingress is not supported for Validator nodes"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.ingress",
+                "ingress is not supported for Validator nodes",
+                "Remove spec.ingress for Validator nodes; expose Validator nodes using peer discovery or other supported mechanisms.",
+            )
+        }));
     }
 
     #[test]
@@ -236,10 +272,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "historyArchiveUrls must not be empty when enableHistoryArchive is true"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.validatorConfig.historyArchiveUrls",
+                "historyArchiveUrls must not be empty when enableHistoryArchive is true",
+                "Provide at least one valid history archive URL in spec.validatorConfig.historyArchiveUrls when enableHistoryArchive is true.",
+            )
+        }));
     }
 
     #[test]
@@ -271,10 +311,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "horizonConfig is required for Horizon nodes"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.horizonConfig",
+                "horizonConfig is required for Horizon nodes",
+                "Add a spec.horizonConfig section with the required Horizon settings when nodeType is Horizon.",
+            )
+        }));
     }
 
     #[test]
@@ -311,10 +355,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "autoscaling.minReplicas must be at least 1"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.autoscaling.minReplicas",
+                "autoscaling.minReplicas must be at least 1",
+                "Set spec.autoscaling.minReplicas to 1 or greater.",
+            )
+        }));
     }
 
     #[test]
@@ -330,10 +378,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "autoscaling.maxReplicas must be >= minReplicas"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.autoscaling.maxReplicas",
+                "autoscaling.maxReplicas must be >= minReplicas",
+                "Set spec.autoscaling.maxReplicas to be greater than or equal to minReplicas.",
+            )
+        }));
     }
 
     #[test]
@@ -371,7 +423,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "ingress.hosts must not be empty");
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.ingress.hosts",
+                "ingress.hosts must not be empty",
+                "Provide at least one host entry under spec.ingress.hosts.",
+            )
+        }));
     }
 
     #[test]
@@ -394,10 +453,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "ingress.hosts[].host must not be empty"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.ingress.hosts[].host",
+                "ingress.hosts[].host must not be empty",
+                "Set a non-empty hostname for each ingress host entry.",
+            )
+        }));
     }
 
     #[test]
@@ -417,10 +480,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "ingress.hosts[].paths must not be empty"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.ingress.hosts[].paths",
+                "ingress.hosts[].paths must not be empty",
+                "Provide at least one path under spec.ingress.hosts[].paths for each host.",
+            )
+        }));
     }
 
     #[test]
@@ -443,10 +510,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "ingress.hosts[].paths[].path must not be empty"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.ingress.hosts[].paths[].path",
+                "ingress.hosts[].paths[].path must not be empty",
+                "Set a non-empty HTTP path for each ingress path entry.",
+            )
+        }));
     }
 
     #[test]
@@ -469,10 +540,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "ingress.hosts[].paths[].pathType must be either Prefix or Exact"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.ingress.hosts[].paths[].pathType",
+                "ingress.hosts[].paths[].pathType must be either Prefix or Exact",
+                "Set pathType to either \"Prefix\" or \"Exact\" for each ingress path.",
+            )
+        }));
     }
 
     #[test]
@@ -513,10 +588,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "sorobanConfig is required for SorobanRpc nodes"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.sorobanConfig",
+                "sorobanConfig is required for SorobanRpc nodes",
+                "Add a spec.sorobanConfig section with the required Soroban RPC settings when nodeType is SorobanRpc.",
+            )
+        }));
     }
 
     #[test]
@@ -553,10 +632,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "autoscaling.minReplicas must be at least 1"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.autoscaling.minReplicas",
+                "autoscaling.minReplicas must be at least 1",
+                "Set spec.autoscaling.minReplicas to 1 or greater.",
+            )
+        }));
     }
 
     #[test]
@@ -572,10 +655,14 @@ mod stellar_node_spec_validation {
 
         let result = spec.validate();
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "autoscaling.maxReplicas must be >= minReplicas"
-        );
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.autoscaling.maxReplicas",
+                "autoscaling.maxReplicas must be >= minReplicas",
+                "Set spec.autoscaling.maxReplicas to be greater than or equal to minReplicas.",
+            )
+        }));
     }
 
     #[test]

@@ -5,7 +5,7 @@ pub async fn reconcile(
     ctx: Arc,
 ) -> Result {
     let client = ctx.client.clone();
-    let namespace = stellar_core.namespace().unwrap();
+    let namespace = stellar_core.namespace().unwrap_or_else(|| "default".to_string());
     let name = stellar_core.name_any();
 
     // Reconcile database

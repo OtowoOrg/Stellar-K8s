@@ -15,6 +15,10 @@ struct Args {
     #[arg(long, env = "OPERATOR_NAMESPACE", default_value = "default")]
     namespace: String,
 
+    /// Run in dry-run mode (calculate changes without applying them)
+    #[arg(long, env = "DRY_RUN")]
+    dry_run: bool,
+
     /// Run the latency-aware scheduler instead of the operator
     #[arg(long, env = "RUN_SCHEDULER")]
     scheduler: bool,
@@ -157,7 +161,7 @@ async fn main() -> Result<(), Error> {
         enable_mtls: args.enable_mtls,
         operator_namespace: args.namespace.clone(),
         mtls_config: mtls_config.clone(),
-        http_client,
+
     });
 
     // Start the peer discovery manager

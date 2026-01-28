@@ -545,6 +545,8 @@ mod tests {
                 global_discovery: None,
                 dr_config: None,
                 topology_spread_constraints: None,
+                load_balancer: None,
+                global_discovery: None,
                 cluster: None,
                 cross_cluster: None,
             },

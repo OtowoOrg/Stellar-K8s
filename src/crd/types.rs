@@ -230,6 +230,7 @@ pub enum RetentionPolicy {
 ///     key_source: KeySource::Secret,
 ///     kms_config: None,
 ///     vl_source: None,
+///     hsm_config: None,
 /// };
 /// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -258,6 +259,39 @@ pub struct ValidatorConfig {
     /// Trusted source for Validator Selection List (VSL)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vl_source: Option<String>,
+    /// Cloud HSM configuration for secure key loading (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hsm_config: Option<HsmConfig>,
+}
+
+/// Configuration for Hardware Security Module (HSM) integration
+///
+/// Enables validators to use keys stored in Cloud HSMs (AWS CloudHSM, Azure Dedicated HSM)
+/// via PKCS#11, ensuring private keys never leave the secure hardware.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HsmConfig {
+    /// Cloud provider for the HSM service
+    pub provider: HsmProvider,
+    /// Path to the PKCS#11 library within the container
+    /// Default: "/opt/cloudhsm/lib/libcloudhsm_pkcs11.so" for AWS
+    pub pkcs11_lib_path: String,
+    /// IP address of the HSM device (Required for Azure/Network HSMs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hsm_ip: Option<String>,
+    /// Secret containing HSM credentials (PIN/Password)
+    /// The secret must have a key 'HSM_PIN' or 'HSM_PASSWORD'
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hsm_credentials_secret_ref: Option<String>,
+}
+
+/// Supported HSM Providers
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub enum HsmProvider {
+    /// AWS CloudHSM (requires cloudhsm-client sidecar)
+    AWS,
+    /// Azure Dedicated HSM (network-based)
+    Azure,
 }
 
 /// Source of security keys

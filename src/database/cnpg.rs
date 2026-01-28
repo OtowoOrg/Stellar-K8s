@@ -1,4 +1,3 @@
-use k8s_openapi::api::core::v1::{Secret, ConfigMap};
 use kube::{Api, Client, ResourceExt};
 use kube::runtime::controller::Action;
 use serde::{Deserialize, Serialize};

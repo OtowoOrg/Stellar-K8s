@@ -2,6 +2,8 @@ name: CI/CD Pipeline
 
 on:
   push:
+    branches: [main, develop, stellar-k8]
+    tags: ['v*']
     branches: [main]
   pull_request:
     branches: [main]

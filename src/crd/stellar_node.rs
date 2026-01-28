@@ -966,6 +966,7 @@ impl StellarNodeStatus {
         self.phase = phase.to_string();
         self.message = message.map(String::from);
     }
+
     #[allow(clippy::empty_line_after_doc_comments)]
     /// Check if the node is ready
     ///

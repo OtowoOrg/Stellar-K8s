@@ -3,7 +3,7 @@
 //! The StellarNode CRD represents a managed Stellar infrastructure node.
 //! Supports Validator (Core), Horizon API, and Soroban RPC node types.
 
-use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -184,24 +184,10 @@ pub struct StellarNodeSpec {
     pub topology_spread_constraints:
         Option<Vec<k8s_openapi::api::core::v1::TopologySpreadConstraint>>,
 
-    /// Load Balancer configuration for external access via MetalLB
+    /// Optional labels and annotations applied to all generated Kubernetes resources
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub load_balancer: Option<LoadBalancerConfig>,
-
-    /// Global node discovery configuration for Stellar network peering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub global_discovery: Option<GlobalDiscoveryConfig>,
-
-    /// Cluster identifier for multi-cluster deployments
-    /// Used to identify which cluster this node belongs to for cross-cluster communication
-    /// Example: "us-east-1", "eu-west-1", "ap-south-1"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cluster: Option<String>,
-
-    /// Cross-cluster communication configuration
-    /// Enables service mesh or ExternalName services for multi-cluster networking
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cross_cluster: Option<CrossClusterConfig>,
+    #[schemars(skip)]
+    pub resource_meta: Option<ObjectMeta>,
 }
 
 fn default_replicas() -> i32 {
@@ -249,10 +235,7 @@ impl StellarNodeSpec {
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
-    /// # load_balancer: None,
-    /// # global_discovery: None,
-    /// # cluster: None,
-    /// # cross_cluster: None,
+    /// # resource_meta: None,
     /// };
     /// match spec.validate() {
     ///     Ok(_) => println!("Valid spec"),
@@ -453,10 +436,7 @@ impl StellarNodeSpec {
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
-    /// # load_balancer: None,
-    /// # global_discovery: None,
-    /// # cluster: None,
-    /// # cross_cluster: None,
+    /// # resource_meta: None,
     /// };
     /// assert_eq!(spec.container_image(), "stellar/stellar-core:v21.0.0");
     /// ```
@@ -510,10 +490,7 @@ impl StellarNodeSpec {
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
-    /// # load_balancer: None,
-    /// # global_discovery: None,
-    /// # cluster: None,
-    /// # cross_cluster: None,
+    /// # resource_meta: None,
     /// };
     /// assert!(spec.should_delete_pvc());
     /// ```

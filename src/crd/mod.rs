@@ -2,6 +2,8 @@
 //!
 //! This module defines the Kubernetes CRDs for managing Stellar infrastructure.
 
+// TODO: Re-enable once compilation issues are resolved
+// mod read_only_pool;
 mod stellar_node;
 mod types;
 

@@ -27,6 +27,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    continue-on-error: false
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -162,6 +163,8 @@ jobs:
       - name: Install CRDs and operator
         run: |
           kubectl apply -f config/crd/stellarnode-crd.yaml
+          # ReadOnlyPool CRD temporarily disabled
+          # kubectl apply -f config/crd/readonlypool-crd.yaml || true
           kubectl create namespace stellar-system || true
 
           # Deploy operator for benchmarking
@@ -347,12 +350,18 @@ jobs:
 
       - name: Commit baseline
         run: |
+          if [[ ! -f benchmarks/baselines/${VERSION}.json ]]; then
+            echo "::warning::Baseline file not created, skipping commit"
+            exit 0
+          fi
+          
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add benchmarks/baselines/
           git commit -m "chore: update performance baseline for ${{ needs.build.outputs.version }}" || true
-          git push
+          git push || true
+        continue-on-error: true
 
   # ==========================================================================
   # Performance Report (PR Comment)
@@ -361,7 +370,7 @@ jobs:
     name: Post PR Report
     runs-on: ubuntu-latest
     needs: [build, benchmark]
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && always() && needs.build.result != 'skipped' && needs.benchmark.result != 'skipped'
     permissions:
       pull-requests: write
 

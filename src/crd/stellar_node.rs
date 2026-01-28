@@ -16,6 +16,8 @@ use super::types::{
     ValidatorConfig,
 };
 
+use k8s_openapi::api::core::v1::Container;
+
 /// The StellarNode CRD represents a managed Stellar infrastructure node.
 ///
 /// # Example
@@ -169,6 +171,11 @@ pub struct StellarNodeSpec {
     /// Enables service mesh or ExternalName services for multi-cluster networking
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cross_cluster: Option<CrossClusterConfig>,
+
+    /// Sidecar containers to run alongside the main container
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Vec<serde_json::Value>>")]
+    pub sidecars: Option<Vec<Container>>,
 }
 
 fn default_replicas() -> i32 {

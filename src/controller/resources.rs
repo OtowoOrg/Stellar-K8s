@@ -1511,6 +1511,11 @@ fn build_pod_template(
         }
     }
 
+    // Add user-defined sidecars
+    if let Some(sidecars) = &node.spec.sidecars {
+        pod_spec.containers.extend(sidecars.clone());
+    }
+
     PodTemplateSpec {
         metadata: Some(ObjectMeta {
             labels: Some(labels.clone()),

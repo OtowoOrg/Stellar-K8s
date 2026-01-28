@@ -9,9 +9,16 @@ repository = "https://github.com/stellar/stellar-k8s"
 
 [dependencies]
 # Kubernetes client and operator framework
-kube = { version = "0.94", features = ["runtime", "derive", "unstable-runtime", "admission"] }
+kube = { version = "0.94", features = [
+    "runtime",
+    "derive",
+    "unstable-runtime",
+    "admission",
+] }
 kube-runtime = { version = "0.94", features = ["unstable-runtime"] }
-k8s-openapi = { version = "0.22", default-features = false, features = ["v1_30"] }
+k8s-openapi = { version = "0.22", default-features = false, features = [
+    "v1_30",
+] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -44,12 +51,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-opentelemetry = "0.22"
 
 # OpenTelemetry for distributed tracing
-opentelemetry = { version = "0.21", features = ["trace"] }
-opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.14", features = ["grpc-tonic", "http-proto"] }
+opentelemetry = "0.21"
+opentelemetry_sdk = { version = "0.21", features = ["rt-tokio", "trace"] }
+opentelemetry-otlp = { version = "0.14", features = [
+    "grpc-tonic",
+    "http-proto",
+] }
 
 # HTTP client for health checks
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls-manual-roots", "native-tls"] }
 
 # REST API (optional)
 axum = { version = "0.8.8", optional = true }
@@ -63,7 +73,7 @@ once_cell = { version = "1", optional = true }
 # TLS and certificate generation
 rustls = "0.23"
 rcgen = { version = "0.13", features = ["pem", "x509-parser"] }
-axum-server = { version = "0.8.0", features = ["tls-rustls"] }
+axum-server = { version = "0.7.0", features = ["tls-rustls"] }
 rustls-pemfile = "2.2.0"
 rustls-pki-types = "1.14.0"
 
@@ -81,11 +91,24 @@ base64 = { version = "0.21", optional = true }
 sha2 = { version = "0.10", optional = true }
 hex = { version = "0.4", optional = true }
 
+[build-dependencies]
+chrono = "0.4"
+
 [features]
-default = ["rest-api", "metrics"]
+default = ["rest-api", "metrics", "admission-webhook"]
 rest-api = ["axum", "tower", "tower-http"]
 metrics = ["prometheus-client", "once_cell"]
-admission-webhook = ["wasmtime", "wasmtime-wasi", "tokio-rustls", "base64", "sha2", "hex", "axum", "tower", "tower-http"]
+admission-webhook = [
+    "wasmtime",
+    "wasmtime-wasi",
+    "tokio-rustls",
+    "base64",
+    "sha2",
+    "hex",
+    "axum",
+    "tower",
+    "tower-http",
+]
 axum = ["dep:axum"]
 
 [dev-dependencies]

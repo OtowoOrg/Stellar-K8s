@@ -77,7 +77,8 @@ pub async fn run_server(
 
         let rustls_config = RustlsConfig::from_config(Arc::new(server_config));
 
-        axum_server::bind_rustls(addr, rustls_config)
+        let listener = std::net::TcpListener::bind(addr)?;
+        axum_server::from_tcp_rustls(listener, rustls_config)
             .serve(app.into_make_service())
             .await
             .map_err(|e| Error::ConfigError(format!("Server error: {}", e)))?;

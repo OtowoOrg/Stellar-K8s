@@ -16,61 +16,8 @@ use super::types::{
     ValidatorConfig,
 };
 
-/// Structured validation error for `StellarNodeSpec`
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SpecValidationError {
-    /// JSON-style path to the invalid field (e.g., "spec.replicas")
-    pub field: String,
-    /// Human-readable description of what is wrong
-    pub message: String,
-    /// Clear guidance on how to fix the issue
-    pub how_to_fix: String,
-}
-
-impl SpecValidationError {
-    pub fn new(
-        field: impl Into<String>,
-        message: impl Into<String>,
-        how_to_fix: impl Into<String>,
-    ) -> Self {
-        Self {
-            field: field.into(),
-            message: message.into(),
-            how_to_fix: how_to_fix.into(),
-        }
-    }
-}
 
 /// The StellarNode CRD represents a managed Stellar infrastructure node.
-///
-/// # Example
-///
-/// ```yaml
-/// apiVersion: stellar.org/v1alpha1
-/// kind: StellarNode
-/// metadata:
-///   name: my-validator
-///   namespace: stellar-nodes
-/// spec:
-///   nodeType: Validator
-///   network: Testnet
-///   version: "v21.0.0"
-///   replicas: 1
-///   resources:
-///     requests:
-///       cpu: "2"
-///       memory: "8Gi"
-///     limits:
-///       cpu: "4"
-///       memory: "16Gi"
-///   storage:
-///     storageClass: "ssd"
-///     size: "500Gi"
-///     retentionPolicy: Retain
-///   validatorConfig:
-///     seedSecretRef: "validator-seed"
-///     enableHistoryArchive: true
-/// ```
 #[derive(CustomResource, Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[kube(
     group = "stellar.org",
@@ -90,6 +37,12 @@ pub struct StellarNodeSpec {
     /// Type of Stellar node to deploy (Validator, Horizon, or SorobanRpc)
     pub node_type: NodeType,
 
+    // --- NEW FIELD ---
+    /// History retention mode (Full vs Recent)
+    /// Defaults to Recent if not specified.
+    #[serde(default = "default_history_mode")]
+    pub history_mode: HistoryMode,
+    // -----------------
     /// Target Stellar network (Mainnet, Testnet, Futurenet, or Custom)
     pub network: StellarNetwork,
 
@@ -105,22 +58,18 @@ pub struct StellarNodeSpec {
     pub storage: StorageConfig,
 
     /// Validator-specific configuration
-    /// Required when nodeType is Validator
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validator_config: Option<ValidatorConfig>,
 
     /// Horizon API server configuration
-    /// Required when nodeType is Horizon
     #[serde(skip_serializing_if = "Option::is_none")]
     pub horizon_config: Option<HorizonConfig>,
 
     /// Soroban RPC configuration
-    /// Required when nodeType is SorobanRpc
     #[serde(skip_serializing_if = "Option::is_none")]
     pub soroban_config: Option<SorobanConfig>,
 
-    /// Number of replicas (only valid for Horizon and SorobanRpc nodes)
-    /// Validators must always have exactly 1 replica
+    /// Number of replicas
     #[serde(default = "default_replicas")]
     pub replicas: i32,
 
@@ -137,7 +86,6 @@ pub struct StellarNodeSpec {
     pub max_unavailable: Option<IntOrString>,
 
     /// Suspend the node (scale to 0 without deleting resources)
-    /// The operator still manages the resources, but keeps them inactive.
     #[serde(default)]
     pub suspended: bool,
 
@@ -145,19 +93,15 @@ pub struct StellarNodeSpec {
     #[serde(default)]
     pub alerting: bool,
 
-    /// External database configuration for managed Postgres databases
-    /// When provided, database credentials will be fetched from the specified Secret
-    /// and injected as environment variables into the container
+    /// External database configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub database: Option<ExternalDatabaseConfig>,
 
     /// Horizontal Pod Autoscaling configuration
-    /// Only applicable to Horizon and SorobanRpc nodes
-    /// Validators do not support autoscaling (always 1 replica)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub autoscaling: Option<AutoscalingConfig>,
 
-    /// Ingress configuration for HTTPS exposure via an ingress controller and cert-manager
+    /// Ingress configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ingress: Option<IngressConfig>,
 
@@ -170,10 +114,16 @@ pub struct StellarNodeSpec {
     pub maintenance_mode: bool,
 
     /// Network Policy configuration for restricting ingress traffic
-    /// When enabled, creates a deny-all policy with explicit allow rules
-    /// for peer-to-peer (Validators), API access (Horizon/Soroban), and metrics
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_policy: Option<NetworkPolicyConfig>,
+
+    /// Load Balancer configuration (MetalLB/BGP)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_balancer: Option<LoadBalancerConfig>,
+
+    /// Global Discovery (GDS) configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_discovery: Option<GlobalDiscoveryConfig>,
 
     /// Configuration for cross-region multi-cluster disaster recovery (DR)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -208,6 +158,12 @@ fn default_replicas() -> i32 {
     1
 }
 
+// --- NEW DEFAULT FUNCTION ---
+fn default_history_mode() -> HistoryMode {
+    HistoryMode::Recent
+}
+// ---------------------------
+
 impl StellarNodeSpec {
     /// Validate the spec based on node type
     ///
@@ -224,11 +180,12 @@ impl StellarNodeSpec {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use stellar_k8s::crd::StellarNodeSpec;
+    /// use stellar_k8s::crd::{StellarNodeSpec, HistoryMode};
     ///
     /// let spec = StellarNodeSpec {
     ///     // ... configuration
     /// # node_type: Default::default(),
+    /// # history_mode: HistoryMode::Recent,
     /// # network: Default::default(),
     /// # version: "v21".to_string(),
     /// # resources: Default::default(),
@@ -247,6 +204,8 @@ impl StellarNodeSpec {
     /// # strategy: Default::default(),
     /// # maintenance_mode: false,
     /// # network_policy: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
     /// # load_balancer: None,
@@ -392,7 +351,7 @@ impl StellarNodeSpec {
             }
         }
 
-        // Validate load balancer configuration (all node types)
+
         if let Some(lb) = &self.load_balancer {
             validate_load_balancer(lb, &mut errors);
         }
@@ -429,10 +388,11 @@ impl StellarNodeSpec {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use stellar_k8s::crd::{StellarNodeSpec, NodeType};
+    /// use stellar_k8s::crd::{StellarNodeSpec, NodeType, HistoryMode};
     ///
     /// let spec = StellarNodeSpec {
     ///     node_type: NodeType::Validator,
+    ///     history_mode: HistoryMode::Recent,
     ///     version: "v21.0.0".to_string(),
     /// # network: Default::default(),
     /// # resources: Default::default(),
@@ -451,6 +411,8 @@ impl StellarNodeSpec {
     /// # strategy: Default::default(),
     /// # maintenance_mode: false,
     /// # network_policy: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
     /// # load_balancer: None,
@@ -481,7 +443,7 @@ impl StellarNodeSpec {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use stellar_k8s::crd::{StellarNodeSpec, RetentionPolicy, StorageConfig};
+    /// use stellar_k8s::crd::{StellarNodeSpec, RetentionPolicy, StorageConfig, HistoryMode};
     ///
     /// let spec = StellarNodeSpec {
     ///     storage: StorageConfig {
@@ -491,6 +453,7 @@ impl StellarNodeSpec {
     /// # annotations: None,
     ///     },
     /// # node_type: Default::default(),
+    /// # history_mode: HistoryMode::Recent,
     /// # network: Default::default(),
     /// # version: "v21".to_string(),
     /// # resources: Default::default(),
@@ -508,6 +471,8 @@ impl StellarNodeSpec {
     /// # strategy: Default::default(),
     /// # maintenance_mode: false,
     /// # network_policy: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
     /// # load_balancer: None,
@@ -531,7 +496,6 @@ fn validate_ingress(ingress: &IngressConfig, errors: &mut Vec<SpecValidationErro
         ));
         return;
     }
-
     for host in &ingress.hosts {
         if host.host.trim().is_empty() {
             errors.push(SpecValidationError::new(
@@ -569,6 +533,7 @@ fn validate_ingress(ingress: &IngressConfig, errors: &mut Vec<SpecValidationErro
             }
         }
     }
+
 }
 
 #[allow(dead_code)]
@@ -579,7 +544,6 @@ fn validate_load_balancer(lb: &LoadBalancerConfig, errors: &mut Vec<SpecValidati
         return;
     }
 
-    // BGP mode requires peers configuration
     if lb.mode == LoadBalancerMode::BGP {
         if let Some(bgp) = &lb.bgp {
             if bgp.local_asn == 0 {
@@ -621,7 +585,6 @@ fn validate_load_balancer(lb: &LoadBalancerConfig, errors: &mut Vec<SpecValidati
         }
     }
 
-    // Validate health check port range
     if lb.health_check_enabled && (lb.health_check_port < 1 || lb.health_check_port > 65535) {
         errors.push(SpecValidationError::new(
             "spec.loadBalancer.healthCheckPort",
@@ -636,8 +599,6 @@ fn validate_global_discovery(gd: &GlobalDiscoveryConfig, errors: &mut Vec<SpecVa
     if !gd.enabled {
         return;
     }
-
-    // Validate external DNS if configured
     if let Some(dns) = &gd.external_dns {
         if dns.hostname.trim().is_empty() {
             errors.push(SpecValidationError::new(
@@ -654,6 +615,7 @@ fn validate_global_discovery(gd: &GlobalDiscoveryConfig, errors: &mut Vec<SpecVa
             ));
         }
     }
+
 }
 
 #[allow(dead_code)]
@@ -835,12 +797,8 @@ pub struct StellarNodeStatus {
         note = "Use conditions array instead. Phase is now derived from Ready/Progressing/Degraded conditions."
     )]
     pub phase: String,
-
-    /// Human-readable message about current state
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
-
-    /// Observed generation for status sync detection
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_generation: Option<i64>,
 
@@ -856,28 +814,16 @@ pub struct StellarNodeStatus {
     /// - Degraded: True when the node is operational but experiencing issues
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<Condition>,
-
-    /// For validators: current ledger sequence number
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ledger_sequence: Option<u64>,
-
-    /// Endpoint where the node is accessible (Service ClusterIP or external)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
-
-    /// External load balancer IP assigned by MetalLB
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_ip: Option<String>,
-
-    /// BGP advertisement status (when using BGP mode)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bgp_status: Option<BGPStatus>,
-
-    /// Current number of ready replicas
     #[serde(default)]
     pub ready_replicas: i32,
-
-    /// Total number of desired replicas
     #[serde(default)]
     pub replicas: i32,
 
@@ -894,21 +840,13 @@ pub struct StellarNodeStatus {
     pub last_migrated_version: Option<String>,
 }
 
-/// BGP advertisement status information
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BGPStatus {
-    /// Whether BGP sessions are established
     pub sessions_established: bool,
-
-    /// Number of active BGP peers
     pub active_peers: i32,
-
-    /// Advertised IP prefixes
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub advertised_prefixes: Vec<String>,
-
-    /// Last BGP update time
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_update: Option<String>,
 }

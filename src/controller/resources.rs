@@ -109,11 +109,18 @@ fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
     let name = resource_name(node, "data");
 
     let mut requests = BTreeMap::new();
-    requests.insert(
-        "storage".to_string(),
-        Quantity(node.spec.storage.size.clone()),
-    );
 
+    // Logic: If user provides a size, use it.
+    // If it's the default "500Gi" (from the example) and mode is Full, bump it to 1Ti.
+    use crate::crd::HistoryMode;
+    let storage_size =
+        if node.spec.history_mode == HistoryMode::Full && node.spec.storage.size == "500Gi" {
+            "1Ti".to_string()
+        } else {
+            node.spec.storage.size.clone()
+        };
+
+    requests.insert("storage".to_string(), Quantity(storage_size));
     // Merge custom annotations from storage config with existing annotations
     let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
 
@@ -734,8 +741,6 @@ fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) 
     }
 
     // Add global discovery annotations
-    // TODO: global_discovery field not yet implemented in StellarNodeSpec
-    /*
     if let Some(gd) = &node.spec.global_discovery {
         if gd.enabled {
             if let Some(region) = &gd.region {
@@ -770,7 +775,6 @@ fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) 
             }
         }
     }
-    */
 
     let external_traffic_policy = match config.external_traffic_policy {
         ExternalTrafficPolicy::Cluster => "Cluster".to_string(),
@@ -831,6 +835,7 @@ pub async fn delete_load_balancer_service(client: &Client, node: &StellarNode) -
 /// Ensure MetalLB BGPAdvertisement and IPAddressPool ConfigMaps are documented
 /// Note: MetalLB CRDs must be created manually or via Helm; this function
 /// creates the recommended ConfigMap for cluster operators to reference.
+
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_metallb_config(client: &Client, node: &StellarNode) -> Result<()> {
     let lb_cfg = match &node.spec.load_balancer {
@@ -1523,6 +1528,24 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
         value: Some(node.spec.network.passphrase().to_string()),
         ..Default::default()
     }];
+
+    // Adjust catchup strategy based on HistoryMode
+    use crate::crd::HistoryMode;
+    let (complete, recent) = match node.spec.history_mode {
+        HistoryMode::Full => ("true", "0"),
+        HistoryMode::Recent => ("false", "1024"),
+    };
+
+    env_vars.push(EnvVar {
+        name: "CATCHUP_COMPLETE".to_string(),
+        value: Some(complete.to_string()),
+        ..Default::default()
+    });
+    env_vars.push(EnvVar {
+        name: "CATCHUP_RECENT".to_string(),
+        value: Some(recent.to_string()),
+        ..Default::default()
+    });
 
     // Source validator seed from Secret or shared RAM volume (KMS)
     if let NodeType::Validator = node.spec.node_type {

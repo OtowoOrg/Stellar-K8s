@@ -29,12 +29,17 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      image_tag: ${{ steps.version.outputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Get version
+      
+      - name: Convert repository to lowercase
+        id: repo-lower
+        run: echo "repo_lc=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      
+      - name: Determine version
         id: version
         run: |
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
@@ -42,7 +47,8 @@ jobs:
           else
             echo "version=sha-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
-
+          echo "image_tag=ghcr.io/${{ steps.repo-lower.outputs.repo_lc }}:benchmark-$VERSION" >> $GITHUB_OUTPUT
+      
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -60,6 +66,19 @@ jobs:
           name: stellar-operator-${{ steps.version.outputs.version }}
           path: target/release/stellar-operator
           retention-days: 7
+      
+      - name: Save Docker image
+        run: |
+          mkdir -p /tmp/docker-images
+          docker save ${{ steps.version.outputs.image_tag }} -o /tmp/docker-images/operator-image.tar
+          ls -lh /tmp/docker-images/operator-image.tar
+      
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: operator-docker-image
+          path: /tmp/docker-images/operator-image.tar
+          retention-days: 1
 
   benchmark:
     name: Run Benchmarks
@@ -151,14 +170,30 @@ jobs:
         uses: helm/kind-action@v1.13.0
         with:
           cluster_name: benchmark-cluster
-          config: |
-            kind: Cluster
-            apiVersion: kind.x-k8s.io/v1alpha4
-            nodes:
-              - role: control-plane
-              - role: worker
-              - role: worker
-
+          config: .github/kind-config.yaml
+          wait: 300s
+      
+      - name: Download operator image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: operator-docker-image
+          path: /tmp/docker-images
+      
+      - name: Load operator image into kind
+        run: |
+          echo "Loading operator image from artifact..."
+          kind load image-archive /tmp/docker-images/operator-image.tar --name benchmark-cluster
+          echo "✓ Image loaded successfully"
+      
+      - name: Wait for cluster to be ready
+        run: |
+          echo "Waiting for cluster nodes..."
+          kubectl wait --for=condition=Ready node --all --timeout=120s || true
+          
+          echo "Checking cluster status..."
+          kubectl cluster-info
+          kubectl get nodes -o wide
+      
       - name: Install CRDs and operator
         run: |
           kubectl apply -f config/crd/stellarnode-crd.yaml
@@ -198,15 +233,58 @@ jobs:
                         cpu: 2000m
                         memory: 2Gi
           EOF
-
-          kubectl wait --for=condition=available deployment/stellar-operator -n stellar-system --timeout=120s
-
+          
+          echo "Waiting for operator deployment to be available..."
+          if ! kubectl wait --for=condition=available deployment/stellar-operator -n stellar-system --timeout=120s; then
+            echo "⚠️ Deployment did not become available in time. Debugging info:"
+            echo "Pod status:"
+            kubectl get pods -n stellar-system -o wide
+            echo "Pod logs:"
+            kubectl logs -n stellar-system -l app=stellar-operator --tail=50 || true
+            echo "Pod events:"
+            kubectl describe pods -n stellar-system -l app=stellar-operator || true
+            exit 1
+          fi
+          
+          echo "✓ Operator deployment is available"
+      
       - name: Setup port forwarding
         run: |
-          kubectl port-forward -n stellar-system svc/stellar-operator 8080:8080 &
-          kubectl proxy --port=8001 &
-          sleep 5
-
+          # Create a script to maintain port forwarding
+          cat > /tmp/maintain-portforward.sh << 'SCRIPT'
+          #!/bin/bash
+          set -e
+          
+          # Start port forwarding and keep it alive
+          while true; do
+            kubectl port-forward -n stellar-system svc/stellar-operator 8080:8080 2>&1 || true
+            sleep 2
+          done
+          SCRIPT
+          
+          chmod +x /tmp/maintain-portforward.sh
+          
+          # Start the port forwarding maintenance in background
+          /tmp/maintain-portforward.sh > /tmp/pf-8080.log 2>&1 &
+          echo $! > /tmp/pf-8080.pid
+          
+          # Wait for port-forward to be ready
+          sleep 3
+          
+          # Verify connectivity
+          for i in {1..30}; do
+            if curl -s http://localhost:8080/api/v1/namespaces > /dev/null 2>&1; then
+              echo "✓ Operator API is accessible on port 8080"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "⚠️ Warning: Operator API not accessible on port 8080"
+              echo "Port forward log:"
+              cat /tmp/pf-8080.log || true
+            fi
+            sleep 1
+          done
+      
       - name: Download baseline
         id: baseline
         run: |
@@ -234,10 +312,21 @@ jobs:
         id: k6
         run: |
           mkdir -p results
-
+          
+          # Verify connectivity before running benchmarks
+          echo "Checking operator connectivity..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8080/api/v1/namespaces > /dev/null 2>&1; then
+              echo "✓ Operator is accessible"
+              break
+            fi
+            echo "Attempt $i/30: Waiting for operator..."
+            sleep 1
+          done
+          
+          # Use kubectl directly for API URLs (no proxy needed)
           k6 run \
             --env BASE_URL=http://localhost:8080 \
-            --env K8S_API_URL=http://localhost:8001 \
             --env NAMESPACE=stellar-benchmark \
             --env RUN_ID=${{ github.run_id }} \
             --env VERSION=${{ needs.build.outputs.version }} \
@@ -264,9 +353,17 @@ jobs:
       - name: Collect operator logs
         if: always()
         run: |
-          kubectl logs -n stellar-system -l app=stellar-operator --tail=500 > results/operator-logs.txt
-          kubectl get events -n stellar-benchmark --sort-by='.lastTimestamp' > results/events.txt || true
-
+          mkdir -p results
+          
+          echo "Collecting operator logs..."
+          kubectl logs -n stellar-system -l app=stellar-operator --tail=500 > results/operator-logs.txt 2>&1 || echo "Could not collect operator logs"
+          
+          echo "Collecting benchmark namespace events..."
+          kubectl get events -n stellar-benchmark --sort-by='.lastTimestamp' > results/events.txt 2>&1 || echo "No events found in benchmark namespace"
+          
+          echo "Collecting operator pod details..."
+          kubectl describe pods -n stellar-system -l app=stellar-operator > results/operator-pod-details.txt 2>&1 || echo "Could not describe operator pods"
+      
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
@@ -326,7 +423,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download benchmark results
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v4
         with:
           name: benchmark-results-${{ needs.build.outputs.version }}
           path: results/

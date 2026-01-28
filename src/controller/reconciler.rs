@@ -72,7 +72,7 @@ pub struct ControllerState {
     pub enable_mtls: bool,
     pub operator_namespace: String,
     pub mtls_config: Option<crate::MtlsConfig>,
-    pub dry_run: bool,
+
 }
 
 /// Main entry point to start the controller
@@ -107,7 +107,7 @@ pub struct ControllerState {
 ///         enable_mtls: false,
 ///         mtls_config: None,
 ///         operator_namespace: "stellar-operator".to_string(),
-///         dry_run: false,
+
 ///     });
 ///     run_controller(state).await?;
 ///     Ok(())
@@ -524,7 +524,7 @@ async fn apply_stellar_node(
     if node.spec.node_type == NodeType::Validator {
         if let Some(config) = &node.spec.validator_config {
             if let Some(vl_source) = &config.vl_source {
-                match vsl::fetch_vsl(vl_source).await {
+                match vsl::fetch_vsl(&ctx.http_client, vl_source).await {
                     Ok(quorum) => {
                         quorum_override = Some(quorum);
                     }
@@ -659,19 +659,7 @@ async fn apply_stellar_node(
     )
     .await?;
 
-    // 5a. MetalLB / LoadBalancer
-    apply_or_emit(
-        ctx,
-        node,
-        ActionType::Update,
-        "MetalLB configuration",
-        async {
-            resources::ensure_metallb_config(client, node).await?;
-            resources::ensure_load_balancer_service(client, node).await?;
-            Ok(())
-        },
-    )
-    .await?;
+
 
     // 6. Autoscaling and Monitoring
     apply_or_emit(
@@ -722,7 +710,7 @@ async fn apply_stellar_node(
                 if let Some(pod) = pods.items.first() {
                     if let Some(status) = &pod.status {
                         if let Some(ip) = &status.pod_ip {
-                            if let Err(e) = vsl::trigger_config_reload(ip).await {
+                            if let Err(e) = vsl::trigger_config_reload(&ctx.http_client, ip).await {
                                 warn!(
                                     "Failed to trigger config-reload for {}/{}: {}",
                                     namespace, name, e
@@ -842,7 +830,9 @@ async fn apply_stellar_node(
             // Calculate ingestion lag if we can get the latest network ledger
             // For now we assume we have a way to track the "latest" known ledger across the cluster
             // or fetch it from a public horizon.
-            if let Ok(network_latest) = get_latest_network_ledger(&node.spec.network).await {
+            if let Ok(network_latest) =
+                get_latest_network_ledger(&ctx.http_client, &node.spec.network).await
+            {
                 let lag = (network_latest as i64) - (seq as i64);
                 metrics::set_ingestion_lag(
                     &namespace,
@@ -912,6 +902,14 @@ async fn cleanup_stellar_node(
         Ok(())
     })
     .await?;
+
+    if let Err(e) = resources::delete_load_balancer_service(client, node).await {
+        warn!("Failed to delete LoadBalancer Service: {:?}", e);
+    }
+
+    if let Err(e) = resources::delete_metallb_config(client, node).await {
+        warn!("Failed to delete MetalLB ConfigMap: {:?}", e);
+    }
 
     // 3a. Delete NetworkPolicy
     apply_or_emit(ctx, node, ActionType::Delete, "NetworkPolicy", async {
@@ -1609,7 +1607,10 @@ async fn update_status_with_canary(
 }
 
 /// Helper to get the latest ledger from the Stellar network
-async fn get_latest_network_ledger(network: &crate::crd::StellarNetwork) -> Result<u64> {
+async fn get_latest_network_ledger(
+    client: &reqwest::Client,
+    network: &crate::crd::StellarNetwork,
+) -> Result<u64> {
     let url = match network {
         crate::crd::StellarNetwork::Mainnet => "https://horizon.stellar.org",
         crate::crd::StellarNetwork::Testnet => "https://horizon-testnet.stellar.org",
@@ -1621,7 +1622,6 @@ async fn get_latest_network_ledger(network: &crate::crd::StellarNetwork) -> Resu
         }
     };
 
-    let client = reqwest::Client::new();
     let resp = client.get(url).send().await.map_err(Error::HttpError)?;
     let json: serde_json::Value = resp
         .json()

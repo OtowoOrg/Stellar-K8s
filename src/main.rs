@@ -1,12 +1,28 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::sync::Arc;
-use stellar_k8s::{controller, Error};
+use stellar_k8s::{controller, crd::StellarNode, Error};
 use tracing::{info, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Run the operator
+    Run(RunArgs),
+    /// Show version and build information
+    Version,
+    /// Show cluster information
+    Info(InfoArgs),
+}
+
+#[derive(Parser, Debug)]
+struct RunArgs {
     /// Enable mTLS for the REST API
     #[arg(long, env = "ENABLE_MTLS")]
     enable_mtls: bool,
@@ -14,6 +30,10 @@ struct Args {
     /// Operator namespace
     #[arg(long, env = "OPERATOR_NAMESPACE", default_value = "default")]
     namespace: String,
+
+    /// Run in dry-run mode (calculate changes without applying them)
+    #[arg(long, env = "DRY_RUN")]
+    dry_run: bool,
 
     /// Run the latency-aware scheduler instead of the operator
     #[arg(long, env = "RUN_SCHEDULER")]
@@ -24,10 +44,51 @@ struct Args {
     scheduler_name: String,
 }
 
+#[derive(Parser, Debug)]
+struct InfoArgs {
+    /// Operator namespace
+    #[arg(long, env = "OPERATOR_NAMESPACE", default_value = "default")]
+    namespace: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
 
+    match args.command {
+        Commands::Version => {
+            println!("Stellar-K8s Operator v{}", env!("CARGO_PKG_VERSION"));
+            println!("Build Date: {}", env!("BUILD_DATE"));
+            println!("Git SHA: {}", env!("GIT_SHA"));
+            println!("Rust Version: {}", env!("RUST_VERSION"));
+            return Ok(());
+        }
+        Commands::Info(info_args) => {
+            return run_info(info_args).await;
+        }
+        Commands::Run(run_args) => {
+            return run_operator(run_args).await;
+        }
+    }
+}
+
+async fn run_info(args: InfoArgs) -> Result<(), Error> {
+    // Initialize Kubernetes client
+    let client = kube::Client::try_default()
+        .await
+        .map_err(Error::KubeError)?;
+
+    let api: kube::Api<StellarNode> = kube::Api::namespaced(client, &args.namespace);
+    let nodes = api
+        .list(&Default::default())
+        .await
+        .map_err(Error::KubeError)?;
+
+    println!("Managed Stellar Nodes: {}", nodes.items.len());
+    Ok(())
+}
+
+async fn run_operator(args: RunArgs) -> Result<(), Error> {
     // Initialize tracing with OpenTelemetry
     let env_filter = EnvFilter::builder()
         .with_default_directive(Level::INFO.into())
@@ -151,6 +212,7 @@ async fn main() -> Result<(), Error> {
         enable_mtls: args.enable_mtls,
         operator_namespace: args.namespace.clone(),
         mtls_config: mtls_config.clone(),
+        dry_run: args.dry_run,
     });
 
     // Start the peer discovery manager

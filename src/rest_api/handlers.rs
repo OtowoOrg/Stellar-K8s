@@ -28,6 +28,7 @@ pub async fn health() -> Json<HealthResponse> {
 
 /// List all StellarNodes
 #[instrument(skip(state))]
+#[allow(deprecated)]
 pub async fn list_nodes(
     State(state): State<Arc<ControllerState>>,
 ) -> Result<Json<NodeListResponse>, (StatusCode, Json<ErrorResponse>)> {

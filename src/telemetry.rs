@@ -4,12 +4,10 @@
 
 use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
-use opentelemetry_sdk::{
-    propagation::TraceContextPropagator,
-    runtime,
-    trace::{self, Sampler},
-    Resource,
-};
+use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::resource::Resource;
+use opentelemetry_sdk::runtime;
+use opentelemetry_sdk::trace::{Config, Sampler};
 use std::env;
 use tracing_subscriber::{registry::LookupSpan, Layer};
 
@@ -40,7 +38,7 @@ where
         .tracing()
         .with_exporter(exporter)
         .with_trace_config(
-            trace::config()
+            Config::default()
                 .with_resource(resource)
                 .with_sampler(Sampler::AlwaysOn),
         )

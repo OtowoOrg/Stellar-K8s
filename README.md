@@ -12,6 +12,8 @@
 
 Designed for high availability, type safety, and minimal footprint.
 
+<!-- CI trigger: formatting fixes applied -->
+
 ---
 
 ## ✨ Key Features

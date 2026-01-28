@@ -1,9 +1,6 @@
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 
-pub fn merge_resource_meta(
-    mut base: ObjectMeta,
-    extra: &Option<ObjectMeta>,
-) -> ObjectMeta {
+pub fn merge_resource_meta(mut base: ObjectMeta, extra: &Option<ObjectMeta>) -> ObjectMeta {
     if let Some(extra) = extra {
         if let Some(labels) = &extra.labels {
             base.labels

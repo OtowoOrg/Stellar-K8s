@@ -3,11 +3,10 @@
 //! The StellarNode CRD represents a managed Stellar infrastructure node.
 //! Supports Validator (Core), Horizon API, and Soroban RPC node types.
 
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
-
 
 use super::types::{
     AutoscalingConfig, Condition, DisasterRecoveryConfig, DisasterRecoveryStatus,
@@ -142,7 +141,7 @@ pub struct StellarNodeSpec {
     pub topology_spread_constraints:
         Option<Vec<k8s_openapi::api::core::v1::TopologySpreadConstraint>>,
 
-   /// Optional labels and annotations applied to all generated Kubernetes resources
+    /// Optional labels and annotations applied to all generated Kubernetes resources
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
     pub resource_meta: Option<ObjectMeta>,
@@ -190,6 +189,7 @@ impl StellarNodeSpec {
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
+    /// # resource_meta: None,
     /// };
     /// match spec.validate() {
     ///     Ok(_) => println!("Valid spec"),
@@ -309,6 +309,7 @@ impl StellarNodeSpec {
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
+    /// # resource_meta: None,
     /// };
     /// assert_eq!(spec.container_image(), "stellar/stellar-core:v21.0.0");
     /// ```
@@ -359,6 +360,7 @@ impl StellarNodeSpec {
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
+    /// # resource_meta: None,
     /// };
     /// assert!(spec.should_delete_pvc());
     /// ```

@@ -41,6 +41,7 @@ mod stellar_node_spec_validation {
             network_policy: None,
             dr_config: None,
             topology_spread_constraints: None,
+            resource_meta: None,
         }
     }
 
@@ -72,6 +73,7 @@ mod stellar_node_spec_validation {
             network_policy: None,
             dr_config: None,
             topology_spread_constraints: None,
+            resource_meta: None,
         }
     }
 
@@ -101,6 +103,7 @@ mod stellar_node_spec_validation {
             network_policy: None,
             dr_config: None,
             topology_spread_constraints: None,
+            resource_meta: None,
         }
     }
 

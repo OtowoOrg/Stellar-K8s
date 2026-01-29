@@ -147,7 +147,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ---
 
-## �️ Development
+## Development
 
 ### Prerequisites
 
@@ -176,7 +176,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines.
 
 ---
 
-## �👨‍💻 Maintainer
+## 👨‍💻 Maintainer
 
 **Otowo Samuel**  
 _DevOps Engineer & Protocol Developer_

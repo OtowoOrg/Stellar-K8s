@@ -115,8 +115,8 @@ pub async fn ensure_server_cert(
 
     let ca_key_pair =
         KeyPair::from_pem(&ca_key_pem).map_err(|e| Error::ConfigError(e.to_string()))?;
-    let ca_params = CertificateParams::from_ca_cert_pem(&ca_cert_pem)
-        .map_err(|e| Error::ConfigError(e.to_string()))?;
+    let mut ca_params = CertificateParams::new(vec!["stellar-operator-ca".to_string()])?;
+    ca_params.is_ca = IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
     let ca_cert = ca_params
         .self_signed(&ca_key_pair)
         .map_err(|e| Error::ConfigError(e.to_string()))?;
@@ -215,8 +215,8 @@ pub async fn ensure_node_cert(client: &Client, node: &StellarNode) -> Result<()>
 
     let ca_key_pair =
         KeyPair::from_pem(&ca_key_pem).map_err(|e| Error::ConfigError(e.to_string()))?;
-    let ca_params = CertificateParams::from_ca_cert_pem(&ca_cert_pem)
-        .map_err(|e| Error::ConfigError(e.to_string()))?;
+    let mut ca_params = CertificateParams::new(vec!["stellar-operator-ca".to_string()])?;
+    ca_params.is_ca = IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
     let ca_cert = ca_params
         .self_signed(&ca_key_pair)
         .map_err(|e| Error::ConfigError(e.to_string()))?;

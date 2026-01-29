@@ -236,17 +236,10 @@ async fn check_horizon_health(
     let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(5));
 
     if let Some(config) = mtls_config {
-        let mut identity_pem = config.cert_pem.clone();
-        identity_pem.extend_from_slice(&config.key_pem);
-
-        let identity = reqwest::Identity::from_pem(&identity_pem)
-            .map_err(|e| Error::ConfigError(format!("Failed to create identity: {}", e)))?;
-
         let ca_cert = reqwest::Certificate::from_pem(&config.ca_pem)
             .map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {}", e)))?;
 
         builder = builder
-            .identity(identity)
             .add_root_certificate(ca_cert)
             .danger_accept_invalid_hostnames(true);
     }
@@ -336,17 +329,10 @@ async fn check_soroban_health(
     let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(5));
 
     if let Some(config) = mtls_config {
-        let mut identity_pem = config.cert_pem.clone();
-        identity_pem.extend_from_slice(&config.key_pem);
-
-        let identity = reqwest::Identity::from_pem(&identity_pem)
-            .map_err(|e| Error::ConfigError(format!("Failed to create identity: {}", e)))?;
-
         let ca_cert = reqwest::Certificate::from_pem(&config.ca_pem)
             .map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {}", e)))?;
 
         builder = builder
-            .identity(identity)
             .add_root_certificate(ca_cert)
             .danger_accept_invalid_hostnames(true);
     }

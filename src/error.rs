@@ -67,6 +67,14 @@ pub enum Error {
     /// Network connectivity error
     #[error("Network error: {0}")]
     NetworkError(String),
+
+    /// Certificate generation error
+    #[error("Certificate error: {0}")]
+    CertificateError(#[from] rcgen::Error),
+
+    /// I/O error
+    #[error("I/O error: {0}")]
+    IoError(#[from] std::io::Error),
 }
 
 /// Result type alias for operator operations

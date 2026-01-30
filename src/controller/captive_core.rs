@@ -203,6 +203,8 @@ mod tests {
                 node_type: NodeType::SorobanRpc,
                 network: StellarNetwork::Testnet,
                 version: "v21.0.0".to_string(),
+                history_mode: Default::default(),
+                resource_meta: None,
                 resources: crate::crd::ResourceRequirements {
                     requests: crate::crd::ResourceSpec {
                         cpu: "500m".to_string(),

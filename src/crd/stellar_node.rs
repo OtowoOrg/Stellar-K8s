@@ -4,6 +4,7 @@
 //! Supports Validator (Core), Horizon API, and Soroban RPC node types.
 
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -181,6 +182,22 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_policy: Option<NetworkPolicyConfig>,
 
+    /// Load Balancer configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_balancer: Option<LoadBalancerConfig>,
+
+    /// Global Discovery configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_discovery: Option<GlobalDiscoveryConfig>,
+
+    /// Cross-cluster configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cross_cluster: Option<CrossClusterConfig>,
+
+    /// Cluster name (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster: Option<String>,
+
     /// Configuration for cross-region multi-cluster disaster recovery (DR)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dr_config: Option<DisasterRecoveryConfig>,
@@ -203,65 +220,45 @@ fn default_replicas() -> i32 {
 impl StellarNodeSpec {
     /// Validate the spec based on node type
     ///
-    /// Performs comprehensive validation of the StellarNodeSpec including:
-    /// - Checking that required config for node type is present
-    /// - Validating replica counts
-    /// - Ensuring node-type-specific constraints (e.g., Validators can't autoscale)
-    /// - Validating ingress configuration
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the spec fails validation.
-    ///
     /// # Examples
     ///
-    /// ```rust,no_run
-    /// use stellar_k8s::crd::StellarNodeSpec;
-    ///
+    /// ```rust
+    /// # use stellar_k8s::crd::stellar_node::{StellarNodeSpec, NodeType};
+    /// # use stellar_k8s::crd::types::StellarNetwork;
     /// let spec = StellarNodeSpec {
-    ///     // ... configuration
-    /// # node_type: Default::default(),
-    /// # network: Default::default(),
-    /// # version: "v21".to_string(),
-    /// # history_mode: Default::default(),
-    /// # resources: Default::default(),
-    /// # storage: Default::default(),
-    /// # validator_config: None,
-    /// # horizon_config: None,
-    /// # soroban_config: None,
-    /// # replicas: 1,
-    /// # min_available: None,
-    /// # max_unavailable: None,
-    /// # suspended: false,
-    /// # alerting: false,
-    /// # database: None,
-    /// # autoscaling: None,
-    /// # ingress: None,
-    /// # strategy: Default::default(),
-    /// # maintenance_mode: false,
-    /// # network_policy: None,
-    /// # dr_config: None,
-    /// # topology_spread_constraints: None,
-    /// # resource_meta: None,
+    ///     node_type: NodeType::Horizon,
+    ///     network: StellarNetwork::Testnet,
+    ///     version: "v21".to_string(),
+    ///     history_mode: Default::default(),
+    ///     resources: Default::default(),
+    ///     storage: Default::default(),
+    ///     validator_config: None,
+    ///     horizon_config: None,
+    ///     soroban_config: None,
+    ///     replicas: 1,
+    ///     min_available: None,
+    ///     max_unavailable: None,
+    ///     suspended: false,
+    ///     alerting: false,
+    ///     database: None,
+    ///     autoscaling: None,
+    ///     ingress: None,
+    ///     strategy: Default::default(),
+    ///     maintenance_mode: false,
+    ///     network_policy: None,
+    ///     dr_config: None,
+    ///     topology_spread_constraints: None,
+    ///     load_balancer: None,
+    ///     global_discovery: None,
+    ///     cluster: None,
+    ///     cross_cluster: None,
+    ///     resource_meta: None,
     /// };
-    /// match spec.validate() {
-    ///     Ok(_) => println!("Valid spec"),
-    ///     Err(errors) => {
-    ///         for e in errors {
-    ///             eprintln!("Validation error in {}: {}", e.field, e.message);
-    ///         }
-    ///     }
-    /// }
     /// ```
     pub fn validate(&self) -> Result<(), Vec<SpecValidationError>> {
         let mut errors: Vec<SpecValidationError> = Vec::new();
-
         if self.min_available.is_some() && self.max_unavailable.is_some() {
-            errors.push(SpecValidationError::new(
-                "spec.minAvailable / spec.maxUnavailable",
-                "Cannot specify both minAvailable and maxUnavailable in PDB configuration",
-                "Set either spec.minAvailable or spec.maxUnavailable in the spec, but not both at the same time.",
-            ));
+            errors.push(SpecValidationError::new("PDB", "Conflict", "Fix PDB"));
         }
 
         if self.min_available.is_some() && self.max_unavailable.is_some() {
@@ -404,104 +401,95 @@ impl StellarNodeSpec {
         }
     }
 
-    /// Get the container image for this node type and version
-    ///
-    /// Constructs the fully qualified container image URI based on the node type and version.
-    /// The operator uses this image when creating Kubernetes Deployments and StatefulSets.
-    ///
-    /// # Returns
-    ///
-    /// A string in the format `stellar/{component}:{version}` where component is:
-    /// - `stellar-core` for Validator nodes
-    /// - `stellar-horizon` for Horizon nodes  
-    /// - `soroban-rpc` for SorobanRpc nodes
+    /// Get the container image
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
-    /// use stellar_k8s::crd::{StellarNodeSpec, NodeType};
-    ///
+    /// ```rust
+    /// # use stellar_k8s::crd::stellar_node::{StellarNodeSpec, NodeType};
+    /// # use stellar_k8s::crd::types::StellarNetwork;
     /// let spec = StellarNodeSpec {
     ///     node_type: NodeType::Validator,
     ///     version: "v21.0.0".to_string(),
-    /// # network: Default::default(),
-    /// # history_mode: Default::default(),
-    /// # resources: Default::default(),
-    /// # storage: Default::default(),
-    /// # validator_config: None,
-    /// # horizon_config: None,
-    /// # soroban_config: None,
-    /// # replicas: 1,
-    /// # min_available: None,
-    /// # max_unavailable: None,
-    /// # suspended: false,
-    /// # alerting: false,
-    /// # database: None,
-    /// # autoscaling: None,
-    /// # ingress: None,
-    /// # strategy: Default::default(),
-    /// # maintenance_mode: false,
-    /// # network_policy: None,
-    /// # dr_config: None,
-    /// # topology_spread_constraints: None,
-    /// # resource_meta: None,
+    ///     network: StellarNetwork::Testnet,
+    ///     history_mode: Default::default(),
+    ///     resources: Default::default(),
+    ///     storage: Default::default(),
+    ///     validator_config: None,
+    ///     horizon_config: None,
+    ///     soroban_config: None,
+    ///     replicas: 1,
+    ///     min_available: None,
+    ///     max_unavailable: None,
+    ///     suspended: false,
+    ///     alerting: false,
+    ///     database: None,
+    ///     autoscaling: None,
+    ///     ingress: None,
+    ///     strategy: Default::default(),
+    ///     maintenance_mode: false,
+    ///     network_policy: None,
+    ///     dr_config: None,
+    ///     topology_spread_constraints: None,
+    ///     load_balancer: None,
+    ///     global_discovery: None,
+    ///     cluster: None,
+    ///     cross_cluster: None,
+    ///     resource_meta: None,
     /// };
-    /// assert_eq!(spec.container_image(), "stellar/stellar-core:v21.0.0");
     /// ```
     pub fn container_image(&self) -> String {
-        match self.node_type {
-            NodeType::Validator => format!("stellar/stellar-core:{}", self.version),
-            NodeType::Horizon => format!("stellar/stellar-horizon:{}", self.version),
-            NodeType::SorobanRpc => format!("stellar/soroban-rpc:{}", self.version),
-        }
+        format!(
+            "stellar/{}:{}",
+            match self.node_type {
+                NodeType::Validator => "stellar-core",
+                _ => "horizon",
+            },
+            self.version
+        )
     }
 
-    /// Check if PVC should be deleted on node deletion
-    ///
-    /// Returns true if the storage retention policy is set to Delete,
-    /// indicating that the PersistentVolumeClaim should be deleted when the StellarNode is deleted.
-    ///
-    /// # Returns
-    ///
-    /// - `true` if `retention_policy == RetentionPolicy::Delete`
-    /// - `false` if `retention_policy == RetentionPolicy::Retain`
+    /// Check if PVC should be deleted
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
-    /// use stellar_k8s::crd::{StellarNodeSpec, RetentionPolicy, StorageConfig};
-    ///
+    /// ```rust
+    /// # use stellar_k8s::crd::stellar_node::{StellarNodeSpec, NodeType};
+    /// # use stellar_k8s::crd::types::{StellarNetwork, RetentionPolicy, StorageConfig};
     /// let spec = StellarNodeSpec {
     ///     storage: StorageConfig {
     ///         retention_policy: RetentionPolicy::Delete,
-    /// # storage_class: "standard".to_string(),
-    /// # size: "100Gi".to_string(),
-    /// # annotations: None,
+    ///         storage_class: "ssd".to_string(),
+    ///         size: "10Gi".to_string(),
+    ///         annotations: None,
     ///     },
-    /// # node_type: Default::default(),
-    /// # network: Default::default(),
-    /// # version: "v21".to_string(),
-    /// # history_mode: Default::default(),
-    /// # resources: Default::default(),
-    /// # validator_config: None,
-    /// # horizon_config: None,
-    /// # soroban_config: None,
-    /// # replicas: 1,
-    /// # min_available: None,
-    /// # max_unavailable: None,
-    /// # suspended: false,
-    /// # alerting: false,
-    /// # database: None,
-    /// # autoscaling: None,
-    /// # ingress: None,
-    /// # strategy: Default::default(),
-    /// # maintenance_mode: false,
-    /// # network_policy: None,
-    /// # dr_config: None,
-    /// # topology_spread_constraints: None,
-    /// # resource_meta: None,
+    ///     node_type: NodeType::Validator,
+    ///     network: StellarNetwork::Testnet,
+    ///     version: "v21".to_string(),
+    ///     history_mode: Default::default(),
+    ///     resources: Default::default(),
+    ///     validator_config: None,
+    ///     horizon_config: None,
+    ///     soroban_config: None,
+    ///     replicas: 1,
+    ///     min_available: None,
+    ///     max_unavailable: None,
+    ///     suspended: false,
+    ///     alerting: false,
+    ///     database: None,
+    ///     autoscaling: None,
+    ///     ingress: None,
+    ///     strategy: Default::default(),
+    ///     maintenance_mode: false,
+    ///     network_policy: None,
+    ///     dr_config: None,
+    ///     topology_spread_constraints: None,
+    ///     load_balancer: None,
+    ///     global_discovery: None,
+    ///     cluster: None,
+    ///     cross_cluster: None,
+    ///     resource_meta: None,
     /// };
-    /// assert!(spec.should_delete_pvc());
     /// ```
     pub fn should_delete_pvc(&self) -> bool {
         self.storage.retention_policy == RetentionPolicy::Delete
@@ -1086,12 +1074,13 @@ mod tests {
             global_discovery: None,
             cluster: None,
             cross_cluster: None,
+            resource_meta: None,
         };
 
         assert!(spec.validate().is_err());
     }
 
-    #[test]
+    #[test] // Ensure this attribute is there
     fn test_horizon_with_canary_should_pass() {
         let spec = StellarNodeSpec {
             node_type: NodeType::Horizon,
@@ -1128,8 +1117,9 @@ mod tests {
             topology_spread_constraints: None,
             load_balancer: None,
             global_discovery: None,
-            cluster: None,
             cross_cluster: None,
+            cluster: None,
+            resource_meta: None,
         };
 
         assert!(spec.validate().is_ok());

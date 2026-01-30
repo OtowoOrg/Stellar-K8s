@@ -545,6 +545,10 @@ mod tests {
                 dr_config: None,
                 topology_spread_constraints: None,
                 resource_meta: None,
+                load_balancer: None,
+                global_discovery: None,
+                cluster: None,
+                cross_cluster: None,
             },
             status: Some(StellarNodeStatus {
                 #[allow(deprecated)]

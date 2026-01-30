@@ -537,6 +537,7 @@ mod tests {
                 suspended: false,
                 alerting: false,
                 database: None,
+                managed_database: None,
                 autoscaling: None,
                 ingress: None,
                 strategy: Default::default(),

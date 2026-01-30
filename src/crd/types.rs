@@ -181,7 +181,7 @@ impl Default for ResourceSpec {
 ///     annotations: None,
 /// };
 /// ```
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageConfig {
     /// Storage class name (e.g., "standard", "ssd", "premium-rwo")
@@ -1704,4 +1704,115 @@ pub enum LatencyMeasurementMethod {
     HTTP,
     /// gRPC health check
     GRPC,
+}
+
+// ============================================================================
+// CloudNativePG Managed Database Configuration
+// ============================================================================
+
+/// Configuration for managed High-Availability Postgres clusters via CloudNativePG
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedDatabaseConfig {
+    /// Number of database instances (replicas) for high availability
+    /// Minimum of 3 is recommended for production HA
+    #[serde(default = "default_db_instances")]
+    pub instances: i32,
+
+    /// Storage configuration for database data
+    pub storage: StorageConfig,
+
+    /// Backup configuration via Barman
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup: Option<ManagedDatabaseBackupConfig>,
+
+    /// Connection pooling configuration via pgBouncer
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pooling: Option<PgBouncerConfig>,
+
+    /// Postgres version to use (e.g., "16")
+    #[serde(default = "default_postgres_version")]
+    pub postgres_version: String,
+}
+
+fn default_db_instances() -> i32 {
+    3
+}
+
+fn default_postgres_version() -> String {
+    "16".to_string()
+}
+
+/// Backup configuration for managed databases using Barman
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedDatabaseBackupConfig {
+    /// Enable automated backups
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Barman destination (e.g., "s3://my-backups/stellar-db")
+    pub destination_path: String,
+
+    /// Reference to a secret containing cloud credentials for backups
+    /// (e.g., AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+    pub credentials_secret_ref: String,
+
+    /// Retention policy for backups (e.g., "30d")
+    #[serde(default = "default_retention")]
+    pub retention_policy: String,
+}
+
+fn default_retention() -> String {
+    "30d".to_string()
+}
+
+/// pgBouncer connection pooling configuration
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PgBouncerConfig {
+    /// Enable pgBouncer connection pooling
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Number of pgBouncer replicas
+    #[serde(default = "default_pooler_replicas")]
+    pub replicas: i32,
+
+    /// pgBouncer pooling mode (Session, Transaction, Statement)
+    #[serde(default)]
+    pub pool_mode: PgBouncerPoolMode,
+
+    /// Maximum number of client connections
+    #[serde(default = "default_max_client_conn")]
+    pub max_client_conn: i32,
+
+    /// Default pool size
+    #[serde(default = "default_pool_size")]
+    pub default_pool_size: i32,
+}
+
+fn default_pooler_replicas() -> i32 {
+    2
+}
+
+fn default_max_client_conn() -> i32 {
+    1000
+}
+
+fn default_pool_size() -> i32 {
+    20
+}
+
+/// pgBouncer pooling modes
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PgBouncerPoolMode {
+    /// Session pooling
+    Session,
+    /// Transaction pooling (recommended)
+    #[default]
+    Transaction,
+    /// Statement pooling
+    Statement,
 }

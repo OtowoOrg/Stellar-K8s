@@ -312,6 +312,14 @@ async fn apply_stellar_node(
     })
     .await?;
 
+    // 1a. Managed Database (CloudNativePG)
+    apply_or_emit(ctx, node, ActionType::Update, "Managed Database", async {
+        resources::ensure_cnpg_cluster(client, node).await?;
+        resources::ensure_cnpg_pooler(client, node).await?;
+        Ok(())
+    })
+    .await?;
+
     // 2. Handle suspension
     if node.spec.suspended {
         apply_or_emit(
@@ -878,6 +886,15 @@ async fn cleanup_stellar_node(
     info!("Cleaning up StellarNode: {}/{}", namespace, name);
 
     // Delete resources in reverse order of creation
+
+    // 0a. Delete Managed Database Resources
+    apply_or_emit(ctx, node, ActionType::Delete, "Managed Database", async {
+        if let Err(e) = resources::delete_cnpg_resources(client, node).await {
+            warn!("Failed to delete CNPG resources: {:?}", e);
+        }
+        Ok(())
+    })
+    .await?;
 
     // 0. Delete Alerting
     apply_or_emit(ctx, node, ActionType::Delete, "Alerting", async {

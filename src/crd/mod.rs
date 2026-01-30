@@ -2,12 +2,14 @@
 //!
 //! This module defines the Kubernetes CRDs for managing Stellar infrastructure.
 
+mod cnpg;
 mod stellar_node;
 mod types;
 
 #[cfg(test)]
 mod tests;
 
+pub use cnpg::*;
 pub use stellar_node::{
     BGPStatus, SpecValidationError, StellarNode, StellarNodeSpec, StellarNodeStatus,
 };

@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 
 use super::types::{
     AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
-    DisasterRecoveryStatus, ExternalDatabaseConfig, GlobalDiscoveryConfig, HorizonConfig,
-    IngressConfig, LoadBalancerConfig, NetworkPolicyConfig, NodeType, ResourceRequirements,
-    RetentionPolicy, RolloutStrategy, SorobanConfig, StellarNetwork, StorageConfig,
-    ValidatorConfig,
+    DisasterRecoveryStatus, ExternalDatabaseConfig, GlobalDiscoveryConfig, HistoryMode,
+    HorizonConfig, IngressConfig, LoadBalancerConfig, NetworkPolicyConfig, NodeType,
+    ResourceRequirements, RetentionPolicy, RolloutStrategy, SorobanConfig, StellarNetwork,
+    StorageConfig, ValidatorConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`
@@ -95,6 +95,12 @@ pub struct StellarNodeSpec {
 
     /// Container image version to use (e.g., "v21.0.0")
     pub version: String,
+
+    /// History retention mode (Full or Recent)
+    /// - Full: Keeps complete history (archive node)
+    /// - Recent: Keeps strictly necessary history (lighter)
+    #[serde(default)]
+    pub history_mode: HistoryMode,
 
     /// Compute resource requirements (CPU and memory)
     #[serde(default)]
@@ -231,6 +237,7 @@ impl StellarNodeSpec {
     /// # node_type: Default::default(),
     /// # network: Default::default(),
     /// # version: "v21".to_string(),
+    /// # history_mode: Default::default(),
     /// # resources: Default::default(),
     /// # storage: Default::default(),
     /// # validator_config: None,
@@ -435,6 +442,7 @@ impl StellarNodeSpec {
     ///     node_type: NodeType::Validator,
     ///     version: "v21.0.0".to_string(),
     /// # network: Default::default(),
+    /// # history_mode: Default::default(),
     /// # resources: Default::default(),
     /// # storage: Default::default(),
     /// # validator_config: None,
@@ -493,6 +501,7 @@ impl StellarNodeSpec {
     /// # node_type: Default::default(),
     /// # network: Default::default(),
     /// # version: "v21".to_string(),
+    /// # history_mode: Default::default(),
     /// # resources: Default::default(),
     /// # validator_config: None,
     /// # horizon_config: None,
@@ -1065,6 +1074,7 @@ mod tests {
             node_type: NodeType::Validator,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
             resources: Default::default(),
             storage: Default::default(),
             validator_config: Some(ValidatorConfig {
@@ -1111,6 +1121,7 @@ mod tests {
             node_type: NodeType::Horizon,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
             resources: Default::default(),
             storage: Default::default(),
             validator_config: None,

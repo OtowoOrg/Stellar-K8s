@@ -31,7 +31,7 @@ use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
 use crate::crd::{
-    ExternalTrafficPolicy, HsmProvider, IngressConfig, KeySource, LoadBalancerConfig,
+    ExternalTrafficPolicy, HistoryMode, HsmProvider, IngressConfig, KeySource, LoadBalancerConfig,
     LoadBalancerMode, NetworkPolicyConfig, NodeType, RolloutStrategy, StellarNode,
 };
 use crate::error::{Error, Result};
@@ -109,10 +109,16 @@ fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
     let name = resource_name(node, "data");
 
     let mut requests = BTreeMap::new();
-    requests.insert(
-        "storage".to_string(),
-        Quantity(node.spec.storage.size.clone()),
-    );
+    let effective_storage_size = if node.spec.storage.size.is_empty() {
+        // Default based on history_mode override
+        match node.spec.history_mode {
+            HistoryMode::Full => "1500Gi".to_string(), // Approximate for full history
+            HistoryMode::Recent => "100Gi".to_string(), // Approximate for recent history
+        }
+    } else {
+        node.spec.storage.size.clone()
+    };
+    requests.insert("storage".to_string(), Quantity(effective_storage_size));
 
     // Merge custom annotations from storage config with existing annotations
     let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
@@ -227,6 +233,19 @@ fn build_config_map(
                 core_cfg.push_str("HTTP_PORT_SECURE=true\n");
                 core_cfg.push_str("TLS_CERT_FILE=\"/etc/stellar/tls/tls.crt\"\n");
                 core_cfg.push_str("TLS_KEY_FILE=\"/etc/stellar/tls/tls.key\"\n");
+            }
+
+            // History Mode Configuration
+            match node.spec.history_mode {
+                HistoryMode::Full => {
+                    core_cfg.push_str("\n# Full History Mode\n");
+                    core_cfg.push_str("CATCHUP_COMPLETE=true\n");
+                }
+                HistoryMode::Recent => {
+                    core_cfg.push_str("\n# Recent History Mode\n");
+                    core_cfg.push_str("CATCHUP_COMPLETE=false\n");
+                    core_cfg.push_str("CATCHUP_RECENT=60480\n"); // ~1 week
+                }
             }
 
             if !core_cfg.is_empty() {
@@ -962,33 +981,32 @@ spec:
         data.insert("bgp-advertisement.yaml".to_string(), bgp_advertisement_yaml);
 
         // Generate BGPPeer YAML for each peer
-        let peers_yaml: String = bgp_cfg
-            .peers
-            .iter()
-            .enumerate()
-            .map(|(i, peer)| {
-                let password_ref = peer.password_secret_ref.as_ref().map(|s| {
-                    format!(
-                        r#"  password:
+        let mut peers_yaml = String::new();
+        for (i, peer) in bgp_cfg.peers.iter().enumerate() {
+            let password_ref = peer.password_secret_ref.as_ref().map(|s| {
+                format!(
+                    r#"  password:
     secretRef:
       name: {}
       key: {}"#,
-                        s.name, s.key
-                    )
-                });
+                    s.name, s.key
+                )
+            });
 
-                let bfd_profile = if bgp_cfg.bfd_enabled {
-                    bgp_cfg
-                        .bfd_profile
-                        .as_ref()
-                        .map(|p| format!("  bfdProfile: {}", p))
-                        .unwrap_or_default()
-                } else {
-                    String::new()
-                };
+            let bfd_profile = if bgp_cfg.bfd_enabled {
+                bgp_cfg
+                    .bfd_profile
+                    .as_ref()
+                    .map(|p| format!("  bfdProfile: {}", p))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
 
-                format!(
-                    r#"---
+            use std::fmt::Write;
+            write!(
+                peers_yaml,
+                r#"---
 # BGPPeer {} for {}
 apiVersion: metallb.io/v1beta2
 kind: BGPPeer
@@ -1005,22 +1023,22 @@ spec:
   ebgpMultiHop: {}
 {}{}
 "#,
-                    i + 1,
-                    node.name_any(),
-                    node.name_any(),
-                    i,
-                    bgp_cfg.local_asn,
-                    peer.asn,
-                    peer.address,
-                    peer.port,
-                    peer.hold_time,
-                    peer.keepalive_time,
-                    peer.ebgp_multi_hop,
-                    password_ref.unwrap_or_default(),
-                    bfd_profile
-                )
-            })
-            .collect();
+                i + 1,
+                node.name_any(),
+                node.name_any(),
+                i,
+                bgp_cfg.local_asn,
+                peer.asn,
+                peer.address,
+                peer.port,
+                peer.hold_time,
+                peer.keepalive_time,
+                peer.ebgp_multi_hop,
+                password_ref.unwrap_or_default(),
+                bfd_profile
+            )
+            .unwrap();
+        }
 
         data.insert("bgp-peers.yaml".to_string(), peers_yaml);
     }

@@ -500,6 +500,7 @@ mod tests {
     use stellar_k8s::controller::conditions::{CONDITION_STATUS_TRUE, CONDITION_TYPE_READY};
     use stellar_k8s::crd::{Condition, NodeType, StellarNodeSpec, StellarNodeStatus};
 
+    #[allow(deprecated)]
     fn create_test_node(name: &str, namespace: &str, node_type: NodeType) -> StellarNode {
         use chrono::Utc;
         use stellar_k8s::crd::StellarNetwork;
@@ -524,6 +525,7 @@ mod tests {
                 node_type,
                 network: StellarNetwork::Testnet,
                 version: "v21.0.0".to_string(),
+                history_mode: Default::default(),
                 replicas: 1,
                 resources: Default::default(),
                 storage: Default::default(),

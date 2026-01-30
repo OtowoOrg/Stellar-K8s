@@ -17,6 +17,7 @@ mod stellar_node_spec_validation {
             node_type: NodeType::Validator,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
             resources: default_resources(),
             storage: default_storage(),
             validator_config: Some(ValidatorConfig {
@@ -58,6 +59,7 @@ mod stellar_node_spec_validation {
             node_type: NodeType::Horizon,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
             resources: default_resources(),
             storage: default_storage(),
             validator_config: None,
@@ -96,6 +98,7 @@ mod stellar_node_spec_validation {
             node_type: NodeType::SorobanRpc,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
             resources: default_resources(),
             storage: default_storage(),
             validator_config: None,

@@ -207,6 +207,8 @@ async fn emit_spec_validation_event(
 ) -> Result<()> {
     let message = format_spec_validation_errors(errors);
     emit_event(client, node, "Warning", "SpecValidationFailed", &message).await
+}
+
 /// Action types for apply_or_emit helper
 #[derive(Debug, Clone, Copy)]
 pub enum ActionType {

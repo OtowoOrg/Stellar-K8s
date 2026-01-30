@@ -45,6 +45,25 @@ impl std::fmt::Display for NodeType {
     }
 }
 
+/// History mode for the node
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub enum HistoryMode {
+    /// Full history node (VSL compatible, archive)
+    Full,
+    /// Recent history only (lighter, faster sync)
+    #[default]
+    Recent,
+}
+
+impl std::fmt::Display for HistoryMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HistoryMode::Full => write!(f, "Full"),
+            HistoryMode::Recent => write!(f, "Recent"),
+        }
+    }
+}
+
 /// Target Stellar network
 ///
 /// Specifies which Stellar network the node connects to.

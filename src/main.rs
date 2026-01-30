@@ -42,16 +42,6 @@ struct RunArgs {
     /// Custom scheduler name (used when --scheduler is set)
     #[arg(long, env = "SCHEDULER_NAME", default_value = "stellar-scheduler")]
     scheduler_name: String,
-    /// Run in dry-run mode (calculate changes without applying them)
-    #[arg(long, env = "DRY_RUN")]
-    dry_run: bool,
-}
-
-#[derive(Parser, Debug)]
-struct InfoArgs {
-    /// Operator namespace
-    #[arg(long, env = "OPERATOR_NAMESPACE", default_value = "default")]
-    namespace: String,
 }
 
 #[derive(Parser, Debug)]

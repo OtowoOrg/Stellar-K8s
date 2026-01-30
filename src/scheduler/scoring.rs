@@ -92,7 +92,7 @@ async fn find_peers(pod: &Pod, client: &Client) -> Result<Vec<Pod>> {
     let mut selector = String::new();
     if let Some(labels) = &pod.metadata.labels {
         if let Some(app) = labels.get("app") {
-            selector = format!("app={}", app);
+            selector = format!("app={app}");
         }
     }
 

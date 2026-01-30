@@ -147,8 +147,7 @@ pub async fn check_node_health(
     // Get the pod(s) for this node
     let pod_api: Api<Pod> = Api::namespaced(client.clone(), &namespace);
     let label_selector = format!(
-        "app.kubernetes.io/instance={},app.kubernetes.io/name=stellar-node",
-        name
+        "app.kubernetes.io/instance={name},app.kubernetes.io/name=stellar-node"
     );
 
     let pods = pod_api
@@ -228,7 +227,7 @@ async fn check_horizon_health(
     } else {
         "http"
     };
-    let url = format!("{}://{}:8000/health", scheme, pod_ip);
+    let url = format!("{scheme}://{pod_ip}:8000/health");
 
     debug!("Querying Horizon health endpoint: {}", url);
 
@@ -240,10 +239,10 @@ async fn check_horizon_health(
         identity_pem.extend_from_slice(&config.key_pem);
 
         let identity = reqwest::Identity::from_pem(&identity_pem)
-            .map_err(|e| Error::ConfigError(format!("Failed to create identity: {}", e)))?;
+            .map_err(|e| Error::ConfigError(format!("Failed to create identity: {e}")))?;
 
         let ca_cert = reqwest::Certificate::from_pem(&config.ca_pem)
-            .map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {}", e)))?;
+            .map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {e}")))?;
 
         builder = builder
             .identity(identity)
@@ -253,7 +252,7 @@ async fn check_horizon_health(
 
     let client = builder
         .build()
-        .map_err(|e| Error::ConfigError(format!("Failed to create HTTP client: {}", e)))?;
+        .map_err(|e| Error::ConfigError(format!("Failed to create HTTP client: {e}")))?;
 
     match client.get(&url).send().await {
         Ok(response) => {
@@ -312,8 +311,7 @@ async fn check_horizon_health(
         Err(e) => {
             warn!("Failed to query Horizon health endpoint: {}", e);
             Ok(HealthCheckResult::pending(format!(
-                "Cannot reach health endpoint: {}",
-                e
+                "Cannot reach health endpoint: {e}"
             )))
         }
     }
@@ -329,7 +327,7 @@ async fn check_soroban_health(
     } else {
         "http"
     };
-    let url = format!("{}://{}:8000/health", scheme, pod_ip);
+    let url = format!("{scheme}://{pod_ip}:8000/health");
 
     debug!("Querying Soroban RPC health endpoint: {}", url);
 
@@ -340,10 +338,10 @@ async fn check_soroban_health(
         identity_pem.extend_from_slice(&config.key_pem);
 
         let identity = reqwest::Identity::from_pem(&identity_pem)
-            .map_err(|e| Error::ConfigError(format!("Failed to create identity: {}", e)))?;
+            .map_err(|e| Error::ConfigError(format!("Failed to create identity: {e}")))?;
 
         let ca_cert = reqwest::Certificate::from_pem(&config.ca_pem)
-            .map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {}", e)))?;
+            .map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {e}")))?;
 
         builder = builder
             .identity(identity)
@@ -353,7 +351,7 @@ async fn check_soroban_health(
 
     let client = builder
         .build()
-        .map_err(|e| Error::ConfigError(format!("Failed to create HTTP client: {}", e)))?;
+        .map_err(|e| Error::ConfigError(format!("Failed to create HTTP client: {e}")))?;
 
     match client.get(&url).send().await {
         Ok(response) => {
@@ -394,8 +392,7 @@ async fn check_soroban_health(
         Err(e) => {
             warn!("Failed to query Soroban health endpoint: {}", e);
             Ok(HealthCheckResult::pending(format!(
-                "Cannot reach health endpoint: {}",
-                e
+                "Cannot reach health endpoint: {e}"
             )))
         }
     }

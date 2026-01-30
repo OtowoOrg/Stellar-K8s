@@ -141,7 +141,7 @@ impl WebhookServer {
 
         let wasm_bytes =
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, wasm_binary_str)
-                .map_err(|e| Error::PluginError(format!("Invalid base64 wasm_binary: {}", e)))?;
+                .map_err(|e| Error::PluginError(format!("Invalid base64 wasm_binary: {e}")))?;
 
         // Load into runtime
         self.runtime
@@ -211,7 +211,7 @@ impl WebhookServer {
                 }
                 Err(e) => {
                     allowed = false;
-                    messages.push(format!("Plugin execution error: {}", e));
+                    messages.push(format!("Plugin execution error: {e}"));
                     plugin_results.push(PluginExecutionResult {
                         plugin_name: "unknown".to_string(),
                         output: ValidationOutput::denied(e.to_string()),
@@ -268,11 +268,11 @@ impl WebhookServer {
 
         let listener = tokio::net::TcpListener::bind(addr)
             .await
-            .map_err(|e| Error::PluginError(format!("Failed to bind to {}: {}", addr, e)))?;
+            .map_err(|e| Error::PluginError(format!("Failed to bind to {addr}: {e}")))?;
 
         axum::serve(listener, app)
             .await
-            .map_err(|e| Error::PluginError(format!("Server error: {}", e)))?;
+            .map_err(|e| Error::PluginError(format!("Server error: {e}")))?;
 
         Ok(())
     }
@@ -321,7 +321,7 @@ async fn validate_handler(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(
-                    AdmissionResponse::invalid(format!("Invalid admission request: {}", e))
+                    AdmissionResponse::invalid(format!("Invalid admission request: {e}"))
                         .into_review(),
                 ),
             );
@@ -378,7 +378,7 @@ async fn mutate_handler(
             (
                 StatusCode::BAD_REQUEST,
                 Json(
-                    AdmissionResponse::invalid(format!("Invalid admission request: {}", e))
+                    AdmissionResponse::invalid(format!("Invalid admission request: {e}"))
                         .into_review(),
                 ),
             )

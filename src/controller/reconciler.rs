@@ -242,7 +242,7 @@ where
             ActionType::Update => "WouldUpdate",
             ActionType::Delete => "WouldDelete",
         };
-        let message = format!("Dry Run: Would {} {}", action, resource_info);
+        let message = format!("Dry Run: Would {action} {resource_info}");
         info!("{}", message);
         emit_event(&ctx.client, node, "Normal", reason, &message).await?;
         Ok(())
@@ -398,8 +398,7 @@ async fn apply_stellar_node(
                         "Normal",
                         "DatabaseMigrationRequired",
                         &format!(
-                            "Database migration will be performed via InitContainer for version {}",
-                            current_version
+                            "Database migration will be performed via InitContainer for version {current_version}"
                         ),
                     )
                     .await?;
@@ -535,7 +534,7 @@ async fn apply_stellar_node(
                             node,
                             "Warning",
                             "VSLFetchFailed",
-                            &format!("Failed to fetch VSL from {}: {}", vl_source, e),
+                            &format!("Failed to fetch VSL from {vl_source}: {e}"),
                         )
                         .await?;
                     }
@@ -717,7 +716,7 @@ async fn apply_stellar_node(
             let pod_api: Api<k8s_openapi::api::core::v1::Pod> =
                 Api::namespaced(client.clone(), &namespace);
             let lp = kube::api::ListParams::default()
-                .labels(&format!("app.kubernetes.io/instance={}", name));
+                .labels(&format!("app.kubernetes.io/instance={name}"));
             if let Ok(pods) = pod_api.list(&lp).await {
                 if let Some(pod) = pods.items.first() {
                     if let Some(status) = &pod.status {

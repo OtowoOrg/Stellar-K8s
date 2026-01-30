@@ -179,7 +179,7 @@ pub async fn ensure_server_cert(
 pub async fn ensure_node_cert(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let node_name = node.name_any();
-    let secret_name = format!("{}-client-cert", node_name);
+    let secret_name = format!("{node_name}-client-cert");
     let secrets: Api<Secret> = Api::namespaced(client.clone(), &namespace);
 
     if secrets.get(&secret_name).await.is_ok() {
@@ -225,7 +225,7 @@ pub async fn ensure_node_cert(client: &Client, node: &StellarNode) -> Result<()>
     params.distinguished_name = DistinguishedName::new();
     params.distinguished_name.push(
         rcgen::DnType::CommonName,
-        format!("stellar-node-{}", node_name),
+        format!("stellar-node-{node_name}"),
     );
     params.key_usages.push(KeyUsagePurpose::DigitalSignature);
     params

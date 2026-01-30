@@ -55,7 +55,7 @@ impl ArchiveHealthResult {
     pub fn error_details(&self) -> String {
         self.unhealthy_urls
             .iter()
-            .map(|(url, err)| format!("  - {}: {}", url, err))
+            .map(|(url, err)| format!("  - {url}: {err}"))
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -70,7 +70,7 @@ async fn check_single_archive(client: &Client, url: &str, timeout: Duration) -> 
     let base_url = url.trim_end_matches('/');
 
     // Try the standard Stellar history metadata endpoint first
-    let metadata_url = format!("{}/.well-known/stellar-history.json", base_url);
+    let metadata_url = format!("{base_url}/.well-known/stellar-history.json");
 
     debug!("Checking archive health: {}", metadata_url);
 
@@ -103,7 +103,7 @@ async fn check_single_archive(client: &Client, url: &str, timeout: Duration) -> 
             Err(Error::ArchiveHealthCheckError(msg))
         }
         Err(e) => {
-            let msg = format!("Connection failed: {}", e);
+            let msg = format!("Connection failed: {e}");
             warn!("{}: {}", url, msg);
             Err(Error::HttpError(e))
         }

@@ -461,7 +461,7 @@ fn build_statefulset(node: &StellarNode, enable_mtls: bool) -> StatefulSet {
                 match_labels: Some(labels.clone()),
                 ..Default::default()
             },
-            service_name: format!("{}-headless", name),
+            service_name: format!("{name}-headless"),
             template: build_pod_template(node, &labels, enable_mtls),
             ..Default::default()
         }),
@@ -887,10 +887,9 @@ spec:
         )
     } else if let Some(pool) = &config.address_pool {
         format!(
-            r#"# Using existing IPAddressPool: {}
+            r#"# Using existing IPAddressPool: {pool}
 # Ensure this pool exists in metallb-system namespace
-"#,
-            pool
+"#
         )
     } else {
         "# No specific IP or pool configured; MetalLB will use default pool\n".to_string()
@@ -906,7 +905,7 @@ spec:
                 bgp_cfg
                     .communities
                     .iter()
-                    .map(|c| format!("    - {}", c))
+                    .map(|c| format!("    - {c}"))
                     .collect::<Vec<_>>()
                     .join("\n")
             )
@@ -920,7 +919,7 @@ spec:
                     "  nodeSelectors:\n    - matchLabels:\n{}",
                     selectors
                         .iter()
-                        .map(|(k, v)| format!("        {}: \"{}\"", k, v))
+                        .map(|(k, v)| format!("        {k}: \"{v}\""))
                         .collect::<Vec<_>>()
                         .join("\n")
                 )
@@ -981,7 +980,7 @@ spec:
                     bgp_cfg
                         .bfd_profile
                         .as_ref()
-                        .map(|p| format!("  bfdProfile: {}", p))
+                        .map(|p| format!("  bfdProfile: {p}"))
                         .unwrap_or_default()
                 } else {
                     String::new()
@@ -1168,7 +1167,7 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
             .and_then(|status| status.canary_version.as_ref())
             .is_some()
         {
-            let canary_name = format!("{}-canary", name);
+            let canary_name = format!("{name}-canary");
             let mut canary_ingress = build_ingress(node, ingress_cfg);
             canary_ingress.metadata.name = Some(canary_name.clone());
 
@@ -1219,7 +1218,7 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
             info!("Canary Ingress ensured for {}/{}", namespace, canary_name);
         } else {
             // Delete canary ingress if no longer active
-            let canary_name = format!("{}-canary", name);
+            let canary_name = format!("{name}-canary");
             let _ = api.delete(&canary_name, &DeleteParams::default()).await;
         }
     }
@@ -2066,7 +2065,7 @@ pub async fn delete_alerting(client: &Client, node: &StellarNode) -> Result<()> 
 pub async fn delete_canary_resources(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
-    let canary_name = format!("{}-canary", name);
+    let canary_name = format!("{name}-canary");
 
     // 1. Delete Canary Ingress
     if node.spec.ingress.is_some() {

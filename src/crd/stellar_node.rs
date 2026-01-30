@@ -599,14 +599,14 @@ fn validate_load_balancer(lb: &LoadBalancerConfig, errors: &mut Vec<SpecValidati
             for (i, peer) in bgp.peers.iter().enumerate() {
                 if peer.address.trim().is_empty() {
                     errors.push(SpecValidationError::new(
-                        format!("spec.loadBalancer.bgp.peers[{}].address", i),
+                        format!("spec.loadBalancer.bgp.peers[{i}].address"),
                         "loadBalancer.bgp.peers[].address must not be empty",
                         "Set a valid IP or hostname for each BGP peer address.",
                     ));
                 }
                 if peer.asn == 0 {
                     errors.push(SpecValidationError::new(
-                        format!("spec.loadBalancer.bgp.peers[{}].asn", i),
+                        format!("spec.loadBalancer.bgp.peers[{i}].asn"),
                         "loadBalancer.bgp.peers[].asn must be a valid ASN",
                         "Set spec.loadBalancer.bgp.peers[].asn to a value between 1 and 4294967295.",
                     ));
@@ -709,14 +709,14 @@ fn validate_cross_cluster(cc: &CrossClusterConfig, errors: &mut Vec<SpecValidati
     for (i, peer) in cc.peer_clusters.iter().enumerate() {
         if peer.cluster_id.trim().is_empty() {
             errors.push(SpecValidationError::new(
-                format!("spec.crossCluster.peerClusters[{}].clusterId", i),
+                format!("spec.crossCluster.peerClusters[{i}].clusterId"),
                 "crossCluster.peerClusters[].clusterId must not be empty",
                 "Set a non-empty identifier for each entry in spec.crossCluster.peerClusters[].clusterId.",
             ));
         }
         if peer.endpoint.trim().is_empty() {
             errors.push(SpecValidationError::new(
-                format!("spec.crossCluster.peerClusters[{}].endpoint", i),
+                format!("spec.crossCluster.peerClusters[{i}].endpoint"),
                 "crossCluster.peerClusters[].endpoint must not be empty",
                 "Set a non-empty endpoint URL for each entry in spec.crossCluster.peerClusters[].endpoint.",
             ));
@@ -725,8 +725,7 @@ fn validate_cross_cluster(cc: &CrossClusterConfig, errors: &mut Vec<SpecValidati
             if threshold == 0 {
                 errors.push(SpecValidationError::new(
                     format!(
-                        "spec.crossCluster.peerClusters[{}].latencyThresholdMs",
-                        i
+                        "spec.crossCluster.peerClusters[{i}].latencyThresholdMs"
                     ),
                     "crossCluster.peerClusters[].latencyThresholdMs must be greater than 0",
                     "Set spec.crossCluster.peerClusters[].latencyThresholdMs to a value greater than 0.",

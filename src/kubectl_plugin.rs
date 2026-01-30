@@ -86,7 +86,7 @@ async fn main() {
     let cli = Cli::parse();
 
     if let Err(e) = run(cli).await {
-        eprintln!("Error: {}", e);
+        eprintln!("Error: {e}");
         process::exit(1);
     }
 }
@@ -152,13 +152,13 @@ async fn run(cli: Cli) -> Result<()> {
 /// Helper function to format nodes as JSON
 fn format_nodes_json(nodes: &[StellarNode]) -> Result<String> {
     serde_json::to_string_pretty(nodes)
-        .map_err(|e| Error::ConfigError(format!("JSON serialization error: {}", e)))
+        .map_err(|e| Error::ConfigError(format!("JSON serialization error: {e}")))
 }
 
 /// Helper function to format nodes as YAML
 fn format_nodes_yaml(nodes: &[StellarNode]) -> Result<String> {
     serde_yaml::to_string(nodes)
-        .map_err(|e| Error::ConfigError(format!("YAML serialization error: {}", e)))
+        .map_err(|e| Error::ConfigError(format!("YAML serialization error: {e}")))
 }
 
 /// Helper function to format node list as table
@@ -177,8 +177,7 @@ fn format_nodes_table(nodes: &[StellarNode], show_namespace: bool) {
             let replicas = node.spec.replicas;
             let phase = get_node_phase(node);
             println!(
-                "{:<30} {:<15} {:<15} {:<10} {:<15} {:<10}",
-                name, node_type, network, replicas, phase, namespace
+                "{name:<30} {node_type:<15} {network:<15} {replicas:<10} {phase:<15} {namespace:<10}"
             );
         }
     } else {
@@ -194,8 +193,7 @@ fn format_nodes_table(nodes: &[StellarNode], show_namespace: bool) {
             let replicas = node.spec.replicas;
             let phase = get_node_phase(node);
             println!(
-                "{:<30} {:<15} {:<15} {:<10} {:<15}",
-                name, node_type, network, replicas, phase
+                "{name:<30} {node_type:<15} {network:<15} {replicas:<10} {phase:<15}"
             );
         }
     }
@@ -254,8 +252,7 @@ async fn logs(
     // Find pods using the same label selector as the controller
     let pod_api: Api<Pod> = Api::namespaced(client.clone(), namespace);
     let label_selector = format!(
-        "app.kubernetes.io/instance={},app.kubernetes.io/name=stellar-node",
-        node_name
+        "app.kubernetes.io/instance={node_name},app.kubernetes.io/name=stellar-node"
     );
 
     let pods = pod_api
@@ -265,8 +262,7 @@ async fn logs(
 
     if pods.items.is_empty() {
         return Err(Error::ConfigError(format!(
-            "No pods found for StellarNode {}/{}",
-            namespace, node_name
+            "No pods found for StellarNode {namespace}/{node_name}"
         )));
     }
 
@@ -296,8 +292,7 @@ async fn logs(
 
         let status = cmd.status().map_err(|e| {
             Error::ConfigError(format!(
-                "Failed to execute kubectl logs for pod {}: {}",
-                pod_name, e
+                "Failed to execute kubectl logs for pod {pod_name}: {e}"
             ))
         })?;
 
@@ -314,7 +309,7 @@ async fn logs(
             let pod_name = pod.name_any();
 
             if pods.items.len() > 1 {
-                println!("\n=== Pod: {} ===", pod_name);
+                println!("\n=== Pod: {pod_name} ===");
             }
 
             // Use kubectl logs command via exec since kube-rs doesn't have a direct logs API
@@ -413,7 +408,7 @@ async fn status(
             println!(
                 "{}",
                 serde_json::to_string_pretty(&results)
-                    .map_err(|e| Error::ConfigError(format!("JSON serialization error: {}", e)))?
+                    .map_err(|e| Error::ConfigError(format!("JSON serialization error: {e}")))?
             );
         }
         "yaml" => {
@@ -435,7 +430,7 @@ async fn status(
             println!(
                 "{}",
                 serde_yaml::to_string(&results)
-                    .map_err(|e| Error::ConfigError(format!("YAML serialization error: {}", e)))?
+                    .map_err(|e| Error::ConfigError(format!("YAML serialization error: {e}")))?
             );
         }
         _ => {
@@ -477,13 +472,11 @@ async fn status(
                 if show_namespace {
                     let node_namespace = node.namespace().unwrap_or_else(|| "default".to_string());
                     println!(
-                        "{:<30} {:<15} {:<15} {:<10} {:<10} {:<10} {:<15} {:<20}",
-                        name, node_namespace, node_type, healthy, synced, ledger, phase, message
+                        "{name:<30} {node_namespace:<15} {node_type:<15} {healthy:<10} {synced:<10} {ledger:<10} {phase:<15} {message:<20}"
                     );
                 } else {
                     println!(
-                        "{:<30} {:<15} {:<10} {:<10} {:<15} {:<20}",
-                        name, node_type, healthy, synced, phase, message
+                        "{name:<30} {node_type:<15} {healthy:<10} {synced:<10} {phase:<15} {message:<20}"
                     );
                 }
             }

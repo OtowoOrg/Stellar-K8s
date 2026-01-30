@@ -49,31 +49,31 @@ pub async fn run_server(
         // Load certificates
         let certs = CertificateDer::pem_slice_iter(&config.cert_pem)
             .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| Error::ConfigError(format!("Failed to parse certificates: {}", e)))?;
+            .map_err(|e| Error::ConfigError(format!("Failed to parse certificates: {e}")))?;
 
         // Load private key
         let key = PrivateKeyDer::from_pem_slice(&config.key_pem)
-            .map_err(|e| Error::ConfigError(format!("Failed to parse private key: {}", e)))?;
+            .map_err(|e| Error::ConfigError(format!("Failed to parse private key: {e}")))?;
 
         // Load CA for client verification
         let mut roots = RootCertStore::empty();
         for cert_res in CertificateDer::pem_slice_iter(&config.ca_pem) {
             let cert = cert_res
-                .map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {}", e)))?;
+                .map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {e}")))?;
             roots
                 .add(cert)
-                .map_err(|e| Error::ConfigError(format!("Failed to add CA cert: {}", e)))?;
+                .map_err(|e| Error::ConfigError(format!("Failed to add CA cert: {e}")))?;
         }
 
         let client_verifier = WebPkiClientVerifier::builder(roots.into())
             .build()
-            .map_err(|e| Error::ConfigError(format!("Failed to create client verifier: {}", e)))?;
+            .map_err(|e| Error::ConfigError(format!("Failed to create client verifier: {e}")))?;
 
         // Create rustls ServerConfig
         let server_config = rustls::ServerConfig::builder()
             .with_client_cert_verifier(client_verifier)
             .with_single_cert(certs, key)
-            .map_err(|e| Error::ConfigError(format!("Failed to create server config: {}", e)))?;
+            .map_err(|e| Error::ConfigError(format!("Failed to create server config: {e}")))?;
 
         let rustls_config = RustlsConfig::from_config(Arc::new(server_config));
 
@@ -81,16 +81,16 @@ pub async fn run_server(
         axum_server::from_tcp_rustls(listener, rustls_config)
             .serve(app.into_make_service())
             .await
-            .map_err(|e| Error::ConfigError(format!("Server error: {}", e)))?;
+            .map_err(|e| Error::ConfigError(format!("Server error: {e}")))?;
     } else {
         info!("REST API server listening on {} (insecure)", addr);
         let listener = tokio::net::TcpListener::bind(addr)
             .await
-            .map_err(|e| Error::ConfigError(format!("Failed to bind to {}: {}", addr, e)))?;
+            .map_err(|e| Error::ConfigError(format!("Failed to bind to {addr}: {e}")))?;
 
         axum::serve(listener, app)
             .await
-            .map_err(|e| Error::ConfigError(format!("Server error: {}", e)))?;
+            .map_err(|e| Error::ConfigError(format!("Server error: {e}")))?;
     }
 
     Ok(())

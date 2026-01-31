@@ -17,6 +17,7 @@ mod stellar_node_spec_validation {
             node_type: NodeType::Validator,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
             resources: default_resources(),
             storage: default_storage(),
             validator_config: Some(ValidatorConfig {
@@ -38,17 +39,23 @@ mod stellar_node_spec_validation {
             suspended: false,
             alerting: false,
             database: None,
+            managed_database: None,
             autoscaling: None,
             ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            cross_cluster: None,
             strategy: Default::default(),
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
             topology_spread_constraints: None,
+            resource_meta: None,
+            // New fields
             load_balancer: None,
             global_discovery: None,
-            cluster: None,
             cross_cluster: None,
+            cluster: None,
         }
     }
 
@@ -58,6 +65,7 @@ mod stellar_node_spec_validation {
             node_type: NodeType::Horizon,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
             resources: default_resources(),
             storage: default_storage(),
             validator_config: None,
@@ -76,17 +84,23 @@ mod stellar_node_spec_validation {
             suspended: false,
             alerting: false,
             database: None,
+            managed_database: None,
             autoscaling: None,
             ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            cross_cluster: None,
             strategy: Default::default(),
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
             topology_spread_constraints: None,
+            resource_meta: None,
+            // New fields
             load_balancer: None,
             global_discovery: None,
-            cluster: None,
             cross_cluster: None,
+            cluster: None,
         }
     }
 
@@ -96,13 +110,16 @@ mod stellar_node_spec_validation {
             node_type: NodeType::SorobanRpc,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
             resources: default_resources(),
             storage: default_storage(),
             validator_config: None,
             horizon_config: None,
             soroban_config: Some(SorobanConfig {
                 stellar_core_url: "http://stellar-core:11626".to_string(),
+                #[allow(deprecated)]
                 captive_core_config: None,
+                captive_core_structured_config: None,
                 enable_preflight: true,
                 max_events_per_request: 10000,
             }),
@@ -112,17 +129,23 @@ mod stellar_node_spec_validation {
             suspended: false,
             alerting: false,
             database: None,
+            managed_database: None,
             autoscaling: None,
             ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            cross_cluster: None,
             strategy: Default::default(),
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
             topology_spread_constraints: None,
+            resource_meta: None,
+            // New fields
             load_balancer: None,
             global_discovery: None,
-            cluster: None,
             cross_cluster: None,
+            cluster: None,
         }
     }
 
@@ -812,5 +835,123 @@ mod stellar_node_spec_validation {
         });
 
         assert!(spec.validate().is_ok());
+    }
+
+    // =========================================================================
+    // Structured Captive Core Configuration Tests
+    // =========================================================================
+
+    #[test]
+    fn test_soroban_structured_captive_core_config_passes() {
+        use crate::crd::CaptiveCoreConfig;
+
+        let mut spec = valid_soroban_spec();
+        if let Some(ref mut soroban_config) = spec.soroban_config {
+            soroban_config.captive_core_structured_config = Some(CaptiveCoreConfig {
+                network_passphrase: None,
+                history_archive_urls: vec![
+                    "https://history.stellar.org/prd/core-testnet/core_testnet_001".to_string(),
+                ],
+                peer_port: None,
+                http_port: None,
+                log_level: Some("info".to_string()),
+                additional_config: None,
+            });
+        }
+
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_soroban_structured_config_with_custom_ports() {
+        use crate::crd::CaptiveCoreConfig;
+
+        let mut spec = valid_soroban_spec();
+        if let Some(ref mut soroban_config) = spec.soroban_config {
+            soroban_config.captive_core_structured_config = Some(CaptiveCoreConfig {
+                network_passphrase: Some(
+                    "Public Global Stellar Network ; September 2015".to_string(),
+                ),
+                history_archive_urls: vec![
+                    "https://history.stellar.org/prd/core-live/core_live_001".to_string(),
+                    "https://history.stellar.org/prd/core-live/core_live_002".to_string(),
+                ],
+                peer_port: Some(11700),
+                http_port: Some(11701),
+                log_level: Some("debug".to_string()),
+                additional_config: Some("MAX_CONCURRENT_SUBPROCESSES=5".to_string()),
+            });
+        }
+
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_soroban_both_configs_passes() {
+        use crate::crd::CaptiveCoreConfig;
+
+        // Having both structured and raw TOML should pass validation
+        // (structured takes precedence)
+        let mut spec = valid_soroban_spec();
+        if let Some(ref mut soroban_config) = spec.soroban_config {
+            #[allow(deprecated)]
+            {
+                soroban_config.captive_core_config =
+                    Some("NETWORK_PASSPHRASE=\"Test\"".to_string());
+            }
+            soroban_config.captive_core_structured_config = Some(CaptiveCoreConfig {
+                network_passphrase: None,
+                history_archive_urls: vec!["https://archive.stellar.org".to_string()],
+                peer_port: None,
+                http_port: None,
+                log_level: None,
+                additional_config: None,
+            });
+        }
+
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_soroban_config_serialization_roundtrip() {
+        use crate::crd::{CaptiveCoreConfig, SorobanConfig};
+
+        let config = SorobanConfig {
+            stellar_core_url: "http://core:11626".to_string(),
+            #[allow(deprecated)]
+            captive_core_config: None,
+            captive_core_structured_config: Some(CaptiveCoreConfig {
+                network_passphrase: Some("Test SDF Network ; September 2015".to_string()),
+                history_archive_urls: vec![
+                    "https://archive1.stellar.org".to_string(),
+                    "https://archive2.stellar.org".to_string(),
+                ],
+                peer_port: Some(11625),
+                http_port: Some(11626),
+                log_level: Some("info".to_string()),
+                additional_config: Some("# Custom config\nFOO=bar".to_string()),
+            }),
+            enable_preflight: true,
+            max_events_per_request: 10000,
+        };
+
+        // Test JSON serialization
+        let json = serde_json::to_string(&config).expect("Failed to serialize to JSON");
+        let deserialized: SorobanConfig =
+            serde_json::from_str(&json).expect("Failed to deserialize from JSON");
+
+        assert_eq!(config.stellar_core_url, deserialized.stellar_core_url);
+        assert!(deserialized.captive_core_structured_config.is_some());
+        let structured = deserialized.captive_core_structured_config.unwrap();
+        assert_eq!(structured.history_archive_urls.len(), 2);
+        assert_eq!(structured.peer_port, Some(11625));
+        assert_eq!(structured.log_level, Some("info".to_string()));
+
+        // Test YAML serialization
+        let yaml = serde_yaml::to_string(&config).expect("Failed to serialize to YAML");
+        let deserialized_yaml: SorobanConfig =
+            serde_yaml::from_str(&yaml).expect("Failed to deserialize from YAML");
+
+        assert!(deserialized_yaml.captive_core_structured_config.is_some());
     }
 }

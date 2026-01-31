@@ -3,6 +3,8 @@
 //! This module creates and manages the underlying Kubernetes resources
 //! (Deployments, StatefulSets, Services, PVCs, ConfigMaps) for each StellarNode.
 
+use crate::controller::resource_meta::merge_resource_meta;
+
 use std::collections::BTreeMap;
 
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec, StatefulSet, StatefulSetSpec};
@@ -31,8 +33,13 @@ use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
 use crate::crd::{
-    ExternalTrafficPolicy, HsmProvider, IngressConfig, KeySource, LoadBalancerConfig,
-    LoadBalancerMode, NetworkPolicyConfig, NodeType, RolloutStrategy, StellarNode,
+    BackupConfiguration, BarmanObjectStore, BootstrapConfiguration, Cluster, ClusterSpec,
+    ExternalTrafficPolicy, HistoryMode, HsmProvider, IngressConfig, InitDbConfiguration, KeySource,
+    LoadBalancerConfig, LoadBalancerMode, ManagedDatabaseConfig, MonitoringConfiguration,
+    NetworkPolicyConfig, NodeType, PgBouncerSpec, Pooler, PoolerCluster, PoolerSpec,
+    PostgresConfiguration, RolloutStrategy, S3Credentials,
+    SecretKeySelector as CnpgSecretKeySelector, StellarNode, StorageConfiguration,
+    WalBackupConfiguration,
 };
 use crate::error::{Error, Result};
 
@@ -109,27 +116,36 @@ fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
     let name = resource_name(node, "data");
 
     let mut requests = BTreeMap::new();
-    requests.insert(
-        "storage".to_string(),
-        Quantity(node.spec.storage.size.clone()),
-    );
+    let effective_storage_size = if node.spec.storage.size.is_empty() {
+        // Default based on history_mode override
+        match node.spec.history_mode {
+            HistoryMode::Full => "1500Gi".to_string(), // Approximate for full history
+            HistoryMode::Recent => "100Gi".to_string(), // Approximate for recent history
+        }
+    } else {
+        node.spec.storage.size.clone()
+    };
+    requests.insert("storage".to_string(), Quantity(effective_storage_size));
 
     // Merge custom annotations from storage config with existing annotations
     let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
 
     PersistentVolumeClaim {
-        metadata: ObjectMeta {
-            name: Some(name),
-            namespace: node.namespace(),
-            labels: Some(labels),
-            annotations: if annotations.is_empty() {
-                None
-            } else {
-                Some(annotations)
+        metadata: merge_resource_meta(
+            ObjectMeta {
+                name: Some(name),
+                namespace: node.namespace(),
+                labels: Some(labels),
+                annotations: if annotations.is_empty() {
+                    None
+                } else {
+                    Some(annotations)
+                },
+                owner_references: Some(vec![owner_reference(node)]),
+                ..Default::default()
             },
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
+            &None,
+        ),
         spec: Some(PersistentVolumeClaimSpec {
             access_modes: Some(vec!["ReadWriteOnce".to_string()]),
             storage_class_name: Some(node.spec.storage.storage_class.clone()),
@@ -229,6 +245,19 @@ fn build_config_map(
                 core_cfg.push_str("TLS_KEY_FILE=\"/etc/stellar/tls/tls.key\"\n");
             }
 
+            // History Mode Configuration
+            match node.spec.history_mode {
+                HistoryMode::Full => {
+                    core_cfg.push_str("\n# Full History Mode\n");
+                    core_cfg.push_str("CATCHUP_COMPLETE=true\n");
+                }
+                HistoryMode::Recent => {
+                    core_cfg.push_str("\n# Recent History Mode\n");
+                    core_cfg.push_str("CATCHUP_COMPLETE=false\n");
+                    core_cfg.push_str("CATCHUP_RECENT=60480\n"); // ~1 week
+                }
+            }
+
             if !core_cfg.is_empty() {
                 data.insert("stellar-core.cfg".to_string(), core_cfg);
             }
@@ -248,22 +277,54 @@ fn build_config_map(
                     "STELLAR_CORE_URL".to_string(),
                     config.stellar_core_url.clone(),
                 );
-                if let Some(captive_config) = &config.captive_core_config {
-                    data.insert("captive-core.cfg".to_string(), captive_config.clone());
+
+                // Try to generate TOML from structured config (preferred)
+                if config.captive_core_structured_config.is_some() {
+                    match crate::controller::captive_core::CaptiveCoreConfigBuilder::from_node_config(node) {
+                        Ok(builder) => {
+                            match builder.build_toml() {
+                                Ok(toml) => {
+                                    data.insert("captive-core.cfg".to_string(), toml);
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to build Captive Core TOML: {}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to create Captive Core config builder: {}", e);
+                        }
+                    }
+                } else {
+                    // Fallback to deprecated raw TOML for backward compatibility
+                    #[allow(deprecated)]
+                    if let Some(captive_config) = &config.captive_core_config {
+                        data.insert("captive-core.cfg".to_string(), captive_config.clone());
+                    }
                 }
             }
         }
     }
 
+    let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
+
     ConfigMap {
-        metadata: ObjectMeta {
-            name: Some(name),
-            namespace: node.namespace(),
-            labels: Some(labels),
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
-        data: Some(data),
+        metadata: merge_resource_meta(
+            ObjectMeta {
+                name: Some(name.clone()),
+                namespace: node.namespace(),
+                labels: Some(labels.clone()),
+                annotations: if annotations.is_empty() {
+                    None
+                } else {
+                    Some(annotations.clone()) // <-- use the extracted annotations
+                },
+                owner_references: Some(vec![owner_reference(node)]),
+                ..Default::default()
+            },
+            &None, // no extra ObjectMeta
+        ),
+        data: Some(data.clone()),
         ..Default::default()
     }
 }
@@ -379,13 +440,16 @@ fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deployment {
     };
 
     Deployment {
-        metadata: ObjectMeta {
-            name: Some(name.clone()),
-            namespace: node.namespace(),
-            labels: Some(labels.clone()),
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
+        metadata: merge_resource_meta(
+            ObjectMeta {
+                name: Some(name.clone()),
+                namespace: node.namespace(),
+                labels: Some(labels.clone()),
+                owner_references: Some(vec![owner_reference(node)]),
+                ..Default::default()
+            },
+            &None,
+        ),
         spec: Some(DeploymentSpec {
             replicas: Some(replicas),
             selector: LabelSelector {
@@ -442,26 +506,31 @@ fn build_statefulset(node: &StellarNode, enable_mtls: bool) -> StatefulSet {
         );
     }
 
+    let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
+
     StatefulSet {
-        metadata: ObjectMeta {
-            name: Some(name.clone()),
-            namespace: node.namespace(),
-            labels: Some(labels.clone()),
-            annotations: if annotations.is_empty() {
-                None
-            } else {
-                Some(annotations)
+        metadata: merge_resource_meta(
+            ObjectMeta {
+                name: Some(name.clone()),
+                namespace: node.namespace(),
+                labels: Some(labels.clone()),
+                annotations: if annotations.is_empty() {
+                    None
+                } else {
+                    Some(annotations)
+                },
+                owner_references: Some(vec![owner_reference(node)]),
+                ..Default::default()
             },
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
+            &None,
+        ),
         spec: Some(StatefulSetSpec {
             replicas: Some(replicas),
             selector: LabelSelector {
                 match_labels: Some(labels.clone()),
                 ..Default::default()
             },
-            service_name: format!("{}-headless", name),
+            service_name: format!("{name}-headless"),
             template: build_pod_template(node, &labels, enable_mtls),
             ..Default::default()
         }),
@@ -602,13 +671,16 @@ fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
     };
 
     Service {
-        metadata: ObjectMeta {
-            name: Some(name),
-            namespace: node.namespace(),
-            labels: Some(labels.clone()),
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
+        metadata: merge_resource_meta(
+            ObjectMeta {
+                name: Some(name),
+                namespace: node.namespace(),
+                labels: Some(labels.clone()),
+                owner_references: Some(vec![owner_reference(node)]),
+                ..Default::default()
+            },
+            &None,
+        ),
         spec: Some(ServiceSpec {
             selector: Some(labels),
             ports: Some(ports),
@@ -777,19 +849,24 @@ fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) 
         ExternalTrafficPolicy::Local => "Local".to_string(),
     };
 
+    let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
+
     Service {
-        metadata: ObjectMeta {
-            name: Some(name),
-            namespace: node.namespace(),
-            labels: Some(labels.clone()),
-            annotations: if annotations.is_empty() {
-                None
-            } else {
-                Some(annotations)
+        metadata: merge_resource_meta(
+            ObjectMeta {
+                name: Some(name),
+                namespace: node.namespace(),
+                labels: Some(labels.clone()),
+                annotations: if annotations.is_empty() {
+                    None
+                } else {
+                    Some(annotations)
+                },
+                owner_references: Some(vec![owner_reference(node)]),
+                ..Default::default()
             },
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
+            &None,
+        ),
         spec: Some(ServiceSpec {
             type_: Some("LoadBalancer".to_string()),
             selector: Some(labels),
@@ -887,10 +964,9 @@ spec:
         )
     } else if let Some(pool) = &config.address_pool {
         format!(
-            r#"# Using existing IPAddressPool: {}
+            r#"# Using existing IPAddressPool: {pool}
 # Ensure this pool exists in metallb-system namespace
-"#,
-            pool
+"#
         )
     } else {
         "# No specific IP or pool configured; MetalLB will use default pool\n".to_string()
@@ -906,7 +982,7 @@ spec:
                 bgp_cfg
                     .communities
                     .iter()
-                    .map(|c| format!("    - {}", c))
+                    .map(|c| format!("    - {c}"))
                     .collect::<Vec<_>>()
                     .join("\n")
             )
@@ -920,7 +996,7 @@ spec:
                     "  nodeSelectors:\n    - matchLabels:\n{}",
                     selectors
                         .iter()
-                        .map(|(k, v)| format!("        {}: \"{}\"", k, v))
+                        .map(|(k, v)| format!("        {k}: \"{v}\""))
                         .collect::<Vec<_>>()
                         .join("\n")
                 )
@@ -962,33 +1038,32 @@ spec:
         data.insert("bgp-advertisement.yaml".to_string(), bgp_advertisement_yaml);
 
         // Generate BGPPeer YAML for each peer
-        let peers_yaml: String = bgp_cfg
-            .peers
-            .iter()
-            .enumerate()
-            .map(|(i, peer)| {
-                let password_ref = peer.password_secret_ref.as_ref().map(|s| {
-                    format!(
-                        r#"  password:
+        let mut peers_yaml = String::new();
+        for (i, peer) in bgp_cfg.peers.iter().enumerate() {
+            let password_ref = peer.password_secret_ref.as_ref().map(|s| {
+                format!(
+                    r#"  password:
     secretRef:
       name: {}
       key: {}"#,
-                        s.name, s.key
-                    )
-                });
+                    s.name, s.key
+                )
+            });
 
-                let bfd_profile = if bgp_cfg.bfd_enabled {
-                    bgp_cfg
-                        .bfd_profile
-                        .as_ref()
-                        .map(|p| format!("  bfdProfile: {}", p))
-                        .unwrap_or_default()
-                } else {
-                    String::new()
-                };
+            let bfd_profile = if bgp_cfg.bfd_enabled {
+                bgp_cfg
+                    .bfd_profile
+                    .as_ref()
+                    .map(|p| format!("  bfdProfile: {p}"))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
 
-                format!(
-                    r#"---
+            use std::fmt::Write;
+            write!(
+                peers_yaml,
+                r#"---
 # BGPPeer {} for {}
 apiVersion: metallb.io/v1beta2
 kind: BGPPeer
@@ -1005,22 +1080,22 @@ spec:
   ebgpMultiHop: {}
 {}{}
 "#,
-                    i + 1,
-                    node.name_any(),
-                    node.name_any(),
-                    i,
-                    bgp_cfg.local_asn,
-                    peer.asn,
-                    peer.address,
-                    peer.port,
-                    peer.hold_time,
-                    peer.keepalive_time,
-                    peer.ebgp_multi_hop,
-                    password_ref.unwrap_or_default(),
-                    bfd_profile
-                )
-            })
-            .collect();
+                i + 1,
+                node.name_any(),
+                node.name_any(),
+                i,
+                bgp_cfg.local_asn,
+                peer.asn,
+                peer.address,
+                peer.port,
+                peer.hold_time,
+                peer.keepalive_time,
+                peer.ebgp_multi_hop,
+                password_ref.unwrap_or_default(),
+                bfd_profile
+            )
+            .unwrap();
+        }
 
         data.insert("bgp-peers.yaml".to_string(), peers_yaml);
     }
@@ -1077,15 +1152,24 @@ spec:
 
     data.insert("README.md".to_string(), instructions);
 
+    let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
     ConfigMap {
-        metadata: ObjectMeta {
-            name: Some(name),
-            namespace: node.namespace(),
-            labels: Some(labels),
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
-        data: Some(data),
+        metadata: merge_resource_meta(
+            ObjectMeta {
+                name: Some(name.clone()),
+                namespace: node.namespace(),
+                labels: Some(labels.clone()),
+                annotations: if annotations.is_empty() {
+                    None
+                } else {
+                    Some(annotations.clone()) // <-- use the extracted annotations
+                },
+                owner_references: Some(vec![owner_reference(node)]),
+                ..Default::default()
+            },
+            &None, // no extra ObjectMeta
+        ),
+        data: Some(data.clone()),
         ..Default::default()
     }
 }
@@ -1122,6 +1206,218 @@ pub async fn delete_service(client: &Client, node: &StellarNode) -> Result<()> {
         }
         Err(e) => return Err(Error::KubeError(e)),
     }
+
+    Ok(())
+}
+
+// ============================================================================
+// CloudNativePG (CNPG) Resources
+// ============================================================================
+
+/// Ensure a CNPG Cluster exists for managed HA database
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_cnpg_cluster(client: &Client, node: &StellarNode) -> Result<()> {
+    let managed_db = match &node.spec.managed_database {
+        Some(cfg) => cfg,
+        None => return Ok(()),
+    };
+
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let api: Api<Cluster> = Api::namespaced(client.clone(), &namespace);
+    let name = node.name_any();
+
+    let cluster = build_cnpg_cluster(node, managed_db);
+
+    let patch = Patch::Apply(&cluster);
+    api.patch(
+        &name,
+        &PatchParams::apply("stellar-operator").force(),
+        &patch,
+    )
+    .await?;
+
+    info!("CNPG Cluster ensured for {}/{}", namespace, name);
+    Ok(())
+}
+
+fn build_cnpg_cluster(node: &StellarNode, config: &ManagedDatabaseConfig) -> Cluster {
+    let mut labels = standard_labels(node);
+    labels.insert(
+        "app.kubernetes.io/managed-by".to_string(),
+        "cnpg".to_string(),
+    );
+    let name = node.name_any();
+
+    let mut cluster = Cluster {
+        metadata: ObjectMeta {
+            name: Some(name.clone()),
+            namespace: node.namespace(),
+            labels: Some(labels),
+            owner_references: Some(vec![owner_reference(node)]),
+            ..Default::default()
+        },
+        spec: ClusterSpec {
+            instances: config.instances,
+            image_name: None,
+            postgresql: Some(PostgresConfiguration {
+                parameters: {
+                    let mut p = BTreeMap::new();
+                    p.insert("max_connections".to_string(), "100".to_string());
+                    p.insert("shared_buffers".to_string(), "256MB".to_string());
+                    p
+                },
+            }),
+            storage: StorageConfiguration {
+                size: config.storage.size.clone(),
+                storage_class: Some(config.storage.storage_class.clone()),
+            },
+            backup: config.backup.as_ref().map(|b| BackupConfiguration {
+                barman_object_store: Some(BarmanObjectStore {
+                    destination_path: b.destination_path.clone(),
+                    endpoint_u_r_l: None,
+                    s3_credentials: Some(S3Credentials {
+                        access_key_id: CnpgSecretKeySelector {
+                            name: b.credentials_secret_ref.clone(),
+                            key: "AWS_ACCESS_KEY_ID".to_string(),
+                        },
+                        secret_access_key: CnpgSecretKeySelector {
+                            name: b.credentials_secret_ref.clone(),
+                            key: "AWS_SECRET_ACCESS_KEY".to_string(),
+                        },
+                    }),
+                    azure_credentials: None,
+                    google_credentials: None,
+                    wal: Some(WalBackupConfiguration {
+                        compression: Some("gzip".to_string()),
+                    }),
+                }),
+                retention_policy: Some(b.retention_policy.clone()),
+            }),
+            bootstrap: Some(BootstrapConfiguration {
+                initdb: Some(InitDbConfiguration {
+                    database: "stellar".to_string(),
+                    owner: "stellar".to_string(),
+                    secret: None,
+                }),
+            }),
+            monitoring: Some(MonitoringConfiguration {
+                enable_pod_monitor: true,
+            }),
+        },
+    };
+
+    // Override image if needed (Postgres version)
+    if !config.postgres_version.is_empty() {
+        cluster.spec.image_name = Some(format!(
+            "ghcr.io/cloudnative-pg/postgresql:{}",
+            config.postgres_version
+        ));
+    }
+
+    cluster
+}
+
+/// Ensure a CNPG Pooler exists for managed database pooling
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_cnpg_pooler(client: &Client, node: &StellarNode) -> Result<()> {
+    let managed_db = match &node.spec.managed_database {
+        Some(cfg) => cfg,
+        None => return Ok(()),
+    };
+
+    let pgbouncer = match &managed_db.pooling {
+        Some(p) if p.enabled => p,
+        _ => return Ok(()),
+    };
+
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let api: Api<Pooler> = Api::namespaced(client.clone(), &namespace);
+    let name = resource_name(node, "pooler");
+
+    let pooler = build_cnpg_pooler(node, pgbouncer);
+
+    let patch = Patch::Apply(&pooler);
+    api.patch(
+        &name,
+        &PatchParams::apply("stellar-operator").force(),
+        &patch,
+    )
+    .await?;
+
+    info!("CNPG Pooler ensured for {}/{}", namespace, name);
+    Ok(())
+}
+
+fn build_cnpg_pooler(node: &StellarNode, config: &crate::crd::PgBouncerConfig) -> Pooler {
+    let mut labels = standard_labels(node);
+    labels.insert(
+        "app.kubernetes.io/component".to_string(),
+        "pooler".to_string(),
+    );
+    let name = resource_name(node, "pooler");
+
+    Pooler {
+        metadata: ObjectMeta {
+            name: Some(name),
+            namespace: node.namespace(),
+            labels: Some(labels),
+            owner_references: Some(vec![owner_reference(node)]),
+            ..Default::default()
+        },
+        spec: PoolerSpec {
+            cluster: PoolerCluster {
+                name: node.name_any(),
+            },
+            instances: config.replicas,
+            type_: "pgbouncer".to_string(),
+            pgbouncer: PgBouncerSpec {
+                pool_mode: match config.pool_mode {
+                    crate::crd::PgBouncerPoolMode::Session => "session".to_string(),
+                    crate::crd::PgBouncerPoolMode::Transaction => "transaction".to_string(),
+                    crate::crd::PgBouncerPoolMode::Statement => "statement".to_string(),
+                },
+                parameters: {
+                    let mut p = BTreeMap::new();
+                    p.insert(
+                        "max_client_conn".to_string(),
+                        config.max_client_conn.to_string(),
+                    );
+                    p.insert(
+                        "default_pool_size".to_string(),
+                        config.default_pool_size.to_string(),
+                    );
+                    p
+                },
+            },
+            monitoring: Some(MonitoringConfiguration {
+                enable_pod_monitor: true,
+            }),
+        },
+    }
+}
+
+/// Delete the CNPG resources for a node
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn delete_cnpg_resources(client: &Client, node: &StellarNode) -> Result<()> {
+    if node.spec.managed_database.is_none() {
+        return Ok(());
+    }
+
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+
+    // Delete Pooler
+    let pooler_api: Api<Pooler> = Api::namespaced(client.clone(), &namespace);
+    let pooler_name = resource_name(node, "pooler");
+    let _ = pooler_api
+        .delete(&pooler_name, &DeleteParams::default())
+        .await;
+
+    // Delete Cluster
+    let cluster_api: Api<Cluster> = Api::namespaced(client.clone(), &namespace);
+    let cluster_name = node.name_any();
+    let _ = cluster_api
+        .delete(&cluster_name, &DeleteParams::default())
+        .await;
 
     Ok(())
 }
@@ -1168,7 +1464,7 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
             .and_then(|status| status.canary_version.as_ref())
             .is_some()
         {
-            let canary_name = format!("{}-canary", name);
+            let canary_name = format!("{name}-canary");
             let mut canary_ingress = build_ingress(node, ingress_cfg);
             canary_ingress.metadata.name = Some(canary_name.clone());
 
@@ -1219,7 +1515,7 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
             info!("Canary Ingress ensured for {}/{}", namespace, canary_name);
         } else {
             // Delete canary ingress if no longer active
-            let canary_name = format!("{}-canary", name);
+            let canary_name = format!("{name}-canary");
             let _ = api.delete(&canary_name, &DeleteParams::default()).await;
         }
     }
@@ -1283,19 +1579,24 @@ fn build_ingress(node: &StellarNode, config: &IngressConfig) -> Ingress {
         }]
     });
 
+    let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
+
     Ingress {
-        metadata: ObjectMeta {
-            name: Some(name),
-            namespace: node.namespace(),
-            labels: Some(labels),
-            annotations: if annotations.is_empty() {
-                None
-            } else {
-                Some(annotations)
+        metadata: merge_resource_meta(
+            ObjectMeta {
+                name: Some(name),
+                namespace: node.namespace(),
+                labels: Some(labels),
+                annotations: if annotations.is_empty() {
+                    None
+                } else {
+                    Some(annotations)
+                },
+                owner_references: Some(vec![owner_reference(node)]),
+                ..Default::default()
             },
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
+            &node.spec.resource_meta,
+        ),
         spec: Some(IngressSpec {
             ingress_class_name: config.class_name.clone(),
             rules: Some(rules),
@@ -1482,10 +1783,13 @@ fn build_pod_template(
     }
 
     PodTemplateSpec {
-        metadata: Some(ObjectMeta {
-            labels: Some(labels.clone()),
-            ..Default::default()
-        }),
+        metadata: Some(merge_resource_meta(
+            ObjectMeta {
+                labels: Some(labels.clone()),
+                ..Default::default()
+            },
+            &node.spec.resource_meta,
+        )),
         spec: Some(pod_spec),
     }
 }
@@ -1563,6 +1867,23 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
                 secret_key_ref: Some(SecretKeySelector {
                     name: Some(db_config.secret_key_ref.name.clone()),
                     key: db_config.secret_key_ref.key.clone(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        });
+    }
+
+    // Add database environment variable from CNPG secret if managed database is configured
+    if let Some(_managed_db) = &node.spec.managed_database {
+        let secret_name = node.name_any(); // CNPG cluster name matches StellarNode name
+        env_vars.push(EnvVar {
+            name: db_env_var_name.to_string(),
+            value: None,
+            value_from: Some(EnvVarSource {
+                secret_key_ref: Some(SecretKeySelector {
+                    name: Some(format!("{secret_name}-app")),
+                    key: "uri".to_string(),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1818,13 +2139,16 @@ pub async fn ensure_alerting(client: &Client, node: &StellarNode) -> Result<()> 
     data.insert("alerts.yaml".to_string(), rules);
 
     let cm = ConfigMap {
-        metadata: ObjectMeta {
-            name: Some(name.clone()),
-            namespace: Some(namespace.clone()),
-            labels: Some(labels),
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
+        metadata: merge_resource_meta(
+            ObjectMeta {
+                name: Some(name.clone()),
+                namespace: Some(namespace.clone()),
+                labels: Some(labels),
+                owner_references: Some(vec![owner_reference(node)]),
+                ..Default::default()
+            },
+            &node.spec.resource_meta,
+        ),
         data: Some(data),
         ..Default::default()
     };
@@ -1938,13 +2262,16 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
         });
 
     let hpa = HorizontalPodAutoscaler {
-        metadata: ObjectMeta {
-            name: Some(name),
-            namespace: Some(namespace),
-            labels: Some(standard_labels(node)),
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
+        metadata: merge_resource_meta(
+            ObjectMeta {
+                name: Some(name),
+                namespace: Some(namespace),
+                labels: Some(standard_labels(node)),
+                owner_references: Some(vec![owner_reference(node)]),
+                ..Default::default()
+            },
+            &node.spec.resource_meta,
+        ),
         spec: Some(HorizontalPodAutoscalerSpec {
             scale_target_ref: CrossVersionObjectReference {
                 api_version: Some("apps/v1".to_string()),
@@ -2066,7 +2393,7 @@ pub async fn delete_alerting(client: &Client, node: &StellarNode) -> Result<()> 
 pub async fn delete_canary_resources(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
-    let canary_name = format!("{}-canary", name);
+    let canary_name = format!("{name}-canary");
 
     // 1. Delete Canary Ingress
     if node.spec.ingress.is_some() {
@@ -2243,13 +2570,16 @@ fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> Net
     }
 
     NetworkPolicy {
-        metadata: ObjectMeta {
-            name: Some(name),
-            namespace: node.namespace(),
-            labels: Some(labels),
-            owner_references: Some(vec![owner_reference(node)]),
-            ..Default::default()
-        },
+        metadata: merge_resource_meta(
+            ObjectMeta {
+                name: Some(name),
+                namespace: node.namespace(),
+                labels: Some(labels),
+                owner_references: Some(vec![owner_reference(node)]),
+                ..Default::default()
+            },
+            &node.spec.resource_meta,
+        ),
         spec: Some(NetworkPolicySpec {
             pod_selector: LabelSelector {
                 match_labels: Some(BTreeMap::from([

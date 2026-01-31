@@ -92,7 +92,7 @@ pub async fn get_node(
             StatusCode::NOT_FOUND,
             Json(ErrorResponse::new(
                 "not_found",
-                &format!("Node {}/{} not found", namespace, name),
+                &format!("Node {namespace}/{name} not found"),
             )),
         )),
         Err(e) => {

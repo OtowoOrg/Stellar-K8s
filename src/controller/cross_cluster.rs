@@ -166,7 +166,7 @@ async fn create_istio_service_export(
     };
 
     let mut service_entry =
-        DynamicObject::new(&format!("{}-cross-cluster", service_name), &api_resource)
+        DynamicObject::new(&format!("{service_name}-cross-cluster"), &api_resource)
             .within(&namespace);
 
     // Set the spec
@@ -202,7 +202,7 @@ async fn create_istio_service_export(
 
     match api
         .patch(
-            &format!("{}-cross-cluster", service_name),
+            &format!("{service_name}-cross-cluster"),
             &PatchParams::apply("stellar-operator").force(),
             &Patch::Apply(&service_entry),
         )
@@ -425,14 +425,14 @@ async fn measure_tcp_latency(endpoint: &str, port: u16) -> Result<u32> {
     use tokio::time::{timeout, Duration};
 
     let start = Instant::now();
-    let addr = format!("{}:{}", endpoint, port);
+    let addr = format!("{endpoint}:{port}");
 
     match timeout(Duration::from_secs(5), TcpStream::connect(&addr)).await {
         Ok(Ok(_)) => {
             let latency = start.elapsed().as_millis() as u32;
             Ok(latency)
         }
-        Ok(Err(e)) => Err(Error::NetworkError(format!("TCP connect failed: {}", e))),
+        Ok(Err(e)) => Err(Error::NetworkError(format!("TCP connect failed: {e}"))),
         Err(_) => Err(Error::NetworkError("TCP connect timeout".to_string())),
     }
 }
@@ -446,20 +446,20 @@ async fn measure_http_latency(endpoint: &str) -> Result<u32> {
     let url = if endpoint.starts_with("http") {
         endpoint.to_string()
     } else {
-        format!("http://{}:11626/info", endpoint)
+        format!("http://{endpoint}:11626/info")
     };
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
-        .map_err(|e| Error::NetworkError(format!("HTTP client error: {}", e)))?;
+        .map_err(|e| Error::NetworkError(format!("HTTP client error: {e}")))?;
 
     match timeout(Duration::from_secs(5), client.get(&url).send()).await {
         Ok(Ok(_)) => {
             let latency = start.elapsed().as_millis() as u32;
             Ok(latency)
         }
-        Ok(Err(e)) => Err(Error::NetworkError(format!("HTTP request failed: {}", e))),
+        Ok(Err(e)) => Err(Error::NetworkError(format!("HTTP request failed: {e}"))),
         Err(_) => Err(Error::NetworkError("HTTP request timeout".to_string())),
     }
 }

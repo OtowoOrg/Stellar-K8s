@@ -2,7 +2,10 @@
 //! This module contains the main controller loop, reconciliation logic,
 //! and resource management for Stellar nodes.
 
+pub mod resource_meta;
+
 mod archive_health;
+pub mod captive_core;
 pub mod conditions;
 pub mod cross_cluster;
 pub mod dr;

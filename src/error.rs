@@ -92,18 +92,18 @@ impl Error {
     /// Convert to a human-readable message for status updates
     pub fn status_message(&self) -> String {
         match self {
-            Error::KubeError(e) => format!("Kubernetes error: {}", e),
-            Error::ValidationError(msg) => format!("Validation failed: {}", msg),
+            Error::KubeError(e) => format!("Kubernetes error: {e}"),
+            Error::ValidationError(msg) => format!("Validation failed: {msg}"),
             Error::MissingRequiredField { field, node_type } => {
-                format!("Missing {} for {} node", field, node_type)
+                format!("Missing {field} for {node_type} node")
             }
             Error::ArchiveHealthCheckError(msg) => {
-                format!("Archive health check failed: {}", msg)
+                format!("Archive health check failed: {msg}")
             }
-            Error::HttpError(e) => format!("HTTP request failed: {}", e),
-            Error::RemediationError(msg) => format!("Remediation failed: {}", msg),
-            Error::PluginError(msg) => format!("Plugin error: {}", msg),
-            Error::WebhookError(msg) => format!("Webhook error: {}", msg),
+            Error::HttpError(e) => format!("HTTP request failed: {e}"),
+            Error::RemediationError(msg) => format!("Remediation failed: {msg}"),
+            Error::PluginError(msg) => format!("Plugin error: {msg}"),
+            Error::WebhookError(msg) => format!("Webhook error: {msg}"),
             _ => self.to_string(),
         }
     }

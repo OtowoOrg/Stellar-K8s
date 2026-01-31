@@ -166,7 +166,7 @@ impl PeerDiscoveryManager {
 
         // Get the service to find the IP
         let services: Api<Service> = Api::namespaced(self.client.clone(), &namespace);
-        let service_name = format!("{}-service", name);
+        let service_name = format!("{name}-service");
 
         match services.get(&service_name).await {
             Ok(service) => {
@@ -326,7 +326,7 @@ pub async fn trigger_peer_config_reload(client: &Client, node: &StellarNode) -> 
     // Get the pod to find its IP
     let pods: Api<k8s_openapi::api::core::v1::Pod> = Api::namespaced(client.clone(), &namespace);
 
-    let label_selector = format!("app={}", name);
+    let label_selector = format!("app={name}");
     let params = ListParams::default().labels(&label_selector);
 
     match pods.list(&params).await {
@@ -352,17 +352,14 @@ pub async fn trigger_peer_config_reload(client: &Client, node: &StellarNode) -> 
 
 /// Trigger config reload via HTTP command
 async fn trigger_config_reload_http(pod_ip: &str) -> Result<()> {
-    let url = format!(
-        "http://{}:11626/http-command?admin=true&command=config-reload",
-        pod_ip
-    );
+    let url = format!("http://{pod_ip}:11626/http-command?admin=true&command=config-reload");
 
     debug!("Triggering config-reload via {}", url);
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
-        .map_err(|e| Error::ConfigError(format!("Failed to build HTTP client: {}", e)))?;
+        .map_err(|e| Error::ConfigError(format!("Failed to build HTTP client: {e}")))?;
 
     let response = client.get(&url).send().await.map_err(Error::HttpError)?;
 

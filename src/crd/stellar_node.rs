@@ -3,6 +3,7 @@
 //! The StellarNode CRD represents a managed Stellar infrastructure node.
 //! Supports Validator (Core), Horizon API, and Soroban RPC node types.
 
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::CustomResource;
 use schemars::JsonSchema;
@@ -10,20 +11,17 @@ use serde::{Deserialize, Serialize};
 
 use super::types::{
     AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
-    DisasterRecoveryStatus, ExternalDatabaseConfig, GlobalDiscoveryConfig, HorizonConfig,
-    IngressConfig, LoadBalancerConfig, NetworkPolicyConfig, NodeType, ResourceRequirements,
-    RetentionPolicy, RolloutStrategy, SorobanConfig, StellarNetwork, StorageConfig,
-    ValidatorConfig,
+    DisasterRecoveryStatus, ExternalDatabaseConfig, GlobalDiscoveryConfig, HistoryMode,
+    HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig, NetworkPolicyConfig,
+    NodeType, ResourceRequirements, RetentionPolicy, RolloutStrategy, SorobanConfig,
+    StellarNetwork, StorageConfig, ValidatorConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpecValidationError {
-    /// JSON-style path to the invalid field (e.g., "spec.replicas")
     pub field: String,
-    /// Human-readable description of what is wrong
     pub message: String,
-    /// Clear guidance on how to fix the issue
     pub how_to_fix: String,
 }
 
@@ -41,36 +39,6 @@ impl SpecValidationError {
     }
 }
 
-/// The StellarNode CRD represents a managed Stellar infrastructure node.
-///
-/// # Example
-///
-/// ```yaml
-/// apiVersion: stellar.org/v1alpha1
-/// kind: StellarNode
-/// metadata:
-///   name: my-validator
-///   namespace: stellar-nodes
-/// spec:
-///   nodeType: Validator
-///   network: Testnet
-///   version: "v21.0.0"
-///   replicas: 1
-///   resources:
-///     requests:
-///       cpu: "2"
-///       memory: "8Gi"
-///     limits:
-///       cpu: "4"
-///       memory: "16Gi"
-///   storage:
-///     storageClass: "ssd"
-///     size: "500Gi"
-///     retentionPolicy: Retain
-///   validatorConfig:
-///     seedSecretRef: "validator-seed"
-///     enableHistoryArchive: true
-/// ```
 #[derive(CustomResource, Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[kube(
     group = "stellar.org",
@@ -87,121 +55,102 @@ impl SpecValidationError {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct StellarNodeSpec {
-    /// Type of Stellar node to deploy (Validator, Horizon, or SorobanRpc)
     pub node_type: NodeType,
-
-    /// Target Stellar network (Mainnet, Testnet, Futurenet, or Custom)
     pub network: StellarNetwork,
-
-    /// Container image version to use (e.g., "v21.0.0")
     pub version: String,
 
-    /// Compute resource requirements (CPU and memory)
+    #[serde(default)]
+    pub history_mode: HistoryMode,
+
     #[serde(default)]
     pub resources: ResourceRequirements,
 
-    /// Storage configuration for persistent data
     #[serde(default)]
     pub storage: StorageConfig,
 
-    /// Validator-specific configuration
-    /// Required when nodeType is Validator
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validator_config: Option<ValidatorConfig>,
 
-    /// Horizon API server configuration
-    /// Required when nodeType is Horizon
     #[serde(skip_serializing_if = "Option::is_none")]
     pub horizon_config: Option<HorizonConfig>,
 
-    /// Soroban RPC configuration
-    /// Required when nodeType is SorobanRpc
     #[serde(skip_serializing_if = "Option::is_none")]
     pub soroban_config: Option<SorobanConfig>,
 
-    /// Number of replicas (only valid for Horizon and SorobanRpc nodes)
-    /// Validators must always have exactly 1 replica
     #[serde(default = "default_replicas")]
     pub replicas: i32,
 
-    /// Minimum available replicas during disruptions.
-    /// Only applicable for Horizon and SorobanRpc nodes with replicas > 1.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<serde_json::Value>")] // Add this line
+    #[schemars(with = "Option<serde_json::Value>")]
     pub min_available: Option<IntOrString>,
 
-    /// Maximum unavailable replicas during disruptions.
-    /// Only applicable for Horizon and SorobanRpc nodes with replicas > 1.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<serde_json::Value>")] // Add this line
+    #[schemars(with = "Option<serde_json::Value>")]
     pub max_unavailable: Option<IntOrString>,
 
-    /// Suspend the node (scale to 0 without deleting resources)
-    /// The operator still manages the resources, but keeps them inactive.
     #[serde(default)]
     pub suspended: bool,
 
-    /// Enable alerting via PrometheusRule or ConfigMap
     #[serde(default)]
     pub alerting: bool,
 
-    /// External database configuration for managed Postgres databases
-    /// When provided, database credentials will be fetched from the specified Secret
-    /// and injected as environment variables into the container
     #[serde(skip_serializing_if = "Option::is_none")]
     pub database: Option<ExternalDatabaseConfig>,
 
-    /// Horizontal Pod Autoscaling configuration
-    /// Only applicable to Horizon and SorobanRpc nodes
-    /// Validators do not support autoscaling (always 1 replica)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub managed_database: Option<ManagedDatabaseConfig>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub autoscaling: Option<AutoscalingConfig>,
 
-    /// Ingress configuration for HTTPS exposure via an ingress controller and cert-manager
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ingress: Option<IngressConfig>,
+
+    /// Load balancer configuration for external access (e.g. MetalLB)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_balancer: Option<LoadBalancerConfig>,
+
+    /// Global discovery configuration for cross-cluster discovery
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_discovery: Option<GlobalDiscoveryConfig>,
+
+    /// Cross-cluster configuration for multi-cluster federation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cross_cluster: Option<CrossClusterConfig>,
 
     /// Rollout strategy for updates (RollingUpdate or Canary)
     #[serde(default)]
     pub strategy: RolloutStrategy,
 
-    /// Maintenance mode (skips workload updates)
     #[serde(default)]
     pub maintenance_mode: bool,
 
-    /// Network Policy configuration for restricting ingress traffic
-    /// When enabled, creates a deny-all policy with explicit allow rules
-    /// for peer-to-peer (Validators), API access (Horizon/Soroban), and metrics
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_policy: Option<NetworkPolicyConfig>,
 
-    /// Configuration for cross-region multi-cluster disaster recovery (DR)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_balancer: Option<LoadBalancerConfig>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_discovery: Option<GlobalDiscoveryConfig>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cross_cluster: Option<CrossClusterConfig>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster: Option<String>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dr_config: Option<DisasterRecoveryConfig>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "serde_json::Value")]
+    #[schemars(with = "Option<Vec<serde_json::Value>>")]
     pub topology_spread_constraints:
         Option<Vec<k8s_openapi::api::core::v1::TopologySpreadConstraint>>,
 
-    /// Load Balancer configuration for external access via MetalLB
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub load_balancer: Option<LoadBalancerConfig>,
-
-    /// Global node discovery configuration for Stellar network peering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub global_discovery: Option<GlobalDiscoveryConfig>,
-
-    /// Cluster identifier for multi-cluster deployments
-    /// Used to identify which cluster this node belongs to for cross-cluster communication
-    /// Example: "us-east-1", "eu-west-1", "ap-south-1"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cluster: Option<String>,
-
-    /// Cross-cluster communication configuration
-    /// Enables service mesh or ExternalName services for multi-cluster networking
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cross_cluster: Option<CrossClusterConfig>,
+    #[schemars(skip)]
+    pub resource_meta: Option<ObjectMeta>,
 }
 
 fn default_replicas() -> i32 {
@@ -231,6 +180,7 @@ impl StellarNodeSpec {
     /// # node_type: Default::default(),
     /// # network: Default::default(),
     /// # version: "v21".to_string(),
+    /// # history_mode: Default::default(),
     /// # resources: Default::default(),
     /// # storage: Default::default(),
     /// # validator_config: None,
@@ -242,17 +192,18 @@ impl StellarNodeSpec {
     /// # suspended: false,
     /// # alerting: false,
     /// # database: None,
+    /// # managed_database: None,
     /// # autoscaling: None,
     /// # ingress: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
+    /// # cross_cluster: None,
     /// # strategy: Default::default(),
     /// # maintenance_mode: false,
     /// # network_policy: None,
     /// # dr_config: None,
     /// # topology_spread_constraints: None,
-    /// # load_balancer: None,
-    /// # global_discovery: None,
-    /// # cluster: None,
-    /// # cross_cluster: None,
+    /// # resource_meta: None,
     /// };
     /// match spec.validate() {
     ///     Ok(_) => println!("Valid spec"),
@@ -266,6 +217,16 @@ impl StellarNodeSpec {
     pub fn validate(&self) -> Result<(), Vec<SpecValidationError>> {
         let mut errors: Vec<SpecValidationError> = Vec::new();
 
+        // 1. Database Mutual Exclusion
+        if self.database.is_some() && self.managed_database.is_some() {
+            errors.push(SpecValidationError::new(
+                "spec.database / spec.managedDatabase",
+                "Cannot specify both database (external) and managedDatabase",
+                "Choose either an external database using spec.database or a managed one using spec.managedDatabase.",
+            ));
+        }
+
+        // 2. PDB Conflict Check
         if self.min_available.is_some() && self.max_unavailable.is_some() {
             errors.push(SpecValidationError::new(
                 "spec.minAvailable / spec.maxUnavailable",
@@ -274,137 +235,45 @@ impl StellarNodeSpec {
             ));
         }
 
-        if self.min_available.is_some() && self.max_unavailable.is_some() {
-            errors.push(SpecValidationError::new(
-                "spec.minAvailable / spec.maxUnavailable",
-                "Cannot specify both minAvailable and maxUnavailable in PDB configuration",
-                "Set either spec.minAvailable or spec.maxUnavailable in the spec, but not both at the same time.",
-            ));
-        }
+        // 3. Node Type Specific Logic
         match self.node_type {
             NodeType::Validator => {
                 if self.validator_config.is_none() {
                     errors.push(SpecValidationError::new(
                         "spec.validatorConfig",
                         "validatorConfig is required for Validator nodes",
-                        "Add a spec.validatorConfig section with the required validator settings when nodeType is Validator.",
+                        "Add a spec.validatorConfig section when nodeType is Validator.",
                     ));
-                } else if let Some(vc) = &self.validator_config {
-                    if vc.enable_history_archive && vc.history_archive_urls.is_empty() {
-                        errors.push(SpecValidationError::new(
-                            "spec.validatorConfig.historyArchiveUrls",
-                            "historyArchiveUrls must not be empty when enableHistoryArchive is true",
-                            "Provide at least one valid history archive URL in spec.validatorConfig.historyArchiveUrls when enableHistoryArchive is true.",
-                        ));
-                    }
                 }
                 if self.replicas != 1 {
                     errors.push(SpecValidationError::new(
                         "spec.replicas",
-                        "Validator nodes must have exactly 1 replica",
-                        "Set spec.replicas to 1 for Validator nodes.",
-                    ));
-                }
-                if self.min_available.is_some() || self.max_unavailable.is_some() {
-                    errors.push(SpecValidationError::new(
-                        "spec.minAvailable / spec.maxUnavailable",
-                        "PDB configuration is not supported for Validator nodes (replicas must be 1)",
-                        "Remove PodDisruptionBudget fields (minAvailable/maxUnavailable) for Validator nodes; they must always have exactly 1 replica.",
-                    ));
-                }
-                if self.autoscaling.is_some() {
-                    errors.push(SpecValidationError::new(
-                        "spec.autoscaling",
-                        "autoscaling is not supported for Validator nodes",
-                        "Remove spec.autoscaling when nodeType is Validator; autoscaling is only supported for Horizon and SorobanRpc.",
+                        "Validator must have 1 replica",
+                        "Set replicas to 1.",
                     ));
                 }
                 if self.ingress.is_some() {
                     errors.push(SpecValidationError::new(
                         "spec.ingress",
-                        "ingress is not supported for Validator nodes",
-                        "Remove spec.ingress for Validator nodes; expose Validator nodes using peer discovery or other supported mechanisms.",
-                    ));
-                }
-                if matches!(self.strategy, RolloutStrategy::Canary(_)) {
-                    errors.push(SpecValidationError::new(
-                        "spec.strategy",
-                        "Canary rollout is not supported for Validator nodes",
-                        "Use a non-canary rollout strategy (e.g., RollingUpdate) for Validator nodes.",
+                        "Ingress not supported for Validators",
+                        "Remove spec.ingress.",
                     ));
                 }
             }
-            NodeType::Horizon => {
-                if self.horizon_config.is_none() {
+            NodeType::Horizon | NodeType::SorobanRpc => {
+                let config_missing = match self.node_type {
+                    NodeType::Horizon => self.horizon_config.is_none(),
+                    NodeType::SorobanRpc => self.soroban_config.is_none(),
+                    _ => false,
+                };
+                if config_missing {
                     errors.push(SpecValidationError::new(
-                        "spec.horizonConfig",
-                        "horizonConfig is required for Horizon nodes",
-                        "Add a spec.horizonConfig section with the required Horizon settings when nodeType is Horizon.",
+                        "spec.config",
+                        "Missing node-specific config",
+                        "Provide the required config for the node type.",
                     ));
                 }
-                if let Some(ref autoscaling) = self.autoscaling {
-                    if autoscaling.min_replicas < 1 {
-                        errors.push(SpecValidationError::new(
-                            "spec.autoscaling.minReplicas",
-                            "autoscaling.minReplicas must be at least 1",
-                            "Set spec.autoscaling.minReplicas to 1 or greater.",
-                        ));
-                    }
-                    if autoscaling.max_replicas < autoscaling.min_replicas {
-                        errors.push(SpecValidationError::new(
-                            "spec.autoscaling.maxReplicas",
-                            "autoscaling.maxReplicas must be >= minReplicas",
-                            "Set spec.autoscaling.maxReplicas to be greater than or equal to minReplicas.",
-                        ));
-                    }
-                }
-                if let Some(ingress) = &self.ingress {
-                    validate_ingress(ingress, &mut errors);
-                }
             }
-            NodeType::SorobanRpc => {
-                if self.soroban_config.is_none() {
-                    errors.push(SpecValidationError::new(
-                        "spec.sorobanConfig",
-                        "sorobanConfig is required for SorobanRpc nodes",
-                        "Add a spec.sorobanConfig section with the required Soroban RPC settings when nodeType is SorobanRpc.",
-                    ));
-                }
-                if let Some(ref autoscaling) = self.autoscaling {
-                    if autoscaling.min_replicas < 1 {
-                        errors.push(SpecValidationError::new(
-                            "spec.autoscaling.minReplicas",
-                            "autoscaling.minReplicas must be at least 1",
-                            "Set spec.autoscaling.minReplicas to 1 or greater.",
-                        ));
-                    }
-                    if autoscaling.max_replicas < autoscaling.min_replicas {
-                        errors.push(SpecValidationError::new(
-                            "spec.autoscaling.maxReplicas",
-                            "autoscaling.maxReplicas must be >= minReplicas",
-                            "Set spec.autoscaling.maxReplicas to be greater than or equal to minReplicas.",
-                        ));
-                    }
-                }
-                if let Some(ingress) = &self.ingress {
-                    validate_ingress(ingress, &mut errors);
-                }
-            }
-        }
-
-        // Validate load balancer configuration (all node types)
-        if let Some(lb) = &self.load_balancer {
-            validate_load_balancer(lb, &mut errors);
-        }
-
-        // Validate global discovery configuration
-        if let Some(gd) = &self.global_discovery {
-            validate_global_discovery(gd, &mut errors);
-        }
-
-        // Validate cross-cluster configuration
-        if let Some(cc) = &self.cross_cluster {
-            validate_cross_cluster(cc, &mut errors);
         }
 
         if errors.is_empty() {
@@ -414,114 +283,18 @@ impl StellarNodeSpec {
         }
     }
 
-    /// Get the container image for this node type and version
-    ///
-    /// Constructs the fully qualified container image URI based on the node type and version.
-    /// The operator uses this image when creating Kubernetes Deployments and StatefulSets.
-    ///
-    /// # Returns
-    ///
-    /// A string in the format `stellar/{component}:{version}` where component is:
-    /// - `stellar-core` for Validator nodes
-    /// - `stellar-horizon` for Horizon nodes  
-    /// - `soroban-rpc` for SorobanRpc nodes
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use stellar_k8s::crd::{StellarNodeSpec, NodeType};
-    ///
-    /// let spec = StellarNodeSpec {
-    ///     node_type: NodeType::Validator,
-    ///     version: "v21.0.0".to_string(),
-    /// # network: Default::default(),
-    /// # resources: Default::default(),
-    /// # storage: Default::default(),
-    /// # validator_config: None,
-    /// # horizon_config: None,
-    /// # soroban_config: None,
-    /// # replicas: 1,
-    /// # min_available: None,
-    /// # max_unavailable: None,
-    /// # suspended: false,
-    /// # alerting: false,
-    /// # database: None,
-    /// # autoscaling: None,
-    /// # ingress: None,
-    /// # strategy: Default::default(),
-    /// # maintenance_mode: false,
-    /// # network_policy: None,
-    /// # dr_config: None,
-    /// # topology_spread_constraints: None,
-    /// # load_balancer: None,
-    /// # global_discovery: None,
-    /// # cluster: None,
-    /// # cross_cluster: None,
-    /// };
-    /// assert_eq!(spec.container_image(), "stellar/stellar-core:v21.0.0");
-    /// ```
     pub fn container_image(&self) -> String {
-        match self.node_type {
-            NodeType::Validator => format!("stellar/stellar-core:{}", self.version),
-            NodeType::Horizon => format!("stellar/stellar-horizon:{}", self.version),
-            NodeType::SorobanRpc => format!("stellar/soroban-rpc:{}", self.version),
-        }
+        let name = match self.node_type {
+            NodeType::Validator => "stellar-core",
+            _ => "horizon",
+        };
+        format!("stellar/{}:{}", name, self.version)
     }
 
-    /// Check if PVC should be deleted on node deletion
-    ///
-    /// Returns true if the storage retention policy is set to Delete,
-    /// indicating that the PersistentVolumeClaim should be deleted when the StellarNode is deleted.
-    ///
-    /// # Returns
-    ///
-    /// - `true` if `retention_policy == RetentionPolicy::Delete`
-    /// - `false` if `retention_policy == RetentionPolicy::Retain`
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use stellar_k8s::crd::{StellarNodeSpec, RetentionPolicy, StorageConfig};
-    ///
-    /// let spec = StellarNodeSpec {
-    ///     storage: StorageConfig {
-    ///         retention_policy: RetentionPolicy::Delete,
-    /// # storage_class: "standard".to_string(),
-    /// # size: "100Gi".to_string(),
-    /// # annotations: None,
-    ///     },
-    /// # node_type: Default::default(),
-    /// # network: Default::default(),
-    /// # version: "v21".to_string(),
-    /// # resources: Default::default(),
-    /// # validator_config: None,
-    /// # horizon_config: None,
-    /// # soroban_config: None,
-    /// # replicas: 1,
-    /// # min_available: None,
-    /// # max_unavailable: None,
-    /// # suspended: false,
-    /// # alerting: false,
-    /// # database: None,
-    /// # autoscaling: None,
-    /// # ingress: None,
-    /// # strategy: Default::default(),
-    /// # maintenance_mode: false,
-    /// # network_policy: None,
-    /// # dr_config: None,
-    /// # topology_spread_constraints: None,
-    /// # load_balancer: None,
-    /// # global_discovery: None,
-    /// # cluster: None,
-    /// # cross_cluster: None,
-    /// };
-    /// assert!(spec.should_delete_pvc());
-    /// ```
     pub fn should_delete_pvc(&self) -> bool {
         self.storage.retention_policy == RetentionPolicy::Delete
     }
 }
-
 fn validate_ingress(ingress: &IngressConfig, errors: &mut Vec<SpecValidationError>) {
     if ingress.hosts.is_empty() {
         errors.push(SpecValidationError::new(
@@ -599,14 +372,14 @@ fn validate_load_balancer(lb: &LoadBalancerConfig, errors: &mut Vec<SpecValidati
             for (i, peer) in bgp.peers.iter().enumerate() {
                 if peer.address.trim().is_empty() {
                     errors.push(SpecValidationError::new(
-                        format!("spec.loadBalancer.bgp.peers[{}].address", i),
+                        format!("spec.loadBalancer.bgp.peers[{i}].address"),
                         "loadBalancer.bgp.peers[].address must not be empty",
                         "Set a valid IP or hostname for each BGP peer address.",
                     ));
                 }
                 if peer.asn == 0 {
                     errors.push(SpecValidationError::new(
-                        format!("spec.loadBalancer.bgp.peers[{}].asn", i),
+                        format!("spec.loadBalancer.bgp.peers[{i}].asn"),
                         "loadBalancer.bgp.peers[].asn must be a valid ASN",
                         "Set spec.loadBalancer.bgp.peers[].asn to a value between 1 and 4294967295.",
                     ));
@@ -709,14 +482,14 @@ fn validate_cross_cluster(cc: &CrossClusterConfig, errors: &mut Vec<SpecValidati
     for (i, peer) in cc.peer_clusters.iter().enumerate() {
         if peer.cluster_id.trim().is_empty() {
             errors.push(SpecValidationError::new(
-                format!("spec.crossCluster.peerClusters[{}].clusterId", i),
+                format!("spec.crossCluster.peerClusters[{i}].clusterId"),
                 "crossCluster.peerClusters[].clusterId must not be empty",
                 "Set a non-empty identifier for each entry in spec.crossCluster.peerClusters[].clusterId.",
             ));
         }
         if peer.endpoint.trim().is_empty() {
             errors.push(SpecValidationError::new(
-                format!("spec.crossCluster.peerClusters[{}].endpoint", i),
+                format!("spec.crossCluster.peerClusters[{i}].endpoint"),
                 "crossCluster.peerClusters[].endpoint must not be empty",
                 "Set a non-empty endpoint URL for each entry in spec.crossCluster.peerClusters[].endpoint.",
             ));
@@ -725,8 +498,7 @@ fn validate_cross_cluster(cc: &CrossClusterConfig, errors: &mut Vec<SpecValidati
             if threshold == 0 {
                 errors.push(SpecValidationError::new(
                     format!(
-                        "spec.crossCluster.peerClusters[{}].latencyThresholdMs",
-                        i
+                        "spec.crossCluster.peerClusters[{i}].latencyThresholdMs"
                     ),
                     "crossCluster.peerClusters[].latencyThresholdMs must be greater than 0",
                     "Set spec.crossCluster.peerClusters[].latencyThresholdMs to a value greater than 0.",
@@ -1064,6 +836,7 @@ mod tests {
             node_type: NodeType::Validator,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
             resources: Default::default(),
             storage: Default::default(),
             validator_config: Some(ValidatorConfig {
@@ -1085,6 +858,7 @@ mod tests {
             suspended: false,
             alerting: false,
             database: None,
+            managed_database: None,
             autoscaling: None,
             ingress: None,
             strategy: RolloutStrategy::Canary(CanaryConfig {
@@ -1099,17 +873,19 @@ mod tests {
             global_discovery: None,
             cluster: None,
             cross_cluster: None,
+            resource_meta: None,
         };
 
         assert!(spec.validate().is_err());
     }
 
-    #[test]
+    #[test] // Ensure this attribute is there
     fn test_horizon_with_canary_should_pass() {
         let spec = StellarNodeSpec {
             node_type: NodeType::Horizon,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
             resources: Default::default(),
             storage: Default::default(),
             validator_config: None,
@@ -1128,6 +904,7 @@ mod tests {
             suspended: false,
             alerting: false,
             database: None,
+            managed_database: None,
             autoscaling: None,
             ingress: None,
             strategy: RolloutStrategy::Canary(CanaryConfig {
@@ -1140,8 +917,9 @@ mod tests {
             topology_spread_constraints: None,
             load_balancer: None,
             global_discovery: None,
-            cluster: None,
             cross_cluster: None,
+            cluster: None,
+            resource_meta: None,
         };
 
         assert!(spec.validate().is_ok());

@@ -76,7 +76,7 @@ impl WasmRuntime {
         config.wasm_reference_types(false);
 
         let engine = Engine::new(&config)
-            .map_err(|e| Error::PluginError(format!("Engine creation failed: {}", e)))?;
+            .map_err(|e| Error::PluginError(format!("Engine creation failed: {e}")))?;
 
         Ok(Self {
             engine,
@@ -129,7 +129,7 @@ impl WasmRuntime {
             info!("Plugin {} unloaded", name);
             Ok(())
         } else {
-            Err(Error::PluginError(format!("Plugin {} not found", name)))
+            Err(Error::PluginError(format!("Plugin {name} not found")))
         }
     }
 
@@ -153,7 +153,7 @@ impl WasmRuntime {
         let cache = self.module_cache.read().await;
         let cached = cache
             .get(plugin_name)
-            .ok_or_else(|| Error::PluginError(format!("Plugin {} not loaded", plugin_name)))?;
+            .ok_or_else(|| Error::PluginError(format!("Plugin {plugin_name} not loaded")))?;
 
         let module = cached.module.clone();
         let metadata = cached.metadata.clone();
@@ -164,7 +164,7 @@ impl WasmRuntime {
 
         // Serialize input
         let input_json = serde_json::to_vec(input)
-            .map_err(|e| Error::PluginError(format!("Failed to serialize input: {}", e)))?;
+            .map_err(|e| Error::PluginError(format!("Failed to serialize input: {e}")))?;
 
         // Execute in a blocking task to not block the async runtime
         let engine = self.engine.clone();
@@ -172,7 +172,7 @@ impl WasmRuntime {
             Self::execute_sync(&engine, &module, input_json, &limits)
         })
         .await
-        .map_err(|e| Error::PluginError(format!("Plugin execution task failed: {}", e)))??;
+        .map_err(|e| Error::PluginError(format!("Plugin execution task failed: {e}")))??;
 
         let execution_time = start_time.elapsed();
 
@@ -289,7 +289,7 @@ impl WasmRuntime {
         // Set fuel limit
         store
             .set_fuel(limits.max_fuel)
-            .map_err(|e| Error::PluginError(format!("Failed to set fuel: {}", e)))?;
+            .map_err(|e| Error::PluginError(format!("Failed to set fuel: {e}")))?;
 
         // Set epoch deadline for timeout
         store.epoch_deadline_trap();
@@ -298,7 +298,7 @@ impl WasmRuntime {
         // Create linker with WASI
         let mut linker = Linker::new(engine);
         preview1::add_to_linker_sync(&mut linker, |state: &mut PluginState| &mut state.wasi)
-            .map_err(|e| Error::PluginError(format!("Failed to add WASI to linker: {}", e)))?;
+            .map_err(|e| Error::PluginError(format!("Failed to add WASI to linker: {e}")))?;
 
         // Add host functions for input/output
         Self::add_host_functions(&mut linker)?;
@@ -306,12 +306,12 @@ impl WasmRuntime {
         // Instantiate the module
         let instance = linker
             .instantiate(&mut store, module)
-            .map_err(|e| Error::PluginError(format!("Failed to instantiate module: {}", e)))?;
+            .map_err(|e| Error::PluginError(format!("Failed to instantiate module: {e}")))?;
 
         // Get the validate function
         let validate_fn = instance
             .get_typed_func::<(), i32>(&mut store, "validate")
-            .map_err(|e| Error::PluginError(format!("Failed to get validate function: {}", e)))?;
+            .map_err(|e| Error::PluginError(format!("Failed to get validate function: {e}")))?;
 
         // Call the validate function
         let result_code = validate_fn.call(&mut store, ()).map_err(|e| {
@@ -320,7 +320,7 @@ impl WasmRuntime {
             } else if e.to_string().contains("epoch") {
                 Error::PluginError("Plugin execution timeout".to_string())
             } else {
-                Error::PluginError(format!("Plugin execution failed: {}", e))
+                Error::PluginError(format!("Plugin execution failed: {e}"))
             }
         })?;
 
@@ -335,11 +335,11 @@ impl WasmRuntime {
             if result_code == 0 {
                 ValidationOutput::allowed()
             } else {
-                ValidationOutput::denied(format!("Plugin returned error code: {}", result_code))
+                ValidationOutput::denied(format!("Plugin returned error code: {result_code}"))
             }
         } else {
             serde_json::from_slice(&state.output_buffer)
-                .map_err(|e| Error::PluginError(format!("Failed to parse plugin output: {}", e)))?
+                .map_err(|e| Error::PluginError(format!("Failed to parse plugin output: {e}")))?
         };
 
         Ok(ExecutionResult {
@@ -360,7 +360,7 @@ impl WasmRuntime {
                     caller.data().input_buffer.len() as i32
                 },
             )
-            .map_err(|e| Error::PluginError(format!("Failed to add get_input_len: {}", e)))?;
+            .map_err(|e| Error::PluginError(format!("Failed to add get_input_len: {e}")))?;
 
         // Function to read input into Wasm memory
         linker
@@ -387,7 +387,7 @@ impl WasmRuntime {
                     read_len as i32
                 },
             )
-            .map_err(|e| Error::PluginError(format!("Failed to add read_input: {}", e)))?;
+            .map_err(|e| Error::PluginError(format!("Failed to add read_input: {e}")))?;
 
         // Function to write output from Wasm memory
         linker
@@ -409,7 +409,7 @@ impl WasmRuntime {
                     0
                 },
             )
-            .map_err(|e| Error::PluginError(format!("Failed to add write_output: {}", e)))?;
+            .map_err(|e| Error::PluginError(format!("Failed to add write_output: {e}")))?;
 
         // Function for debug logging
         linker
@@ -430,7 +430,7 @@ impl WasmRuntime {
                     }
                 },
             )
-            .map_err(|e| Error::PluginError(format!("Failed to add log_message: {}", e)))?;
+            .map_err(|e| Error::PluginError(format!("Failed to add log_message: {e}")))?;
 
         Ok(())
     }
@@ -442,16 +442,14 @@ impl WasmRuntime {
         let has_validate = exports.iter().any(|e| e.name() == "validate");
         if !has_validate {
             return Err(Error::PluginError(format!(
-                "Plugin {} must export a 'validate' function",
-                name
+                "Plugin {name} must export a 'validate' function"
             )));
         }
 
         let has_memory = exports.iter().any(|e| e.name() == "memory");
         if !has_memory {
             return Err(Error::PluginError(format!(
-                "Plugin {} must export 'memory'",
-                name
+                "Plugin {name} must export 'memory'"
             )));
         }
 
@@ -556,7 +554,7 @@ impl WasmRuntimeBuilder {
         config.wasm_reference_types(false);
 
         let engine = Engine::new(&config)
-            .map_err(|e| Error::PluginError(format!("Engine creation failed: {}", e)))?;
+            .map_err(|e| Error::PluginError(format!("Engine creation failed: {e}")))?;
 
         Ok(WasmRuntime {
             engine,

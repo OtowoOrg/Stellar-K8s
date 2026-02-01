@@ -16,7 +16,7 @@ kube = { version = "0.94", features = [
     "admission",
 ] }
 kube-runtime = { version = "0.94", features = ["unstable-runtime"] }
-k8s-openapi = { version = "0.22", default-features = false, features = [
+k8s-openapi = { version = "0.26", default-features = false, features = [
     "v1_30",
 ] }
 

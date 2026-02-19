@@ -119,6 +119,8 @@ See [kubectl-plugin.md](docs/kubectl-plugin.md) for complete documentation.
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on our development process, coding standards, and how to submit pull requests.
 
+See also our [CHANGELOG](CHANGELOG.md) for a list of changes in each release.
+
 ---
 
 ## Roadmap

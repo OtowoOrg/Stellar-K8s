@@ -125,7 +125,7 @@ mod tests {
     fn test_non_validator_nodes_excluded_from_peer_list() {
         // Only Validator nodes should ever enter the peer set;
         // process_node_event returns early for non-Validator node_type.
-        let all_nodes = vec![
+        let all_nodes = [
             PeerInfo {
                 name: "validator-0".to_string(),
                 namespace: "stellar-system".to_string(),
@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn test_peers_txt_format() {
         // Verify the newline-separated peer list format used in ConfigMap peers.txt
-        let peers = vec![
+        let peers = [
             make_peer("validator-0", "stellar-system", "10.0.0.1", 11625),
             make_peer("validator-1", "stellar-system", "10.0.0.2", 11625),
         ];

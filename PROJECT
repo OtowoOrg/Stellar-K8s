@@ -1,0 +1,6 @@
+version: "3"
+domain: 0xolivanode.io
+repo: github.com/0xOlivanode/Stellar-K8s
+layout:
+  - go.kubebuilder.io/v4
+projectName: stellar-operator

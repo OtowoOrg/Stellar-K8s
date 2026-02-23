@@ -8,7 +8,13 @@ CARGO := cargo
 KUBECTL := kubectl
 DOCKER := docker
 IMAGE_NAME := stellar-operator
-IMAGE_TAG := latest
+IMAGE_TAG ?= latest
+
+# Bundle variables
+VERSION ?= 0.1.0
+BUNDLE_IMG ?= $(IMAGE_NAME)-bundle:v$(VERSION)
+CHANNELS ?= "alpha"
+DEFAULT_CHANNEL ?= "alpha"
 
 help: ## Show this help
 	@echo 'Usage: make [target]'
@@ -84,5 +90,21 @@ run: build ## Run locally
 
 run-dev: ## Run operator in dev mode with hot reload
 	RUST_LOG=debug cargo watch -x run
+
+# Bundle targets
+.PHONY: bundle bundle-build
+bundle: ## Generate bundle manifests and metadata, then validate generated files.
+	@echo "→ Generating manifests from Helm chart..."
+	@mkdir -p rendered
+	@helm template stellar-operator charts/stellar-operator > rendered/manifests.yaml
+	@echo "→ Generating bundle..."
+	@operator-sdk generate kustomize manifests -q
+	@kustomize build config/manifests | operator-sdk generate bundle -q --overwrite --version $(VERSION) --channels $(CHANNELS) --default-channel $(DEFAULT_CHANNEL)
+	@echo "→ Validating bundle..."
+	@operator-sdk bundle validate ./bundle
+	@rm -rf rendered
+
+bundle-build: ## Build the bundle image.
+	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 all: ci-local docker-build ## Full build pipeline

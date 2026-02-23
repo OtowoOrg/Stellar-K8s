@@ -1,6 +1,7 @@
 use super::{StorageProviderTrait, UploadMetadata};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use base64::Engine;
 use reqwest::Client;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -8,6 +9,7 @@ use sha2::{Digest, Sha256};
 pub struct ArweaveProvider {
     client: Client,
     gateway: String,
+    #[allow(dead_code)]
     wallet_jwk: Value,
 }
 
@@ -35,16 +37,18 @@ impl StorageProviderTrait for ArweaveProvider {
 
         // In production, use arweave-rs or bundlr for actual implementation
         // This is a simplified example
+        let b64 = base64::engine::general_purpose::STANDARD;
         let tx_data = json!({
-            "data": base64::encode(&data),
+            "data": b64.encode(&data),
             "tags": tags.iter().map(|(k, v)| json!({
-                "name": base64::encode(k),
-                "value": base64::encode(v)
+                "name": b64.encode(k),
+                "value": b64.encode(v)
             })).collect::<Vec<_>>(),
         });
 
         // Sign and submit transaction (simplified)
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{}/tx", self.gateway))
             .json(&tx_data)
             .send()
@@ -52,7 +56,7 @@ impl StorageProviderTrait for ArweaveProvider {
             .context("Failed to submit Arweave transaction")?;
 
         let tx_id = response.text().await?;
-        
+
         Ok(tx_id)
     }
 
@@ -65,7 +69,8 @@ impl StorageProviderTrait for ArweaveProvider {
             )
         });
 
-        let response: Value = self.client
+        let response: Value = self
+            .client
             .post(format!("{}/graphql", self.gateway))
             .json(&query)
             .send()
@@ -73,13 +78,15 @@ impl StorageProviderTrait for ArweaveProvider {
             .json()
             .await?;
 
-        Ok(!response["data"]["transactions"]["edges"].as_array()
+        Ok(!response["data"]["transactions"]["edges"]
+            .as_array()
             .map(|a| a.is_empty())
             .unwrap_or(true))
     }
 
     async fn verify(&self, cid: &str, expected_hash: &str) -> Result<bool> {
-        let data = self.client
+        let data = self
+            .client
             .get(format!("{}/{}", self.gateway, cid))
             .send()
             .await?

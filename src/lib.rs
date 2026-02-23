@@ -3,6 +3,7 @@
 //! This crate provides a Kubernetes operator for managing Stellar Core,
 //! Horizon, and Soroban RPC nodes on Kubernetes clusters.
 
+pub mod backup;
 pub mod controller;
 pub mod crd;
 pub mod error;

@@ -1,10 +1,11 @@
+use super::providers::{StorageProviderTrait, UploadMetadata};
 use super::*;
 use anyhow::{Context, Result};
 use cron::Schedule;
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{info, warn, error};
+use tracing::{error, info};
 
 pub struct BackupScheduler {
     config: DecentralizedBackupConfig,
@@ -13,10 +14,7 @@ pub struct BackupScheduler {
 }
 
 impl BackupScheduler {
-    pub fn new(
-        config: DecentralizedBackupConfig,
-        provider: Arc<dyn StorageProviderTrait>,
-    ) -> Self {
+    pub fn new(config: DecentralizedBackupConfig, provider: Arc<dyn StorageProviderTrait>) -> Self {
         Self {
             config,
             provider,
@@ -25,18 +23,22 @@ impl BackupScheduler {
     }
 
     pub async fn start(&self, history_archive_path: String) -> Result<()> {
-        let schedule = Schedule::from_str(&self.config.schedule)
-            .context("Invalid cron schedule")?;
+        let schedule =
+            Schedule::from_str(&self.config.schedule).context("Invalid cron schedule")?;
 
-        info!("Starting backup scheduler with schedule: {}", self.config.schedule);
+        info!(
+            "Starting backup scheduler with schedule: {}",
+            self.config.schedule
+        );
 
         loop {
             let now = chrono::Utc::now();
-            let next = schedule.upcoming(chrono::Utc).next()
+            let next = schedule
+                .upcoming(chrono::Utc)
+                .next()
                 .context("No upcoming schedule")?;
-            
-            let duration = (next - now).to_std()
-                .unwrap_or(Duration::from_secs(60));
+
+            let duration = (next - now).to_std().unwrap_or(Duration::from_secs(60));
 
             info!("Next backup scheduled in {:?}", duration);
             sleep(duration).await;
@@ -56,7 +58,7 @@ impl BackupScheduler {
 
         // Upload with concurrency control
         let semaphore = Arc::new(tokio::sync::Semaphore::new(
-            self.config.max_concurrent_uploads
+            self.config.max_concurrent_uploads,
         ));
 
         let mut tasks = vec![];
@@ -76,8 +78,12 @@ impl BackupScheduler {
 
         let results = futures::future::join_all(tasks).await;
         let successful = results.iter().filter(|r| r.is_ok()).count();
-        
-        info!("Backup completed: {}/{} successful", successful, results.len());
+
+        info!(
+            "Backup completed: {}/{} successful",
+            successful,
+            results.len()
+        );
 
         Ok(())
     }
@@ -89,7 +95,7 @@ impl BackupScheduler {
         Ok(vec![])
     }
 
-    async fn upload_segment(
+    pub(crate) async fn upload_segment(
         segment: ArchiveSegment,
         provider: Arc<dyn StorageProviderTrait>,
         uploaded_hashes: Arc<RwLock<HashSet<String>>>,
@@ -105,7 +111,8 @@ impl BackupScheduler {
         }
 
         // Read segment data
-        let mut data = tokio::fs::read(&segment.path).await
+        let mut data = tokio::fs::read(&segment.path)
+            .await
             .context("Failed to read segment")?;
 
         // Apply additional compression if enabled and not already compressed
@@ -125,7 +132,9 @@ impl BackupScheduler {
         };
 
         // Upload
-        let cid = provider.upload(data, metadata).await
+        let cid = provider
+            .upload(data, metadata)
+            .await
             .context("Upload failed")?;
 
         info!("Uploaded {} -> {}", segment.filename, cid);
@@ -141,15 +150,15 @@ impl BackupScheduler {
 }
 
 #[derive(Debug, Clone)]
-struct ArchiveSegment {
-    filename: String,
-    path: String,
-    hash: String,
-    ledger: u64,
-    segment_type: String,
+pub(crate) struct ArchiveSegment {
+    pub(crate) filename: String,
+    pub(crate) path: String,
+    pub(crate) hash: String,
+    pub(crate) ledger: u64,
+    pub(crate) segment_type: String,
 }
 
-fn compress_data(data: &[u8]) -> Result<Vec<u8>> {
+pub(crate) fn compress_data(data: &[u8]) -> Result<Vec<u8>> {
     use flate2::write::GzEncoder;
     use flate2::Compression;
     use std::io::Write;

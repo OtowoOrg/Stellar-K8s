@@ -1,18 +1,18 @@
 pub mod arweave;
-pub mod ipfs;
 pub mod filecoin;
+pub mod ipfs;
 
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 
 #[async_trait]
 pub trait StorageProviderTrait: Send + Sync {
     /// Upload data and return the content identifier
     async fn upload(&self, data: Vec<u8>, metadata: UploadMetadata) -> Result<String>;
-    
+
     /// Check if content exists (for deduplication)
     async fn exists(&self, content_hash: &str) -> Result<bool>;
-    
+
     /// Verify uploaded content
     async fn verify(&self, cid: &str, expected_hash: &str) -> Result<bool>;
 }

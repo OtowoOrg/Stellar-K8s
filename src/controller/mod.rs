@@ -27,6 +27,8 @@ pub mod peer_discovery;
 mod peer_discovery_test;
 mod reconciler;
 mod remediation;
+#[cfg(test)]
+mod remediation_test;
 mod resources;
 mod vsl;
 

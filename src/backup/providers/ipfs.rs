@@ -30,11 +30,13 @@ impl IPFSProvider {
 impl StorageProviderTrait for IPFSProvider {
     async fn upload(&self, data: Vec<u8>, metadata: UploadMetadata) -> Result<String> {
         // Upload to IPFS
-        let form = reqwest::multipart::Form::new()
-            .part("file", reqwest::multipart::Part::bytes(data)
-                .file_name(metadata.filename.clone()));
+        let form = reqwest::multipart::Form::new().part(
+            "file",
+            reqwest::multipart::Part::bytes(data).file_name(metadata.filename.clone()),
+        );
 
-        let response: Value = self.client
+        let response: Value = self
+            .client
             .post(format!("{}/api/v0/add", self.api_url))
             .multipart(form)
             .send()
@@ -43,7 +45,8 @@ impl StorageProviderTrait for IPFSProvider {
             .json()
             .await?;
 
-        let cid = response["Hash"].as_str()
+        let cid = response["Hash"]
+            .as_str()
             .context("Missing CID in IPFS response")?
             .to_string();
 
@@ -57,26 +60,30 @@ impl StorageProviderTrait for IPFSProvider {
 
     async fn exists(&self, content_hash: &str) -> Result<bool> {
         // Check if CID is pinned locally
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{}/api/v0/pin/ls", self.api_url))
             .send()
             .await?;
 
         let pins: Value = response.json().await?;
-        Ok(pins["Keys"].as_object()
+        Ok(pins["Keys"]
+            .as_object()
             .map(|keys| keys.contains_key(content_hash))
             .unwrap_or(false))
     }
 
     async fn verify(&self, cid: &str, expected_hash: &str) -> Result<bool> {
         // Cat the file and verify hash
-        let data = self.client
+        let data = self
+            .client
             .post(format!("{}/api/v0/cat?arg={}", self.api_url, cid))
             .send()
             .await?
             .bytes()
             .await?;
 
+        use sha2::Digest;
         let mut hasher = sha2::Sha256::new();
         hasher.update(&data);
         let hash = format!("{:x}", hasher.finalize());
@@ -86,7 +93,12 @@ impl StorageProviderTrait for IPFSProvider {
 }
 
 impl IPFSProvider {
-    async fn pin_to_service(&self, cid: &str, metadata: &UploadMetadata, config: &PinningConfig) -> Result<()> {
+    async fn pin_to_service(
+        &self,
+        cid: &str,
+        metadata: &UploadMetadata,
+        config: &PinningConfig,
+    ) -> Result<()> {
         let pin_data = serde_json::json!({
             "cid": cid,
             "name": metadata.filename,

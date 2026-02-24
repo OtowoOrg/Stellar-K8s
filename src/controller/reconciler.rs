@@ -1720,6 +1720,16 @@ async fn update_dr_status(
     Ok(())
 }
 
+/// Public entry point for state-machine fuzzing. Calls the same reconcile logic as the controller.
+/// Only compiled when the `reconciler-fuzz` feature is enabled.
+#[cfg(feature = "reconciler-fuzz")]
+pub async fn reconcile_for_fuzz(
+    obj: Arc<StellarNode>,
+    ctx: Arc<ControllerState>,
+) -> Result<Action> {
+    reconcile(obj, ctx).await
+}
+
 /// Error policy determines how to handle reconciliation errors
 fn error_policy(node: Arc<StellarNode>, error: &Error, _ctx: Arc<ControllerState>) -> Action {
     error!("Reconciliation error for {}: {:?}", node.name_any(), error);

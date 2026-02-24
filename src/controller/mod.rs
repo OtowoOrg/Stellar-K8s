@@ -42,4 +42,6 @@ pub use peer_discovery::{
     PeerDiscoveryManager, PeerInfo,
 };
 pub use reconciler::{run_controller, ControllerState};
+#[cfg(feature = "reconciler-fuzz")]
+pub use reconciler::reconcile_for_fuzz;
 pub use remediation::{can_remediate, check_stale_node, RemediationLevel, StaleCheckResult};

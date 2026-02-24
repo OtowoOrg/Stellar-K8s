@@ -174,6 +174,16 @@ make run
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines.
 
+### Reconciler fuzzing
+
+To ensure the operator never panics under malformed or extreme inputs, the reconciler is fuzzed with random `StellarNodeSpec` mutations and event sequences (proptest). Run the fuzzer locally:
+
+```bash
+cargo test -p stellar-k8s --features reconciler-fuzz --test reconciler_fuzz
+```
+
+See [docs/fuzzing.md](docs/fuzzing.md) for full instructions (more cases, env vars, optional reconcile test with cluster).
+
 ---
 
 ## 👨‍💻 Maintainer

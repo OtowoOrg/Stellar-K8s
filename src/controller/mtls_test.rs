@@ -3,8 +3,8 @@
 #[cfg(test)]
 mod tests {
     use rcgen::{
-        CertificateParams, DistinguishedName, ExtendedKeyUsagePurpose, Ia5String, IsCa,
-        KeyPair, KeyUsagePurpose, SanType,
+        CertificateParams, DistinguishedName, ExtendedKeyUsagePurpose, Ia5String, IsCa, KeyPair,
+        KeyUsagePurpose, SanType,
     };
 
     use crate::MtlsConfig;
@@ -67,9 +67,9 @@ mod tests {
             .distinguished_name
             .push(rcgen::DnType::CommonName, "stellar-operator");
         for dns in &dns_names {
-            params.subject_alt_names.push(SanType::DnsName(
-                Ia5String::try_from(dns.clone()).unwrap(),
-            ));
+            params
+                .subject_alt_names
+                .push(SanType::DnsName(Ia5String::try_from(dns.clone()).unwrap()));
         }
         params.key_usages.push(KeyUsagePurpose::DigitalSignature);
         params

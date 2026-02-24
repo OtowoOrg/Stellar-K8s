@@ -147,6 +147,10 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ---
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes.
+
 ## Development
 
 ### Prerequisites

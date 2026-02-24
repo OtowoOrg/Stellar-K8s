@@ -293,7 +293,7 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
 
 /// Apply/create/update the StellarNode resources
 #[instrument(skip(client, node, ctx), fields(name = %node.name_any(), namespace = node.namespace()))]
-async fn apply_stellar_node(
+pub(crate) async fn apply_stellar_node(
     client: &Client,
     node: &StellarNode,
     ctx: &ControllerState,
@@ -892,7 +892,7 @@ async fn apply_stellar_node(
 
 /// Clean up resources when the StellarNode is deleted
 #[instrument(skip(client, node, ctx), fields(name = %node.name_any(), namespace = node.namespace()))]
-async fn cleanup_stellar_node(
+pub(crate) async fn cleanup_stellar_node(
     client: &Client,
     node: &StellarNode,
     ctx: &ControllerState,
@@ -1721,7 +1721,11 @@ async fn update_dr_status(
 }
 
 /// Error policy determines how to handle reconciliation errors
-fn error_policy(node: Arc<StellarNode>, error: &Error, _ctx: Arc<ControllerState>) -> Action {
+pub(crate) fn error_policy(
+    node: Arc<StellarNode>,
+    error: &Error,
+    _ctx: Arc<ControllerState>,
+) -> Action {
     error!("Reconciliation error for {}: {:?}", node.name_any(), error);
 
     // Use shorter retry for retriable errors

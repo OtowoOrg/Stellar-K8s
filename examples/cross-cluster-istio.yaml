@@ -20,7 +20,7 @@ spec:
   network: Mainnet
   version: "v21.0.0"
   
-  cluster: "primary"
+
   
   resources:
     requests:

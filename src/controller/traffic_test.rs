@@ -47,6 +47,7 @@ mod tests {
             backup_schedule: None,
             resource_meta: None,
             vpa_config: None,
+            read_pool_endpoint: None,
         }
     }
 
@@ -102,6 +103,7 @@ mod tests {
                 }),
                 resource_meta: None,
                 vpa_config: None,
+                read_pool_endpoint: None,
             },
             status: None,
         }
@@ -151,6 +153,7 @@ mod tests {
                 backup_schedule: None,
                 resource_meta: None,
                 vpa_config: None,
+                read_pool_endpoint: None,
             },
             status: None,
         }

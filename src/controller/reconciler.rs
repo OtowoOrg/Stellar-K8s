@@ -561,7 +561,7 @@ pub(crate) async fn apply_stellar_node(
     info!("PVC ensured for {}/{}", namespace, name);
 
     // 2. Handle VSL Fetching for Validators
-    let mut quorum_override = None;
+    let mut quorum_override: Option<crate::controller::vsl::QuorumSet> = None;
     if node.spec.node_type == NodeType::Validator {
         if let Some(config) = &node.spec.validator_config {
             if let Some(vl_source) = &config.vl_source {
@@ -1478,12 +1478,19 @@ async fn update_status(
         }
     }
 
+    let read_pool_endpoint = if node.spec.read_replica_config.is_some() {
+        Some(crate::controller::read_pool::read_pool_endpoint(node))
+    } else {
+        None
+    };
+
     let mut status_patch = serde_json::json!({
         "phase": phase,
         "observedGeneration": observed_generation,
         "replicas": if node.spec.suspended { 0 } else { node.spec.replicas },
         "readyReplicas": ready_replicas,
         "conditions": conditions,
+        "readPoolEndpoint": read_pool_endpoint,
     });
 
     if let Some(msg) = message {

@@ -71,6 +71,10 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validator_config: Option<ValidatorConfig>,
 
+    /// DNS endpoint for the read-replica pool Service.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_pool_endpoint: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub horizon_config: Option<HorizonConfig>,
 
@@ -217,6 +221,7 @@ impl StellarNodeSpec {
     /// # backup_schedule: None,
     /// # vpa_config: None,
     /// # resource_meta: None,
+    /// # read_pool_endpoint: None,
     /// };
     /// match spec.validate() {
     ///     Ok(_) => println!("Valid spec"),
@@ -1015,6 +1020,7 @@ mod tests {
             backup_schedule: None,
             resource_meta: None,
             vpa_config: None,
+            read_pool_endpoint: None,
         };
 
         assert!(spec.validate().is_err());
@@ -1064,6 +1070,7 @@ mod tests {
             backup_schedule: None,
             resource_meta: None,
             vpa_config: None,
+            read_pool_endpoint: None,
         };
 
         assert!(spec.validate().is_ok());

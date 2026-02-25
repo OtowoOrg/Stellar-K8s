@@ -186,7 +186,7 @@ pub async fn delete_pvc(client: &Client, node: &StellarNode) -> Result<()> {
 pub async fn ensure_config_map(
     client: &Client,
     node: &StellarNode,
-    quorum_override: Option<String>,
+    quorum_override: Option<crate::controller::vsl::QuorumSet>,
     enable_mtls: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
@@ -208,7 +208,7 @@ pub async fn ensure_config_map(
 
 fn build_config_map(
     node: &StellarNode,
-    quorum_override: Option<String>,
+    quorum_override: Option<crate::controller::vsl::QuorumSet>,
     enable_mtls: bool,
 ) -> ConfigMap {
     let labels = standard_labels(node);
@@ -232,9 +232,10 @@ fn build_config_map(
         NodeType::Validator => {
             let mut core_cfg = String::new();
             if let Some(config) = &node.spec.validator_config {
-                let quorum = quorum_override.or_else(|| config.quorum_set.clone());
-                if let Some(q) = quorum {
-                    core_cfg.push_str(&q);
+                if let Some(qs) = quorum_override {
+                    core_cfg.push_str(&qs.to_stellar_core_toml());
+                } else if let Some(q) = &config.quorum_set {
+                    core_cfg.push_str(q);
                 }
             }
 

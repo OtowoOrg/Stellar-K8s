@@ -8,6 +8,8 @@ license = "Apache-2.0"
 repository = "https://github.com/stellar/stellar-k8s"
 
 [dependencies]
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+toml = "0.8"
 # Kubernetes client and operator framework
 kube = { version = "0.94", features = [
     "runtime",
@@ -100,7 +102,7 @@ base64 = "0.21"
 # SHA256 for plugin integrity verification
 sha2 = "0.10"
 hex = { version = "0.4", optional = true }
-rand = "0.9.2"
+rand = "0.8"
 rand_distr = "0.5.1"
 
 # Backup scheduler dependencies

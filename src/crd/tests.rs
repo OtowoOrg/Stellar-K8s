@@ -55,6 +55,7 @@ mod stellar_node_spec_validation {
             backup_schedule: None,
             resource_meta: None,
             vpa_config: None,
+            read_pool_endpoint: None,
         }
     }
 
@@ -99,6 +100,7 @@ mod stellar_node_spec_validation {
             backup_schedule: None,
             resource_meta: None,
             vpa_config: None,
+            read_pool_endpoint: None,
         }
     }
 
@@ -143,6 +145,7 @@ mod stellar_node_spec_validation {
             backup_schedule: None,
             resource_meta: None,
             vpa_config: None,
+            read_pool_endpoint: None,
         }
     }
 

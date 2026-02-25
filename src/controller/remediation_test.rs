@@ -51,6 +51,7 @@ mod tests {
                 backup_schedule: None,
                 resource_meta: None,
                 vpa_config: None,
+                read_pool_endpoint: None,
             },
             status: None,
         }

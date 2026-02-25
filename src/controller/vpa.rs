@@ -287,6 +287,7 @@ mod tests {
                 read_replica_config: None,
                 backup_schedule: None,
                 resource_meta: None,
+                read_pool_endpoint: None,
             },
             status: None,
         }

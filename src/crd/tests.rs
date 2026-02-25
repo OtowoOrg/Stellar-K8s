@@ -51,6 +51,7 @@ mod stellar_node_spec_validation {
             dr_config: None,
             topology_spread_constraints: None,
             cve_handling: None,
+            read_replica_config: None,
             resource_meta: None,
         }
     }
@@ -92,6 +93,7 @@ mod stellar_node_spec_validation {
             dr_config: None,
             topology_spread_constraints: None,
             cve_handling: None,
+            read_replica_config: None,
             resource_meta: None,
         }
     }
@@ -133,6 +135,7 @@ mod stellar_node_spec_validation {
             dr_config: None,
             topology_spread_constraints: None,
             cve_handling: None,
+            read_replica_config: None,
             resource_meta: None,
         }
     }

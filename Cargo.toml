@@ -88,8 +88,8 @@ rustls-pemfile = "2.2.0"
 rustls-pki-types = "1.14.0"
 
 # Wasm runtime for custom validation plugins
-wasmtime = { version = "24.0.5", optional = true }
-wasmtime-wasi = { version = "24.0.5", features = ["preview1"], optional = true }
+wasmtime = { version = "24.0.6", optional = true }
+wasmtime-wasi = { version = "24.0.6", features = ["preview1"], optional = true }
 
 # Additional crypto for webhook TLS
 tokio-rustls = { version = "0.25", optional = true }

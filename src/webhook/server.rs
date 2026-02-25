@@ -365,13 +365,37 @@ async fn mutate_handler(
     State(_state): State<Arc<WebhookServer>>,
     Json(review): Json<AdmissionReview<StellarNode>>,
 ) -> impl IntoResponse {
-    // For now, mutation is not supported - just pass through
+    use super::mutation::apply_mutations;
+
     let request: Result<AdmissionRequest<StellarNode>, _> = review.try_into();
 
     match request {
         Ok(req) => {
-            let response = AdmissionResponse::from(&req);
-            (StatusCode::OK, Json(response.into_review()))
+            // Apply mutations to the StellarNode
+            match apply_mutations(&req) {
+                Ok(Some(patch)) => {
+                    let mut response = AdmissionResponse::from(&req);
+                    // Convert JSON patch to bytes
+                    let patch_bytes = serde_json::to_vec(&patch)
+                        .map_err(|e| format!("Failed to serialize patch: {}", e))
+                        .unwrap_or_default();
+                    response.patch = Some(patch_bytes);
+
+                    info!("Applied mutations to StellarNode {}", req.name);
+                    (StatusCode::OK, Json(response.into_review()))
+                }
+                Ok(None) => {
+                    // No mutations needed
+                    let response = AdmissionResponse::from(&req);
+                    (StatusCode::OK, Json(response.into_review()))
+                }
+                Err(e) => {
+                    error!("Failed to apply mutations: {}", e);
+                    let response =
+                        AdmissionResponse::from(&req).deny(format!("Mutation failed: {e}"));
+                    (StatusCode::OK, Json(response.into_review()))
+                }
+            }
         }
         Err(e) => {
             error!("Failed to parse admission request: {}", e);

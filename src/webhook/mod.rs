@@ -39,10 +39,12 @@
 //! server.start("0.0.0.0:8443".parse()?).await?;
 //! ```
 
+pub mod mutation;
 pub mod runtime;
 pub mod server;
 pub mod types;
 
+pub use mutation::apply_mutations;
 pub use runtime::{WasmRuntime, WasmRuntimeBuilder};
 pub use server::{LoadPluginRequest, PluginInfo, PluginListResponse, TlsConfig, WebhookServer};
 pub use types::{

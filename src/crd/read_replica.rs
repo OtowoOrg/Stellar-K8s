@@ -26,16 +26,11 @@ pub struct ReadReplicaConfig {
     pub archive_sharding: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub enum ReadReplicaStrategy {
+    #[default]
     RoundRobin,
     FreshnessPreferred,
-}
-
-impl Default for ReadReplicaStrategy {
-    fn default() -> Self {
-        ReadReplicaStrategy::RoundRobin
-    }
 }
 
 fn default_read_replicas() -> i32 {

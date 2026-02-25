@@ -540,6 +540,7 @@ mod tests {
                 topology_spread_constraints: None,
                 cve_handling: None,
                 resource_meta: None,
+                read_replica_config: None,
             },
             status: Some(StellarNodeStatus {
                 #[allow(deprecated)]

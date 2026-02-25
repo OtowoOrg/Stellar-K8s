@@ -115,6 +115,23 @@ See [kubectl-plugin.md](docs/kubectl-plugin.md) for complete documentation.
 
 ---
 
+## 📊 Monitoring & Observability
+
+Stellar-K8s comes with built-in Prometheus metrics and a pre-configured Grafana dashboard that provides a comprehensive overview of both the operator's health and the managed Stellar nodes.
+
+### Importing the Grafana Dashboard
+
+1. Open your Grafana instance.
+2. Navigate to **Dashboards** -> **Import**.
+3. Upload the `monitoring/grafana-dashboard.json` file provided in this repository.
+4. Select your Prometheus data source when prompted.
+5. The dashboard will now automatically visualize:
+   - Node availability, sync status, and peer connectivity
+   - Controller reconciliation rates and duration (p50, p95, p99)
+   - Error rates and operator resource usage (CPU/Memory)
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on our development process, coding standards, and how to submit pull requests.

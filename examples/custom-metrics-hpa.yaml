@@ -1,0 +1,199 @@
+---
+# Example HorizontalPodAutoscaler using Stellar custom metrics
+# This demonstrates how to scale Horizon API nodes based on Stellar-specific metrics
+#
+# Prerequisites:
+# 1. Stellar operator must be running with REST API enabled
+# 2. Custom metrics API must be registered: 
+#    kubectl get apiservice | grep custom.metrics
+# 3. Horizon pods must have resource requests defined
+#
+# Note: This requires the operator to expose custom metrics through the 
+# Kubernetes Custom Metrics API aggregation layer
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: horizon-hpa-ingestion-lag
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-horizon-hpa
+    app.kubernetes.io/managed-by: stellar-operator
+spec:
+  scaleTargetRef:
+    apiVersion: stellar.org/v1alpha1
+    kind: StellarNode
+    name: horizon-prod
+  
+  minReplicas: 2
+  maxReplicas: 10
+  
+  metrics:
+  # Scale based on ledger ingestion lag
+  # If lag exceeds 5 ledgers, scale up additional Horizon replicas
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  
+  # Custom metric: ledger ingestion lag
+  # Target: Keep lag below 5 ledgers by scaling out
+  - type: Pods
+    pods:
+      metric:
+        name: stellar_ingestion_lag
+      target:
+        type: AverageValue
+        averageValue: "5"
+  
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 30
+      selectPolicy: Max
+
+---
+# Alternative HPA targeting ledger sequence as a metric
+# This can be used to scale based on network activity
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: horizon-hpa-ledger-sequence
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-horizon-hpa-ledger
+    app.kubernetes.io/managed-by: stellar-operator
+spec:
+  scaleTargetRef:
+    apiVersion: stellar.org/v1alpha1
+    kind: StellarNode
+    name: horizon-prod
+  
+  minReplicas: 1
+  maxReplicas: 5
+  
+  metrics:
+  # Scale based on network activity (ledger sequence growth rate)
+  - type: Pods
+    pods:
+      metric:
+        name: stellar_ledger_sequence
+      target:
+        type: AverageValue
+        averageValue: "10000000"  # Scale when average ledger number is high
+  
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 30
+
+---
+# HPA using custom metric for Horizon API request throughput
+# Requires the operator to track requests_per_second metric
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: horizon-hpa-tps
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-horizon-hpa-tps
+    app.kubernetes.io/managed-by: stellar-operator
+spec:
+  scaleTargetRef:
+    apiVersion: stellar.org/v1alpha1
+    kind: StellarNode
+    name: horizon-prod
+  
+  minReplicas: 3
+  maxReplicas: 20
+  
+  metrics:
+  # Scale based on transactions per second
+  - type: Pods
+    pods:
+      metric:
+        name: stellar_horizon_tps
+      target:
+        type: AverageValue
+        averageValue: "1000"  # Scale up if TPS exceeds 1000 per pod
+  
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+      - type: Pods
+        value: 3
+        periodSeconds: 30
+
+---
+# Example with active connections metric
+# Useful for tracking concurrent connections to Stellar Core
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: stellar-core-hpa-connections
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-core-hpa-connections
+    app.kubernetes.io/managed-by: stellar-operator
+spec:
+  scaleTargetRef:
+    apiVersion: stellar.org/v1alpha1
+    kind: StellarNode
+    name: stellar-validator-prod
+  
+  minReplicas: 1
+  maxReplicas: 3
+  
+  metrics:
+  # Scale based on active peer connections
+  - type: Pods
+    pods:
+      metric:
+        name: stellar_active_connections
+      target:
+        type: AverageValue
+        averageValue: "100"  # Scale up if average connections exceed 100
+  
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 30

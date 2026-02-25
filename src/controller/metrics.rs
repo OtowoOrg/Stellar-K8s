@@ -28,6 +28,14 @@ pub static LEDGER_SEQUENCE: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
 pub static INGESTION_LAG: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
+/// Gauge tracking requests per second for Horizon nodes
+pub static HORIZON_TPS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking active connections per node
+pub static ACTIVE_CONNECTIONS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
 /// Global metrics registry
 pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
     let mut registry = Registry::default();
@@ -40,6 +48,16 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_node_ingestion_lag",
         "Lag between latest network ledger and node ledger",
         INGESTION_LAG.clone(),
+    );
+    registry.register(
+        "stellar_horizon_tps",
+        "Transactions per second for Horizon API nodes",
+        HORIZON_TPS.clone(),
+    );
+    registry.register(
+        "stellar_node_active_connections",
+        "Number of active peer connections",
+        ACTIVE_CONNECTIONS.clone(),
     );
     registry
 });
@@ -112,6 +130,34 @@ pub fn set_ingestion_lag_with_dp(
     INGESTION_LAG.get_or_create(&labels).set(val);
 }
 
+/// Update the Horizon TPS metric for a node
+pub fn set_horizon_tps(namespace: &str, name: &str, node_type: &str, network: &str, tps: i64) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+    };
+    HORIZON_TPS.get_or_create(&labels).set(tps);
+}
+
+/// Update the active connections metric for a node
+pub fn set_active_connections(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    connections: i64,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+    };
+    ACTIVE_CONNECTIONS.get_or_create(&labels).set(connections);
+}
+
 fn generate_laplace_noise(epsilon: f64, sensitivity: f64) -> f64 {
     let scale = sensitivity / epsilon;
     let u: f64 = rand::random::<f64>() - 0.5;
@@ -139,5 +185,51 @@ mod tests {
 
         // We can't easily check the value in the global registry without exposing it more,
         // but this ensures the code path runs.
+    }
+
+    #[test]
+    fn test_set_ledger_sequence() {
+        set_ledger_sequence("default", "test-node", "horizon", "testnet", 12345);
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_set_ingestion_lag() {
+        set_ingestion_lag("default", "test-node", "core", "testnet", 5);
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_set_horizon_tps() {
+        set_horizon_tps("default", "horizon-1", "horizon", "testnet", 500);
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_set_active_connections() {
+        set_active_connections("default", "validator-1", "core", "testnet", 25);
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_node_labels_creation() {
+        let labels = NodeLabels {
+            namespace: "stellar-system".to_string(),
+            name: "horizon-prod".to_string(),
+            node_type: "horizon".to_string(),
+            network: "mainnet".to_string(),
+        };
+
+        assert_eq!(labels.namespace, "stellar-system");
+        assert_eq!(labels.name, "horizon-prod");
+        assert_eq!(labels.node_type, "horizon");
+        assert_eq!(labels.network, "mainnet");
+    }
+
+    #[test]
+    fn test_registry_registration() {
+        // Access the registry to ensure metrics are registered
+        let _registry = &*REGISTRY;
+        // If this doesn't panic, metrics are properly registered
     }
 }

@@ -2,14 +2,14 @@ use k8s_openapi::api::core::v1::{Pod, Service, ServicePort, ServiceSpec};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::{
-    api::{Api, Patch, PatchParams, ListParams},
+    api::{Api, ListParams, Patch, PatchParams},
     Client, ResourceExt,
 };
-use std::time::Duration;
-use tracing::{info, debug, instrument};
 use serde::Deserialize;
+use std::time::Duration;
+use tracing::{debug, info, instrument};
 
-use crate::crd::{StellarNode, ReadReplicaStrategy};
+use crate::crd::{ReadReplicaStrategy, StellarNode};
 use crate::error::{Error, Result};
 
 #[derive(Debug, Deserialize)]
@@ -30,17 +30,14 @@ struct LedgerInfo {
 
 /// Reconcile traffic routing for read-only replicas
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn reconcile_traffic_routing(
-    client: &Client,
-    node: &StellarNode,
-) -> Result<()> {
+pub async fn reconcile_traffic_routing(client: &Client, node: &StellarNode) -> Result<()> {
     if node.spec.read_replica_config.is_none() {
         return Ok(());
     }
-    
+
     let config = node.spec.read_replica_config.as_ref().unwrap();
     let _namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    
+
     // 1. Ensure the traffic service exists
     ensure_traffic_service(client, node).await?;
 
@@ -64,15 +61,13 @@ async fn ensure_traffic_service(client: &Client, node: &StellarNode) -> Result<(
     selector.insert("stellar.org/role".to_string(), "read-replica".to_string());
     selector.insert("stellar.org/traffic".to_string(), "enabled".to_string());
 
-    let ports = vec![
-        ServicePort {
-            name: Some("http".to_string()),
-            port: 80,
-            target_port: Some(IntOrString::Int(11626)),
-            protocol: Some("TCP".to_string()),
-            ..Default::default()
-        },
-    ];
+    let ports = vec![ServicePort {
+        name: Some("http".to_string()),
+        port: 80,
+        target_port: Some(IntOrString::Int(11626)),
+        protocol: Some("TCP".to_string()),
+        ..Default::default()
+    }];
 
     let service = Service {
         metadata: ObjectMeta {
@@ -105,7 +100,7 @@ async fn ensure_traffic_service(client: &Client, node: &StellarNode) -> Result<(
 async fn update_pod_labels_based_on_lag(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let pod_api: Api<Pod> = Api::namespaced(client.clone(), &namespace);
-    
+
     // Select read replicas
     let label_selector = format!(
         "app.kubernetes.io/instance={},stellar.org/role=read-replica",
@@ -155,30 +150,38 @@ async fn update_pod_labels_based_on_lag(client: &Client, node: &StellarNode) -> 
 
         ensure_traffic_label(&pod_api, &pod, should_enable).await?;
     }
-    
+
     // Also handle pods that didn't respond (assume unhealthy/lagging)
     // We didn't collect them in pod_ledgers, so we need to iterate all pods again?
     // Optimization: Just iterate original list and check if in pod_ledgers
     // For simplicity, failing to respond means traffic disabled.
-    
+
     Ok(())
 }
 
 async fn ensure_all_ready_pods_enabled(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let pod_api: Api<Pod> = Api::namespaced(client.clone(), &namespace);
-    
+
     let label_selector = format!(
         "app.kubernetes.io/instance={},stellar.org/role=read-replica",
         node.name_any()
     );
-    let pods = pod_api.list(&ListParams::default().labels(&label_selector)).await?;
+    let pods = pod_api
+        .list(&ListParams::default().labels(&label_selector))
+        .await?;
 
     for pod in pods {
         // Check if ready
-        let is_ready = pod.status.as_ref()
+        let is_ready = pod
+            .status
+            .as_ref()
             .and_then(|s| s.conditions.as_ref())
-            .map(|conds| conds.iter().any(|c| c.type_ == "Ready" && c.status == "True"))
+            .map(|conds| {
+                conds
+                    .iter()
+                    .any(|c| c.type_ == "Ready" && c.status == "True")
+            })
             .unwrap_or(false);
 
         ensure_traffic_label(&pod_api, &pod, is_ready).await?;
@@ -187,7 +190,10 @@ async fn ensure_all_ready_pods_enabled(client: &Client, node: &StellarNode) -> R
 }
 
 async fn ensure_traffic_label(api: &Api<Pod>, pod: &Pod, enabled: bool) -> Result<()> {
-    let current_val = pod.metadata.labels.as_ref()
+    let current_val = pod
+        .metadata
+        .labels
+        .as_ref()
         .and_then(|l| l.get("stellar.org/traffic"))
         .map(|s| s.as_str());
 
@@ -196,11 +202,11 @@ async fn ensure_traffic_label(api: &Api<Pod>, pod: &Pod, enabled: bool) -> Resul
     if current_val != desired_val {
         let name = pod.name_any();
         info!("Updating traffic label for {} to {:?}", name, desired_val);
-        
+
         // Patch label using JSON merge patch
         // To remove a label, set it to null
         let patch_json = if let Some(val) = desired_val {
-             serde_json::json!({
+            serde_json::json!({
                 "metadata": {
                     "labels": {
                         "stellar.org/traffic": val
@@ -217,7 +223,12 @@ async fn ensure_traffic_label(api: &Api<Pod>, pod: &Pod, enabled: bool) -> Resul
             })
         };
 
-        api.patch(&name, &PatchParams::apply("stellar-operator"), &Patch::Merge(&patch_json)).await?;
+        api.patch(
+            &name,
+            &PatchParams::apply("stellar-operator"),
+            &Patch::Merge(&patch_json),
+        )
+        .await?;
     }
     Ok(())
 }

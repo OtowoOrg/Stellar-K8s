@@ -30,6 +30,9 @@ mod remediation;
 #[cfg(test)]
 mod remediation_test;
 mod resources;
+mod traffic;
+#[cfg(test)]
+mod traffic_test;
 mod vsl;
 
 pub use archive_health::{calculate_backoff, check_history_archive_health, ArchiveHealthResult};

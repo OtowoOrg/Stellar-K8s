@@ -205,6 +205,7 @@ impl StellarNodeSpec {
     /// # topology_spread_constraints: None,
     /// # cve_handling: None,
     /// # read_replica_config: None,
+    /// # vpa_config: None,
     /// # resource_meta: None,
     /// };
     /// match spec.validate() {

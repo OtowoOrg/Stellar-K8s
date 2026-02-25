@@ -21,6 +21,34 @@ serviceAccount:
   # The name of the service account to use
   name: ""
 
+# Configuration for secrets
+# It can generate standard Kubernetes Secrets or ExternalSecrets mapping to an external store
+secrets:
+  # Whether to create secret manifests
+  create: false
+  # Set to true to generate ExternalSecret manifests instead of standard Secret manifests
+  useExternalSecrets: false
+  # Applicable only when useExternalSecrets is true
+  externalSecret:
+    # the name of the SecretStore or ClusterSecretStore
+    secretStoreRef:
+      name: "aws-secrets"
+      kind: "ClusterSecretStore"
+    # the refresh interval for the ExternalSecret
+    refreshInterval: "1h"
+  # Define the secrets here
+  # For useExternalSecrets: true, 'value' is used as the remoteRef key.
+  # For useExternalSecrets: false, 'value' is base64 encoded into a standard K8s Secret.
+  items: {}
+  # Example:
+  # items:
+  #   validator-seed:
+  #     key: STELLAR_CORE_SEED
+  #     value: "my-validator-seed-value" # or remoteRef key if useExternalSecrets: true
+  #   horizon-db:
+  #     key: DATABASE_URL
+  #     value: "my-db-url"
+
 podAnnotations:
   prometheus.io/scrape: "true"
   prometheus.io/port: "9090"

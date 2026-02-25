@@ -19,7 +19,7 @@ spec:
   version: "v21.0.0"
   
   # Cluster identifier
-  cluster: "us-east-1"
+
   
   resources:
     requests:

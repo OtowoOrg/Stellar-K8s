@@ -377,7 +377,7 @@ async fn mutate_handler(
                     let mut response = AdmissionResponse::from(&req);
                     // Convert JSON patch to bytes
                     let patch_bytes = serde_json::to_vec(&patch)
-                        .map_err(|e| format!("Failed to serialize patch: {}", e))
+                        .map_err(|e| format!("Failed to serialize patch: {e}"))
                         .unwrap_or_default();
                     response.patch = Some(patch_bytes);
 

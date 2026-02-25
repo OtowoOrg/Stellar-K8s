@@ -128,7 +128,7 @@ async fn update_pod_labels_based_on_lag(client: &Client, node: &StellarNode) -> 
     // Gather ledger info
     for pod in &pods.items {
         if let Some(ip) = &pod.status.as_ref().and_then(|s| s.pod_ip.as_ref()) {
-            let url = format!("http://{}:11626/info", ip);
+            let url = format!("http://{ip}:11626/info");
             match http_client.get(&url).send().await {
                 Ok(resp) => {
                     if let Ok(info) = resp.json::<StellarCoreInfo>().await {

@@ -709,8 +709,7 @@ mod tests {
     fn test_pod_list_params_label_selector() {
         let node_name = "test-node";
         let label_selector = format!(
-            "app.kubernetes.io/instance={},stellar.org/role=read-replica",
-            node_name
+            "app.kubernetes.io/instance={node_name},stellar.org/role=read-replica"
         );
 
         // Verify label selector format is correct for Kubernetes API

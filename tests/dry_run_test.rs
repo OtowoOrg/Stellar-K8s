@@ -34,7 +34,7 @@ fn test_dry_run_prevents_resource_updates() {
 
     for resource in &resource_types {
         if dry_run {
-            let _message = format!("Dry Run: Would update {}", resource);
+            let _message = format!("Dry Run: Would update {resource}");
         } else {
             resources_updated.fetch_add(1, Ordering::SeqCst);
         }
@@ -91,7 +91,7 @@ fn test_full_reconciliation_dry_run_no_mutations() {
     let result = std::panic::catch_unwind(|| {
         for (action, resource) in &steps {
             if dry_run {
-                let _msg = format!("Dry Run: Would {} {}", action, resource);
+                let _msg = format!("Dry Run: Would {action} {resource}");
             } else {
                 mutations.fetch_add(1, Ordering::SeqCst);
             }
@@ -146,7 +146,7 @@ fn test_dry_run_event_messages() {
             ActionType::Update => "WouldUpdate",
             ActionType::Delete => "WouldDelete",
         };
-        let message = format!("Dry Run: Would {} {}", action, resource_info);
+        let message = format!("Dry Run: Would {action} {resource_info}");
 
         assert_eq!(reason, *expected_reason);
         assert!(message.starts_with("Dry Run: Would"));

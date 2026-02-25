@@ -539,6 +539,7 @@ mod tests {
                 dr_config: None,
                 topology_spread_constraints: None,
                 cve_handling: None,
+                read_replica_config: None,
                 resource_meta: None,
             },
             status: Some(StellarNodeStatus {

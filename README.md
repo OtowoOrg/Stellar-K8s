@@ -182,7 +182,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines.
 
 ## 👨‍💻 Maintainer
 
-**Otowo Samuel**  
+**Otowo Samuel**
 _DevOps Engineer & Protocol Developer_
 
 Bringing nearly 5 years of DevOps experience and a deep background in blockchain infrastructure tools (core contributor of `starknetnode-kit`). Passionate about building robust, type-safe tooling for the decentralized web.

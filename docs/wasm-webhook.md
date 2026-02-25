@@ -94,13 +94,13 @@ The runtime provides these host functions:
 extern "C" {
     // Get the length of the input JSON
     fn get_input_len() -> i32;
-    
+
     // Read input into plugin memory
     fn read_input(ptr: *mut u8, len: i32) -> i32;
-    
+
     // Write output from plugin memory
     fn write_output(ptr: *const u8, len: i32) -> i32;
-    
+
     // Log a debug message
     fn log_message(ptr: *const u8, len: i32);
 }
@@ -180,17 +180,17 @@ struct ValidationOutput {
 pub extern "C" fn validate() -> i32 {
     // Read input
     let input: ValidationInput = read_validation_input();
-    
+
     // Validate
     let output = if is_valid(&input) {
         ValidationOutput { allowed: true, .. }
     } else {
         ValidationOutput { allowed: false, .. }
     };
-    
+
     // Write output
     write_validation_output(&output);
-    
+
     if output.allowed { 0 } else { 1 }
 }
 ```

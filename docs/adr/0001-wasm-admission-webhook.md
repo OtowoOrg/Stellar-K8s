@@ -81,10 +81,10 @@ Plugins must export a `validate()` function:
 pub extern "C" fn validate() -> i32 {
     // Read input via host functions
     let input: ValidationInput = read_input();
-    
+
     // Perform validation
     let is_valid = validate_stellar_node(&input);
-    
+
     // Write output
     write_output(&ValidationOutput {
         allowed: is_valid,
@@ -92,7 +92,7 @@ pub extern "C" fn validate() -> i32 {
         errors: vec![],
         warnings: vec![],
     });
-    
+
     if is_valid { 0 } else { 1 }
 }
 ```

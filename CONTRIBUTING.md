@@ -58,7 +58,7 @@ If a dependency scan fails due to a RUSTSEC advisory:
 ## Pull Request Process
 
 1. Create a new branch for your feature or fix.
-2. Ensure all tests pass locally: `make ci-local` or use your personalized commands for your tests and changes. 
+2. Ensure all tests pass locally: `make ci-local` or use your personalized commands for your tests and changes.
 3. Ensure all 62+ unit tests pass, including the `StellarNodeSpec` validation tests.
 4. Submit your PR against the `main` branch.
 5. Wait for CI checks to pass (all workflows must be green ✓).

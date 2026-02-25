@@ -5,6 +5,8 @@
 pub mod resource_meta;
 
 mod archive_health;
+#[cfg(test)]
+mod backup_test;
 pub mod captive_core;
 pub mod conditions;
 pub mod cross_cluster;

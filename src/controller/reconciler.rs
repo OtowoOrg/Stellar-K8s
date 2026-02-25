@@ -760,6 +760,19 @@ pub(crate) async fn apply_stellar_node(
     )
     .await?;
 
+    // 6b. Backup CronJob (S3-compatible ledger snapshot backups)
+    apply_or_emit(
+        ctx,
+        node,
+        ActionType::Update,
+        "Backup CronJob",
+        async {
+            resources::ensure_backup_cronjob(client, node).await?;
+            Ok(())
+        },
+    )
+    .await?;
+
     // 7. Perform health check to determine if node is ready
     let health_result = health::check_node_health(client, node, ctx.mtls_config.as_ref()).await?;
 
@@ -1039,6 +1052,15 @@ pub(crate) async fn cleanup_stellar_node(
     apply_or_emit(ctx, node, ActionType::Delete, "PDB", async {
         if let Err(e) = resources::delete_pdb(client, node).await {
             warn!("Failed to delete PodDisruptionBudget: {:?}", e);
+        }
+        Ok(())
+    })
+    .await?;
+
+    // 3d. Delete Backup CronJob
+    apply_or_emit(ctx, node, ActionType::Delete, "Backup CronJob", async {
+        if let Err(e) = resources::delete_backup_cronjob(client, node).await {
+            warn!("Failed to delete backup CronJob: {:?}", e);
         }
         Ok(())
     })

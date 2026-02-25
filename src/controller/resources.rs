@@ -13,11 +13,12 @@ use k8s_openapi::api::autoscaling::v2::{
     HorizontalPodAutoscalerBehavior, HorizontalPodAutoscalerSpec, MetricIdentifier, MetricSpec,
     MetricTarget, ObjectMetricSource,
 };
+use k8s_openapi::api::batch::v1::{CronJob, CronJobSpec, JobSpec, JobTemplateSpec};
 use k8s_openapi::api::core::v1::{
-    ConfigMap, Container, ContainerPort, EnvVar, EnvVarSource, PersistentVolumeClaim,
-    PersistentVolumeClaimSpec, PodSpec, PodTemplateSpec, ResourceRequirements as K8sResources,
-    SecretKeySelector, Service, ServicePort, ServiceSpec, Volume, VolumeMount,
-    VolumeResourceRequirements,
+    ConfigMap, Container, ContainerPort, EmptyDirVolumeSource, EnvVar, EnvVarSource,
+    PersistentVolumeClaim, PersistentVolumeClaimSpec, PersistentVolumeClaimVolumeSource, PodSpec,
+    PodTemplateSpec, ResourceRequirements as K8sResources, SecretKeySelector, Service, ServicePort,
+    ServiceSpec, Volume, VolumeMount, VolumeResourceRequirements,
 };
 use k8s_openapi::api::networking::v1::{
     HTTPIngressPath, HTTPIngressRuleValue, IPBlock, Ingress, IngressBackend, IngressRule,
@@ -33,10 +34,10 @@ use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
 use crate::crd::{
-    BackupConfiguration, BarmanObjectStore, BootstrapConfiguration, Cluster, ClusterSpec,
-    HistoryMode, HsmProvider, IngressConfig, InitDbConfiguration, KeySource, ManagedDatabaseConfig,
-    MonitoringConfiguration, NetworkPolicyConfig, NodeType, PgBouncerSpec, Pooler, PoolerCluster,
-    PoolerSpec, PostgresConfiguration, RolloutStrategy, S3Credentials,
+    BackupConfiguration, BackupScheduleConfig, BarmanObjectStore, BootstrapConfiguration, Cluster,
+    ClusterSpec, HistoryMode, HsmProvider, IngressConfig, InitDbConfiguration, KeySource,
+    ManagedDatabaseConfig, MonitoringConfiguration, NetworkPolicyConfig, NodeType, PgBouncerSpec,
+    Pooler, PoolerCluster, PoolerSpec, PostgresConfiguration, RolloutStrategy, S3Credentials,
     SecretKeySelector as CnpgSecretKeySelector, StellarNode, StorageConfiguration,
     WalBackupConfiguration,
 };
@@ -2639,6 +2640,302 @@ pub async fn delete_pdb(client: &Client, node: &StellarNode) -> Result<()> {
         Ok(_) => info!("Deleted PodDisruptionBudget {}/{}", namespace, name),
         Err(kube::Error::Api(e)) if e.code == 404 => {
             // Resource doesn't exist, ignore
+        }
+        Err(e) => return Err(Error::KubeError(e)),
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// S3 Ledger Snapshot Backup CronJob
+// ============================================================================
+
+/// Shell script executed inside the backup container.
+///
+/// Behaviour:
+/// 1. Creates a timestamped `.tar.gz` archive of `$LEDGER_PATH`.
+/// 2. Uploads the archive to `s3://$S3_BUCKET/$S3_PREFIX/`.
+/// 3. If `$S3_RETENTION_COUNT` is greater than zero, deletes snapshots that
+///    exceed the retention limit (oldest first).
+/// 4. Removes the local temporary archive.
+///
+/// All S3 interactions honour `$S3_ENDPOINT_URL` when set, which allows the
+/// same script to target AWS S3, MinIO, or any other S3-compatible backend.
+const BACKUP_SCRIPT: &str = r#"set -e
+
+ENDPOINT_ARG=""
+if [ -n "${S3_ENDPOINT_URL}" ]; then
+    ENDPOINT_ARG="--endpoint-url ${S3_ENDPOINT_URL}"
+fi
+
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+SNAPSHOT="ledger-snapshot-${TIMESTAMP}.tar.gz"
+
+echo "[stellar-backup] Creating ledger snapshot: ${SNAPSHOT}"
+tar czf "/tmp/${SNAPSHOT}" -C "${LEDGER_PATH}" .
+
+echo "[stellar-backup] Uploading snapshot to s3://${S3_BUCKET}/${S3_PREFIX}/${SNAPSHOT}"
+# shellcheck disable=SC2086
+aws $ENDPOINT_ARG s3 cp \
+    "/tmp/${SNAPSHOT}" \
+    "s3://${S3_BUCKET}/${S3_PREFIX}/${SNAPSHOT}" \
+    --region "${AWS_DEFAULT_REGION}"
+
+echo "[stellar-backup] Upload complete: ${SNAPSHOT}"
+
+if [ "${S3_RETENTION_COUNT:-0}" -gt 0 ]; then
+    echo "[stellar-backup] Applying retention policy: keeping last ${S3_RETENTION_COUNT} snapshots"
+    # shellcheck disable=SC2086
+    aws $ENDPOINT_ARG s3 ls \
+        "s3://${S3_BUCKET}/${S3_PREFIX}/" \
+        --region "${AWS_DEFAULT_REGION}" \
+        | grep "ledger-snapshot-" \
+        | sort \
+        | head -n -"${S3_RETENTION_COUNT}" \
+        | awk '{ print $4 }' \
+        | while IFS= read -r old_snapshot; do
+            echo "[stellar-backup] Removing old snapshot: ${old_snapshot}"
+            # shellcheck disable=SC2086
+            aws $ENDPOINT_ARG s3 rm \
+                "s3://${S3_BUCKET}/${S3_PREFIX}/${old_snapshot}" \
+                --region "${AWS_DEFAULT_REGION}"
+          done
+fi
+
+rm -f "/tmp/${SNAPSHOT}"
+echo "[stellar-backup] Backup finished successfully."
+"#;
+
+/// Build the backup `CronJob` for a `StellarNode`.
+pub(crate) fn build_backup_cronjob(node: &StellarNode, cfg: &BackupScheduleConfig) -> CronJob {
+    let labels = standard_labels(node);
+    let name = resource_name(node, "backup");
+    let pvc_name = resource_name(node, "data");
+
+    let ledger_path = cfg.ledger_path.as_deref().unwrap_or("/data");
+    let prefix = cfg.prefix.as_deref().unwrap_or("snapshots");
+    let image = cfg
+        .image
+        .as_deref()
+        .unwrap_or("amazon/aws-cli:latest")
+        .to_string();
+
+    // Environment variables sourced from the operator spec (non-sensitive).
+    let mut env: Vec<EnvVar> = vec![
+        EnvVar {
+            name: "S3_BUCKET".to_string(),
+            value: Some(cfg.bucket.clone()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "AWS_DEFAULT_REGION".to_string(),
+            value: Some(cfg.region.clone()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "S3_PREFIX".to_string(),
+            value: Some(prefix.to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "LEDGER_PATH".to_string(),
+            value: Some(ledger_path.to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "S3_RETENTION_COUNT".to_string(),
+            value: Some(cfg.retention_count.to_string()),
+            ..Default::default()
+        },
+    ];
+
+    // Optional custom endpoint for MinIO / GCS / other S3-compatible backends.
+    if let Some(endpoint) = &cfg.endpoint {
+        env.push(EnvVar {
+            name: "S3_ENDPOINT_URL".to_string(),
+            value: Some(endpoint.clone()),
+            ..Default::default()
+        });
+    }
+
+    // Sensitive credentials injected from the referenced Kubernetes Secret.
+    env.push(EnvVar {
+        name: "AWS_ACCESS_KEY_ID".to_string(),
+        value_from: Some(EnvVarSource {
+            secret_key_ref: Some(SecretKeySelector {
+                name: Some(cfg.credentials_secret.clone()),
+                key: "AWS_ACCESS_KEY_ID".to_string(),
+                optional: Some(false),
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    env.push(EnvVar {
+        name: "AWS_SECRET_ACCESS_KEY".to_string(),
+        value_from: Some(EnvVarSource {
+            secret_key_ref: Some(SecretKeySelector {
+                name: Some(cfg.credentials_secret.clone()),
+                key: "AWS_SECRET_ACCESS_KEY".to_string(),
+                optional: Some(false),
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    // Session token is optional – the aws CLI ignores an unset variable.
+    env.push(EnvVar {
+        name: "AWS_SESSION_TOKEN".to_string(),
+        value_from: Some(EnvVarSource {
+            secret_key_ref: Some(SecretKeySelector {
+                name: Some(cfg.credentials_secret.clone()),
+                key: "AWS_SESSION_TOKEN".to_string(),
+                optional: Some(true),
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+
+    let volumes = vec![
+        // Node's ledger PVC mounted read-only to prevent data corruption.
+        Volume {
+            name: "ledger-data".to_string(),
+            persistent_volume_claim: Some(PersistentVolumeClaimVolumeSource {
+                claim_name: pvc_name,
+                read_only: Some(true),
+            }),
+            ..Default::default()
+        },
+        // Ephemeral scratch space for the compressed archive.
+        Volume {
+            name: "tmp-storage".to_string(),
+            empty_dir: Some(EmptyDirVolumeSource::default()),
+            ..Default::default()
+        },
+    ];
+
+    let volume_mounts = vec![
+        VolumeMount {
+            name: "ledger-data".to_string(),
+            mount_path: ledger_path.to_string(),
+            read_only: Some(true),
+            ..Default::default()
+        },
+        VolumeMount {
+            name: "tmp-storage".to_string(),
+            mount_path: "/tmp".to_string(),
+            ..Default::default()
+        },
+    ];
+
+    let container = Container {
+        name: "stellar-backup".to_string(),
+        image: Some(image),
+        // Pass the script as a positional argument to `/bin/sh -c`.
+        command: Some(vec!["/bin/sh".to_string(), "-c".to_string()]),
+        args: Some(vec![BACKUP_SCRIPT.to_string()]),
+        env: Some(env),
+        volume_mounts: Some(volume_mounts),
+        ..Default::default()
+    };
+
+    CronJob {
+        metadata: merge_resource_meta(
+            ObjectMeta {
+                name: Some(name.clone()),
+                namespace: node.namespace(),
+                labels: Some(labels),
+                owner_references: Some(vec![owner_reference(node)]),
+                ..Default::default()
+            },
+            &node.spec.resource_meta,
+        ),
+        spec: Some(CronJobSpec {
+            schedule: cfg.schedule.clone(),
+            // Prevent overlapping backup jobs.
+            concurrency_policy: Some("Forbid".to_string()),
+            successful_jobs_history_limit: Some(3),
+            failed_jobs_history_limit: Some(1),
+            job_template: JobTemplateSpec {
+                spec: Some(JobSpec {
+                    template: PodTemplateSpec {
+                        spec: Some(PodSpec {
+                            restart_policy: Some("OnFailure".to_string()),
+                            containers: vec![container],
+                            volumes: Some(volumes),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                    // Retry up to 3 times before marking the job as failed.
+                    backoff_limit: Some(3),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// Reconcile the backup `CronJob` for a `StellarNode`.
+///
+/// Creates or updates the `CronJob` when `spec.backupSchedule.enabled` is
+/// `true`.  Deletes the `CronJob` when the field is absent or disabled so
+/// that removing the config from the spec has the expected teardown effect.
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_backup_cronjob(client: &Client, node: &StellarNode) -> Result<()> {
+    let backup_cfg = match &node.spec.backup_schedule {
+        Some(cfg) if cfg.enabled => cfg,
+        _ => {
+            // Backup not configured or explicitly disabled – clean up any
+            // previously created CronJob.
+            return delete_backup_cronjob(client, node).await;
+        }
+    };
+
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let api: Api<CronJob> = Api::namespaced(client.clone(), &namespace);
+    let cronjob = build_backup_cronjob(node, backup_cfg);
+    let name = cronjob
+        .metadata
+        .name
+        .as_deref()
+        .unwrap_or("")
+        .to_string();
+
+    info!(
+        "Reconciling backup CronJob {}/{} (schedule: {})",
+        namespace, name, backup_cfg.schedule
+    );
+
+    api.patch(
+        &name,
+        &PatchParams::apply("stellar-operator").force(),
+        &Patch::Apply(&cronjob),
+    )
+    .await
+    .map_err(Error::KubeError)?;
+
+    Ok(())
+}
+
+/// Delete the backup `CronJob` for a `StellarNode`.
+///
+/// This is a no-op when the `CronJob` does not exist.
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn delete_backup_cronjob(client: &Client, node: &StellarNode) -> Result<()> {
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let name = resource_name(node, "backup");
+    let api: Api<CronJob> = Api::namespaced(client.clone(), &namespace);
+
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => info!("Deleted backup CronJob {}/{}", namespace, name),
+        Err(kube::Error::Api(e)) if e.code == 404 => {
+            // Already absent – nothing to do.
         }
         Err(e) => return Err(Error::KubeError(e)),
     }

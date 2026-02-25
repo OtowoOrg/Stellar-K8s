@@ -48,6 +48,7 @@ mod tests {
                 topology_spread_constraints: None,
                 cve_handling: None,
                 read_replica_config: None,
+                backup_schedule: None,
                 resource_meta: None,
                 vpa_config: None,
             },

@@ -43,7 +43,7 @@ use crate::crd::{
 use crate::error::{Error, Result};
 
 /// Get the standard labels for a StellarNode's resources
-fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
+pub fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
     let mut labels = BTreeMap::new();
     labels.insert(
         "app.kubernetes.io/name".to_string(),
@@ -66,7 +66,7 @@ fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
 }
 
 /// Create an OwnerReference for garbage collection
-fn owner_reference(node: &StellarNode) -> OwnerReference {
+pub fn owner_reference(node: &StellarNode) -> OwnerReference {
     OwnerReference {
         api_version: StellarNode::api_version(&()).to_string(),
         kind: StellarNode::kind(&()).to_string(),

@@ -122,7 +122,7 @@ impl StellarNetwork {
 ///     limits: Default::default(),
 /// };
 /// ```
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceRequirements {
     /// Minimum resources requested
@@ -147,7 +147,7 @@ impl Default for ResourceRequirements {
 }
 
 /// Resource specification for CPU and memory
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct ResourceSpec {
     /// CPU cores (e.g., "500m", "2")
     pub cpu: String,

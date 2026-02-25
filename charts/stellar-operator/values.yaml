@@ -60,7 +60,7 @@ operator:
   # Enable REST API
   restApiEnabled: true
   # REST API port
-  restApiPort: 8080
+  restApiPort: 9090
   # Metrics port
   metricsPort: 9090
   # Namespaces to watch (empty = all namespaces)
@@ -69,5 +69,5 @@ operator:
 # Service for REST API and metrics
 service:
   type: ClusterIP
-  restApiPort: 8080
+  restApiPort: 9090
   metricsPort: 9090

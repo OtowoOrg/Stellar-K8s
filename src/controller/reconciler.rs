@@ -264,31 +264,54 @@ where
 /// - The requeue timer expires
 #[instrument(skip(ctx), fields(name = %obj.name_any(), namespace = obj.namespace()))]
 async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<Action> {
+    #[cfg(feature = "metrics")]
+    let reconcile_start = std::time::Instant::now();
+
     if !ctx.is_leader.load(std::sync::atomic::Ordering::Relaxed) {
         debug!("Not the leader, skipping reconciliation");
         return Ok(Action::requeue(Duration::from_secs(5)));
     }
 
-    let client = ctx.client.clone();
-    let namespace = obj.namespace().unwrap_or_else(|| "default".to_string());
-    let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+    let res = {
+        let client = ctx.client.clone();
+        let namespace = obj.namespace().unwrap_or_else(|| "default".to_string());
+        let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
 
-    info!(
-        "Reconciling StellarNode {}/{} (type: {:?})",
-        namespace,
-        obj.name_any(),
-        obj.spec.node_type
-    );
+        info!(
+            "Reconciling StellarNode {}/{} (type: {:?})",
+            namespace,
+            obj.name_any(),
+            obj.spec.node_type
+        );
 
-    // Use kube-rs built-in finalizer helper for clean lifecycle management
-    finalizer(&api, STELLAR_NODE_FINALIZER, obj, |event| async {
-        match event {
-            FinalizerEvent::Apply(node) => apply_stellar_node(&client, &node, &ctx).await,
-            FinalizerEvent::Cleanup(node) => cleanup_stellar_node(&client, &node, &ctx).await,
+        // Use kube-rs built-in finalizer helper for clean lifecycle management
+        finalizer(&api, STELLAR_NODE_FINALIZER, obj, |event| async {
+            match event {
+                FinalizerEvent::Apply(node) => apply_stellar_node(&client, &node, &ctx).await,
+                FinalizerEvent::Cleanup(node) => cleanup_stellar_node(&client, &node, &ctx).await,
+            }
+        })
+        .await
+        .map_err(Error::from)
+    };
+
+    #[cfg(feature = "metrics")]
+    {
+        let seconds = reconcile_start.elapsed().as_secs_f64();
+        metrics::observe_reconcile_duration_seconds("stellarnode", seconds);
+        if let Err(err) = &res {
+            // Keep the label cardinality low: a few broad error kinds.
+            let kind = match err {
+                Error::KubeError(_) => "kube",
+                Error::ValidationError(_) => "validation",
+                Error::ConfigError(_) => "config",
+                _ => "unknown",
+            };
+            metrics::inc_reconcile_error("stellarnode", kind);
         }
-    })
-    .await
-    .map_err(Error::from)
+    }
+
+    res
 }
 
 /// Apply/create/update the StellarNode resources

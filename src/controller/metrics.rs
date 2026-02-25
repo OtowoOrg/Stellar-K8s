@@ -1,11 +1,22 @@
 //! Prometheus metrics for the Stellar-K8s operator
+//!
+//! # Exported metrics
+//! The `/metrics` endpoint (when built with `--features metrics`) exports the following metrics:
+//! - `stellar_reconcile_duration_seconds` (histogram): reconcile duration labeled by controller.
+//! - `stellar_reconcile_errors_total` (counter): reconcile errors labeled by controller and kind.
+//! - `stellar_node_ledger_sequence` (gauge): ledger sequence labeled by namespace/name/node_type/network.
+//! - `stellar_node_ingestion_lag` (gauge): ingestion lag labeled by namespace/name/node_type/network.
+//! - `stellar_horizon_tps` (gauge): Horizon TPS labeled by namespace/name/node_type/network.
+//! - `stellar_node_active_connections` (gauge): active peer connections labeled by namespace/name/node_type/network.
 
-use std::sync::atomic::AtomicI64;
+use std::sync::atomic::{AtomicI64, AtomicU64};
 
 use once_cell::sync::Lazy;
 use prometheus_client::encoding::EncodeLabelSet;
+use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::family::Family;
 use prometheus_client::metrics::gauge::Gauge;
+use prometheus_client::metrics::histogram::{exponential_buckets, Histogram};
 use prometheus_client::registry::Registry;
 
 const DP_EPSILON: f64 = 1.0; // Privacy budget
@@ -36,9 +47,52 @@ pub static HORIZON_TPS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
 pub static ACTIVE_CONNECTIONS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
+/// Labels for operator reconcile metrics
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct ReconcileLabels {
+    /// Controller name, e.g. "stellarnode"
+    pub controller: String,
+}
+
+/// Labels for operator error metrics
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct ErrorLabels {
+    /// Controller name, e.g. "stellarnode"
+    pub controller: String,
+    /// Error kind/category, e.g. "kube", "validation", "unknown"
+    pub kind: String,
+}
+
+/// Histogram tracking reconcile duration (seconds)
+pub static RECONCILE_DURATION_SECONDS: Lazy<Family<ReconcileLabels, Histogram>> = Lazy::new(|| {
+    fn reconcile_histogram() -> Histogram {
+        // 1ms .. ~32s across 16 buckets.
+        Histogram::new(exponential_buckets(0.001, 2.0, 16))
+    }
+
+    Family::new_with_constructor(reconcile_histogram)
+});
+
+/// Counter tracking reconcile errors
+pub static RECONCILE_ERRORS_TOTAL: Lazy<Family<ErrorLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
+
 /// Global metrics registry
 pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
     let mut registry = Registry::default();
+
+    registry.register(
+        "stellar_reconcile_duration_seconds",
+        "Duration of reconcile loops in seconds",
+        RECONCILE_DURATION_SECONDS.clone(),
+    );
+
+    registry.register(
+        "stellar_reconcile_errors_total",
+        "Total number of reconcile errors",
+        RECONCILE_ERRORS_TOTAL.clone(),
+    );
+
     registry.register(
         "stellar_node_ledger_sequence",
         "Current ledger sequence number of the Stellar node",
@@ -61,6 +115,25 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
     );
     registry
 });
+
+/// Observe a reconcile duration in seconds.
+pub fn observe_reconcile_duration_seconds(controller: &str, seconds: f64) {
+    let labels = ReconcileLabels {
+        controller: controller.to_string(),
+    };
+    RECONCILE_DURATION_SECONDS
+        .get_or_create(&labels)
+        .observe(seconds);
+}
+
+/// Increment the reconcile error counter.
+pub fn inc_reconcile_error(controller: &str, kind: &str) {
+    let labels = ErrorLabels {
+        controller: controller.to_string(),
+        kind: kind.to_string(),
+    };
+    RECONCILE_ERRORS_TOTAL.get_or_create(&labels).inc();
+}
 
 /// Update the ledger sequence metric for a node
 pub fn set_ledger_sequence(

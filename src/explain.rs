@@ -1,5 +1,5 @@
-/// Module for explaining common Stellar error codes
-/// Reference: https://developers.stellar.org/docs/learn/glossary/errors
+//! Module for explaining common Stellar error codes
+//! Reference: https://developers.stellar.org/docs/learn/glossary/errors
 
 pub struct ErrorExplanation {
     pub summary: &'static str,
@@ -119,7 +119,9 @@ pub fn explain_error(code: &str) {
         None => {
             println!("Status:       Unknown Error Code");
             println!("Description:  This code was not found in the local dictionary. It might be a less common or newer error.");
-            println!("Tip:          Check the official documentation or search on the Horizon API.");
+            println!(
+                "Tip:          Check the official documentation or search on the Horizon API."
+            );
             println!("Documentation: https://developers.stellar.org/docs/learn/glossary/errors");
         }
     }

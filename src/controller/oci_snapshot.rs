@@ -493,6 +493,7 @@ mod tests {
                 alerting: false,
                 database: None,
                 managed_database: None,
+                db_maintenance_config: None,
                 autoscaling: None,
                 vpa_config: None,
                 ingress: None,

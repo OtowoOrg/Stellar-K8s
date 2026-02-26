@@ -175,10 +175,34 @@ async fn emit_event(
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let events: Api<Event> = Api::namespaced(client.clone(), &namespace);
 
+    use opentelemetry::{global, propagation::Injector};
+    use std::collections::BTreeMap;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+    struct HashMapInjector<'a>(&'a mut BTreeMap<String, String>);
+
+    impl<'a> Injector for HashMapInjector<'a> {
+        fn set(&mut self, key: &str, value: String) {
+            self.0.insert(key.to_string(), value);
+        }
+    }
+
+    let mut annotations = BTreeMap::new();
+    let cx = tracing::Span::current().context();
+    global::get_text_map_propagator(|propagator| {
+        propagator.inject_context(&cx, &mut HashMapInjector(&mut annotations));
+    });
+    let annotations_opt = if annotations.is_empty() {
+        None
+    } else {
+        Some(annotations)
+    };
+
     let time = chrono::Utc::now();
     let event = Event {
         metadata: kube::api::ObjectMeta {
             generate_name: Some(format!("{}-event-", node.name_any())),
+            annotations: annotations_opt,
             ..Default::default()
         },
         type_: Some(event_type.to_string()),

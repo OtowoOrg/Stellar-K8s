@@ -15,6 +15,34 @@ use tracing::info;
 use crate::controller::ControllerState;
 use crate::{Error, MtlsConfig, Result};
 
+use axum::http::{HeaderMap, HeaderName, HeaderValue};
+use axum::{
+    extract::Request,
+    middleware::{self, Next},
+    response::Response,
+};
+use opentelemetry::{global, propagation::Extractor};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+struct HeaderExtractor<'a>(&'a HeaderMap);
+
+impl<'a> Extractor for HeaderExtractor<'a> {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).and_then(|v: &HeaderValue| v.to_str().ok())
+    }
+    fn keys(&self) -> Vec<&str> {
+        self.0.keys().map(|k: &HeaderName| k.as_str()).collect()
+    }
+}
+
+async fn extract_trace_context(request: Request, next: Next) -> Response {
+    let parent_cx = global::get_text_map_propagator(|propagator| {
+        propagator.extract(&HeaderExtractor(request.headers()))
+    });
+    tracing::Span::current().set_parent(parent_cx);
+    next.run(request).await
+}
+
 use super::custom_metrics;
 use super::handlers;
 
@@ -45,6 +73,7 @@ pub async fn run_server(
             "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/stellarnodes.stellar.org/:name/:metric",
             get(custom_metrics::get_stellar_node_metric),
         )
+        .layer(middleware::from_fn(extract_trace_context))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

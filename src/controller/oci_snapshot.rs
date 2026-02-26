@@ -483,6 +483,7 @@ mod tests {
                     kms_config: None,
                     vl_source: None,
                     hsm_config: None,
+                    dynamic_quorum: None,
                 }),
                 horizon_config: None,
                 soroban_config: None,

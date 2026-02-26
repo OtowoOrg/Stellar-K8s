@@ -73,6 +73,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                     kms_config: None,
                     vl_source: None,
                     hsm_config: None,
+                    dynamic_quorum: None,
                 }),
                 horizon_config: None,
                 soroban_config: None,
@@ -294,6 +295,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             mtls_config: None,
             dry_run: true,
             is_leader: Arc::new(AtomicBool::new(true)),
+            quorum_optimizer: Arc::new(tokio::sync::Mutex::new(crate::controller::quorum_optimizer::QuorumOptimizer::new())),
         });
 
         // Test with a retriable error (network-related)
@@ -322,6 +324,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             mtls_config: None,
             dry_run: true,
             is_leader: Arc::new(AtomicBool::new(true)),
+            quorum_optimizer: Arc::new(tokio::sync::Mutex::new(crate::controller::quorum_optimizer::QuorumOptimizer::new())),
         });
 
         // Test with validation error (non-retriable)
@@ -349,6 +352,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             mtls_config: None,
             dry_run: true,
             is_leader: Arc::new(AtomicBool::new(true)),
+            quorum_optimizer: Arc::new(tokio::sync::Mutex::new(crate::controller::quorum_optimizer::QuorumOptimizer::new())),
         });
 
         let errors = vec![
@@ -568,6 +572,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             mtls_config: None,
             dry_run: false,
             is_leader: Arc::new(AtomicBool::new(true)),
+            quorum_optimizer: Arc::new(tokio::sync::Mutex::new(crate::controller::quorum_optimizer::QuorumOptimizer::new())),
         };
 
         assert_eq!(state.operator_namespace, "test-namespace");
@@ -591,6 +596,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             mtls_config: None,
             dry_run: true,
             is_leader: Arc::new(AtomicBool::new(true)),
+            quorum_optimizer: Arc::new(tokio::sync::Mutex::new(crate::controller::quorum_optimizer::QuorumOptimizer::new())),
         };
 
         assert!(

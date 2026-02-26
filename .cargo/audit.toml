@@ -15,4 +15,10 @@ ignore = [
     "RUSTSEC-2024-0436",
     # rustls-pemfile 2.2.0 – unmaintained, via kube-client / axum-server (transitive)
     "RUSTSEC-2025-0134",
+    # rsa 0.9.10 – Marvin Attack timing sidechannel, via sqlx-mysql 0.8.6.
+    # This project only uses the sqlx postgres driver; the rsa code path in
+    # sqlx-mysql is never executed. No fixed version of rsa is available
+    # upstream. Re-evaluate when https://github.com/RustSec/advisory-db/issues
+    # tracks a patched release.
+    "RUSTSEC-2023-0071",
 ]

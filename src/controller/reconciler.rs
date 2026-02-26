@@ -82,6 +82,7 @@ pub struct ControllerState {
     pub mtls_config: Option<crate::MtlsConfig>,
     pub dry_run: bool,
     pub is_leader: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub quorum_optimizer: Arc<tokio::sync::Mutex<super::quorum_optimizer::QuorumOptimizer>>,
 }
 
 /// Main entry point to start the controller
@@ -657,6 +658,70 @@ pub(crate) async fn apply_stellar_node(
                             &format!("Failed to fetch VSL from {vl_source}: {e}"),
                         )
                         .await?;
+                    }
+                }
+            }
+        }
+    }
+
+    // Handle Dynamic Quorum Optimization
+    if node.spec.node_type == NodeType::Validator {
+        if let Some(config) = node
+            .spec
+            .validator_config
+            .as_ref()
+            .and_then(|c| c.dynamic_quorum.as_ref())
+        {
+            if config.enabled {
+                // Get Pod IP for health check
+                let pods: Api<k8s_openapi::api::core::v1::Pod> =
+                    Api::namespaced(client.clone(), &namespace);
+                let pod_list = pods
+                    .list(
+                        &kube::api::ListParams::default()
+                            .labels(&format!("app.kubernetes.io/instance={}", name)),
+                    )
+                    .await?;
+
+                if let Some(pod) = pod_list.items.first() {
+                    if let Some(pod_ip) = pod.status.as_ref().and_then(|s| s.pod_ip.as_ref()) {
+                        let mut optimizer = ctx.quorum_optimizer.lock().await;
+                        // Use self-info as a starting point, but in practice we'd iterate over all peers in the quorum set
+                        // For this implementation, we monitor the local pod and its view of the network
+                        if let Err(e) = optimizer
+                            .update_node_health(pod_ip, "LOCAL_NODE", &name, config)
+                            .await
+                        {
+                            debug!("Health update failed for {}: {}", name, e);
+                        }
+
+                        let dq_status = optimizer.get_status(config);
+
+                        // Update status with optimization results
+                        let mut status = node.status.clone().unwrap_or_default();
+                        status.dynamic_quorum = Some(dq_status.clone());
+
+                        // If autoApply is enabled and we have a recommendation, use it
+                        if config.enabled && config.auto_apply {
+                            if let Some(rec) = dq_status.recommended_quorum_set {
+                                info!("Automatically applying recommended quorum set for {}", name);
+                                quorum_override = Some(
+                                    vsl::QuorumSet::from_toml(&rec)
+                                        .unwrap_or_else(|_| vsl::QuorumSet::default()),
+                                );
+                            }
+                        }
+
+                        // Patch status
+                        let status_api: Api<StellarNode> =
+                            Api::namespaced(client.clone(), &namespace);
+                        status_api
+                            .patch_status(
+                                &name,
+                                &PatchParams::default(),
+                                &Patch::Merge(serde_json::json!({ "status": status })),
+                            )
+                            .await?;
                     }
                 }
             }

@@ -67,7 +67,7 @@ pub const TRUSTED_VSL_SIGNERS: &[&str] = &[
 // ---------------------------------------------------------------------------
 
 /// A single validator entry inside a VSL.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct VslValidator {
     /// Human-readable name (e.g. "SDF 1")
@@ -83,7 +83,7 @@ pub struct VslValidator {
 }
 
 /// An inner quorum set nested inside the top-level quorum set.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct InnerQuorumSet {
     /// Number of validators in this group that must agree
@@ -97,7 +97,7 @@ pub struct InnerQuorumSet {
 ///
 /// This is the type returned by [`fetch_vsl`] and consumed by the
 /// stellar-core.cfg generation logic.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct QuorumSet {
     /// How many of the top-level validators/inner-sets must agree.
@@ -111,6 +111,19 @@ pub struct QuorumSet {
 }
 
 impl QuorumSet {
+    /// Parse a quorum set from a TOML string (no signature verification).
+    /// Used for applying recommended quorum sets from the optimizer.
+    pub fn from_toml(toml: &str) -> Result<Self> {
+        let doc: RawVslDocument = toml::from_str(toml)
+            .map_err(|e| Error::ConfigError(format!("Failed to parse QuorumSet TOML: {e}")))?;
+
+        Ok(QuorumSet {
+            threshold: (doc.validators.len() as u32 / 2) + 1,
+            validators: doc.validators,
+            inner_sets: doc.quorum_sets,
+        })
+    }
+
     /// Render this quorum set as the TOML fragment expected by stellar-core.cfg.
     ///
     /// # Example output

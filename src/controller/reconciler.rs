@@ -926,6 +926,7 @@ pub(crate) async fn apply_stellar_node(
             resources::ensure_pdb(client, node).await?;
             resources::ensure_alerting(client, node).await?;
             resources::ensure_network_policy(client, node).await?;
+        resources::ensure_ebpf_agent(client, node).await?;
             Ok(())
         },
     )

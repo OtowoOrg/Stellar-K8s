@@ -1,0 +1,12 @@
+[package]
+name = "stellar-ebpf-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aya = { version = "0.13", optional = true }
+aya-ebpf = { version = "0.1", optional = true }
+aya-log-ebpf = { version = "0.1", optional = true }
+
+[features]
+user = ["dep:aya"]

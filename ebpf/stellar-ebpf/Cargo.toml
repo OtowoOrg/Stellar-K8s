@@ -1,0 +1,21 @@
+[package]
+name = "stellar-ebpf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aya-ebpf = "0.1"
+aya-log-ebpf = "0.1"
+stellar-ebpf-common = { path = "../stellar-ebpf-common" }
+network-types = "0.0.5"
+
+[[bin]]
+name = "stellar-ebpf"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+debug = false
+codegen-units = 1
+lto = true
+panic = "abort"

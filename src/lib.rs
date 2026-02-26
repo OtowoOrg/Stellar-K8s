@@ -7,6 +7,7 @@ pub mod backup;
 pub mod carbon_aware;
 pub mod controller;
 pub mod crd;
+pub mod ebpf;
 pub mod error;
 pub mod scheduler;
 pub mod telemetry;

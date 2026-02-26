@@ -13,6 +13,7 @@ use super::types::{
     AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
     DisasterRecoveryStatus, ExternalDatabaseConfig, GlobalDiscoveryConfig, HistoryMode,
     HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig, NetworkPolicyConfig,
+    EbpfIsolationConfig,
     NodeType, OciSnapshotConfig, ResourceRequirements, RetentionPolicy, RolloutStrategy,
     SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig, VpaConfig,
 };
@@ -137,6 +138,9 @@ pub struct StellarNodeSpec {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dr_config: Option<DisasterRecoveryConfig>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ebpf_isolation: Option<EbpfIsolationConfig>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Vec<serde_json::Value>>")]

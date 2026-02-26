@@ -47,6 +47,13 @@ jobs:
         with:
           shared-key: "ci-lint"
 
+      - name: Create dummy eBPF bytecode for CI
+        run: |
+          mkdir -p target/bpfel-unknown-none/debug
+          touch target/bpfel-unknown-none/debug/stellar-ebpf
+          mkdir -p target/bpfel-unknown-none/release
+          touch target/bpfel-unknown-none/release/stellar-ebpf
+
       - name: Check formatting
         run: cargo fmt --all --check
 
@@ -70,6 +77,13 @@ jobs:
         with:
           shared-key: "ci-test"
 
+      - name: Create dummy eBPF bytecode for CI
+        run: |
+          mkdir -p target/bpfel-unknown-none/debug
+          touch target/bpfel-unknown-none/debug/stellar-ebpf
+          mkdir -p target/bpfel-unknown-none/release
+          touch target/bpfel-unknown-none/release/stellar-ebpf
+
       - name: Run tests
         run: cargo test --workspace --all-features --verbose
 
@@ -90,6 +104,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "ci-build"
+
+      - name: Create dummy eBPF bytecode for CI
+        run: |
+          mkdir -p target/bpfel-unknown-none/debug
+          touch target/bpfel-unknown-none/debug/stellar-ebpf
+          mkdir -p target/bpfel-unknown-none/release
+          touch target/bpfel-unknown-none/release/stellar-ebpf
 
       - name: Build release
         run: cargo build --release --locked

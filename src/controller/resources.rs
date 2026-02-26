@@ -38,7 +38,7 @@ use tracing::{info, instrument, warn};
 use crate::crd::{
     BackupConfiguration, BarmanObjectStore, BootstrapConfiguration, Cluster, ClusterSpec,
     HistoryMode, HsmProvider, IngressConfig, InitDbConfiguration, KeySource, ManagedDatabaseConfig,
-    MonitoringConfiguration, NetworkPolicyConfig, NodeType, PgBouncerSpec, Pooler, PoolerCluster,
+    MonitoringConfiguration, NetworkPolicyConfig, EbpfIsolationConfig, NodeType, PgBouncerSpec, Pooler, PoolerCluster,
     PoolerSpec, PostgresConfiguration, RolloutStrategy, S3Credentials,
     SecretKeySelector as CnpgSecretKeySelector, StellarNode, StorageConfiguration,
     WalBackupConfiguration,
@@ -2239,4 +2239,101 @@ pub async fn delete_pdb(client: &Client, node: &StellarNode) -> Result<()> {
     }
 
     Ok(())
+}
+
+// ============================================================================
+// eBPF Agent (DaemonSet)
+// ============================================================================
+
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_ebpf_agent(client: &Client, node: &StellarNode) -> Result<()> {
+    let ebpf_cfg = match &node.spec.ebpf_isolation {
+        Some(cfg) if cfg.enabled => cfg,
+        _ => return Ok(()),
+    };
+
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let api: Api<k8s_openapi::api::apps::v1::DaemonSet> = Api::namespaced(client.clone(), &namespace);
+    let name = "stellar-ebpf-agent";
+
+    let ds = build_ebpf_agent_daemonset(node, ebpf_cfg);
+
+    api.patch(
+        &name,
+        &PatchParams::apply("stellar-operator").force(),
+        &Patch::Apply(&ds),
+    )
+    .await?;
+
+    info!("eBPF Agent DaemonSet ensured in namespace {}", namespace);
+    Ok(())
+}
+
+fn build_ebpf_agent_daemonset(node: &StellarNode, _config: &EbpfIsolationConfig) -> k8s_openapi::api::apps::v1::DaemonSet {
+    use k8s_openapi::api::apps::v1::{DaemonSet, DaemonSetSpec};
+    use k8s_openapi::api::core::v1::{Container, HostPathVolumeSource, PodSpec, PodTemplateSpec, Volume, VolumeMount, SecurityContext, Capabilities};
+
+    let labels = BTreeMap::from([
+        ("app.kubernetes.io/name".to_string(), "stellar-ebpf-agent".to_string()),
+        ("app.kubernetes.io/managed-by".to_string(), "stellar-operator".to_string()),
+    ]);
+
+    DaemonSet {
+        metadata: ObjectMeta {
+            name: Some("stellar-ebpf-agent".to_string()),
+            namespace: node.namespace(),
+            labels: Some(labels.clone()),
+            owner_references: Some(vec![owner_reference(node)]),
+            ..Default::default()
+        },
+        spec: Some(DaemonSetSpec {
+            selector: LabelSelector {
+                match_labels: Some(labels.clone()),
+                ..Default::default()
+            },
+            template: PodTemplateSpec {
+                metadata: Some(ObjectMeta {
+                    labels: Some(labels),
+                    ..Default::default()
+                }),
+                spec: Some(PodSpec {
+                    host_network: Some(true),
+                    host_pid: Some(true),
+                    containers: vec![Container {
+                        name: "agent".to_string(),
+                        image: Some("stellar/ebpf-agent:latest".to_string()),
+                        security_context: Some(SecurityContext {
+                            privileged: Some(true),
+                            capabilities: Some(Capabilities {
+                                add: Some(vec!["SYS_ADMIN".to_string(), "NET_ADMIN".to_string()]),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        }),
+                        volume_mounts: Some(vec![
+                            VolumeMount {
+                                name: "sys".to_string(),
+                                mount_path: "/sys".to_string(),
+                                ..Default::default()
+                            },
+                        ]),
+                        ..Default::default()
+                    }],
+                    volumes: Some(vec![
+                        Volume {
+                            name: "sys".to_string(),
+                            host_path: Some(HostPathVolumeSource {
+                                path: "/sys".to_string(),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        },
+                    ]),
+                    ..Default::default()
+                }),
+            },
+            ..Default::default()
+        }),
+        status: None,
+    }
 }

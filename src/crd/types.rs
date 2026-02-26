@@ -557,6 +557,34 @@ impl Default for NetworkPolicyConfig {
     }
 }
 
+/// eBPF-based deep packet inspection and network isolation
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EbpfIsolationConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Ports to filter (default: [11625])
+    #[serde(default = "default_ebpf_ports")]
+    pub ports: Vec<u16>,
+    /// Export metrics to Prometheus
+    #[serde(default = "default_true")]
+    pub export_metrics: bool,
+}
+
+fn default_ebpf_ports() -> Vec<u16> {
+    vec![11625]
+}
+
+impl Default for EbpfIsolationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            ports: default_ebpf_ports(),
+            export_metrics: true,
+        }
+    }
+}
+
 /// Rollout strategy for updates
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

@@ -840,6 +840,10 @@ pub struct StellarNodeStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_generation: Option<i64>,
 
+    /// Dynamic quorum optimization status
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dynamic_quorum: Option<super::types::DynamicQuorumStatus>,
+
     /// Status of the cross-region disaster recovery setup (if enabled)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dr_status: Option<DisasterRecoveryStatus>,
@@ -1091,6 +1095,7 @@ mod tests {
                 kms_config: None,
                 vl_source: None,
                 hsm_config: None,
+                dynamic_quorum: None,
             }),
             horizon_config: None,
             soroban_config: None,

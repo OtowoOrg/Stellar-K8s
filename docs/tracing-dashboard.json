@@ -1,0 +1,282 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_TEMPO",
+      "label": "Tempo",
+      "description": "Grafana Tempo datasource for distributed traces",
+      "type": "datasource",
+      "pluginId": "tempo",
+      "pluginName": "Tempo"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "tempo",
+      "name": "Tempo",
+      "version": "1.0.0"
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Distributed tracing dashboard for the Stellar-K8s operator, REST API, and admission webhook. Data sourced from OpenTelemetry → OTLP → Grafana Tempo.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "🔭 Trace Explorer",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "description": "All traces from the stellar-operator service. Click a trace to inspect individual spans.",
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "spanBar": { "type": "None" }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "query": "{ service.name = \"stellar-operator\" }",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "All Stellar Operator Traces",
+      "type": "traces"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "id": 101,
+      "title": "⚙️ Reconciler",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "description": "Traces for the main reconcile loop. High latency indicates expensive reconcile operations.",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 18 },
+      "id": 2,
+      "options": {},
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "query": "{ span.name = \"reconcile\" }",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "Reconcile Spans",
+      "type": "traces"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "description": "Traces for the apply_stellar_node function, which creates/updates Kubernetes resources.",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 18 },
+      "id": 3,
+      "options": {},
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "query": "{ span.name = \"apply_stellar_node\" }",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "Resource Apply Spans",
+      "type": "traces"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "description": "Reconcile operations that resulted in errors. Use these traces to diagnose failures.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 28 },
+      "id": 4,
+      "options": {},
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "query": "{ span.name = \"reconcile\" && status = error }",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "Reconcile Errors",
+      "type": "traces"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
+      "id": 102,
+      "title": "🌐 REST API",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "description": "HTTP request traces for the REST API server (port 9090). Includes all routes including /health, /api/v1/nodes, and /metrics.",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 39 },
+      "id": 5,
+      "options": {},
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "query": "{ service.name = \"stellar-operator\" && span.http.method != \"\" }",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "REST API Requests",
+      "type": "traces"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "description": "REST API requests that returned HTTP 4xx or 5xx status codes.",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 39 },
+      "id": 6,
+      "options": {},
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "query": "{ service.name = \"stellar-operator\" && span.http.status_code >= 400 }",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "REST API Errors (4xx/5xx)",
+      "type": "traces"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 49 },
+      "id": 103,
+      "title": "🔒 Admission Webhook",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "description": "Traces for incoming admission webhook requests from the Kubernetes API server.",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 50 },
+      "id": 7,
+      "options": {},
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "query": "{ span.name = \"validate_handler\" }",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "Webhook Validate Requests",
+      "type": "traces"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "description": "Traces for admission webhook mutation requests (defaulting webhook).",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 50 },
+      "id": 8,
+      "options": {},
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "query": "{ span.name = \"mutate_handler\" }",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "Webhook Mutate Requests",
+      "type": "traces"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "description": "Webhook validation requests that resulted in a denial (pod/resource blocked by policy).",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 60 },
+      "id": 9,
+      "options": {},
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "query": "{ span.name = \"validate_handler\" && status = error }",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "Webhook Validation Denials",
+      "type": "traces"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 70 },
+      "id": 104,
+      "title": "🔍 Custom Trace Search",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "description": "Use TraceQL to write custom queries. Example: { service.name = \"stellar-operator\" && duration > 500ms }",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 71 },
+      "id": 10,
+      "options": {},
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "query": "{ service.name = \"stellar-operator\" && duration > 500ms }",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "Slow Spans (>500ms)",
+      "type": "traces"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["tracing", "stellar-k8s", "opentelemetry", "tempo"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Stellar Operator – Distributed Tracing",
+  "uid": "stellar_tracing_dashboard",
+  "version": 2
+}

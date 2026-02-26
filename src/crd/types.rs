@@ -267,6 +267,69 @@ pub struct ValidatorConfig {
     /// Cloud HSM configuration for secure key loading (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hsm_config: Option<HsmConfig>,
+    /// Dynamic quorum optimization configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dynamic_quorum: Option<DynamicQuorumConfig>,
+}
+
+/// Configuration for dynamic quorum set optimization
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DynamicQuorumConfig {
+    /// Enable automatic optimization based on peer health
+    #[serde(default)]
+    pub enabled: bool,
+    /// Automatically apply recommended changes to the quorum set
+    #[serde(default)]
+    pub auto_apply: bool,
+    /// Latency threshold in milliseconds (default: 2000ms)
+    #[serde(default = "default_dq_latency_threshold")]
+    pub latency_threshold_ms: u32,
+    /// Minimum trust score required to stay in the quorum set (0-100, default: 70)
+    #[serde(default = "default_dq_min_trust_score")]
+    pub min_trust_score: u32,
+    /// Number of observations to calculate uptime (default: 60)
+    #[serde(default = "default_dq_observation_window")]
+    pub observation_window: u32,
+}
+
+fn default_dq_latency_threshold() -> u32 {
+    2000
+}
+
+fn default_dq_min_trust_score() -> u32 {
+    70
+}
+
+fn default_dq_observation_window() -> u32 {
+    60
+}
+
+/// Health metrics for a single peer in the quorum set
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PeerHealthStatus {
+    pub public_key: String,
+    pub name: String,
+    pub latency_ms: u32,
+    pub uptime_percent: f32,
+    pub ledger_lag: u64,
+    pub trust_score: u32,
+    pub last_seen: String,
+}
+
+/// Dynamic quorum status reported by the operator
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DynamicQuorumStatus {
+    /// Current trust scores and health metrics for known peers
+    #[serde(default)]
+    pub peers: Vec<PeerHealthStatus>,
+    /// The currently recommended quorum set (TOML format)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended_quorum_set: Option<String>,
+    /// Last time the quorum optimization was calculated
+    pub last_optimized_at: Option<String>,
 }
 
 // =============================================================================

@@ -313,6 +313,9 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         mtls_config: mtls_config.clone(),
         dry_run: args.dry_run,
         is_leader: Arc::clone(&is_leader),
+        quorum_optimizer: Arc::new(tokio::sync::Mutex::new(
+            controller::quorum_optimizer::QuorumOptimizer::new(),
+        )),
     });
 
     // Start the peer discovery manager

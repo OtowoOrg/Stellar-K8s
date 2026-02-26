@@ -29,6 +29,7 @@ pub mod peer_discovery;
 #[cfg(test)]
 mod peer_discovery_test;
 pub mod quorum;
+pub mod quorum_optimizer;
 pub mod read_pool;
 mod reconciler;
 #[cfg(test)]

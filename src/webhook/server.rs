@@ -7,13 +7,36 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use axum::{
-    extract::State,
+    extract::{Request, State},
     http::StatusCode,
-    response::IntoResponse,
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
+use opentelemetry::{global, propagation::Extractor};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+struct HeaderExtractor<'a>(&'a HeaderMap);
+
+impl<'a> Extractor for HeaderExtractor<'a> {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).and_then(|v: &HeaderValue| v.to_str().ok())
+    }
+    fn keys(&self) -> Vec<&str> {
+        self.0.keys().map(|k: &HeaderName| k.as_str()).collect()
+    }
+}
+
+async fn extract_trace_context(request: Request, next: Next) -> Response {
+    let parent_cx = global::get_text_map_propagator(|propagator| {
+        propagator.extract(&HeaderExtractor(request.headers()))
+    });
+    tracing::Span::current().set_parent(parent_cx);
+    next.run(request).await
+}
 use kube::core::admission::{AdmissionRequest, AdmissionResponse, AdmissionReview};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -265,6 +288,8 @@ impl WebhookServer {
                 "/plugins/:name",
                 axum::routing::delete(remove_plugin_handler),
             )
+            .layer(middleware::from_fn(extract_trace_context))
+            .layer(tower_http::trace::TraceLayer::new_for_http())
             .with_state(state);
 
         info!("Starting webhook server on {}", addr);

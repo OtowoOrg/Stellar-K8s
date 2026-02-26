@@ -43,6 +43,7 @@ mod tests {
                     kms_config: None,
                     vl_source: None,
                     hsm_config: None,
+                    dynamic_quorum: None,
                 }),
                 horizon_config: None,
                 soroban_config: None,
@@ -53,6 +54,7 @@ mod tests {
                 alerting: false,
                 database: None,
                 managed_database: None,
+                db_maintenance_config: None,
                 autoscaling: None,
                 vpa_config: None,
                 ingress: None,
@@ -68,7 +70,6 @@ mod tests {
                 snapshot_schedule: None,
                 restore_from_snapshot: None,
                 read_replica_config: None,
-                db_maintenance_config: None,
                 oci_snapshot: None,
                 service_mesh: Some(ServiceMeshConfig {
                     sidecar_injection: true,

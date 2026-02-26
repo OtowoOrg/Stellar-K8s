@@ -181,6 +181,7 @@ mod stellar_node_spec_validation {
             size: "100Gi".to_string(),
             retention_policy: Default::default(),
             annotations: None,
+            ..Default::default()
         }
     }
 

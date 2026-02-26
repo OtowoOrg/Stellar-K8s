@@ -219,6 +219,7 @@ mod tests {
                     size: "100Gi".to_string(),
                     retention_policy: Default::default(),
                     annotations: None,
+                    ..Default::default()
                 },
                 validator_config: None,
                 horizon_config: None,

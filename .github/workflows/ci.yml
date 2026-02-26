@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Audit for vulnerabilities
-        uses: actions-rust-lang/audit-check@v1
+        uses: actions-rs/audit-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -96,7 +96,6 @@ jobs:
           path: |
             target/release/stellar-operator
             target/release/kubectl-stellar
-            target/release/pqc-sidecar
           retention-days: 7
 
   docker:

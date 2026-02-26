@@ -67,6 +67,27 @@ pub static ACTIVE_CONNECTIONS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
 pub static ARCHIVE_LEDGER_LAG: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
+/// Gauge tracking number of critical nodes in the quorum
+pub static QUORUM_CRITICAL_NODES: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking minimum quorum overlap count
+pub static QUORUM_MIN_OVERLAP: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Histogram tracking consensus latency per validator
+pub static QUORUM_CONSENSUS_LATENCY_MS: Lazy<Family<NodeLabels, Histogram>> = Lazy::new(|| {
+    fn latency_histogram() -> Histogram {
+        // 1ms .. ~32s across 16 buckets
+        Histogram::new(exponential_buckets(1.0, 2.0, 16))
+    }
+    Family::new_with_constructor(latency_histogram)
+});
+
+/// Gauge tracking quorum fragility score (0.0 to 1.0)
+pub static QUORUM_FRAGILITY_SCORE: Lazy<Family<NodeLabels, Gauge<f64, AtomicU64>>> =
+    Lazy::new(Family::default);
+
 /// Labels for operator reconcile metrics
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct ReconcileLabels {
@@ -213,16 +234,38 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         ARCHIVE_LEDGER_LAG.clone(),
     );
 
+    // Register reactive update metrics (from HEAD)
     registry.register(
         "stellar_reactive_status_updates_total",
         "Total number of reactive status updates from DB triggers",
         REACTIVE_STATUS_UPDATES_TOTAL.clone(),
     );
-
     registry.register(
         "stellar_api_polls_avoided_total",
         "Total number of API health check polls avoided",
         API_POLLS_AVOIDED_TOTAL.clone(),
+    );
+
+    // Register quorum analysis metrics (from feat/spec branch)
+    registry.register(
+        "stellar_quorum_critical_nodes",
+        "Number of critical nodes in the quorum whose failure would break consensus",
+        QUORUM_CRITICAL_NODES.clone(),
+    );
+    registry.register(
+        "stellar_quorum_min_overlap",
+        "Minimum overlap count between quorum slices",
+        QUORUM_MIN_OVERLAP.clone(),
+    );
+    registry.register(
+        "stellar_quorum_consensus_latency_ms",
+        "Consensus latency per validator in milliseconds",
+        QUORUM_CONSENSUS_LATENCY_MS.clone(),
+    );
+    registry.register(
+        "stellar_quorum_fragility_score",
+        "Quorum fragility score (0.0 = resilient, 1.0 = fragile)",
+        QUORUM_FRAGILITY_SCORE.clone(),
     );
 
     // Register Soroban-specific metrics
@@ -562,6 +605,76 @@ pub fn inc_host_function_call(namespace: &str, name: &str, network: &str, contra
         contract_id: contract_id.to_string(),
     };
     HOST_FUNCTION_CALLS_TOTAL.get_or_create(&labels).inc();
+}
+
+/// Set the number of critical nodes in the quorum
+pub fn set_quorum_critical_nodes(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    count: i64,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+    };
+    QUORUM_CRITICAL_NODES.get_or_create(&labels).set(count);
+}
+
+/// Set the minimum quorum overlap count
+pub fn set_quorum_min_overlap(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    overlap: i64,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+    };
+    QUORUM_MIN_OVERLAP.get_or_create(&labels).set(overlap);
+}
+
+/// Observe consensus latency in milliseconds
+pub fn observe_consensus_latency(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    latency_ms: f64,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+    };
+    QUORUM_CONSENSUS_LATENCY_MS
+        .get_or_create(&labels)
+        .observe(latency_ms);
+}
+
+/// Set the quorum fragility score (0.0 to 1.0)
+pub fn set_quorum_fragility_score(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    score: f64,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+    };
+    QUORUM_FRAGILITY_SCORE.get_or_create(&labels).set(score);
 }
 
 #[cfg(test)]

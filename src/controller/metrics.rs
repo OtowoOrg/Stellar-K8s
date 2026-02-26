@@ -22,6 +22,21 @@ use prometheus_client::registry::Registry;
 const DP_EPSILON: f64 = 1.0; // Privacy budget
 const DP_SENSITIVITY: f64 = 1.0; // Sensitivity of the metric
 
+/// Labels for reactive updates
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct ReactiveLabels {
+    pub namespace: String,
+    pub name: String,
+}
+
+/// Counter tracking reactive status updates
+pub static REACTIVE_STATUS_UPDATES_TOTAL: Lazy<Family<ReactiveLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
+
+/// Counter tracking API polls avoided due to reactive updates
+pub static API_POLLS_AVOIDED_TOTAL: Lazy<Family<ReactiveLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
+
 /// Labels for the ledger sequence metric
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct NodeLabels {
@@ -198,6 +213,18 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         ARCHIVE_LEDGER_LAG.clone(),
     );
 
+    registry.register(
+        "stellar_reactive_status_updates_total",
+        "Total number of reactive status updates from DB triggers",
+        REACTIVE_STATUS_UPDATES_TOTAL.clone(),
+    );
+
+    registry.register(
+        "stellar_api_polls_avoided_total",
+        "Total number of API health check polls avoided",
+        API_POLLS_AVOIDED_TOTAL.clone(),
+    );
+
     // Register Soroban-specific metrics
     registry.register(
         "soroban_rpc_wasm_execution_duration_microseconds",
@@ -260,6 +287,24 @@ pub fn inc_reconcile_error(controller: &str, kind: &str) {
         kind: kind.to_string(),
     };
     RECONCILE_ERRORS_TOTAL.get_or_create(&labels).inc();
+}
+
+/// Increment reactive status updates counter
+pub fn inc_reactive_status_update(namespace: &str, name: &str) {
+    let labels = ReactiveLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+    };
+    REACTIVE_STATUS_UPDATES_TOTAL.get_or_create(&labels).inc();
+}
+
+/// Increment API polls avoided counter
+pub fn inc_api_polls_avoided(namespace: &str, name: &str) {
+    let labels = ReactiveLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+    };
+    API_POLLS_AVOIDED_TOTAL.get_or_create(&labels).inc();
 }
 
 /// Update the ledger sequence metric for a node

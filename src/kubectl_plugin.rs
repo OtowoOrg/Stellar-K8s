@@ -673,6 +673,7 @@ mod tests {
                 topology_spread_constraints: None,
                 cve_handling: None,
                 read_replica_config: None,
+                db_maintenance_config: None,
                 oci_snapshot: None,
                 service_mesh: None,
                 resource_meta: None,
@@ -695,6 +696,7 @@ mod tests {
                 canary_version: None,
                 canary_start_time: None,
                 last_migrated_version: None,
+                ledger_updated_at: None,
             }),
         }
     }

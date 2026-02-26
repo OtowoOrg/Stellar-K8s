@@ -14,8 +14,8 @@ use wasmtime_wasi::preview1::{self, WasiP1Ctx};
 use wasmtime_wasi::WasiCtxBuilder;
 
 use super::types::{
-    PluginConfig, PluginExecutionResult, PluginLimits, PluginMetadata, ValidationInput,
-    ValidationOutput,
+    DbTriggerInput, DbTriggerOutput, PluginConfig, PluginExecutionResult, PluginLimits,
+    PluginMetadata, ValidationInput, ValidationOutput,
 };
 use crate::error::{Error, Result};
 
@@ -168,20 +168,32 @@ impl WasmRuntime {
 
         // Execute in a blocking task to not block the async runtime
         let engine = self.engine.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            Self::execute_sync(&engine, &module, input_json, &limits)
+        let (result_code, output_buffer, fuel_consumed) = tokio::task::spawn_blocking(move || {
+            Self::execute_sync(&engine, &module, input_json, &limits, "validate")
         })
         .await
         .map_err(|e| Error::PluginError(format!("Plugin execution task failed: {e}")))??;
 
         let execution_time = start_time.elapsed();
 
+        let output: ValidationOutput = if output_buffer.is_empty() {
+            // Default to denied if no output
+            if result_code == 0 {
+                ValidationOutput::allowed()
+            } else {
+                ValidationOutput::denied(format!("Plugin returned error code: {result_code}"))
+            }
+        } else {
+            serde_json::from_slice(&output_buffer)
+                .map_err(|e| Error::PluginError(format!("Failed to parse plugin output: {e}")))?
+        };
+
         Ok(PluginExecutionResult {
             plugin_name: plugin_name.to_string(),
-            output: result.output,
+            output,
             execution_time_ms: execution_time.as_millis() as u64,
-            memory_used_bytes: result.memory_used,
-            fuel_consumed: result.fuel_consumed,
+            memory_used_bytes: 0, // TODO
+            fuel_consumed,
         })
     }
 
@@ -263,13 +275,70 @@ impl WasmRuntime {
         results
     }
 
+    /// Execute a db trigger plugin
+    #[instrument(skip(self, input), fields(plugin_name = %plugin_name))]
+    pub async fn execute_db_trigger(
+        &self,
+        plugin_name: &str,
+        input: &DbTriggerInput,
+        limits: Option<PluginLimits>,
+    ) -> Result<ExecutionResult<DbTriggerOutput>> {
+        let start_time = Instant::now();
+
+        // Get the cached module
+        let cache = self.module_cache.read().await;
+        let cached = cache
+            .get(plugin_name)
+            .ok_or_else(|| Error::PluginError(format!("Plugin {plugin_name} not loaded")))?;
+
+        let module = cached.module.clone();
+        let metadata = cached.metadata.clone();
+        drop(cache);
+
+        // Use provided limits or defaults
+        let limits = limits.unwrap_or_else(|| metadata.limits.clone());
+
+        // Serialize input
+        let input_json = serde_json::to_vec(input)
+            .map_err(|e| Error::PluginError(format!("Failed to serialize input: {e}")))?;
+
+        // Execute in a blocking task to not block the async runtime
+        let engine = self.engine.clone();
+        let (result_code, output_buffer, fuel_consumed) = tokio::task::spawn_blocking(move || {
+            Self::execute_sync(&engine, &module, input_json, &limits, "process_trigger")
+        })
+        .await
+        .map_err(|e| Error::PluginError(format!("Plugin execution task failed: {e}")))??;
+
+        if result_code != 0 {
+            return Err(Error::PluginError(format!(
+                "DB Trigger Plugin {} returned error code {}",
+                plugin_name, result_code
+            )));
+        }
+
+        let output: DbTriggerOutput = serde_json::from_slice(&output_buffer).map_err(|e| {
+            Error::PluginError(format!("Failed to parse DB trigger plugin output: {e}"))
+        })?;
+
+        let execution_time = start_time.elapsed();
+
+        Ok(ExecutionResult {
+            output,
+            memory_used: 0,
+            fuel_consumed,
+            execution_time_ms: execution_time.as_millis() as u64,
+        })
+    }
+
     /// Synchronous execution (runs in blocking task)
     fn execute_sync(
         engine: &Engine,
         module: &Module,
         input_json: Vec<u8>,
         limits: &PluginLimits,
-    ) -> Result<ExecutionResult> {
+        func_name: &str,
+    ) -> Result<(i32, Vec<u8>, u64)> {
         // Create store with limits
         let _store_limits = StoreLimitsBuilder::new()
             .memory_size(limits.max_memory_bytes as usize)
@@ -308,12 +377,12 @@ impl WasmRuntime {
             .instantiate(&mut store, module)
             .map_err(|e| Error::PluginError(format!("Failed to instantiate module: {e}")))?;
 
-        // Get the validate function
+        // Get the target function
         let validate_fn = instance
-            .get_typed_func::<(), i32>(&mut store, "validate")
-            .map_err(|e| Error::PluginError(format!("Failed to get validate function: {e}")))?;
+            .get_typed_func::<(), i32>(&mut store, func_name)
+            .map_err(|e| Error::PluginError(format!("Failed to get {func_name} function: {e}")))?;
 
-        // Call the validate function
+        // Call the target function
         let result_code = validate_fn.call(&mut store, ()).map_err(|e| {
             if e.to_string().contains("fuel") {
                 Error::PluginError("Plugin exceeded instruction limit".to_string())
@@ -328,25 +397,11 @@ impl WasmRuntime {
         let fuel_remaining = store.get_fuel().unwrap_or(0);
         let fuel_consumed = limits.max_fuel.saturating_sub(fuel_remaining);
 
-        // Parse output from state
+        // Get output from state
         let state = store.data();
-        let output: ValidationOutput = if state.output_buffer.is_empty() {
-            // Default to denied if no output
-            if result_code == 0 {
-                ValidationOutput::allowed()
-            } else {
-                ValidationOutput::denied(format!("Plugin returned error code: {result_code}"))
-            }
-        } else {
-            serde_json::from_slice(&state.output_buffer)
-                .map_err(|e| Error::PluginError(format!("Failed to parse plugin output: {e}")))?
-        };
+        let output_buffer = state.output_buffer.clone();
 
-        Ok(ExecutionResult {
-            output,
-            memory_used: 0, // TODO: Track actual memory usage
-            fuel_consumed,
-        })
+        Ok((result_code, output_buffer, fuel_consumed))
     }
 
     /// Add host functions for plugin I/O
@@ -480,11 +535,12 @@ impl Default for WasmRuntime {
     }
 }
 
-/// Result of plugin execution
-struct ExecutionResult {
-    output: ValidationOutput,
-    memory_used: u64,
-    fuel_consumed: u64,
+/// Result of plugin execution generic over output type
+pub struct ExecutionResult<T> {
+    pub output: T,
+    pub memory_used: u64,
+    pub fuel_consumed: u64,
+    pub execution_time_ms: u64,
 }
 
 /// Builder for configuring the Wasm runtime

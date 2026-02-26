@@ -66,6 +66,7 @@ mod tests {
                 topology_spread_constraints: None,
                 cve_handling: None,
                 read_replica_config: None,
+                db_maintenance_config: None,
                 oci_snapshot: None,
                 service_mesh: Some(ServiceMeshConfig {
                     sidecar_injection: true,

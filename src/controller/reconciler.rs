@@ -932,7 +932,33 @@ pub(crate) async fn apply_stellar_node(
     .await?;
 
     // 7. Perform health check to determine if node is ready
-    let health_result = health::check_node_health(client, node, ctx.mtls_config.as_ref()).await?;
+    //
+    // Measure reduction in API polling overhead: Reactive Status check
+    // If the DB trigger updated the status very recently (e.g. < 15 seconds ago), we can skip the health check API poll
+    let mut skipped_poll = false;
+    let mut recent_health = None;
+    if let Some(ref status) = node.status {
+        if let Some(updated_at_str) = &status.ledger_updated_at {
+            if let Ok(updated_at) = chrono::DateTime::parse_from_rfc3339(updated_at_str) {
+                let age = chrono::Utc::now()
+                    .signed_duration_since(updated_at.with_timezone(&chrono::Utc))
+                    .num_seconds();
+                if age < 15 {
+                    info!("Skipping health polling for {}/{}, DB trigger recently updated status {}s ago", namespace, name, age);
+                    crate::controller::metrics::inc_api_polls_avoided(&namespace, &name);
+                    skipped_poll = true;
+                    // Assume node is healthy, use the reactively set ledger sequence
+                    recent_health = Some(health::HealthCheckResult::synced(status.ledger_sequence));
+                }
+            }
+        }
+    }
+
+    let health_result = if skipped_poll {
+        recent_health.unwrap()
+    } else {
+        health::check_node_health(client, node, ctx.mtls_config.as_ref()).await?
+    };
 
     debug!(
         "Health check result for {}/{}: healthy={}, synced={}, message={}",

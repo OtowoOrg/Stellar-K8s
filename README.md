@@ -117,6 +117,33 @@ kubectl stellar logs my-validator -f
 
 See [kubectl-plugin.md](docs/kubectl-plugin.md) for complete documentation.
 
+### 4. Custom Validation Policies with WebAssembly
+
+Stellar-K8s supports custom validation policies written in WebAssembly, allowing you to enforce organization-specific requirements without modifying the operator code.
+
+```rust
+// Example: Enforce approved image registries
+#[no_mangle]
+pub extern "C" fn validate() -> i32 {
+    let input = read_validation_input()?;
+    
+    // Check if image is from approved registry
+    if !is_approved_registry(&input.object.spec.version) {
+        return deny("Image must be from approved registry");
+    }
+    
+    allow()
+}
+```
+
+Features:
+- **Sandboxed Execution**: Plugins run in a secure, isolated Wasm environment
+- **Dynamic Loading**: Load plugins from ConfigMaps at runtime
+- **Multi-Language Support**: Write policies in Rust, Go, C++, or any language that compiles to Wasm
+- **Fail-Open Support**: Configure plugins to allow requests if they fail
+
+See [wasm-webhook.md](docs/wasm-webhook.md) for complete documentation and examples.
+
 ---
 
 ## 🤝 Contributing

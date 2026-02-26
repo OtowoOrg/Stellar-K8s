@@ -1,104 +1,164 @@
-# Wasm Admission Webhook
+# WebAssembly Validation Policies
 
-The Stellar-K8s operator includes a Wasm-based admission webhook that allows you to implement custom validation logic for `StellarNode` resources using WebAssembly plugins.
+The Stellar Kubernetes Operator supports custom validation policies written in WebAssembly (Wasm). This allows you to enforce organization-specific requirements and policies without modifying the operator code.
 
 ## Overview
 
-The admission webhook intercepts `CREATE` and `UPDATE` requests for `StellarNode` resources and executes one or more Wasm plugins to validate them. This provides:
+The Wasm webhook system provides:
 
-- **Custom Validation Logic**: Implement organization-specific policies
-- **Secure Sandboxing**: Plugins run in an isolated Wasm environment
-- **Resource Limits**: Configurable memory, CPU, and time limits
-- **Fail-Open/Fail-Close**: Configure behavior when plugins fail
-- **Audit Logging**: Track validation decisions
+- **Custom Validation Logic**: Write policies in any language that compiles to Wasm (Rust, Go, C++, AssemblyScript, etc.)
+- **Sandboxed Execution**: Plugins run in a secure, isolated environment with resource limits
+- **Dynamic Loading**: Load and unload plugins at runtime without restarting the operator
+- **ConfigMap Integration**: Store plugins in Kubernetes ConfigMaps for easy management
+- **Fail-Open Support**: Configure plugins to allow requests if they fail
+- **Audit Logging**: Plugins can add annotations to the Kubernetes audit log
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Kubernetes API Server                     │
-└─────────────────────────────┬───────────────────────────────┘
-                              │ AdmissionReview
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Webhook Server                            │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │   Plugin 1  │  │   Plugin 2  │  │   Plugin N  │          │
-│  │   (Wasm)    │  │   (Wasm)    │  │   (Wasm)    │          │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘          │
-│         │                │                │                  │
-│  ┌──────▼────────────────▼────────────────▼──────┐          │
-│  │            Wasmtime Runtime                    │          │
-│  │  • Memory limits   • Fuel metering            │          │
-│  │  • Timeout control • No filesystem/network    │          │
-│  └───────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────┐
+│  Kubernetes API │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│  Admission Webhook      │
+│  (Validating/Mutating)  │
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│  Wasm Runtime           │
+│  (Wasmtime)             │
+├─────────────────────────┤
+│  Plugin 1 (Wasm)        │
+│  Plugin 2 (Wasm)        │
+│  Plugin 3 (Wasm)        │
+└─────────────────────────┘
 ```
 
-## Installation
+## Quick Start
 
-### Prerequisites
+### 1. Build a Plugin
 
-- Kubernetes cluster 1.19+
-- cert-manager installed (for TLS certificates)
-- kubectl configured
-
-### Deploy the Webhook
-
-```bash
-# Install cert-manager if not present
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
-
-# Wait for cert-manager to be ready
-kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=60s
-
-# Deploy the webhook
-kubectl apply -f charts/stellar-operator/templates/webhook.yaml
-```
-
-### Verify Installation
-
-```bash
-# Check webhook pods
-kubectl get pods -n stellar-webhook
-
-# Check webhook service
-kubectl get svc -n stellar-webhook
-
-# Check ValidatingWebhookConfiguration
-kubectl get validatingwebhookconfiguration stellar-webhook
-```
-
-## Writing Validation Plugins
-
-### Plugin Interface
-
-Plugins must export the following functions:
+See the [example plugin](../examples/plugins/image-registry-validator/) for a complete example.
 
 ```rust
-// Required: Main validation entry point
-// Returns 0 for success, non-zero for failure
 #[no_mangle]
-pub extern "C" fn validate() -> i32;
+pub extern "C" fn validate() -> i32 {
+    let input = read_validation_input()?;
+    let output = validate_stellar_node(&input);
+    write_validation_output(&output);
+    if output.allowed { 0 } else { 1 }
+}
+```
 
-// Required: Memory export for host communication
-#[no_mangle]
-pub static mut MEMORY: [u8; 65536];
+Build it:
+
+```bash
+cd examples/plugins/image-registry-validator
+cargo build --target wasm32-unknown-unknown --release
+```
+
+### 2. Deploy the Plugin
+
+#### Option A: ConfigMap
+
+```bash
+kubectl create configmap my-validator \
+    --from-file=plugin.wasm=target/wasm32-unknown-unknown/release/my_validator.wasm \
+    -n stellar-operator-system
+```
+
+Then configure the operator to load it (see Configuration section).
+
+#### Option B: Direct API
+
+```bash
+WASM_BASE64=$(base64 < my_validator.wasm)
+
+curl -X POST http://webhook-service:8443/plugins \
+    -H "Content-Type: application/json" \
+    -d '{
+        "metadata": {
+            "name": "my-validator",
+            "version": "1.0.0",
+            "description": "My custom validator"
+        },
+        "wasm_binary": "'$WASM_BASE64'",
+        "operations": ["CREATE", "UPDATE"],
+        "enabled": true
+    }'
+```
+
+### 3. Test the Plugin
+
+```bash
+# List loaded plugins
+curl http://webhook-service:8443/plugins
+
+# Create a StellarNode (will be validated by your plugin)
+kubectl apply -f my-stellarnode.yaml
+```
+
+## Plugin Interface
+
+### Input Structure
+
+Plugins receive a JSON object with this structure:
+
+```json
+{
+  "operation": "CREATE",
+  "object": {
+    "apiVersion": "stellar.org/v1alpha1",
+    "kind": "StellarNode",
+    "metadata": { "name": "my-node" },
+    "spec": { /* StellarNode spec */ }
+  },
+  "oldObject": null,
+  "namespace": "default",
+  "name": "my-node",
+  "userInfo": {
+    "username": "admin",
+    "uid": "...",
+    "groups": ["system:masters"],
+    "extra": {}
+  },
+  "context": {}
+}
+```
+
+### Output Structure
+
+Plugins must return a JSON object:
+
+```json
+{
+  "allowed": true,
+  "message": "Validation passed",
+  "reason": null,
+  "errors": [],
+  "warnings": ["Consider increasing memory limit"],
+  "auditAnnotations": {
+    "my-plugin/checked": "true"
+  }
+}
 ```
 
 ### Host Functions
 
-The runtime provides these host functions:
+The runtime provides these functions for plugin I/O:
 
 ```rust
 extern "C" {
-    // Get the length of the input JSON
+    // Get the length of the input data
     fn get_input_len() -> i32;
     
-    // Read input into plugin memory
+    // Read input data into Wasm memory
     fn read_input(ptr: *mut u8, len: i32) -> i32;
     
-    // Write output from plugin memory
+    // Write output data from Wasm memory
     fn write_output(ptr: *const u8, len: i32) -> i32;
     
     // Log a debug message
@@ -106,334 +166,435 @@ extern "C" {
 }
 ```
 
-### Input Format
-
-```json
-{
-  "operation": "CREATE",
-  "object": {
-    "apiVersion": "stellar.io/v1alpha1",
-    "kind": "StellarNode",
-    "metadata": {
-      "name": "my-node",
-      "namespace": "default"
-    },
-    "spec": {
-      "nodeType": "horizon",
-      "network": "testnet"
-    }
-  },
-  "oldObject": null,
-  "namespace": "default",
-  "name": "my-node",
-  "userInfo": {
-    "username": "admin",
-    "groups": ["system:masters"]
-  },
-  "context": {}
-}
-```
-
-### Output Format
-
-```json
-{
-  "allowed": true,
-  "message": "Validation passed",
-  "warnings": ["Consider adding resource limits"],
-  "errors": [
-    {
-      "field": "spec.replicas",
-      "message": "Replicas must be positive",
-      "type": "FieldValueInvalid"
-    }
-  ],
-  "auditAnnotations": {
-    "stellar.io/validated-by": "my-plugin"
-  }
-}
-```
-
-### Example Plugin (Rust)
-
-See [examples/plugins/example-validator](../examples/plugins/example-validator/) for a complete example.
-
-```rust
-use serde::{Deserialize, Serialize};
-
-#[derive(Deserialize)]
-struct ValidationInput {
-    operation: String,
-    object: Option<StellarNode>,
-    // ... other fields
-}
-
-#[derive(Serialize)]
-struct ValidationOutput {
-    allowed: bool,
-    message: Option<String>,
-    warnings: Vec<String>,
-    errors: Vec<ValidationError>,
-}
-
-#[no_mangle]
-pub extern "C" fn validate() -> i32 {
-    // Read input
-    let input: ValidationInput = read_validation_input();
-    
-    // Validate
-    let output = if is_valid(&input) {
-        ValidationOutput { allowed: true, .. }
-    } else {
-        ValidationOutput { allowed: false, .. }
-    };
-    
-    // Write output
-    write_validation_output(&output);
-    
-    if output.allowed { 0 } else { 1 }
-}
-```
-
-### Building Plugins
-
-```bash
-# Install wasm32-wasi target
-rustup target add wasm32-wasi
-
-# Build the plugin
-cd examples/plugins/example-validator
-cargo build --target wasm32-wasi --release
-
-# The plugin is at target/wasm32-wasi/release/example_validator.wasm
-```
-
-## Managing Plugins
-
-### Loading Plugins via API
-
-```bash
-# Encode the Wasm binary
-WASM_BASE64=$(base64 < example_validator.wasm)
-
-# Load the plugin
-curl -X POST https://stellar-webhook.stellar-webhook:443/plugins \
-  -H "Content-Type: application/json" \
-  -d @- <<EOF
-{
-  "metadata": {
-    "name": "example-validator",
-    "version": "1.0.0",
-    "description": "Example validation plugin",
-    "sha256": "$(sha256sum example_validator.wasm | cut -d' ' -f1)"
-  },
-  "wasm_binary": "${WASM_BASE64}",
-  "operations": ["Create", "Update"],
-  "enabled": true,
-  "fail_open": false
-}
-EOF
-```
-
-### Loading Plugins via ConfigMap
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: stellar-webhook-plugins
-  namespace: stellar-webhook
-data:
-  example-validator.wasm: |
-    <base64-encoded-wasm>
-  plugins.json: |
-    {
-      "plugins": [
-        {
-          "metadata": {
-            "name": "example-validator",
-            "version": "1.0.0"
-          },
-          "configMapRef": {
-            "name": "stellar-webhook-plugins",
-            "key": "example-validator.wasm"
-          },
-          "operations": ["Create", "Update"],
-          "enabled": true
-        }
-      ]
-    }
-```
-
-### Listing Plugins
-
-```bash
-curl https://stellar-webhook.stellar-webhook:443/plugins
-```
-
-### Removing Plugins
-
-```bash
-curl -X DELETE https://stellar-webhook.stellar-webhook:443/plugins/example-validator
-```
-
 ## Configuration
 
-### Plugin Limits
+### Operator Configuration
 
-Each plugin can have custom resource limits:
-
-```json
-{
-  "metadata": {
-    "name": "my-plugin",
-    "limits": {
-      "timeout_ms": 1000,
-      "max_memory_bytes": 16777216,
-      "max_fuel": 1000000
-    }
-  }
-}
-```
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `timeout_ms` | 1000 | Maximum execution time in milliseconds |
-| `max_memory_bytes` | 16MB | Maximum memory the plugin can allocate |
-| `max_fuel` | 1,000,000 | Maximum Wasm instructions (fuel units) |
-
-### Fail-Open vs Fail-Close
-
-- **Fail-Close** (`fail_open: false`): If a plugin fails, the admission request is denied
-- **Fail-Open** (`fail_open: true`): If a plugin fails, the request is allowed with a warning
-
-### Webhook Timeout
-
-The Kubernetes ValidatingWebhookConfiguration has a 10-second timeout:
+Configure the webhook in the operator deployment:
 
 ```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stellar-operator
+spec:
+  template:
+    spec:
+      containers:
+      - name: operator
+        args:
+        - webhook
+        - --webhook-port=8443
+        - --webhook-cert=/certs/tls.crt
+        - --webhook-key=/certs/tls.key
+        - --plugin-config=/config/plugins.yaml
+```
+
+### Plugin Configuration File
+
+Create a `plugins.yaml` file:
+
+```yaml
+plugins:
+  - metadata:
+      name: image-registry-validator
+      version: "1.0.0"
+      description: "Validates image registries"
+      limits:
+        timeoutMs: 1000
+        maxMemoryBytes: 16777216  # 16MB
+        maxFuel: 1000000
+    configMapRef:
+      name: image-registry-validator
+      key: plugin.wasm
+      namespace: stellar-operator-system
+    operations:
+      - CREATE
+      - UPDATE
+    enabled: true
+    failOpen: false
+    
+  - metadata:
+      name: resource-limits-validator
+      version: "1.0.0"
+    secretRef:
+      name: resource-limits-validator
+      key: plugin.wasm
+    operations:
+      - CREATE
+      - UPDATE
+    enabled: true
+    failOpen: true  # Allow if plugin fails
+```
+
+### Kubernetes Resources
+
+#### ValidatingWebhookConfiguration
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: stellar-node-validator
 webhooks:
-  - name: stellarnode.stellar.io
+  - name: validate.stellarnode.stellar.org
+    clientConfig:
+      service:
+        name: stellar-operator-webhook
+        namespace: stellar-operator-system
+        path: /validate
+      caBundle: <base64-encoded-ca-cert>
+    rules:
+      - operations: ["CREATE", "UPDATE"]
+        apiGroups: ["stellar.org"]
+        apiVersions: ["v1alpha1"]
+        resources: ["stellarnodes"]
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
     timeoutSeconds: 10
 ```
 
-## Security Considerations
+## Security
 
-### Plugin Sandboxing
+### Sandboxing
 
-Plugins run in a secure Wasm sandbox with:
+Plugins run in a secure sandbox with:
 
 - **No filesystem access**: Plugins cannot read or write files
-- **No network access**: Plugins cannot make network connections
-- **Memory isolation**: Each plugin gets its own memory space
-- **Instruction limits**: Fuel metering prevents infinite loops
-- **Time limits**: Epoch-based interruption for timeouts
+- **No network access**: Plugins cannot make network requests
+- **No system calls**: Only approved host functions are available
+- **Memory limits**: Configurable maximum memory usage
+- **CPU limits**: Fuel metering prevents infinite loops
+- **Timeout**: Execution time limits prevent hanging
 
-### Plugin Integrity
+### Resource Limits
 
-Use SHA256 checksums to verify plugin integrity:
+Configure limits per plugin:
 
-```json
-{
-  "metadata": {
-    "sha256": "a3b2c1d4e5f67890..."
-  }
+```yaml
+limits:
+  timeoutMs: 1000          # Maximum execution time
+  maxMemoryBytes: 16777216 # Maximum memory (16MB)
+  maxFuel: 1000000         # Maximum instructions
+```
+
+### Integrity Verification
+
+Verify plugin integrity with SHA256 hashes:
+
+```yaml
+metadata:
+  name: my-plugin
+  version: "1.0.0"
+  sha256: "abc123..."  # SHA256 hash of the Wasm binary
+```
+
+The runtime will verify the hash before loading the plugin.
+
+## Use Cases
+
+### 1. Image Registry Enforcement
+
+Ensure all images come from approved registries:
+
+```rust
+const APPROVED_REGISTRIES: &[&str] = &[
+    "docker.io/stellar/",
+    "ghcr.io/myorg/",
+];
+
+fn validate(input: &ValidationInput) -> ValidationOutput {
+    let version = input.object.spec.version;
+    if !APPROVED_REGISTRIES.iter().any(|r| version.starts_with(r)) {
+        return ValidationOutput::denied("Unapproved registry");
+    }
+    ValidationOutput::allowed()
 }
 ```
 
-### RBAC
+### 2. Resource Limit Enforcement
 
-The webhook service account has minimal permissions:
+Enforce minimum/maximum resource limits:
 
-```yaml
-rules:
-  - apiGroups: ["stellar.io"]
-    resources: ["stellarnodes"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["configmaps", "secrets"]
-    verbs: ["get", "list", "watch"]
+```rust
+fn validate(input: &ValidationInput) -> ValidationOutput {
+    let memory = input.object.spec.resources.limits.memory;
+    let memory_bytes = parse_memory(memory);
+    
+    if memory_bytes < 512 * 1024 * 1024 {
+        return ValidationOutput::denied("Memory must be at least 512Mi");
+    }
+    
+    ValidationOutput::allowed()
+}
+```
+
+### 3. Network Policy Enforcement
+
+Ensure nodes on mainnet have specific configurations:
+
+```rust
+fn validate(input: &ValidationInput) -> ValidationOutput {
+    if input.object.spec.network == "Mainnet" {
+        if input.object.spec.replicas < 3 {
+            return ValidationOutput::denied(
+                "Mainnet nodes must have at least 3 replicas"
+            );
+        }
+    }
+    ValidationOutput::allowed()
+}
+```
+
+### 4. Compliance Checks
+
+Enforce organizational compliance requirements:
+
+```rust
+fn validate(input: &ValidationInput) -> ValidationOutput {
+    let mut errors = Vec::new();
+    
+    // Check labels
+    if !input.object.metadata.labels.contains_key("cost-center") {
+        errors.push(ValidationError::new(
+            "metadata.labels.cost-center",
+            "Cost center label is required"
+        ));
+    }
+    
+    // Check annotations
+    if !input.object.metadata.annotations.contains_key("owner") {
+        errors.push(ValidationError::new(
+            "metadata.annotations.owner",
+            "Owner annotation is required"
+        ));
+    }
+    
+    if errors.is_empty() {
+        ValidationOutput::allowed()
+    } else {
+        ValidationOutput::denied_with_errors(errors)
+    }
+}
+```
+
+## Development
+
+### Prerequisites
+
+- Rust toolchain
+- `wasm32-unknown-unknown` target
+- `wasm-opt` (optional, for optimization)
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install wasm-opt
+```
+
+### Project Structure
+
+```
+my-validator/
+├── Cargo.toml
+├── src/
+│   └── lib.rs
+├── build.sh
+└── README.md
+```
+
+### Cargo.toml
+
+```toml
+[package]
+name = "my-validator"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+```
+
+### Testing
+
+Test plugins locally before deploying:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_approved_registry() {
+        let input = ValidationInput {
+            operation: "CREATE".to_string(),
+            object: Some(json!({
+                "spec": {
+                    "version": "docker.io/stellar/stellar-core:v21.3.0"
+                }
+            })),
+            // ... other fields
+        };
+        
+        let output = validate_stellar_node(&input);
+        assert!(output.allowed);
+    }
+    
+    #[test]
+    fn test_unapproved_registry() {
+        let input = ValidationInput {
+            operation: "CREATE".to_string(),
+            object: Some(json!({
+                "spec": {
+                    "version": "quay.io/myorg/stellar-core:v21.3.0"
+                }
+            })),
+            // ... other fields
+        };
+        
+        let output = validate_stellar_node(&input);
+        assert!(!output.allowed);
+    }
+}
 ```
 
 ## Troubleshooting
 
-### Check Webhook Logs
+### Plugin Not Loading
+
+Check the operator logs:
 
 ```bash
-kubectl logs -n stellar-webhook -l app.kubernetes.io/name=stellar-webhook
+kubectl logs -n stellar-operator-system deployment/stellar-operator
 ```
 
-### Test Validation
+Common issues:
+- Invalid Wasm binary
+- Missing required exports (`validate`, `memory`)
+- SHA256 mismatch
+- ConfigMap not found
+
+### Plugin Execution Failures
+
+Check for:
+- Timeout (increase `timeoutMs`)
+- Out of memory (increase `maxMemoryBytes`)
+- Out of fuel (increase `maxFuel`)
+- Invalid JSON output
+
+### Debugging
+
+Enable debug logging in plugins:
+
+```rust
+log(&format!("Checking version: {}", version));
+```
+
+View logs:
 
 ```bash
-# Create a test StellarNode
-kubectl apply -f - <<EOF
-apiVersion: stellar.io/v1alpha1
-kind: StellarNode
-metadata:
-  name: test-validation
-spec:
-  nodeType: horizon
-  network: testnet
-EOF
-
-# Check the response
-kubectl get stellarnode test-validation -o yaml
+kubectl logs -n stellar-operator-system deployment/stellar-operator | grep wasm_plugin
 ```
 
-### Debug Mode
+## Performance
 
-Enable debug logging:
+### Benchmarks
 
-```yaml
-env:
-  - name: RUST_LOG
-    value: "debug,stellar_k8s=trace"
-```
+Typical plugin performance:
 
-### Common Issues
+- **Load time**: <100ms (one-time, cached)
+- **Execution time**: <5ms per validation
+- **Memory usage**: <1MB per plugin
+- **Binary size**: 20-100KB (optimized)
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| Webhook timeout | Plugin too slow | Increase timeout or optimize plugin |
-| Certificate error | TLS misconfiguration | Check cert-manager certificates |
-| Plugin not found | Plugin not loaded | Verify plugin is in the plugins list |
-| Memory limit exceeded | Plugin uses too much memory | Increase `max_memory_bytes` |
+### Optimization Tips
 
-## Metrics
+1. **Use `wasm-opt`**: Reduces binary size by 50-70%
+2. **Minimize dependencies**: Each dependency adds to binary size
+3. **Avoid allocations**: Reuse buffers where possible
+4. **Profile with fuel**: Monitor `fuel_consumed` in results
+5. **Cache compiled modules**: The runtime caches compiled plugins
 
-The webhook exposes Prometheus metrics on port 9090:
+## Best Practices
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `webhook_requests_total` | Counter | Total validation requests |
-| `webhook_request_duration_seconds` | Histogram | Request processing time |
-| `plugin_executions_total` | Counter | Plugin execution count |
-| `plugin_execution_duration_seconds` | Histogram | Plugin execution time |
-| `plugin_errors_total` | Counter | Plugin execution errors |
+1. **Keep plugins focused**: One policy per plugin
+2. **Fail gracefully**: Always return valid JSON
+3. **Use fail-open for non-critical checks**: Prevent outages
+4. **Add audit annotations**: Track what was validated
+5. **Version your plugins**: Use semantic versioning
+6. **Test thoroughly**: Write unit tests for all cases
+7. **Monitor performance**: Track execution time and fuel
+8. **Document policies**: Explain what each plugin validates
 
 ## API Reference
 
-### POST /validate
+### REST API
 
-Kubernetes admission webhook endpoint.
+#### List Plugins
 
-### GET /health, GET /healthz
+```
+GET /plugins
+```
 
-Health check endpoint.
+Response:
 
-### GET /ready
+```json
+{
+  "plugins": [
+    {
+      "name": "image-registry-validator",
+      "version": "1.0.0",
+      "description": "Validates image registries",
+      "operations": ["CREATE", "UPDATE"],
+      "enabled": true
+    }
+  ]
+}
+```
 
-Readiness check endpoint (requires at least one plugin loaded).
+#### Load Plugin
 
-### GET /plugins
+```
+POST /plugins
+Content-Type: application/json
 
-List loaded plugins.
+{
+  "metadata": {
+    "name": "my-plugin",
+    "version": "1.0.0"
+  },
+  "wasm_binary": "<base64-encoded-wasm>",
+  "operations": ["CREATE", "UPDATE"],
+  "enabled": true
+}
+```
 
-### POST /plugins
+#### Remove Plugin
 
-Load a new plugin.
+```
+DELETE /plugins/:name
+```
 
-### DELETE /plugins/:name
+## Examples
 
-Unload a plugin.
+See the [examples/plugins](../examples/plugins/) directory for complete examples:
+
+- [image-registry-validator](../examples/plugins/image-registry-validator/) - Validates image registries
+- [example-validator](../examples/plugins/example-validator/) - Basic validation template
+
+## References
+
+- [WebAssembly](https://webassembly.org/)
+- [Wasmtime](https://wasmtime.dev/)
+- [Kubernetes Admission Webhooks](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/)
+- [Rust Wasm Book](https://rustwasm.github.io/docs/book/)

@@ -102,6 +102,24 @@ pub struct ValidationInput {
     pub context: BTreeMap<String, String>,
 }
 
+/// Input provided to Wasm plugin for database triggers
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbTriggerInput {
+    pub table: String,
+    pub action: String,
+    pub record: serde_json::Value,
+}
+
+/// Output returned by Wasm plugin from a database trigger
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbTriggerOutput {
+    pub namespace: String,
+    pub name: String,
+    pub ledger_sequence: u64,
+}
+
 /// Kubernetes operation type
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "UPPERCASE")]
@@ -110,6 +128,7 @@ pub enum Operation {
     Update,
     Delete,
     Connect,
+    DbTrigger,
 }
 
 impl std::fmt::Display for Operation {
@@ -119,6 +138,7 @@ impl std::fmt::Display for Operation {
             Operation::Update => write!(f, "UPDATE"),
             Operation::Delete => write!(f, "DELETE"),
             Operation::Connect => write!(f, "CONNECT"),
+            Operation::DbTrigger => write!(f, "DB_TRIGGER"),
         }
     }
 }

@@ -1199,6 +1199,42 @@ pub struct PgBouncerConfig {
     pub default_pool_size: i32,
 }
 
+// ============================================================================
+// Database Maintenance Configuration
+// ============================================================================
+
+/// Configuration for automated database maintenance (VACUUM, Reindexing)
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DbMaintenanceConfig {
+    /// Enable automated database maintenance
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Maintenance window start time (24h format, e.g., "02:00")
+    /// Maintenance will only trigger during this window
+    pub window_start: String,
+
+    /// Maintenance window duration (e.g., "2h")
+    pub window_duration: String,
+
+    /// Bloat threshold percentage to trigger VACUUM FULL (default: 30)
+    #[serde(default = "default_bloat_threshold")]
+    pub bloat_threshold_percent: u32,
+
+    /// Automatically reindex bloated tables
+    #[serde(default = "default_true")]
+    pub auto_reindex: bool,
+
+    /// Coordination with read-pool for zero-downtime
+    #[serde(default = "default_true")]
+    pub read_pool_coordination: bool,
+}
+
+fn default_bloat_threshold() -> u32 {
+    30
+}
+
 fn default_pooler_replicas() -> i32 {
     2
 }

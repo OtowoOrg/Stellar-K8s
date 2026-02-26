@@ -13,8 +13,8 @@ use super::types::{
     AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
     DisasterRecoveryStatus, ExternalDatabaseConfig, GlobalDiscoveryConfig, HistoryMode,
     HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig, NetworkPolicyConfig,
-    NodeType, ResourceRequirements, RetentionPolicy, RolloutStrategy, SorobanConfig,
-    StellarNetwork, StorageConfig, ValidatorConfig, VpaConfig,
+    NodeType, OciSnapshotConfig, ResourceRequirements, RetentionPolicy, RolloutStrategy,
+    SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig, VpaConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`
@@ -153,6 +153,14 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_replica_config: Option<super::read_replica::ReadReplicaConfig>,
 
+    /// OCI-based ledger snapshot sync for multi-region bootstrapping
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oci_snapshot: Option<OciSnapshotConfig>,
+
+    /// Service mesh configuration (Istio/Linkerd) for mTLS and advanced traffic control
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_mesh: Option<super::service_mesh::ServiceMeshConfig>,
+
     #[schemars(skip)]
     pub resource_meta: Option<ObjectMeta>,
 }
@@ -209,6 +217,8 @@ impl StellarNodeSpec {
     /// # topology_spread_constraints: None,
     /// # cve_handling: None,
     /// # read_replica_config: None,
+    /// # oci_snapshot: None,
+    /// # service_mesh: None,
     /// # vpa_config: None,
     /// # resource_meta: None,
     /// # read_pool_endpoint: None,
@@ -372,6 +382,9 @@ impl StellarNodeSpec {
         }
         if let Some(ref cc) = self.cross_cluster {
             validate_cross_cluster(cc, &mut errors);
+        }
+        if let Some(ref mesh) = self.service_mesh {
+            validate_service_mesh(mesh, &mut errors);
         }
 
         if errors.is_empty() {
@@ -677,6 +690,72 @@ fn validate_cross_cluster(cc: &CrossClusterConfig, errors: &mut Vec<SpecValidati
     }
 }
 
+fn validate_service_mesh(
+    mesh: &super::service_mesh::ServiceMeshConfig,
+    errors: &mut Vec<SpecValidationError>,
+) {
+    // Validate that only one of Istio or Linkerd is configured
+    if mesh.istio.is_some() && mesh.linkerd.is_some() {
+        errors.push(SpecValidationError::new(
+            "spec.serviceMesh",
+            "Cannot specify both Istio and Linkerd configurations",
+            "Choose either spec.serviceMesh.istio or spec.serviceMesh.linkerd, but not both.",
+        ));
+    }
+
+    // Validate Istio configuration if present
+    if let Some(ref istio) = mesh.istio {
+        if let Some(ref cb) = istio.circuit_breaker {
+            if cb.consecutive_errors == 0 {
+                errors.push(SpecValidationError::new(
+                    "spec.serviceMesh.istio.circuitBreaker.consecutiveErrors",
+                    "consecutiveErrors must be greater than 0",
+                    "Set spec.serviceMesh.istio.circuitBreaker.consecutiveErrors to a value greater than 0.",
+                ));
+            }
+            if cb.time_window_secs == 0 {
+                errors.push(SpecValidationError::new(
+                    "spec.serviceMesh.istio.circuitBreaker.timeWindowSecs",
+                    "timeWindowSecs must be greater than 0",
+                    "Set spec.serviceMesh.istio.circuitBreaker.timeWindowSecs to a value greater than 0.",
+                ));
+            }
+        }
+
+        if let Some(ref retry) = istio.retries {
+            if retry.max_retries == 0 {
+                errors.push(SpecValidationError::new(
+                    "spec.serviceMesh.istio.retries.maxRetries",
+                    "maxRetries must be greater than 0",
+                    "Set spec.serviceMesh.istio.retries.maxRetries to a value greater than 0.",
+                ));
+            }
+        }
+
+        if istio.timeout_secs == 0 {
+            errors.push(SpecValidationError::new(
+                "spec.serviceMesh.istio.timeoutSecs",
+                "timeoutSecs must be greater than 0",
+                "Set spec.serviceMesh.istio.timeoutSecs to a value greater than 0.",
+            ));
+        }
+    }
+
+    // Validate Linkerd configuration if present
+    if let Some(ref linkerd) = mesh.linkerd {
+        if !["allow", "deny", "audit"].contains(&linkerd.policy_mode.as_str()) {
+            errors.push(SpecValidationError::new(
+                "spec.serviceMesh.linkerd.policyMode",
+                format!(
+                    "policyMode must be one of: allow, deny, audit (got: {})",
+                    linkerd.policy_mode
+                ),
+                "Set spec.serviceMesh.linkerd.policyMode to one of: allow, deny, or audit.",
+            ));
+        }
+    }
+}
+
 /// Status subresource for StellarNode
 ///
 /// Reports the current state of the managed Stellar node using Kubernetes conventions.
@@ -973,6 +1052,8 @@ mod tests {
             cross_cluster: None,
             cve_handling: None,
             read_replica_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
@@ -1022,6 +1103,8 @@ mod tests {
             cross_cluster: None,
             cve_handling: None,
             read_replica_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,

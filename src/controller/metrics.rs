@@ -47,6 +47,11 @@ pub static HORIZON_TPS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
 pub static ACTIVE_CONNECTIONS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
+/// Gauge tracking how many ledgers the history archive is behind the validator node.
+/// A sustained non-zero value above the configured threshold fires a Prometheus alert.
+pub static ARCHIVE_LEDGER_LAG: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
 /// Labels for operator reconcile metrics
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct ReconcileLabels {
@@ -112,6 +117,11 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_node_active_connections",
         "Number of active peer connections",
         ACTIVE_CONNECTIONS.clone(),
+    );
+    registry.register(
+        "stellar_archive_ledger_lag",
+        "Ledgers the history archive is behind the validator node (0 = in-sync)",
+        ARCHIVE_LEDGER_LAG.clone(),
     );
     registry
 });
@@ -201,6 +211,27 @@ pub fn set_ingestion_lag_with_dp(
         network: network.to_string(),
     };
     INGESTION_LAG.get_or_create(&labels).set(val);
+}
+
+/// Set the archive ledger lag metric for a node.
+///
+/// `lag` is the number of ledgers the history archive is behind the validator node.
+/// A value above [`crate::controller::archive_health::ARCHIVE_LAG_THRESHOLD`] indicates
+/// the archive is significantly stale and a Prometheus alert should fire.
+pub fn set_archive_ledger_lag(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    lag: i64,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+    };
+    ARCHIVE_LEDGER_LAG.get_or_create(&labels).set(lag);
 }
 
 /// Update the Horizon TPS metric for a node

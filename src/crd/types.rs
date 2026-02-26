@@ -1919,3 +1919,72 @@ pub enum PgBouncerPoolMode {
     /// Statement pooling
     Statement,
 }
+
+// ============================================================================
+// OCI Snapshot Sync (#231)
+// ============================================================================
+
+/// Strategy for generating the OCI image tag for a ledger snapshot
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TagStrategy {
+    /// Tag the image with the current ledger sequence number, e.g. `snapshot-12345678`
+    #[default]
+    LatestLedger,
+    /// Always use the same fixed tag, e.g. `latest` or `stable`
+    Fixed,
+}
+
+/// Configuration for packaging and syncing ledger snapshots via an OCI registry.
+///
+/// When `push` is enabled the operator will create a Kubernetes Job after the node
+/// reaches Ready state that tars the contents of the node's data PVC and pushes it
+/// as an OCI image layer to the configured registry.
+///
+/// When `pull` is enabled the operator will create a Job that pulls the most recent
+/// snapshot image and extracts it onto a freshly provisioned PVC before the node pod
+/// starts, enabling fast bootstrapping of new validator/RPC nodes across regions.
+///
+/// Registry credentials are read from a K8s Secret (`.dockerconfigjson` format) whose
+/// name is specified in `credential_secret_name`.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OciSnapshotConfig {
+    /// Whether the OCI snapshot feature is enabled (default: false)
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// OCI registry host, e.g. `ghcr.io` or `registry-1.docker.io`
+    pub registry: String,
+
+    /// Image name within the registry, e.g. `myorg/stellar-snapshot`
+    pub image: String,
+
+    /// Tag used when pushing/pulling the snapshot image.
+    /// With `LatestLedger` the tag is `snapshot-<ledger_seq>`; with `Fixed` the
+    /// literal `fixed_tag` value is used.
+    #[serde(default)]
+    pub tag_strategy: TagStrategy,
+
+    /// Fixed tag to use when `tag_strategy` is `Fixed` (e.g. `latest`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fixed_tag: Option<String>,
+
+    /// Name of a K8s Secret in the same namespace containing Docker registry
+    /// credentials as `config.json` (standard `~/.docker/config.json` format).
+    pub credential_secret_name: String,
+
+    /// Enable pushing snapshots to the registry (default: false)
+    #[serde(default)]
+    pub push: bool,
+
+    /// Enable pulling a snapshot to bootstrap a new node's PVC (default: false)
+    #[serde(default)]
+    pub pull: bool,
+
+    /// Image reference to pull from (full `registry/image:tag` string).
+    /// Required when `pull = true`; if omitted the operator constructs the reference
+    /// from `registry`, `image`, and `tag_strategy`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pull_image_ref: Option<String>,
+}

@@ -1,0 +1,83 @@
+   Compiling stellar-k8s v0.1.0 (/Users/0t41k1/Documents/Stellar-K8s)
+error[E0308]: mismatched types
+   --> src/bin/pqc_sidecar.rs:66:28
+    |
+ 66 |     let _ss2 = decapsulate(&ct, &k_sk);
+    |                ----------- ^^^ expected `&Ciphertext`, found `&SharedSecret`
+    |                |
+    |                arguments to this function are incorrect
+    |
+    = note: expected reference `&pqcrypto_kyber::kyber512::Ciphertext`
+               found reference `&pqcrypto_kyber::kyber512::SharedSecret`
+note: function defined here
+   --> /Users/0t41k1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pqcrypto-kyber-0.8.1/src/kyber512.rs:186:8
+    |
+186 | pub fn decapsulate(ct: &Ciphertext, sk: &SecretKey) -> SharedSecret {
+    |        ^^^^^^^^^^^
+
+error[E0599]: no method named `as_bytes` found for struct `pqcrypto_dilithium::dilithium2::DetachedSignature` in the current scope
+  --> src/bin/pqc_sidecar.rs:97:44
+   |
+97 |         signature_b64: STANDARD.encode(sig.as_bytes()),
+   |                                            ^^^^^^^^ method not found in `pqcrypto_dilithium::dilithium2::DetachedSignature`
+   |
+  ::: /Users/0t41k1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pqcrypto-traits-0.3.5/src/sign.rs:44:8
+   |
+44 |     fn as_bytes(&self) -> &[u8];
+   |        -------- the method is available for `pqcrypto_dilithium::dilithium2::DetachedSignature` here
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: trait `DetachedSignature` which provides `as_bytes` is implemented but not in scope; perhaps you want to import it
+   |
+ 1 + use pqcrypto_traits::sign::DetachedSignature;
+   |
+
+error[E0599]: no method named `as_bytes` found for reference `&pqcrypto_dilithium::dilithium2::PublicKey` in the current scope
+  --> src/bin/pqc_sidecar.rs:98:44
+   |
+98 |         public_key_b64: STANDARD.encode(pk.as_bytes()),
+   |                                            ^^^^^^^^ method not found in `&pqcrypto_dilithium::dilithium2::PublicKey`
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: trait `PublicKey` which provides `as_bytes` is implemented but not in scope; perhaps you want to import it
+   |
+ 1 + use pqcrypto_traits::sign::PublicKey;
+   |
+
+error[E0599]: no function or associated item named `from_bytes` found for struct `pqcrypto_dilithium::dilithium2::DetachedSignature` in the current scope
+   --> src/bin/pqc_sidecar.rs:105:56
+    |
+105 |         if let (Ok(sig), Ok(pk)) = (DetachedSignature::from_bytes(&sig_bytes), DilithiumPublicKey::from_bytes(&pk_bytes)) {
+    |                                                        ^^^^^^^^^^ function or associated item not found in `pqcrypto_dilithium::dilithium2::DetachedSignature`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `as_bytes` with a similar name, but with different arguments
+   --> /Users/0t41k1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pqcrypto-traits-0.3.5/src/sign.rs:44:5
+    |
+ 44 |     fn as_bytes(&self) -> &[u8];
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `DetachedSignature` which provides `from_bytes` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use pqcrypto_traits::sign::DetachedSignature;
+    |
+
+error[E0599]: no function or associated item named `from_bytes` found for struct `pqcrypto_dilithium::dilithium2::PublicKey` in the current scope
+   --> src/bin/pqc_sidecar.rs:105:100
+    |
+105 |         if let (Ok(sig), Ok(pk)) = (DetachedSignature::from_bytes(&sig_bytes), DilithiumPublicKey::from_bytes(&pk_bytes)) {
+    |                                                                                                    ^^^^^^^^^^ function or associated item not found in `pqcrypto_dilithium::dilithium2::PublicKey`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `as_bytes` with a similar name, but with different arguments
+   --> /Users/0t41k1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pqcrypto-traits-0.3.5/src/sign.rs:6:5
+    |
+  6 |     fn as_bytes(&self) -> &[u8];
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `PublicKey` which provides `from_bytes` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use pqcrypto_traits::sign::PublicKey;
+    |
+
+Some errors have detailed explanations: E0308, E0599.
+For more information about an error, try `rustc --explain E0308`.
+error: could not compile `stellar-k8s` (bin "pqc-sidecar") due to 5 previous errors

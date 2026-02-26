@@ -19,8 +19,8 @@ use k8s_openapi::api::autoscaling::v2::{
 use k8s_openapi::api::core::v1::{
     ConfigMap, Container, ContainerPort, EnvVar, EnvVarSource, PersistentVolumeClaim,
     PersistentVolumeClaimSpec, PodSpec, PodTemplateSpec, ResourceRequirements as K8sResources,
-    SecretKeySelector, Service, ServicePort, ServiceSpec, Volume, VolumeMount,
-    VolumeResourceRequirements,
+    SecretKeySelector, Service, ServicePort, ServiceSpec, TypedLocalObjectReference, Volume,
+    VolumeMount, VolumeResourceRequirements,
 };
 use k8s_openapi::api::networking::v1::{
     HTTPIngressPath, HTTPIngressRuleValue, IPBlock, Ingress, IngressBackend, IngressRule,
@@ -46,7 +46,7 @@ use crate::crd::{
 use crate::error::{Error, Result};
 
 /// Get the standard labels for a StellarNode's resources
-pub fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
+pub(crate) fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
     let mut labels = BTreeMap::new();
     labels.insert(
         "app.kubernetes.io/name".to_string(),
@@ -69,7 +69,7 @@ pub fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
 }
 
 /// Create an OwnerReference for garbage collection
-pub fn owner_reference(node: &StellarNode) -> OwnerReference {
+pub(crate) fn owner_reference(node: &StellarNode) -> OwnerReference {
     OwnerReference {
         api_version: StellarNode::api_version(&()).to_string(),
         kind: StellarNode::kind(&()).to_string(),
@@ -81,7 +81,7 @@ pub fn owner_reference(node: &StellarNode) -> OwnerReference {
 }
 
 /// Build the resource name for a given component
-fn resource_name(node: &StellarNode, suffix: &str) -> String {
+pub(crate) fn resource_name(node: &StellarNode, suffix: &str) -> String {
     format!("{}-{}", node.name_any(), suffix)
 }
 
@@ -129,6 +129,17 @@ fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
 
     let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
 
+    // When restoring from a VolumeSnapshot, set dataSource so the PVC is populated from the snapshot
+    let data_source = node
+        .spec
+        .restore_from_snapshot
+        .as_ref()
+        .map(|r| TypedLocalObjectReference {
+            api_group: Some("snapshot.storage.k8s.io".to_string()),
+            kind: "VolumeSnapshot".to_string(),
+            name: r.volume_snapshot_name.clone(),
+        });
+
     PersistentVolumeClaim {
         metadata: merge_resource_meta(
             ObjectMeta {
@@ -148,6 +159,7 @@ fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
         spec: Some(PersistentVolumeClaimSpec {
             access_modes: Some(vec!["ReadWriteOnce".to_string()]),
             storage_class_name: Some(node.spec.storage.storage_class.clone()),
+            data_source,
             resources: Some(VolumeResourceRequirements {
                 requests: Some(requests),
                 ..Default::default()

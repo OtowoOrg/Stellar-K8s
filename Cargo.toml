@@ -142,3 +142,7 @@ path = "src/main.rs"
 [[bin]]
 name = "kubectl-stellar"
 path = "src/kubectl_plugin.rs"
+
+[[bin]]
+name = "pqc-sidecar"
+path = "src/bin/pqc_sidecar.rs"

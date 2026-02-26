@@ -938,6 +938,19 @@ pub(crate) async fn apply_stellar_node(
     )
     .await?;
 
+    // 6a. CSI VolumeSnapshot schedule (Validator only)
+    if node.spec.node_type == NodeType::Validator {
+        if let Some(ref snapshot_config) = node.spec.snapshot_schedule {
+            if let Err(e) = super::snapshot::reconcile_snapshot(client, node, snapshot_config).await
+            {
+                warn!(
+                    "Snapshot reconciliation failed for {}/{}: {}",
+                    namespace, name, e
+                );
+            }
+        }
+    }
+
     // 7. Perform health check to determine if node is ready
     //
     // Measure reduction in API polling overhead: Reactive Status check

@@ -180,9 +180,9 @@ fn spec_strategy() -> impl Strategy<Value = StellarNodeSpec> {
             Just(base_horizon_spec()),
             Just(base_soroban_spec()),
         ],
-        0i32..=10i32,           // replicas
+        0i32..=10i32, // replicas
         Just("v21.0.0".to_string()),
-        prop::bool::ANY,        // suspended
+        prop::bool::ANY, // suspended
     )
         .prop_map(|(mut spec, replicas, version, suspended)| {
             spec.replicas = replicas;

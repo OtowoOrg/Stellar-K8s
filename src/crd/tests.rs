@@ -22,6 +22,7 @@ mod stellar_node_spec_validation {
             storage: default_storage(),
             validator_config: Some(ValidatorConfig {
                 seed_secret_ref: "validator-seed".to_string(),
+                seed_secret_source: Default::default(),
                 quorum_set: None,
                 enable_history_archive: false,
                 history_archive_urls: vec![],
@@ -51,7 +52,12 @@ mod stellar_node_spec_validation {
             dr_config: None,
             topology_spread_constraints: None,
             cve_handling: None,
+            read_replica_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
             resource_meta: None,
+            vpa_config: None,
+            read_pool_endpoint: None,
         }
     }
 
@@ -92,7 +98,12 @@ mod stellar_node_spec_validation {
             dr_config: None,
             topology_spread_constraints: None,
             cve_handling: None,
+            read_replica_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
             resource_meta: None,
+            vpa_config: None,
+            read_pool_endpoint: None,
         }
     }
 
@@ -133,7 +144,12 @@ mod stellar_node_spec_validation {
             dr_config: None,
             topology_spread_constraints: None,
             cve_handling: None,
+            read_replica_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
             resource_meta: None,
+            vpa_config: None,
+            read_pool_endpoint: None,
         }
     }
 

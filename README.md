@@ -63,6 +63,10 @@ helm install stellar-operator stellar-k8s/stellar-operator \
   --create-namespace
 ```
 
+### Install the Operator via OLM
+
+If you are installing on a cluster with the Operator Lifecycle Manager (e.g. OpenShift), refer to the [OLM Deployment Guide](docs/deploy-olm.md).
+
 ### 2. Deploy a Testnet Validator
 
 Apply the following manifest to your cluster:
@@ -147,6 +151,131 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ---
 
+## 📊 Soroban-Specific Observability
+
+Stellar-K8s provides comprehensive monitoring for Soroban RPC nodes with specialized metrics for smart contract operations.
+
+### Grafana Dashboard
+
+A dedicated Soroban monitoring dashboard is available at `monitoring/grafana-soroban.json`. This dashboard provides real-time visibility into:
+
+#### Smart Contract Metrics
+- **Wasm Execution Time**: Histogram showing p50, p95, and p99 latencies for host function execution
+- **Contract Storage Fees**: Distribution of storage fees charged across contract operations
+- **Host Function Calls**: Breakdown of which host functions are being invoked most frequently
+
+#### Resource Consumption
+- **CPU per Invocation**: CPU instructions consumed by each contract invocation
+- **Memory per Invocation**: Wasm VM memory usage and per-invocation memory consumption
+- **Process Resources**: Overall CPU and memory usage of the Soroban RPC process
+
+#### Transaction Metrics
+- **Success/Failure Rate**: Real-time success and failure rates for Soroban transactions
+- **Transaction Ingestion Rate**: Rate of transactions being processed (10m sliding window)
+- **Events Ingestion Rate**: Rate of contract events being ingested
+
+#### Performance Indicators
+- **RPC Request Latency**: p50, p95, p99 latencies for JSON RPC methods
+- **Database Round Trip Time**: Database query performance monitoring
+- **Ledger Ingestion Lag**: How far behind the network the RPC node is
+
+#### Runtime Health
+- **Active Goroutines**: Number of concurrent goroutines in the Go runtime
+- **Memory Allocations**: Rate of memory allocations
+- **GC Pause Time**: Garbage collection pause duration
+
+### Importing the Dashboard
+
+1. **Access Grafana**: Navigate to your Grafana instance
+2. **Import Dashboard**: Go to Dashboards → Import
+3. **Upload JSON**: Upload `monitoring/grafana-soroban.json`
+4. **Configure Datasource**: Select your Prometheus datasource
+5. **Save**: The dashboard will be available as "Soroban RPC - Smart Contract Monitoring"
+
+### Prometheus Metrics
+
+The operator exports the following Soroban-specific metrics:
+
+```
+# Wasm execution metrics
+soroban_rpc_wasm_execution_duration_microseconds{namespace, name, network, contract_id}
+
+# Storage fee metrics
+soroban_rpc_contract_storage_fee_stroops{namespace, name, network, contract_id}
+
+# Resource consumption
+soroban_rpc_wasm_vm_memory_bytes{namespace, name, network, contract_id}
+soroban_rpc_contract_invocation_cpu_instructions{namespace, name, network, contract_id}
+soroban_rpc_contract_invocation_memory_bytes{namespace, name, network, contract_id}
+
+# Contract invocations
+soroban_rpc_contract_invocations_total{namespace, name, network, contract_type}
+
+# Transaction results
+soroban_rpc_transaction_result_total{namespace, name, network, result}
+
+# Host function calls
+soroban_rpc_host_function_calls_total{namespace, name, network, contract_id}
+```
+
+### Example Queries
+
+**Average Wasm execution time (last 5m)**:
+```promql
+rate(soroban_rpc_wasm_execution_duration_microseconds_sum[5m]) / 
+rate(soroban_rpc_wasm_execution_duration_microseconds_count[5m])
+```
+
+**Transaction success rate**:
+```promql
+sum(rate(soroban_rpc_transaction_result_total{result="success"}[5m])) /
+sum(rate(soroban_rpc_transaction_result_total[5m]))
+```
+
+**Top 5 most invoked contracts**:
+```promql
+topk(5, sum(rate(soroban_rpc_contract_invocations_total[5m])) by (contract_type))
+```
+
+### Alerting Rules
+
+Example Prometheus alerting rules for Soroban RPC:
+
+```yaml
+groups:
+  - name: soroban_rpc
+    rules:
+      - alert: HighWasmExecutionLatency
+        expr: histogram_quantile(0.99, rate(soroban_rpc_wasm_execution_duration_microseconds_bucket[5m])) > 100000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Wasm execution latency (p99 > 100ms)"
+          
+      - alert: HighTransactionFailureRate
+        expr: |
+          sum(rate(soroban_rpc_transaction_result_total{result="failed"}[5m])) /
+          sum(rate(soroban_rpc_transaction_result_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Transaction failure rate above 10%"
+          
+      - alert: HighLedgerIngestionLag
+        expr: soroban_rpc_ingest_ledger_lag > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ledger ingestion lagging behind network"
+```
+
+For more details on Soroban metrics, see the [Stellar Soroban RPC documentation](https://developers.stellar.org/docs/data/apis/rpc/admin-guide/monitoring).
+
+---
+
 ## Development
 
 ### Prerequisites
@@ -198,3 +327,9 @@ Bringing nearly 5 years of DevOps experience and a deep background in blockchain
 ## 📄 License
 
 This project is licensed under the [Apache 2.0 License](LICENSE).
+
+---
+
+## 📝 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes and releases.

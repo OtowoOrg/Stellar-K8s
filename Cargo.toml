@@ -8,6 +8,8 @@ license = "Apache-2.0"
 repository = "https://github.com/stellar/stellar-k8s"
 
 [dependencies]
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+toml = "0.8"
 # Kubernetes client and operator framework
 kube = { version = "0.94", features = [
     "runtime",
@@ -84,12 +86,11 @@ once_cell = { version = "1", optional = true }
 rustls = "0.23"
 rcgen = { version = "0.13", features = ["pem", "x509-parser"] }
 axum-server = { version = "0.7.0", features = ["tls-rustls"] }
-rustls-pemfile = "2.2.0"
 rustls-pki-types = "1.14.0"
 
 # Wasm runtime for custom validation plugins
-wasmtime = { version = "24.0.5", optional = true }
-wasmtime-wasi = { version = "24.0.5", features = ["preview1"], optional = true }
+wasmtime = { version = "24.0.6", optional = true }
+wasmtime-wasi = { version = "24.0.6", features = ["preview1"], optional = true }
 
 # Additional crypto for webhook TLS
 tokio-rustls = { version = "0.25", optional = true }
@@ -100,7 +101,7 @@ base64 = "0.21"
 # SHA256 for plugin integrity verification
 sha2 = "0.10"
 hex = { version = "0.4", optional = true }
-rand = "0.9.2"
+rand = "0.8"
 rand_distr = "0.5.1"
 
 # Backup scheduler dependencies

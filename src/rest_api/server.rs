@@ -19,6 +19,7 @@ use super::custom_metrics;
 use super::handlers;
 
 /// Metrics endpoint handler
+#[cfg(feature = "metrics")]
 async fn metrics_handler() -> String {
     use prometheus_client::encoding::text::encode;
     let mut buffer = String::new();
@@ -31,18 +32,34 @@ pub async fn run_server(
     state: Arc<ControllerState>,
     mtls_config: Option<MtlsConfig>,
 ) -> Result<()> {
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/health", get(handlers::health))
         .route("/leader", get(handlers::leader_status))
-        .route("/metrics", get(metrics_handler))
         .route("/api/v1/nodes", get(handlers::list_nodes))
         .route("/api/v1/nodes/:namespace/:name", get(handlers::get_node))
-        .route("/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric", get(custom_metrics::get_pod_metric))
-        .route("/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/stellarnodes.stellar.org/:name/:metric", get(custom_metrics::get_stellar_node_metric))
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric",
+            get(custom_metrics::get_pod_metric),
+        )
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/stellarnodes.stellar.org/:name/:metric",
+            get(custom_metrics::get_stellar_node_metric),
+        )
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
+    #[cfg(feature = "metrics")]
+    {
+        app = app.route("/metrics", get(metrics_handler));
+    }
+
+    // Default to 9090 to match Prometheus scrape conventions and project docs.
+    let port: u16 = std::env::var("REST_API_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9090);
+
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
     if let Some(config) = mtls_config {
         info!("REST API server listening on {} with mTLS", addr);

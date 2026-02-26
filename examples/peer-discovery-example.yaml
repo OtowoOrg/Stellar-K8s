@@ -49,7 +49,7 @@ spec:
   validatorConfig:
     seedSecretRef: "validator-1-seed"
     # Quorum set will be dynamically updated with discovered peers
-    quorum_set: |
+    quorumSet: |
       [VALIDATORS]
       vALiDaTor1 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX2"
       vALiDaTor2 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX3"
@@ -93,7 +93,7 @@ spec:
     retentionPolicy: Retain
   validatorConfig:
     seedSecretRef: "validator-2-seed"
-    quorum_set: |
+    quorumSet: |
       [VALIDATORS]
       vALiDaTor1 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX2"
       vALiDaTor2 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX3"
@@ -137,7 +137,7 @@ spec:
     retentionPolicy: Retain
   validatorConfig:
     seedSecretRef: "validator-3-seed"
-    quorum_set: |
+    quorumSet: |
       [VALIDATORS]
       vALiDaTor1 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX2"
       vALiDaTor2 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX3"

@@ -4,6 +4,7 @@
 //! Horizon, and Soroban RPC nodes on Kubernetes clusters.
 
 pub mod backup;
+pub mod carbon_aware;
 pub mod controller;
 pub mod crd;
 pub mod error;

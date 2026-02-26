@@ -79,6 +79,17 @@ enum Commands {
         #[arg(short = 'A', long)]
         all_namespaces: bool,
     },
+    /// Debug a StellarNode by exec'ing into a diagnostic pod
+    Debug {
+        /// Name of the StellarNode
+        node_name: String,
+        /// Shell to use (default: /bin/bash)
+        #[arg(short, long, default_value = "/bin/bash")]
+        shell: String,
+        /// Use ephemeral debug container instead of exec
+        #[arg(short, long)]
+        ephemeral: bool,
+    },
 }
 
 #[tokio::main]
@@ -145,6 +156,14 @@ async fn run(cli: Cli) -> Result<()> {
                 &cli.output,
             )
             .await
+        }
+        Commands::Debug {
+            node_name,
+            shell,
+            ephemeral,
+        } => {
+            let namespace = cli.namespace.as_deref().unwrap_or("default");
+            debug(&client, namespace, &node_name, &shell, ephemeral).await
         }
     }
 }
@@ -483,6 +502,119 @@ async fn status(
     Ok(())
 }
 
+/// Debug a StellarNode by exec'ing into a pod with diagnostic tools
+async fn debug(
+    client: &Client,
+    namespace: &str,
+    node_name: &str,
+    shell: &str,
+    ephemeral: bool,
+) -> Result<()> {
+    // First, verify the StellarNode exists
+    let node_api: Api<StellarNode> = Api::namespaced(client.clone(), namespace);
+    let node = node_api.get(node_name).await.map_err(Error::KubeError)?;
+
+    // Find pods using the same label selector as the controller
+    let pod_api: Api<Pod> = Api::namespaced(client.clone(), namespace);
+    let label_selector =
+        format!("app.kubernetes.io/instance={node_name},app.kubernetes.io/name=stellar-node");
+
+    let pods = pod_api
+        .list(&kube::api::ListParams::default().labels(&label_selector))
+        .await
+        .map_err(Error::KubeError)?;
+
+    if pods.items.is_empty() {
+        return Err(Error::ConfigError(format!(
+            "No pods found for StellarNode {namespace}/{node_name}"
+        )));
+    }
+
+    // Use the first pod (for StatefulSets there's typically one, for Deployments we pick one)
+    let pod = &pods.items[0];
+    let pod_name = pod.name_any();
+
+    println!("🔍 Debugging StellarNode: {node_name}");
+    println!("📦 Pod: {pod_name}");
+    println!("🌐 Namespace: {namespace}");
+    println!("🔧 Node Type: {:?}", node.spec.node_type);
+    println!();
+
+    if ephemeral {
+        // Use ephemeral debug container (requires Kubernetes 1.23+)
+        println!("🚀 Starting ephemeral debug container with diagnostic tools...");
+        println!();
+
+        let mut cmd = std::process::Command::new("kubectl");
+        cmd.arg("debug");
+        cmd.arg("-n").arg(namespace);
+        cmd.arg(&pod_name);
+        cmd.arg("-it");
+        cmd.arg("--image=nicolaka/netshoot:latest");
+        cmd.arg("--target").arg("stellar-core"); // Target the main container
+        cmd.arg("--");
+        cmd.arg(shell);
+
+        let status = cmd.status().map_err(|e| {
+            Error::ConfigError(format!(
+                "Failed to execute kubectl debug for pod {pod_name}: {e}"
+            ))
+        })?;
+
+        if !status.success() {
+            return Err(Error::ConfigError(format!(
+                "kubectl debug failed for pod {} with exit code: {:?}",
+                pod_name,
+                status.code()
+            )));
+        }
+    } else {
+        // Regular exec into the existing container
+        println!("🔌 Exec'ing into pod...");
+        println!("💡 Available diagnostic commands:");
+        println!("   - stellar-core --version");
+        println!("   - stellar-core http-command 'info'");
+        println!("   - stellar-core http-command 'peers'");
+        println!("   - curl http://localhost:11626/info");
+        println!("   - ps aux");
+        println!("   - df -h");
+        println!("   - netstat -tulpn");
+        println!();
+
+        // Determine the container name based on node type
+        let container_name = match node.spec.node_type {
+            stellar_k8s::crd::NodeType::Validator => "stellar-core",
+            stellar_k8s::crd::NodeType::Horizon => "horizon",
+            stellar_k8s::crd::NodeType::SorobanRpc => "soroban-rpc",
+        };
+
+        let mut cmd = std::process::Command::new("kubectl");
+        cmd.arg("exec");
+        cmd.arg("-n").arg(namespace);
+        cmd.arg("-it");
+        cmd.arg(&pod_name);
+        cmd.arg("-c").arg(container_name);
+        cmd.arg("--");
+        cmd.arg(shell);
+
+        let status = cmd.status().map_err(|e| {
+            Error::ConfigError(format!(
+                "Failed to execute kubectl exec for pod {pod_name}: {e}"
+            ))
+        })?;
+
+        if !status.success() {
+            return Err(Error::ConfigError(format!(
+                "kubectl exec failed for pod {} with exit code: {:?}",
+                pod_name,
+                status.code()
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -529,6 +661,7 @@ mod tests {
                 database: None,
                 managed_database: None,
                 autoscaling: None,
+                vpa_config: None,
                 ingress: None,
                 load_balancer: None,
                 global_discovery: None,
@@ -539,7 +672,11 @@ mod tests {
                 dr_config: None,
                 topology_spread_constraints: None,
                 cve_handling: None,
+                read_replica_config: None,
+                oci_snapshot: None,
+                service_mesh: None,
                 resource_meta: None,
+                read_pool_endpoint: None,
             },
             status: Some(StellarNodeStatus {
                 #[allow(deprecated)]
@@ -556,6 +693,7 @@ mod tests {
                 replicas: 1,
                 canary_ready_replicas: 0,
                 canary_version: None,
+                canary_start_time: None,
                 last_migrated_version: None,
             }),
         }

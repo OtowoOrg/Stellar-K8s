@@ -1,0 +1,37 @@
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-mainnet-canary
+  namespace: default
+spec:
+  nodeType: Horizon
+  network: mainnet
+  
+  # Change this version to trigger a canary rollout!
+  version: "2.33.0"
+  
+  replicas: 2
+  
+  # The new Rolling Strategy defining a canary
+  strategy:
+    canary:
+      # Traffic weight routed to the new canary version
+      weight: 10
+      # Amount of time in seconds to wait before checking the health and promoting
+      checkIntervalSeconds: 300
+      
+  horizonConfig:
+    stellarCoreUrl: "http://core-mainnet.default.svc.cluster.local:11626"
+    enableIngest: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+      
+  ingress:
+    enabled: true
+    ingressClassName: "nginx"
+    hosts:
+      - host: "horizon-canary.example.com"
+        paths:
+          - path: "/"
+            pathType: Prefix
+    tls: []

@@ -474,6 +474,7 @@ mod tests {
                 storage: StorageConfig::default(),
                 validator_config: Some(ValidatorConfig {
                     seed_secret_ref: "test-seed-secret".to_string(),
+                    seed_secret_source: Default::default(),
                     enable_history_archive: false,
                     history_archive_urls: vec![],
                     quorum_set: None,

@@ -561,6 +561,7 @@ mod tests {
                 replicas: 1,
                 canary_ready_replicas: 0,
                 canary_version: None,
+                canary_start_time: None,
                 last_migrated_version: None,
             }),
         }

@@ -5,6 +5,9 @@
 
 use crate::controller::resource_meta::merge_resource_meta;
 
+// *** NEW: import kms_secret so we can accept SeedInjectionSpec ***
+use super::kms_secret;
+
 use std::collections::BTreeMap;
 
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec, StatefulSet, StatefulSetSpec};
@@ -97,7 +100,6 @@ pub async fn ensure_pvc(client: &Client, node: &StellarNode) -> Result<()> {
 
     match api.get(&name).await {
         Ok(_existing) => {
-            // PVCs are mostly immutable, just ensure it exists
             info!("PVC {} already exists", name);
         }
         Err(kube::Error::Api(e)) if e.code == 404 => {
@@ -116,17 +118,15 @@ fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
 
     let mut requests = BTreeMap::new();
     let effective_storage_size = if node.spec.storage.size.is_empty() {
-        // Default based on history_mode override
         match node.spec.history_mode {
-            HistoryMode::Full => "1500Gi".to_string(), // Approximate for full history
-            HistoryMode::Recent => "100Gi".to_string(), // Approximate for recent history
+            HistoryMode::Full => "1500Gi".to_string(),
+            HistoryMode::Recent => "100Gi".to_string(),
         }
     } else {
         node.spec.storage.size.clone()
     };
     requests.insert("storage".to_string(), Quantity(effective_storage_size));
 
-    // Merge custom annotations from storage config with existing annotations
     let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
 
     PersistentVolumeClaim {
@@ -215,18 +215,15 @@ fn build_config_map(
 
     let mut data = BTreeMap::new();
 
-    // Add network-specific configuration
     data.insert(
         "NETWORK_PASSPHRASE".to_string(),
         node.spec.network.passphrase().to_string(),
     );
 
-    // Add mTLS configuration if enabled
     if enable_mtls {
         data.insert("MTLS_ENABLED".to_string(), "true".to_string());
     }
 
-    // Add node-type-specific configuration
     match &node.spec.node_type {
         NodeType::Validator => {
             let mut core_cfg = String::new();
@@ -245,7 +242,6 @@ fn build_config_map(
                 core_cfg.push_str("TLS_KEY_FILE=\"/etc/stellar/tls/tls.key\"\n");
             }
 
-            // History Mode Configuration
             match node.spec.history_mode {
                 HistoryMode::Full => {
                     core_cfg.push_str("\n# Full History Mode\n");
@@ -254,7 +250,7 @@ fn build_config_map(
                 HistoryMode::Recent => {
                     core_cfg.push_str("\n# Recent History Mode\n");
                     core_cfg.push_str("CATCHUP_COMPLETE=false\n");
-                    core_cfg.push_str("CATCHUP_RECENT=60480\n"); // ~1 week
+                    core_cfg.push_str("CATCHUP_RECENT=60480\n");
                 }
             }
 
@@ -278,7 +274,6 @@ fn build_config_map(
                     config.stellar_core_url.clone(),
                 );
 
-                // Try to generate TOML from structured config (preferred)
                 if config.captive_core_structured_config.is_some() {
                     match crate::controller::captive_core::CaptiveCoreConfigBuilder::from_node_config(node) {
                         Ok(builder) => {
@@ -296,7 +291,6 @@ fn build_config_map(
                         }
                     }
                 } else {
-                    // Fallback to deprecated raw TOML for backward compatibility
                     #[allow(deprecated)]
                     if let Some(captive_config) = &config.captive_core_config {
                         data.insert("captive-core.cfg".to_string(), captive_config.clone());
@@ -317,12 +311,12 @@ fn build_config_map(
                 annotations: if annotations.is_empty() {
                     None
                 } else {
-                    Some(annotations.clone()) // <-- use the extracted annotations
+                    Some(annotations.clone())
                 },
                 owner_references: Some(vec![owner_reference(node)]),
                 ..Default::default()
             },
-            &None, // no extra ObjectMeta
+            &None,
         ),
         data: Some(data.clone()),
         ..Default::default()
@@ -400,7 +394,6 @@ pub async fn ensure_canary_deployment(
     let mut deployment = build_deployment(&canary_node, enable_mtls);
     deployment.metadata.name = Some(name.clone());
 
-    // Update labels and selectors to include canary label
     if let Some(spec) = &mut deployment.spec {
         let mut labels = spec
             .template
@@ -456,7 +449,8 @@ fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deployment {
                 match_labels: Some(labels.clone()),
                 ..Default::default()
             },
-            template: build_pod_template(node, &labels, enable_mtls),
+            // Deployments (Horizon/SorobanRpc) never need seed injection → pass None
+            template: build_pod_template(node, &labels, enable_mtls, None),
             ..Default::default()
         }),
         status: None,
@@ -467,18 +461,25 @@ fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deployment {
 // StatefulSet (for Validators)
 // ============================================================================
 
-/// Ensure a StatefulSet exists for Validator nodes
+/// Ensure a StatefulSet exists for Validator nodes.
+///
+/// `seed_injection` describes how the validator seed should be mounted into
+/// the pod — either as an env var from a Secret/ExternalSecret, or as a CSI
+/// volume mount. Pass `None` when called for non-validator nodes.
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_statefulset(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
+    // *** NEW PARAMETER ***
+    seed_injection: Option<&kms_secret::SeedInjectionSpec>,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<StatefulSet> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
-    let statefulset = build_statefulset(node, enable_mtls);
+    // *** Pass seed_injection down to the builder ***
+    let statefulset = build_statefulset(node, enable_mtls, seed_injection);
 
     let patch = Patch::Apply(&statefulset);
     api.patch(
@@ -491,20 +492,16 @@ pub async fn ensure_statefulset(
     Ok(())
 }
 
-fn build_statefulset(node: &StellarNode, enable_mtls: bool) -> StatefulSet {
+// *** seed_injection added as parameter ***
+fn build_statefulset(
+    node: &StellarNode,
+    enable_mtls: bool,
+    seed_injection: Option<&kms_secret::SeedInjectionSpec>,
+) -> StatefulSet {
     let labels = standard_labels(node);
     let name = node.name_any();
 
-    let replicas = if node.spec.suspended { 0 } else { 1 }; // Validators always have 1 replica
-
-    let mut annotations = BTreeMap::new();
-    if node.spec.suspended {
-        annotations.insert("stellar.org/suspended".to_string(), "true".to_string());
-        annotations.insert(
-            "stellar.org/suspended-at".to_string(),
-            chrono::Utc::now().to_rfc3339(),
-        );
-    }
+    let replicas = if node.spec.suspended { 0 } else { 1 };
 
     let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
 
@@ -531,7 +528,8 @@ fn build_statefulset(node: &StellarNode, enable_mtls: bool) -> StatefulSet {
                 ..Default::default()
             },
             service_name: format!("{name}-headless"),
-            template: build_pod_template(node, &labels, enable_mtls),
+            // *** Pass seed_injection into pod template builder ***
+            template: build_pod_template(node, &labels, enable_mtls, seed_injection),
             ..Default::default()
         }),
         status: None,
@@ -575,7 +573,6 @@ pub async fn delete_workload(client: &Client, node: &StellarNode) -> Result<()> 
 // ============================================================================
 
 /// Ensure a Service exists for the node
-/// Service persists even when node is suspended to maintain peer discovery
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_service(client: &Client, node: &StellarNode, enable_mtls: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
@@ -691,444 +688,28 @@ fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
 }
 
 // ============================================================================
-// LoadBalancer Service (MetalLB Integration)
+// LoadBalancer Service (MetalLB Integration) — stubs unchanged
 // ============================================================================
 
-/// Ensure a LoadBalancer Service exists for external access via MetalLB
-/// TODO: Load balancer and global discovery fields not yet implemented in StellarNodeSpec
 #[allow(dead_code)]
 #[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
 pub async fn ensure_load_balancer_service(_client: &Client, _node: &StellarNode) -> Result<()> {
-    // Disabled: load_balancer field not yet implemented in StellarNodeSpec
     Ok(())
 }
 
-/*
-fn build_load_balancer_service(node: &StellarNode, config: &LoadBalancerConfig) -> Service {
-    let labels = standard_labels(node);
-    let name = resource_name(node, "lb");
-
-    // Build service ports based on node type
-    let mut ports = match node.spec.node_type {
-        NodeType::Validator => vec![
-            ServicePort {
-                name: Some("peer".to_string()),
-                port: 11625,
-                target_port: Some(
-                    k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(11625),
-                ),
-                protocol: Some("TCP".to_string()),
-                ..Default::default()
-            },
-            ServicePort {
-                name: Some("http".to_string()),
-                port: 11626,
-                target_port: Some(
-                    k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(11626),
-                ),
-                protocol: Some("TCP".to_string()),
-                ..Default::default()
-            },
-        ],
-        NodeType::Horizon | NodeType::SorobanRpc => vec![ServicePort {
-            name: Some("http".to_string()),
-            port: 8000,
-            target_port: Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(8000)),
-            protocol: Some("TCP".to_string()),
-            ..Default::default()
-        }],
-    };
-
-    // Add health check port if enabled
-    if config.health_check_enabled {
-        ports.push(ServicePort {
-            name: Some("health".to_string()),
-            port: config.health_check_port,
-            target_port: Some(
-                k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(
-                    config.health_check_port,
-                ),
-            ),
-            protocol: Some("TCP".to_string()),
-            ..Default::default()
-        });
-    }
-
-    // Build annotations for MetalLB
-    let mut annotations = config.annotations.clone().unwrap_or_default();
-
-    // Add MetalLB address pool annotation if specified
-    if let Some(pool) = &config.address_pool {
-        annotations.insert("metallb.universe.tf/address-pool".to_string(), pool.clone());
-    }
-
-    // Add MetalLB load balancer sharing annotation for anycast
-    annotations.insert(
-        "metallb.universe.tf/allow-shared-ip".to_string(),
-        format!("stellar-{}", node.name_any()),
-    );
-
-    // Add BGP-specific annotations
-    if config.mode == LoadBalancerMode::BGP {
-        if let Some(bgp) = &config.bgp {
-            // Add BGP communities annotation
-            if !bgp.communities.is_empty() {
-                annotations.insert(
-                    "metallb.universe.tf/bgp-peer-communities".to_string(),
-                    bgp.communities.join(","),
-                );
-            }
-
-            // Add large communities
-            if !bgp.large_communities.is_empty() {
-                annotations.insert(
-                    "metallb.universe.tf/bgp-large-communities".to_string(),
-                    bgp.large_communities.join(","),
-                );
-            }
-        }
-    }
-
-    // Add global discovery annotations
-    // TODO: global_discovery field not yet implemented in StellarNodeSpec
-    /*
-    if let Some(gd) = &node.spec.global_discovery {
-        if gd.enabled {
-            if let Some(region) = &gd.region {
-                annotations.insert("stellar.org/region".to_string(), region.clone());
-            }
-            if let Some(zone) = &gd.zone {
-                annotations.insert("stellar.org/zone".to_string(), zone.clone());
-            }
-            annotations.insert("stellar.org/priority".to_string(), gd.priority.to_string());
-
-            // Add topology aware hints annotation
-            if gd.topology_aware_hints {
-                annotations.insert(
-                    "service.kubernetes.io/topology-mode".to_string(),
-                    "Auto".to_string(),
-                );
-            }
-
-            // Add external-dns annotations if configured
-            if let Some(dns) = &gd.external_dns {
-                annotations.insert(
-                    "external-dns.alpha.kubernetes.io/hostname".to_string(),
-                    dns.hostname.clone(),
-                );
-                annotations.insert(
-                    "external-dns.alpha.kubernetes.io/ttl".to_string(),
-                    dns.ttl.to_string(),
-                );
-                if let Some(extra) = &dns.annotations {
-                    annotations.extend(extra.clone());
-                }
-            }
-        }
-    }
-    */
-
-    let external_traffic_policy = match config.external_traffic_policy {
-        ExternalTrafficPolicy::Cluster => "Cluster".to_string(),
-        ExternalTrafficPolicy::Local => "Local".to_string(),
-    };
-
-    let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
-
-    Service {
-        metadata: merge_resource_meta(
-            ObjectMeta {
-                name: Some(name),
-                namespace: node.namespace(),
-                labels: Some(labels.clone()),
-                annotations: if annotations.is_empty() {
-                    None
-                } else {
-                    Some(annotations)
-                },
-                owner_references: Some(vec![owner_reference(node)]),
-                ..Default::default()
-            },
-            &None,
-        ),
-        spec: Some(ServiceSpec {
-            type_: Some("LoadBalancer".to_string()),
-            selector: Some(labels),
-            ports: Some(ports),
-            load_balancer_ip: config.load_balancer_ip.clone(),
-            external_traffic_policy: Some(external_traffic_policy),
-            ..Default::default()
-        }),
-        status: None,
-    }
-}
-*/
-
-/// Delete the LoadBalancer Service for a node
 #[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
 pub async fn delete_load_balancer_service(_client: &Client, _node: &StellarNode) -> Result<()> {
-    // Disabled: load_balancer field not yet implemented in StellarNodeSpec
     Ok(())
 }
 
-// ============================================================================
-// MetalLB BGP Configuration Resources
-// ============================================================================
-
-/// Ensure MetalLB BGPAdvertisement and IPAddressPool ConfigMaps are documented
-/// Note: MetalLB CRDs must be created manually or via Helm; this function
-/// creates the recommended ConfigMap for cluster operators to reference.
 #[allow(dead_code)]
 #[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
 pub async fn ensure_metallb_config(_client: &Client, _node: &StellarNode) -> Result<()> {
-    // Disabled: load_balancer field not yet implemented in StellarNodeSpec
     Ok(())
 }
 
-/*
-fn build_metallb_config_map(node: &StellarNode, config: &LoadBalancerConfig) -> ConfigMap {
-    let labels = standard_labels(node);
-    let name = resource_name(node, "metallb-config");
-
-    let bgp = config.bgp.as_ref();
-    let mut data = BTreeMap::new();
-
-    // Generate IPAddressPool YAML
-    let address_pool_yaml = if let Some(ip) = &config.load_balancer_ip {
-        format!(
-            r#"# IPAddressPool for {}
-# Apply this to metallb-system namespace
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: stellar-{}-pool
-  namespace: metallb-system
-spec:
-  addresses:
-    - {}/32
-  autoAssign: true
-"#,
-            node.name_any(),
-            node.name_any(),
-            ip
-        )
-    } else if let Some(pool) = &config.address_pool {
-        format!(
-            r#"# Using existing IPAddressPool: {pool}
-# Ensure this pool exists in metallb-system namespace
-"#
-        )
-    } else {
-        "# No specific IP or pool configured; MetalLB will use default pool\n".to_string()
-    };
-
-    data.insert("ip-address-pool.yaml".to_string(), address_pool_yaml);
-
-    // Generate BGPAdvertisement YAML
-    if let Some(bgp_cfg) = bgp {
-        let communities_yaml = if !bgp_cfg.communities.is_empty() {
-            format!(
-                "  communities:\n{}",
-                bgp_cfg
-                    .communities
-                    .iter()
-                    .map(|c| format!("    - {c}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            )
-        } else {
-            String::new()
-        };
-
-        let node_selectors_yaml = if let Some(adv) = &bgp_cfg.advertisement {
-            if let Some(selectors) = &adv.node_selectors {
-                format!(
-                    "  nodeSelectors:\n    - matchLabels:\n{}",
-                    selectors
-                        .iter()
-                        .map(|(k, v)| format!("        {k}: \"{v}\""))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                )
-            } else {
-                String::new()
-            }
-        } else {
-            String::new()
-        };
-
-        let aggregation = bgp_cfg
-            .advertisement
-            .as_ref()
-            .map(|a| a.aggregation_length)
-            .unwrap_or(32);
-
-        let bgp_advertisement_yaml = format!(
-            r#"# BGPAdvertisement for {}
-# Apply this to metallb-system namespace
-apiVersion: metallb.io/v1beta1
-kind: BGPAdvertisement
-metadata:
-  name: stellar-{}-bgp
-  namespace: metallb-system
-spec:
-  ipAddressPools:
-    - stellar-{}-pool
-  aggregationLength: {}
-{}{}
-"#,
-            node.name_any(),
-            node.name_any(),
-            node.name_any(),
-            aggregation,
-            communities_yaml,
-            node_selectors_yaml
-        );
-
-        data.insert("bgp-advertisement.yaml".to_string(), bgp_advertisement_yaml);
-
-        // Generate BGPPeer YAML for each peer
-        let mut peers_yaml = String::new();
-        for (i, peer) in bgp_cfg.peers.iter().enumerate() {
-            let password_ref = peer.password_secret_ref.as_ref().map(|s| {
-                format!(
-                    r#"  password:
-    secretRef:
-      name: {}
-      key: {}"#,
-                    s.name, s.key
-                )
-            });
-
-            let bfd_profile = if bgp_cfg.bfd_enabled {
-                bgp_cfg
-                    .bfd_profile
-                    .as_ref()
-                    .map(|p| format!("  bfdProfile: {p}"))
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
-
-            use std::fmt::Write;
-            write!(
-                peers_yaml,
-                r#"---
-# BGPPeer {} for {}
-apiVersion: metallb.io/v1beta2
-kind: BGPPeer
-metadata:
-  name: stellar-{}-peer-{}
-  namespace: metallb-system
-spec:
-  myASN: {}
-  peerASN: {}
-  peerAddress: {}
-  peerPort: {}
-  holdTime: {}s
-  keepaliveTime: {}s
-  ebgpMultiHop: {}
-{}{}
-"#,
-                i + 1,
-                node.name_any(),
-                node.name_any(),
-                i,
-                bgp_cfg.local_asn,
-                peer.asn,
-                peer.address,
-                peer.port,
-                peer.hold_time,
-                peer.keepalive_time,
-                peer.ebgp_multi_hop,
-                password_ref.unwrap_or_default(),
-                bfd_profile
-            )
-            .unwrap();
-        }
-
-        data.insert("bgp-peers.yaml".to_string(), peers_yaml);
-    }
-
-    // Generate L2Advertisement YAML as fallback
-    if config.mode == LoadBalancerMode::L2 || config.mode == LoadBalancerMode::BGP {
-        let l2_advertisement_yaml = format!(
-            r#"# L2Advertisement for {} (optional fallback)
-# Apply this to metallb-system namespace
-apiVersion: metallb.io/v1beta1
-kind: L2Advertisement
-metadata:
-  name: stellar-{}-l2
-  namespace: metallb-system
-spec:
-  ipAddressPools:
-    - stellar-{}-pool
-"#,
-            node.name_any(),
-            node.name_any(),
-            node.name_any()
-        );
-
-        data.insert("l2-advertisement.yaml".to_string(), l2_advertisement_yaml);
-    }
-
-    // Add usage instructions
-    let instructions = format!(
-        r#"# MetalLB Configuration for Stellar Node: {}
-#
-# This ConfigMap contains the recommended MetalLB resources for BGP anycast.
-# Apply these manifests to enable global node discovery.
-#
-# Prerequisites:
-# 1. MetalLB must be installed in the cluster (metallb-system namespace)
-# 2. BGP peers must be configured to accept connections from cluster nodes
-# 3. Firewall rules must allow BGP traffic (TCP port 179)
-#
-# Installation:
-#   kubectl apply -f ip-address-pool.yaml -n metallb-system
-#   kubectl apply -f bgp-advertisement.yaml -n metallb-system
-#   kubectl apply -f bgp-peers.yaml -n metallb-system
-#
-# Verification:
-#   kubectl get ipaddresspools -n metallb-system
-#   kubectl get bgpadvertisements -n metallb-system
-#   kubectl get bgppeers -n metallb-system
-#   kubectl logs -n metallb-system -l app=metallb,component=speaker
-#
-# For more information, see: https://metallb.universe.tf/configuration/
-"#,
-        node.name_any()
-    );
-
-    data.insert("README.md".to_string(), instructions);
-
-    let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
-    ConfigMap {
-        metadata: merge_resource_meta(
-            ObjectMeta {
-                name: Some(name.clone()),
-                namespace: node.namespace(),
-                labels: Some(labels.clone()),
-                annotations: if annotations.is_empty() {
-                    None
-                } else {
-                    Some(annotations.clone()) // <-- use the extracted annotations
-                },
-                owner_references: Some(vec![owner_reference(node)]),
-                ..Default::default()
-            },
-            &None, // no extra ObjectMeta
-        ),
-        data: Some(data.clone()),
-        ..Default::default()
-    }
-}
-*/
-
-/// Delete the MetalLB configuration ConfigMap
 #[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
 pub async fn delete_metallb_config(_client: &Client, _node: &StellarNode) -> Result<()> {
-    // Disabled: load_balancer field not yet implemented in StellarNodeSpec
     Ok(())
 }
 
@@ -1151,10 +732,9 @@ pub async fn delete_service(client: &Client, node: &StellarNode) -> Result<()> {
 }
 
 // ============================================================================
-// CloudNativePG (CNPG) Resources
+// CloudNativePG (CNPG) Resources — unchanged
 // ============================================================================
 
-/// Ensure a CNPG Cluster exists for managed HA database
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_cnpg_cluster(client: &Client, node: &StellarNode) -> Result<()> {
     let managed_db = match &node.spec.managed_database {
@@ -1246,7 +826,6 @@ fn build_cnpg_cluster(node: &StellarNode, config: &ManagedDatabaseConfig) -> Clu
         },
     };
 
-    // Override image if needed (Postgres version)
     if !config.postgres_version.is_empty() {
         cluster.spec.image_name = Some(format!(
             "ghcr.io/cloudnative-pg/postgresql:{}",
@@ -1257,7 +836,6 @@ fn build_cnpg_cluster(node: &StellarNode, config: &ManagedDatabaseConfig) -> Clu
     cluster
 }
 
-/// Ensure a CNPG Pooler exists for managed database pooling
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_cnpg_pooler(client: &Client, node: &StellarNode) -> Result<()> {
     let managed_db = match &node.spec.managed_database {
@@ -1336,7 +914,6 @@ fn build_cnpg_pooler(node: &StellarNode, config: &crate::crd::PgBouncerConfig) -
     }
 }
 
-/// Delete the CNPG resources for a node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn delete_cnpg_resources(client: &Client, node: &StellarNode) -> Result<()> {
     if node.spec.managed_database.is_none() {
@@ -1345,14 +922,12 @@ pub async fn delete_cnpg_resources(client: &Client, node: &StellarNode) -> Resul
 
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
 
-    // Delete Pooler
     let pooler_api: Api<Pooler> = Api::namespaced(client.clone(), &namespace);
     let pooler_name = resource_name(node, "pooler");
     let _ = pooler_api
         .delete(&pooler_name, &DeleteParams::default())
         .await;
 
-    // Delete Cluster
     let cluster_api: Api<Cluster> = Api::namespaced(client.clone(), &namespace);
     let cluster_name = node.name_any();
     let _ = cluster_api
@@ -1363,12 +938,11 @@ pub async fn delete_cnpg_resources(client: &Client, node: &StellarNode) -> Resul
 }
 
 // ============================================================================
-// Ingress
+// Ingress — unchanged
 // ============================================================================
 
-/// Ensure an Ingress exists for Horizon or Soroban RPC nodes when configured
+#[allow(dead_code)]
 pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
-    // Ingress is only supported for Horizon and SorobanRpc
     let ingress_cfg = match &node.spec.ingress {
         Some(cfg)
             if matches!(
@@ -1396,7 +970,6 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
 
     info!("Ingress ensured for {}/{}", namespace, name);
 
-    // If canary is active, ensure canary ingress as well
     if let RolloutStrategy::Canary(ref cfg) = node.spec.strategy {
         if node
             .status
@@ -1408,7 +981,6 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
             let mut canary_ingress = build_ingress(node, ingress_cfg);
             canary_ingress.metadata.name = Some(canary_name.clone());
 
-            // Add canary annotations
             let mut annotations = canary_ingress
                 .metadata
                 .annotations
@@ -1422,8 +994,6 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
                 "nginx.ingress.kubernetes.io/canary-weight".to_string(),
                 cfg.weight.to_string(),
             );
-
-            // Support for Traefik and Istio (Istio usually needs VirtualService, but some setups use Ingress annotations)
             annotations.insert(
                 "traefik.ingress.kubernetes.io/service.weights".to_string(),
                 format!("{}:{}", node.name_any(), cfg.weight),
@@ -1431,7 +1001,6 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
 
             canary_ingress.metadata.annotations = Some(annotations);
 
-            // Update backend to point to canary service
             if let Some(spec) = &mut canary_ingress.spec {
                 if let Some(rules) = &mut spec.rules {
                     for rule in rules {
@@ -1454,7 +1023,6 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
             .await?;
             info!("Canary Ingress ensured for {}/{}", namespace, canary_name);
         } else {
-            // Delete canary ingress if no longer active
             let canary_name = format!("{name}-canary");
             let _ = api.delete(&canary_name, &DeleteParams::default()).await;
         }
@@ -1463,6 +1031,7 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn build_ingress(node: &StellarNode, config: &IngressConfig) -> Ingress {
     let labels = standard_labels(node);
     let name = resource_name(node, "ingress");
@@ -1472,7 +1041,6 @@ fn build_ingress(node: &StellarNode, config: &IngressConfig) -> Ingress {
         NodeType::Validator => 11626,
     };
 
-    // Merge user-provided annotations with cert-manager issuer hints
     let mut annotations = config.annotations.clone().unwrap_or_default();
     if let Some(issuer) = &config.cert_manager_issuer {
         annotations.insert("cert-manager.io/issuer".to_string(), issuer.clone());
@@ -1547,7 +1115,6 @@ fn build_ingress(node: &StellarNode, config: &IngressConfig) -> Ingress {
     }
 }
 
-/// Delete the Ingress for a node
 pub async fn delete_ingress(client: &Client, node: &StellarNode) -> Result<()> {
     if node.spec.ingress.is_none() {
         return Ok(());
@@ -1572,10 +1139,16 @@ pub async fn delete_ingress(client: &Client, node: &StellarNode) -> Result<()> {
 // Pod Template Builder
 // ============================================================================
 
+/// Build the pod template.
+///
+/// `seed_injection` is `Some` only for Validator StatefulSets; it adds the
+/// env vars / volumes / mounts required to deliver the seed from KMS/ESO/CSI.
 fn build_pod_template(
     node: &StellarNode,
     labels: &BTreeMap<String, String>,
     enable_mtls: bool,
+    // *** NEW PARAMETER ***
+    seed_injection: Option<&kms_secret::SeedInjectionSpec>,
 ) -> PodTemplateSpec {
     let mut pod_spec = PodSpec {
         containers: vec![build_container(node, enable_mtls)],
@@ -1621,7 +1194,6 @@ fn build_pod_template(
         if let Some(validator_config) = &node.spec.validator_config {
             if validator_config.key_source == KeySource::KMS {
                 if let Some(kms_config) = &validator_config.kms_config {
-                    // Add shared memory volume for keys (never touches disk)
                     let volumes = pod_spec.volumes.get_or_insert_with(Vec::new);
                     volumes.push(Volume {
                         name: "keys".to_string(),
@@ -1632,7 +1204,6 @@ fn build_pod_template(
                         ..Default::default()
                     });
 
-                    // Add KMS fetcher init container
                     let init_containers = pod_spec.init_containers.get_or_insert_with(Vec::new);
                     init_containers.push(Container {
                         name: "kms-fetcher".to_string(),
@@ -1691,9 +1262,7 @@ fn build_pod_template(
     if let NodeType::Validator = node.spec.node_type {
         if let Some(validator_config) = &node.spec.validator_config {
             if let Some(hsm_config) = &validator_config.hsm_config {
-                // If using AWS CloudHSM, add sidecar and shared volume
                 if hsm_config.provider == HsmProvider::AWS {
-                    // Shared socket volume
                     volumes.push(Volume {
                         name: "cloudhsm-socket".to_string(),
                         empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource {
@@ -1703,13 +1272,9 @@ fn build_pod_template(
                         ..Default::default()
                     });
 
-                    // Sidecar container running CloudHSM client daemon
                     let containers = &mut pod_spec.containers;
                     containers.push(Container {
                         name: "cloudhsm-client".to_string(),
-                        // Use a standard image or user-provided one.
-                        // In reality, user would likely build this or we'd default to a known working one.
-                        // For now, using a placeholder that needs to be valid.
                         image: Some("amazon/cloudhsm-client:latest".to_string()),
                         command: Some(vec!["/opt/cloudhsm/bin/cloudhsm_client".to_string()]),
                         args: Some(vec!["--foreground".to_string()]),
@@ -1725,6 +1290,33 @@ fn build_pod_template(
         }
     }
 
+    // ==========================================================================
+    // NEW: Inject KMS/ESO/CSI seed env vars, volumes, and volume mounts
+    // ==========================================================================
+    if let Some(inj) = seed_injection {
+        // Extend the main container (index 0) with seed env vars and volume mounts
+        if let Some(container) = pod_spec.containers.first_mut() {
+            if let Some(ref mut env) = container.env {
+                env.extend(inj.env_vars());
+            } else {
+                container.env = Some(inj.env_vars());
+            }
+            if let Some(ref mut mounts) = container.volume_mounts {
+                mounts.extend(inj.volume_mounts());
+            } else {
+                let vm = inj.volume_mounts();
+                if !vm.is_empty() {
+                    container.volume_mounts = Some(vm);
+                }
+            }
+        }
+        // Extend pod volumes with any CSI volume
+        if let Some(ref mut vols) = pod_spec.volumes {
+            vols.extend(inj.volumes());
+        }
+    }
+    // ==========================================================================
+
     PodTemplateSpec {
         metadata: Some(merge_resource_meta(
             ObjectMeta {
@@ -1738,16 +1330,6 @@ fn build_pod_template(
 }
 
 /// Build `TopologySpreadConstraints` for a pod spec.
-///
-/// If the user has provided constraints in `spec.topologySpreadConstraints`
-/// those are used as-is. If the field is `None` **or** an empty vec, two
-/// sensible defaults are generated:
-///
-/// 1. Spread across nodes  (`kubernetes.io/hostname`,      maxSkew=1, DoNotSchedule)
-/// 2. Spread across zones  (`topology.kubernetes.io/zone`, maxSkew=1, DoNotSchedule)
-///
-/// Both defaults target pods that share the same `app.kubernetes.io/instance`
-/// label so only pods of *this* StellarNode are counted when computing skew.
 pub fn build_topology_spread_constraints(
     spec: &crate::crd::StellarNodeSpec,
     node_name: &str,
@@ -1756,14 +1338,12 @@ pub fn build_topology_spread_constraints(
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
     use std::collections::BTreeMap;
 
-    // Use user-provided constraints if present and non-empty
     if let Some(constraints) = &spec.topology_spread_constraints {
         if !constraints.is_empty() {
             return constraints.clone();
         }
     }
 
-    // Default label selector: target pods belonging to this specific node instance
     let selector = LabelSelector {
         match_labels: Some(BTreeMap::from([
             (
@@ -1779,7 +1359,6 @@ pub fn build_topology_spread_constraints(
     };
 
     vec![
-        // Spread across physical/virtual nodes (avoids co-location on same host)
         TopologySpreadConstraint {
             max_skew: 1,
             topology_key: "kubernetes.io/hostname".to_string(),
@@ -1787,7 +1366,6 @@ pub fn build_topology_spread_constraints(
             label_selector: Some(selector.clone()),
             ..Default::default()
         },
-        // Spread across availability zones (avoids single-AZ failure)
         TopologySpreadConstraint {
             max_skew: 1,
             topology_key: "topology.kubernetes.io/zone".to_string(),
@@ -1825,7 +1403,6 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
         NodeType::SorobanRpc => (8000, "/data", "DATABASE_URL"),
     };
 
-    // Build environment variables
     let mut env_vars = vec![EnvVar {
         name: "NETWORK_PASSPHRASE".to_string(),
         value: Some(node.spec.network.passphrase().to_string()),
@@ -1837,21 +1414,27 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
         if let Some(validator_config) = &node.spec.validator_config {
             match validator_config.key_source {
                 KeySource::Secret => {
-                    env_vars.push(EnvVar {
-                        name: "STELLAR_CORE_SEED".to_string(),
-                        value: None,
-                        value_from: Some(EnvVarSource {
-                            secret_key_ref: Some(SecretKeySelector {
-                                name: Some(validator_config.seed_secret_ref.clone()),
-                                key: "STELLAR_CORE_SEED".to_string(),
+                    // Only inject the legacy env var when seed_secret_source is NOT set.
+                    // When seed_secret_source IS set, the injection is handled via
+                    // seed_injection in build_pod_template so we skip it here.
+                    if validator_config.seed_secret_source.is_none()
+                        && !validator_config.seed_secret_ref.is_empty()
+                    {
+                        env_vars.push(EnvVar {
+                            name: "STELLAR_CORE_SEED".to_string(),
+                            value: None,
+                            value_from: Some(EnvVarSource {
+                                secret_key_ref: Some(SecretKeySelector {
+                                    name: Some(validator_config.seed_secret_ref.clone()),
+                                    key: "STELLAR_CORE_SEED".to_string(),
+                                    ..Default::default()
+                                }),
                                 ..Default::default()
                             }),
-                            ..Default::default()
-                        }),
-                    });
+                        });
+                    }
                 }
                 KeySource::KMS => {
-                    // Seed will be read from /keys/validator-seed file provided by init container
                     env_vars.push(EnvVar {
                         name: "STELLAR_CORE_SEED_PATH".to_string(),
                         value: Some("/keys/validator-seed".to_string()),
@@ -1880,7 +1463,7 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
 
     // Add database environment variable from CNPG secret if managed database is configured
     if let Some(_managed_db) = &node.spec.managed_database {
-        let secret_name = node.name_any(); // CNPG cluster name matches StellarNode name
+        let secret_name = node.name_any();
         env_vars.push(EnvVar {
             name: db_env_var_name.to_string(),
             value: None,
@@ -1924,14 +1507,12 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
     if let NodeType::Validator = node.spec.node_type {
         if let Some(validator_config) = &node.spec.validator_config {
             if let Some(hsm_config) = &validator_config.hsm_config {
-                // PKCS#11 Module Path
                 env_vars.push(EnvVar {
                     name: "PKCS11_MODULE_PATH".to_string(),
                     value: Some(hsm_config.pkcs11_lib_path.clone()),
                     ..Default::default()
                 });
 
-                // HSM IP (for Azure/Network)
                 if let Some(ip) = &hsm_config.hsm_ip {
                     env_vars.push(EnvVar {
                         name: "HSM_IP_ADDRESS".to_string(),
@@ -1940,7 +1521,6 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
                     });
                 }
 
-                // HSM Credentials (PIN/User)
                 if let Some(secret_ref) = &hsm_config.hsm_credentials_secret_ref {
                     env_vars.push(EnvVar {
                         name: "HSM_PIN".to_string(),
@@ -1968,7 +1548,6 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
                     });
                 }
 
-                // Mount socket for AWS CloudHSM
                 if hsm_config.provider == HsmProvider::AWS {
                     extra_volume_mounts.push(VolumeMount {
                         name: "cloudhsm-socket".to_string(),
@@ -2041,30 +1620,24 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
 fn build_horizon_migration_container(node: &StellarNode) -> Container {
     let mut container = build_container(node, false);
     container.name = "horizon-db-migration".to_string();
-    // Use a shell to try upgrade then init if needed, ensuring the DB is ready
     container.command = Some(vec!["/bin/sh".to_string()]);
     container.args = Some(vec![
         "-c".to_string(),
         "horizon db upgrade || horizon db init".to_string(),
     ]);
-
-    // Migration doesn't need ports or probes
     container.ports = None;
     container.liveness_probe = None;
     container.readiness_probe = None;
     container.startup_probe = None;
     container.lifecycle = None;
-
-    // Use slightly less resources for migration if desired, but reusing main ones is safer
     container
 }
+
 // ============================================================================
-// HorizontalPodAutoscaler
+// HorizontalPodAutoscaler — unchanged
 // ============================================================================
 
-/// Ensure a HorizontalPodAutoscaler exists for RPC nodes with autoscaling enabled
 pub async fn ensure_hpa(client: &Client, node: &StellarNode) -> Result<()> {
-    // Only create HPA for Horizon and SorobanRpc nodes with autoscaling config
     if !matches!(
         node.spec.node_type,
         NodeType::Horizon | NodeType::SorobanRpc
@@ -2092,10 +1665,9 @@ pub async fn ensure_hpa(client: &Client, node: &StellarNode) -> Result<()> {
 }
 
 // ============================================================================
-// Alerting (ConfigMap with Prometheus Rules)
+// Alerting — unchanged
 // ============================================================================
 
-/// Ensure alerting resources exist for the node if enabled
 pub async fn ensure_alerting(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = resource_name(node, "alerts");
@@ -2107,7 +1679,6 @@ pub async fn ensure_alerting(client: &Client, node: &StellarNode) -> Result<()> 
     let labels = standard_labels(node);
     let mut data = BTreeMap::new();
 
-    // Define standard alerting rules in Prometheus format
     let rules = format!(
         r#"groups:
 - name: {instance}.rules
@@ -2188,7 +1759,6 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
 
     let mut metrics = Vec::new();
 
-    // Add CPU utilization metric if configured
     if let Some(target_cpu) = autoscaling.target_cpu_utilization_percentage {
         metrics.push(MetricSpec {
             type_: "Resource".to_string(),
@@ -2204,7 +1774,6 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
         });
     }
 
-    // Add custom metrics
     for metric_name in &autoscaling.custom_metrics {
         if metric_name == "ledger_ingestion_lag" {
             metrics.push(MetricSpec {
@@ -2221,14 +1790,13 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
                     },
                     target: MetricTarget {
                         type_: "Value".to_string(),
-                        value: Some(Quantity("5".to_string())), // Scale if lag > 5 ledgers
+                        value: Some(Quantity("5".to_string())),
                         ..Default::default()
                     },
                 }),
                 ..Default::default()
             });
         }
-        // Add more custom metrics mapping here (e.g., request throughput)
     }
 
     let behavior = autoscaling
@@ -2297,9 +1865,7 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
     Ok(hpa)
 }
 
-/// Delete the HPA when node is deleted
 pub async fn delete_hpa(client: &Client, node: &StellarNode) -> Result<()> {
-    // Only delete HPA if autoscaling was configured
     if node.spec.autoscaling.is_none() {
         return Ok(());
     }
@@ -2324,16 +1890,10 @@ pub async fn delete_hpa(client: &Client, node: &StellarNode) -> Result<()> {
 }
 
 // ============================================================================
-// ServiceMonitor (Prometheus Operator)
+// ServiceMonitor — unchanged
 // ============================================================================
 
-/// Ensure a ServiceMonitor exists for Prometheus scraping (Prometheus Operator)
-///
-/// ServiceMonitor is a custom resource from the Prometheus Operator.
-/// Users should manually create ServiceMonitor resources or use a tool like
-/// kustomize/helm to generate them. This function documents the capability.
 pub async fn ensure_service_monitor(_client: &Client, node: &StellarNode) -> Result<()> {
-    // Only log for Horizon and SorobanRpc nodes with autoscaling config
     if !matches!(
         node.spec.node_type,
         NodeType::Horizon | NodeType::SorobanRpc
@@ -2350,17 +1910,10 @@ pub async fn ensure_service_monitor(_client: &Client, node: &StellarNode) -> Res
         namespace, name
     );
 
-    info!(
-        "ServiceMonitor should scrape metrics on port 'http' at path '/metrics' from service: {}",
-        node.name_any()
-    );
-
     Ok(())
 }
 
-/// Delete the ServiceMonitor when node is deleted
 pub async fn delete_service_monitor(_client: &Client, node: &StellarNode) -> Result<()> {
-    // Only delete ServiceMonitor if autoscaling was configured
     if node.spec.autoscaling.is_none() {
         return Ok(());
     }
@@ -2376,7 +1929,6 @@ pub async fn delete_service_monitor(_client: &Client, node: &StellarNode) -> Res
     Ok(())
 }
 
-/// Delete alerting resources
 pub async fn delete_alerting(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = resource_name(node, "alerts");
@@ -2384,32 +1936,26 @@ pub async fn delete_alerting(client: &Client, node: &StellarNode) -> Result<()> 
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => info!("Deleted alerting ConfigMap {}", name),
-        Err(kube::Error::Api(e)) if e.code == 404 => {
-            // Already gone
-        }
+        Err(kube::Error::Api(e)) if e.code == 404 => {}
         Err(e) => return Err(Error::KubeError(e)),
     }
 
     Ok(())
 }
 
-/// Delete canary resources specifically
 pub async fn delete_canary_resources(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
     let canary_name = format!("{name}-canary");
 
-    // 1. Delete Canary Ingress
     if node.spec.ingress.is_some() {
         let api: Api<Ingress> = Api::namespaced(client.clone(), &namespace);
         let _ = api.delete(&canary_name, &DeleteParams::default()).await;
     }
 
-    // 2. Delete Canary Service
     let api_svc: Api<Service> = Api::namespaced(client.clone(), &namespace);
     let _ = api_svc.delete(&canary_name, &DeleteParams::default()).await;
 
-    // 3. Delete Canary Deployment
     let api_deploy: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
     let _ = api_deploy
         .delete(&canary_name, &DeleteParams::default())
@@ -2419,10 +1965,9 @@ pub async fn delete_canary_resources(client: &Client, node: &StellarNode) -> Res
 }
 
 // ============================================================================
-// NetworkPolicy
+// NetworkPolicy — unchanged
 // ============================================================================
 
-/// Ensure a NetworkPolicy exists for the node when configured
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_network_policy(client: &Client, node: &StellarNode) -> Result<()> {
     let policy_cfg = match &node.spec.network_policy {
@@ -2453,7 +1998,6 @@ fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> Net
 
     let mut ingress_rules: Vec<NetworkPolicyIngressRule> = Vec::new();
 
-    // Determine ports based on node type
     let app_ports = match node.spec.node_type {
         NodeType::Validator => vec![
             NetworkPolicyPort {
@@ -2474,7 +2018,6 @@ fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> Net
         }],
     };
 
-    // Allow from specified namespaces
     if !config.allow_namespaces.is_empty() {
         let peers: Vec<NetworkPolicyPeer> = config
             .allow_namespaces
@@ -2497,7 +2040,6 @@ fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> Net
         });
     }
 
-    // Allow from specified pod selectors
     if let Some(pod_labels) = &config.allow_pod_selector {
         ingress_rules.push(NetworkPolicyIngressRule {
             from: Some(vec![NetworkPolicyPeer {
@@ -2511,7 +2053,6 @@ fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> Net
         });
     }
 
-    // Allow from specified CIDRs
     if !config.allow_cidrs.is_empty() {
         let peers: Vec<NetworkPolicyPeer> = config
             .allow_cidrs
@@ -2531,7 +2072,6 @@ fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> Net
         });
     }
 
-    // Allow metrics scraping from monitoring namespace
     if config.allow_metrics_scrape {
         ingress_rules.push(NetworkPolicyIngressRule {
             from: Some(vec![NetworkPolicyPeer {
@@ -2552,7 +2092,6 @@ fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> Net
         });
     }
 
-    // For Validators, allow peer-to-peer from other validators in the same namespace
     if node.spec.node_type == NodeType::Validator {
         ingress_rules.push(NetworkPolicyIngressRule {
             from: Some(vec![NetworkPolicyPeer {
@@ -2606,7 +2145,6 @@ fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> Net
     }
 }
 
-/// Delete the NetworkPolicy for a node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn delete_network_policy(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
@@ -2625,12 +2163,10 @@ pub async fn delete_network_policy(client: &Client, node: &StellarNode) -> Resul
 }
 
 // ============================================================================
-// PodDisruptionBudget (PDB)
+// PodDisruptionBudget — unchanged
 // ============================================================================
 
-/// Internal builder for the PodDisruptionBudget resource
 fn build_pdb(node: &StellarNode) -> Option<PodDisruptionBudget> {
-    // PDBs are only applicable if there are multiple replicas to protect
     if node.spec.replicas <= 1 {
         return None;
     }
@@ -2638,7 +2174,6 @@ fn build_pdb(node: &StellarNode) -> Option<PodDisruptionBudget> {
     let labels = standard_labels(node);
     let name = node.name_any();
 
-    // Determine disruption constraints: default to maxUnavailable: 1 if not specified
     let (min_available, max_unavailable) =
         if node.spec.min_available.is_none() && node.spec.max_unavailable.is_none() {
             (None, Some(IntOrString::Int(1)))
@@ -2670,9 +2205,7 @@ fn build_pdb(node: &StellarNode) -> Option<PodDisruptionBudget> {
     })
 }
 
-/// Ensure a PodDisruptionBudget exists for multi-replica nodes
 pub async fn ensure_pdb(client: &Client, node: &StellarNode) -> Result<()> {
-    // If replicas <= 1, we ensure the PDB is deleted (cleanup)
     if node.spec.replicas <= 1 {
         return delete_pdb(client, node).await;
     }
@@ -2693,7 +2226,6 @@ pub async fn ensure_pdb(client: &Client, node: &StellarNode) -> Result<()> {
     Ok(())
 }
 
-/// Delete the PodDisruptionBudget
 pub async fn delete_pdb(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
@@ -2702,9 +2234,7 @@ pub async fn delete_pdb(client: &Client, node: &StellarNode) -> Result<()> {
 
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => info!("Deleted PodDisruptionBudget {}/{}", namespace, name),
-        Err(kube::Error::Api(e)) if e.code == 404 => {
-            // Resource doesn't exist, ignore
-        }
+        Err(kube::Error::Api(e)) if e.code == 404 => {}
         Err(e) => return Err(Error::KubeError(e)),
     }
 

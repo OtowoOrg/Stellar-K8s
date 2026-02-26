@@ -54,6 +54,7 @@ use super::cve_reconciler;
 use super::dr;
 use super::finalizers::STELLAR_NODE_FINALIZER;
 use super::health;
+use super::kms_secret;
 #[cfg(feature = "metrics")]
 use super::metrics;
 use super::mtls;
@@ -370,7 +371,8 @@ pub(crate) async fn apply_stellar_node(
 
                 match node.spec.node_type {
                     NodeType::Validator => {
-                        resources::ensure_statefulset(client, node, ctx.enable_mtls).await?;
+                        // Suspended validators don't need seed injection resolved
+                        resources::ensure_statefulset(client, node, ctx.enable_mtls, None).await?;
                     }
                     NodeType::Horizon | NodeType::SorobanRpc => {
                         resources::ensure_deployment(client, node, ctx.enable_mtls).await?;
@@ -687,42 +689,172 @@ pub(crate) async fn apply_stellar_node(
         async {
             match node.spec.node_type {
                 NodeType::Validator => {
-                    resources::ensure_statefulset(client, node, ctx.enable_mtls).await?;
+                    // Resolve the KMS/ESO/CSI seed injection spec before building the StatefulSet.
+                    // Creates any required ExternalSecret CR and returns a lightweight descriptor
+                    // of how to wire the seed into the pod. No secret values are ever read.
+                    let seed_injection = if let Some(validator_config) = &node.spec.validator_config {
+                        if let Some(_source) = validator_config.resolve_seed_source() {
+                            match kms_secret::reconcile_seed_secret(client, node).await {
+                                Ok(spec) => Some(spec),
+                                Err(e) => {
+                                    warn!(
+                                        "Seed secret reconciliation failed for {}/{}: {}. \
+                                         Falling back to legacy seed_secret_ref behaviour.",
+                                        namespace, name, e
+                                    );
+                                    None
+                                }
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    resources::ensure_statefulset(
+                        client,
+                        node,
+                        ctx.enable_mtls,
+                        seed_injection.as_ref(),
+                    )
+                    .await?;
                 }
                 NodeType::Horizon | NodeType::SorobanRpc => {
                     // Handle Canary Deployment
-                    if let RolloutStrategy::Canary(_) = &node.spec.strategy {
+                    if let RolloutStrategy::Canary(cfg) = &node.spec.strategy {
                         // Determine if we are in a canary state
                         let current_version = get_current_deployment_version(client, node).await?;
-                        if let Some(cv) = current_version {
-                            if cv != node.spec.version {
-                                // We have a version mismatch, ensure canary
-                                info!(
-                                    "Canary version mismatch: spec={} current={}. Ensuring canary resources.",
-                                    node.spec.version, cv
-                                );
-                            }
-                        }
 
-                        resources::ensure_canary_deployment(client, node, ctx.enable_mtls).await?;
-                        resources::ensure_canary_service(client, node, ctx.enable_mtls).await?;
-
-                        // For canary, the main deployment should stay at the OLD version
-                        // IF we are in the middle of a rollout.
-                        if node
+                        // Check if we already have an active canary
+                        let mut is_canary_active = node
                             .status
                             .as_ref()
                             .and_then(|status| status.canary_version.as_ref())
-                            .is_some()
-                        {
+                            .is_some();
+
+                        if !is_canary_active {
+                            if let Some(cv) = &current_version {
+                                if cv != &node.spec.version {
+                                    // 1. Start Canary: We have a version mismatch, start canary
+                                    info!(
+                                        "Canary version mismatch: spec={} current={}. Starting canary.",
+                                        node.spec.version, cv
+                                    );
+                                    let now = chrono::Utc::now().to_rfc3339();
+
+                                    // Update status to indicate canary has started
+                                    let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+                                    let patch = serde_json::json!({
+                                        "status": {
+                                            "canaryVersion": node.spec.version,
+                                            "canaryStartTime": now,
+                                            "phase": "Canary"
+                                        }
+                                    });
+                                    api.patch_status(
+                                        &name,
+                                        &PatchParams::apply("stellar-operator"),
+                                        &Patch::Merge(&patch),
+                                    ).await?;
+
+                                    is_canary_active = true;
+
+                                    // We need to fetch the updated node with the new status
+                                    // but we can proceed with creating canary resources for now
+                                }
+                            }
+                        }
+
+                        if is_canary_active {
+                            // 2. Monitor Canary: we are in the middle of a rollout
+                            resources::ensure_canary_deployment(client, node, ctx.enable_mtls).await?;
+                            resources::ensure_canary_service(client, node, ctx.enable_mtls).await?;
+
                             let mut stable_node = node.clone();
                             // Recover the stable version from the existing deployment if possible
-                            if let Some(cv) = get_current_deployment_version(client, node).await? {
-                                stable_node.spec.version = cv;
+                            if let Some(cv) = &current_version {
+                                stable_node.spec.version = cv.clone();
                             }
                             resources::ensure_deployment(client, &stable_node, ctx.enable_mtls).await?;
+
+                            // Check if the canary interval has elapsed
+                            if let Some(status) = &node.status {
+                                if let Some(start_time_str) = &status.canary_start_time {
+                                    if let Ok(start_time) = chrono::DateTime::parse_from_rfc3339(start_time_str) {
+                                        let now = chrono::Utc::now();
+                                        let elapsed_secs = now.signed_duration_since(start_time).num_seconds();
+
+                                        if elapsed_secs >= cfg.check_interval_seconds as i64 {
+                                            // 3. Evaluate Canary: interval elapsed, check health
+                                            info!(
+                                                "Canary check interval elapsed ({} >= {}). Evaluating canary health.",
+                                                elapsed_secs, cfg.check_interval_seconds
+                                            );
+
+                                            let canary_health = check_canary_health(client, node).await?;
+
+                                            let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+                                            if canary_health.healthy {
+                                                // 4a. Promote Canary
+                                                info!("Canary {}/{} is healthy. Promoting to stable.", namespace, name);
+                                                resources::ensure_deployment(client, node, ctx.enable_mtls).await?;
+                                                resources::delete_canary_resources(client, node).await?;
+
+                                                let patch = serde_json::json!({
+                                                    "status": {
+                                                        "canaryVersion": null,
+                                                        "canaryStartTime": null,
+                                                        "phase": "Running"
+                                                    }
+                                                });
+                                                api.patch_status(
+                                                    &name,
+                                                    &PatchParams::apply("stellar-operator"),
+                                                    &Patch::Merge(&patch),
+                                                ).await?;
+                                            } else {
+                                                // 4b. Rollback Canary
+                                                warn!("Canary {}/{} is unhealthy. Rolling back.", namespace, name);
+                                                resources::delete_canary_resources(client, node).await?;
+
+                                                // Clean up canary status, emitting failure message
+                                                let message = format!("Canary rollback triggered due to failed health check: {}", canary_health.message);
+                                                let patch = serde_json::json!({
+                                                    "status": {
+                                                        "canaryVersion": null,
+                                                        "canaryStartTime": null,
+                                                        "phase": "Failed",
+                                                        "message": message
+                                                    }
+                                                });
+                                                api.patch_status(
+                                                    &name,
+                                                    &PatchParams::apply("stellar-operator"),
+                                                    &Patch::Merge(&patch),
+                                                ).await?;
+
+                                                // Create a k8s event for the rollback
+                                                let _ = remediation::emit_remediation_event(
+                                                    client,
+                                                    node,
+                                                    remediation::RemediationLevel::Restart, // Not exactly a restart but conceptually similar action
+                                                    &message,
+                                                ).await;
+                                            }
+                                        } else {
+                                            debug!(
+                                                "Canary interval not yet elapsed: {} < {} seconds",
+                                                elapsed_secs, cfg.check_interval_seconds
+                                            );
+                                        }
+                                    }
+                                }
+                            }
                         } else {
+                            // No canary active, regular deployment ensure
                             resources::ensure_deployment(client, node, ctx.enable_mtls).await?;
+                            resources::delete_canary_resources(client, node).await?;
                         }
                     } else {
                         // RPC nodes use Deployment
@@ -734,19 +866,6 @@ pub(crate) async fn apply_stellar_node(
                     }
                 }
             }
-            Ok(())
-        },
-    )
-    .await?;
-
-    apply_or_emit(
-        ctx,
-        node,
-        ActionType::Update,
-        "Service and Ingress",
-        async {
-            resources::ensure_service(client, node, ctx.enable_mtls).await?;
-            resources::ensure_ingress(client, node).await?;
             Ok(())
         },
     )

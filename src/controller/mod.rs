@@ -19,6 +19,7 @@ mod finalizers;
 mod health;
 #[cfg(test)]
 mod health_test;
+pub mod kms_secret;
 #[cfg(feature = "metrics")]
 pub mod metrics;
 pub mod mtls;

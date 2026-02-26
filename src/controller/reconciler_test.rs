@@ -57,6 +57,7 @@ mod tests {
                 },
                 validator_config: Some(ValidatorConfig {
                     seed_secret_ref: "validator-seed".to_string(),
+                    seed_secret_source: Default::default(),
                     quorum_set: Some(
                         r#"[QUORUM_SET]
 THRESHOLD_PERCENT=67

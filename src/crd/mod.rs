@@ -4,6 +4,7 @@
 
 mod cnpg;
 pub mod read_replica;
+pub mod seed_secret;
 pub mod service_mesh;
 mod stellar_node;
 pub mod types;

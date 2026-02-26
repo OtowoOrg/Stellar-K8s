@@ -34,6 +34,7 @@ mod tests {
                 storage: Default::default(),
                 validator_config: Some(ValidatorConfig {
                     seed_secret_ref: "test-seed".to_string(),
+                    seed_secret_source: Default::default(),
                     quorum_set: None,
                     enable_history_archive: false,
                     history_archive_urls: vec![],

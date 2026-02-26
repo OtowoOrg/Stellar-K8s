@@ -816,8 +816,8 @@ fn horizon_node_manifest(version: &str) -> String {
         r#"apiVersion: stellar.org/v1alpha1
 kind: StellarNode
 metadata:
-  name: {node_name}
-  namespace: {namespace}
+  name: {HORIZON_NODE_NAME}
+  namespace: {HORIZON_TEST_NAMESPACE}
 spec:
   nodeType: Horizon
   network: Testnet
@@ -844,14 +844,11 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: horizon-db-credentials
-  namespace: {namespace}
+  namespace: {HORIZON_TEST_NAMESPACE}
 type: Opaque
 stringData:
   DATABASE_URL: "postgres://horizon:password@postgres:5432/horizon?sslmode=disable"
 "#,
-        node_name = HORIZON_NODE_NAME,
-        namespace = HORIZON_TEST_NAMESPACE,
-        version = version,
     )
 }
 
@@ -1040,7 +1037,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
             &[
                 "get",
                 "configmap",
-                &format!("{}-config", HORIZON_NODE_NAME),
+                &format!("{HORIZON_NODE_NAME}-config"),
                 "-n",
                 HORIZON_TEST_NAMESPACE,
             ],
@@ -1054,7 +1051,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
             &[
                 "get",
                 "pvc",
-                &format!("{}-data", HORIZON_NODE_NAME),
+                &format!("{HORIZON_NODE_NAME}-data"),
                 "-n",
                 HORIZON_TEST_NAMESPACE,
             ],
@@ -1076,11 +1073,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
         ],
     )?;
     if current_image != "stellar/horizon:v21.0.0" {
-        return Err(format!(
-            "unexpected Horizon node image after create: {}",
-            current_image
-        )
-        .into());
+        return Err(format!("unexpected Horizon node image after create: {current_image}").into());
     }
 
     // ── Step 3: Wait for pod to become Ready ─────────────────────────────────
@@ -1091,7 +1084,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
                 "get",
                 "pods",
                 "-l",
-                &format!("app.kubernetes.io/instance={}", HORIZON_NODE_NAME),
+                &format!("app.kubernetes.io/instance={HORIZON_NODE_NAME}"),
                 "-n",
                 HORIZON_TEST_NAMESPACE,
                 "-o",
@@ -1112,7 +1105,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
             "get",
             "pods",
             "-l",
-            &format!("app.kubernetes.io/instance={}", HORIZON_NODE_NAME),
+            &format!("app.kubernetes.io/instance={HORIZON_NODE_NAME}"),
             "-n",
             HORIZON_TEST_NAMESPACE,
             "-o",
@@ -1124,7 +1117,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
     let mut port_forward = Command::new("kubectl")
         .args([
             "port-forward",
-            &format!("pod/{}", pod_name),
+            &format!("pod/{pod_name}"),
             "18000:8000",
             "-n",
             HORIZON_TEST_NAMESPACE,
@@ -1227,7 +1220,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
             &[
                 "get",
                 "pvc",
-                &format!("{}-data", HORIZON_NODE_NAME),
+                &format!("{HORIZON_NODE_NAME}-data"),
                 "-n",
                 HORIZON_TEST_NAMESPACE,
             ],
@@ -1237,7 +1230,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
             &[
                 "get",
                 "configmap",
-                &format!("{}-config", HORIZON_NODE_NAME),
+                &format!("{HORIZON_NODE_NAME}-config"),
                 "-n",
                 HORIZON_TEST_NAMESPACE,
             ],
@@ -1248,7 +1241,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
                 "get",
                 "pods",
                 "-l",
-                &format!("app.kubernetes.io/instance={}", HORIZON_NODE_NAME),
+                &format!("app.kubernetes.io/instance={HORIZON_NODE_NAME}"),
                 "-n",
                 HORIZON_TEST_NAMESPACE,
                 "-o",

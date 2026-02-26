@@ -57,6 +57,7 @@ use super::health;
 use super::kms_secret;
 #[cfg(feature = "metrics")]
 use super::metrics;
+use super::migration;
 use super::mtls;
 use super::oci_snapshot;
 use super::peer_discovery;
@@ -340,6 +341,12 @@ pub(crate) async fn apply_stellar_node(
         emit_spec_validation_event(client, node, &errors).await?;
         update_status(client, node, "Failed", Some(&message), 0, true).await?;
         return Err(Error::ValidationError(message));
+    }
+
+    // Check for migration scenario
+    if migration::reconcile_migration(client, node).await? {
+        info!("Migration in progress for {}/{}", namespace, name);
+        return Ok(Action::requeue(Duration::from_secs(30)));
     }
 
     // 1. Core infrastructure (PVC and ConfigMap) always managed by operator

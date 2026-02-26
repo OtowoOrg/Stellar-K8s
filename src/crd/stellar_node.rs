@@ -184,6 +184,47 @@ fn default_replicas() -> i32 {
     1
 }
 
+impl Default for StellarNodeSpec {
+    fn default() -> Self {
+        Self {
+            node_type: NodeType::default(),
+            network: StellarNetwork::default(),
+            version: String::new(),
+            history_mode: HistoryMode::default(),
+            resources: ResourceRequirements::default(),
+            storage: StorageConfig::default(),
+            validator_config: None,
+            read_pool_endpoint: None,
+            horizon_config: None,
+            soroban_config: None,
+            replicas: default_replicas(),
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            managed_database: None,
+            autoscaling: None,
+            vpa_config: None,
+            ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            cross_cluster: None,
+            strategy: RolloutStrategy::default(),
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            topology_spread_constraints: None,
+            cve_handling: None,
+            read_replica_config: None,
+            db_maintenance_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
+            resource_meta: None,
+        }
+    }
+}
+
 impl StellarNodeSpec {
     /// Validate the spec based on node type
     ///
@@ -896,6 +937,10 @@ pub struct StellarNodeStatus {
     /// Version of the database schema after last successful migration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_migrated_version: Option<String>,
+
+    /// Migration status for node type transitions (e.g., Horizon to Soroban RPC)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migration_status: Option<MigrationStatus>,
 }
 
 /// BGP advertisement status information

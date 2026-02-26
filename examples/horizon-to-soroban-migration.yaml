@@ -1,0 +1,91 @@
+# Horizon to Soroban RPC Migration Example
+#
+# This example demonstrates the automated migration path from a Horizon node
+# to a Soroban RPC node with zero downtime.
+#
+# Migration Process:
+# 1. Start with a running Horizon node
+# 2. Update the nodeType to SorobanRpc and add sorobanConfig
+# 3. The operator will:
+#    - Keep the Horizon deployment running
+#    - Create a new Soroban RPC deployment in parallel
+#    - Wait for Soroban RPC to be fully synced
+#    - Mark migration as complete
+#    - Clean up old Horizon resources
+#
+# The migration is fully automated and requires no manual intervention.
+
+---
+# Step 1: Initial Horizon Node
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: api-node
+  namespace: stellar
+  annotations:
+    stellar.org/migration-source-type: "Horizon"
+spec:
+  nodeType: Horizon
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 3
+  storage:
+    storageClass: "fast-ssd"
+    size: "200Gi"
+    retentionPolicy: Retain
+  horizonConfig:
+    databaseSecretRef: "horizon-db-secret"
+    enableIngest: true
+    stellarCoreUrl: "http://core-validator:11626"
+    ingestWorkers: 2
+    autoMigration: true
+  database:
+    secretKeyRef:
+      name: "horizon-db-secret"
+      key: "DATABASE_URL"
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCpuUtilizationPercentage: 70
+
+---
+# Step 2: Migrate to Soroban RPC (apply this change)
+# Simply change nodeType and add sorobanConfig
+# The operator handles the rest automatically
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: api-node
+  namespace: stellar
+  annotations:
+    stellar.org/migration-source-type: "Horizon"
+spec:
+  nodeType: SorobanRpc  # Changed from Horizon
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 3
+  storage:
+    storageClass: "fast-ssd"
+    size: "200Gi"
+    retentionPolicy: Retain
+  # horizonConfig removed, replaced with sorobanConfig
+  sorobanConfig:
+    stellarCoreUrl: "http://core-validator:11626"
+    enablePreflight: true
+    maxEventsPerRequest: 10000
+    captiveCoreStructuredConfig:
+      networkPassphrase: "Test SDF Network ; September 2015"
+      historyArchiveUrls:
+        - "https://history.stellar.org/prd/core-testnet/core_testnet_001"
+        - "https://history.stellar.org/prd/core-testnet/core_testnet_002"
+      peerPort: 11625
+      httpPort: 11626
+      logLevel: "info"
+  database:
+    secretKeyRef:
+      name: "horizon-db-secret"  # Reuse same database
+      key: "DATABASE_URL"
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCpuUtilizationPercentage: 70

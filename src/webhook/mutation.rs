@@ -302,7 +302,11 @@ mod tests {
             topology_spread_constraints: None,
             cve_handling: None,
             read_replica_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
             resource_meta: None,
+            vpa_config: None,
+            read_pool_endpoint: None,
         };
 
         let labels = get_standard_labels(&spec, "my-validator");
@@ -354,7 +358,11 @@ mod tests {
             topology_spread_constraints: None,
             cve_handling: None,
             read_replica_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
             resource_meta: None,
+            vpa_config: None,
+            read_pool_endpoint: None,
         };
 
         let annotations = get_standard_annotations(&spec);

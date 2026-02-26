@@ -1,0 +1,186 @@
+# examples/vpa-scaling.yaml
+#
+# Demonstrates Vertical Pod Autoscaler (VPA) integration for StellarNode.
+#
+# Prerequisites:
+#   The VPA controller must be installed in your cluster:
+#     kubectl apply -f https://github.com/kubernetes/autoscaler/releases/latest/download/vpa-v1-crd-gen.yaml
+#     kubectl apply -f https://github.com/kubernetes/autoscaler/releases/latest/download/vpa-admission-controller.yaml
+#     kubectl apply -f https://github.com/kubernetes/autoscaler/releases/latest/download/vpa-recommender.yaml
+#     kubectl apply -f https://github.com/kubernetes/autoscaler/releases/latest/download/vpa-updater.yaml
+#
+# Apply with:
+#   kubectl apply -f examples/vpa-scaling.yaml
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# Example 1 — Horizon node with VPA in "Initial" mode (recommendation only).
+#
+# The VPA recommender will observe resource usage and surface recommendations
+# in `.status.recommendation`, but it will NOT restart pods automatically.
+# Use this mode to gather data before committing to automatic restarts.
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-vpa-initial
+  namespace: stellar
+spec:
+  nodeType: Horizon
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 2
+
+  horizonConfig:
+    databaseSecretRef: horizon-db-secret
+    enableIngest: true
+    stellarCoreUrl: "http://stellar-core:11626"
+    ingestWorkers: 4
+    enableExperimentalIngestion: false
+    autoMigration: false
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  # VPA: recommendation-only, never evicts/restarts pods automatically.
+  vpaConfig:
+    updateMode: Initial          # "Initial" | "Auto"
+    containerPolicies:
+      - containerName: stellar-horizon
+        minAllowed:
+          cpu: "250m"
+          memory: "512Mi"
+        maxAllowed:
+          cpu: "4"
+          memory: "8Gi"
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# Example 2 — Horizon node with VPA in "Auto" mode.
+#
+# The VPA updater may evict and restart pods to apply new CPU/memory
+# recommendations. Ideal for production nodes where right-sizing is critical.
+# Consider pairing this with a PodDisruptionBudget (minAvailable) to ensure
+# availability during evictions.
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-vpa-auto
+  namespace: stellar
+spec:
+  nodeType: Horizon
+  network: Mainnet
+  version: "v21.0.0"
+  replicas: 3
+
+  # Keep at least 2 pods up during evictions triggered by VPA.
+  minAvailable: 2
+
+  horizonConfig:
+    databaseSecretRef: horizon-db-secret
+    enableIngest: true
+    stellarCoreUrl: "http://stellar-core:11626"
+    ingestWorkers: 8
+    enableExperimentalIngestion: false
+    autoMigration: false
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+
+  # VPA: automatic eviction + restart to apply recommendations.
+  vpaConfig:
+    updateMode: Auto
+    containerPolicies:
+      - containerName: stellar-horizon
+        minAllowed:
+          cpu: "500m"
+          memory: "1Gi"
+        maxAllowed:
+          cpu: "8"
+          memory: "16Gi"
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# Example 3 — Validator node with VPA in "Auto" mode.
+#
+# Validators run as StatefulSets. The VPA targets the StatefulSet.
+# Be cautious: validator pods being restarted may temporarily affect
+# quorum participation. Use minAvailable or a maintenance window.
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-vpa-auto
+  namespace: stellar
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  replicas: 1
+
+  validatorConfig:
+    seedSecretRef: validator-seed-secret
+    enableHistoryArchive: false
+    historyArchiveUrls: []
+    catchupComplete: false
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: "4Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+
+  # VPA: auto-apply recommendations for the validator container.
+  vpaConfig:
+    updateMode: Auto
+    containerPolicies:
+      - containerName: stellar-core
+        minAllowed:
+          cpu: "500m"
+          memory: "2Gi"
+        maxAllowed:
+          cpu: "8"
+          memory: "32Gi"
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# Example 4 — VPA with no container policies (VPA uses its own defaults).
+#
+# The VPA will recommend resources for ALL containers using its built-in
+# heuristics. Useful as a quick start before tuning per-container bounds.
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: soroban-vpa-defaults
+  namespace: stellar
+spec:
+  nodeType: SorobanRpc
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  # Minimal VPA config — no container policies, VPA decides bounds automatically.
+  vpaConfig:
+    updateMode: Initial

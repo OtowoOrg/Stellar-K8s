@@ -1,0 +1,7 @@
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: broken
+spec:
+  nodeType: UnknownBadddd
+  network: Unknown

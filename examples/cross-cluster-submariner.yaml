@@ -20,7 +20,7 @@ spec:
   version: "v21.0.0"
   
   # Cluster identifier for this deployment
-  cluster: "us-east-1"
+
   
   # Resource requirements
   resources:
@@ -127,7 +127,7 @@ spec:
   network: Mainnet
   version: "v21.0.0"
   
-  cluster: "us-west-1"
+
   
   resources:
     requests:

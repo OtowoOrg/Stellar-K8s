@@ -1,0 +1,42 @@
+# tests/chaos/03-api-latency.yaml
+#
+# Experiment 3: Induce high latency on all traffic from the operator to the K8s API.
+#
+# What this tests:
+#   Every API call the operator makes is delayed by 2 seconds with ±500ms jitter.
+#   This simulates a severely degraded control plane (overloaded etcd, network
+#   congestion, cloud provider throttling).
+#   The operator must not crash, must not corrupt state, and must eventually
+#   converge all StellarNodes despite the slow API.
+#
+# Expected outcome:
+#   - Operator remains Running throughout (no OOMKill, no CrashLoopBackOff).
+#   - Reconciliation loop slows down but does not stop.
+#   - All StellarNodes converge to Ready within 10 minutes (generous timeout
+#     given the 2s-per-call overhead).
+#   - No duplicate resources or phantom finalizers are left behind.
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: operator-api-latency
+  namespace: chaos-testing
+  labels:
+    app.kubernetes.io/part-of: stellar-chaos-suite
+    chaos/experiment: "03-api-latency"
+spec:
+  action: delay                   # Add network delay (not a full partition)
+  mode: one
+  selector:
+    namespaces:
+      - stellar-system
+    labelSelectors:
+      app: stellar-operator
+  direction: both
+  delay:
+    latency: "2000ms"             # 2 second base delay on every packet
+    jitter: "500ms"               # ±500ms random jitter on top
+    correlation: "50"             # 50% correlation between successive packets
+  duration: "120s"                # Run for 2 minutes
+  scheduler:
+    cron: "@once"

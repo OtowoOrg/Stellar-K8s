@@ -15,9 +15,11 @@ fn tool_available(binary: &str) -> bool {
 
 const OPERATOR_NAMESPACE: &str = "stellar-system";
 const TEST_NAMESPACE: &str = "stellar-e2e";
+const HORIZON_TEST_NAMESPACE: &str = "stellar-e2e-horizon";
 const OPERATOR_NAME: &str = "stellar-operator";
 const NODE_NAME: &str = "test-soroban";
 const E2E_NODE_NAME: &str = "e2e-soroban";
+const HORIZON_NODE_NAME: &str = "test-horizon";
 
 // ---------------------------------------------------------------------------
 // Issue #156: E2E reconciliation test
@@ -799,4 +801,470 @@ spec:
     retentionPolicy: Delete
 "#
     )
+}
+
+// ---------------------------------------------------------------------------
+// Horizon node lifecycle E2E test
+//
+// Validates the most common production use case: deploying a Horizon API node
+// with health checks. Run with:
+//   cargo test --test e2e_kind -- --ignored
+// ---------------------------------------------------------------------------
+
+fn horizon_node_manifest(version: &str) -> String {
+    format!(
+        r#"apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: {node_name}
+  namespace: {namespace}
+spec:
+  nodeType: Horizon
+  network: Testnet
+  version: "{version}"
+  replicas: 1
+  horizonConfig:
+    databaseSecretRef: "horizon-db-credentials"
+    enableIngest: true
+    stellarCoreUrl: "http://stellar-core.default:11626"
+    ingestWorkers: 1
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+  storage:
+    storageClass: "standard"
+    size: "1Gi"
+    retentionPolicy: Delete
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: horizon-db-credentials
+  namespace: {namespace}
+type: Opaque
+stringData:
+  DATABASE_URL: "postgres://horizon:password@postgres:5432/horizon?sslmode=disable"
+"#,
+        node_name = HORIZON_NODE_NAME,
+        namespace = HORIZON_TEST_NAMESPACE,
+        version = version,
+    )
+}
+
+/// RAII cleanup guard for the Horizon lifecycle test.
+struct HorizonCleanup {
+    operator_manifest: String,
+}
+
+impl HorizonCleanup {
+    fn new(operator_manifest: String) -> Self {
+        Self { operator_manifest }
+    }
+}
+
+impl Drop for HorizonCleanup {
+    fn drop(&mut self) {
+        let _ = run_cmd_quiet(
+            "kubectl",
+            &[
+                "delete",
+                "stellarnode",
+                HORIZON_NODE_NAME,
+                "-n",
+                HORIZON_TEST_NAMESPACE,
+                "--ignore-not-found=true",
+                "--timeout=60s",
+                "--wait=true",
+            ],
+        );
+        let _ =
+            run_cmd_with_stdin_quiet("kubectl", &["delete", "-f", "-"], &self.operator_manifest);
+        let _ = run_cmd_quiet(
+            "kubectl",
+            &[
+                "delete",
+                "namespace",
+                HORIZON_TEST_NAMESPACE,
+                "--ignore-not-found=true",
+            ],
+        );
+        let _ = run_cmd_quiet(
+            "kubectl",
+            &[
+                "delete",
+                "namespace",
+                OPERATOR_NAMESPACE,
+                "--ignore-not-found=true",
+            ],
+        );
+    }
+}
+
+/// Full Horizon node lifecycle E2E test.
+///
+/// 1. Apply the Horizon manifest (mirrors examples/horizon-with-health-check.yaml).
+/// 2. Wait for the operator to reconcile and the pod to become Ready.
+/// 3. Port-forward to the Horizon pod and curl `http://localhost:8000/` — must return HTTP 200.
+/// 4. Verify the StellarNode status shows `phase: Running`.
+/// 5. Delete the resource and verify pods + services are cleaned up within 60 seconds.
+#[test]
+#[ignore]
+fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
+    if std::env::var("E2E_KIND").is_err() {
+        eprintln!("E2E_KIND is not set; skipping KinD E2E Horizon lifecycle test.");
+        return Ok(());
+    }
+
+    let cluster_name = std::env::var("KIND_CLUSTER_NAME").unwrap_or_else(|_| "stellar-e2e".into());
+    ensure_kind_cluster(&cluster_name)?;
+
+    let image =
+        std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
+    let build_image = env_true("E2E_BUILD_IMAGE", true);
+    let load_image = env_true("E2E_LOAD_IMAGE", true);
+
+    if build_image {
+        run_cmd("docker", &["build", "-t", &image, "."])?;
+    }
+    if load_image {
+        run_cmd(
+            "kind",
+            &["load", "docker-image", &image, "--name", &cluster_name],
+        )?;
+    }
+
+    let operator_yaml = operator_manifest(&image);
+    let _cleanup = HorizonCleanup::new(operator_yaml.clone());
+
+    // ── Install CRD ──────────────────────────────────────────────────────────
+    run_cmd(
+        "kubectl",
+        &["apply", "-f", "config/crd/stellarnode-crd.yaml"],
+    )?;
+
+    // ── Create operator namespace ────────────────────────────────────────────
+    run_cmd(
+        "kubectl",
+        &[
+            "create",
+            "namespace",
+            OPERATOR_NAMESPACE,
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+    )
+    .and_then(|output| kubectl_apply(&output))?;
+
+    // ── Deploy operator ──────────────────────────────────────────────────────
+    kubectl_apply(&operator_yaml)?;
+    run_cmd(
+        "kubectl",
+        &[
+            "rollout",
+            "status",
+            "deployment/stellar-operator",
+            "-n",
+            OPERATOR_NAMESPACE,
+            "--timeout=180s",
+        ],
+    )?;
+
+    // ── Create test namespace ────────────────────────────────────────────────
+    run_cmd(
+        "kubectl",
+        &[
+            "create",
+            "namespace",
+            HORIZON_TEST_NAMESPACE,
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+    )
+    .and_then(|output| kubectl_apply(&output))?;
+
+    // ── Step 1: Apply the Horizon manifest ───────────────────────────────────
+    kubectl_apply(&horizon_node_manifest("v21.0.0"))?;
+
+    wait_for("StellarNode exists", Duration::from_secs(60), || {
+        Ok(run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "stellarnode",
+                HORIZON_NODE_NAME,
+                "-n",
+                HORIZON_TEST_NAMESPACE,
+            ],
+        )
+        .is_ok())
+    })?;
+
+    // ── Step 2: Wait for operator to reconcile — Deployment, Service, ConfigMap, PVC
+    wait_for("Deployment created", Duration::from_secs(90), || {
+        Ok(run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "deployment",
+                HORIZON_NODE_NAME,
+                "-n",
+                HORIZON_TEST_NAMESPACE,
+            ],
+        )
+        .is_ok())
+    })?;
+
+    wait_for("Service created", Duration::from_secs(60), || {
+        Ok(run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "service",
+                HORIZON_NODE_NAME,
+                "-n",
+                HORIZON_TEST_NAMESPACE,
+            ],
+        )
+        .is_ok())
+    })?;
+
+    wait_for("ConfigMap created", Duration::from_secs(60), || {
+        Ok(run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "configmap",
+                &format!("{}-config", HORIZON_NODE_NAME),
+                "-n",
+                HORIZON_TEST_NAMESPACE,
+            ],
+        )
+        .is_ok())
+    })?;
+
+    wait_for("PVC created", Duration::from_secs(60), || {
+        Ok(run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "pvc",
+                &format!("{}-data", HORIZON_NODE_NAME),
+                "-n",
+                HORIZON_TEST_NAMESPACE,
+            ],
+        )
+        .is_ok())
+    })?;
+
+    // Verify the container image is correct
+    let current_image = run_cmd(
+        "kubectl",
+        &[
+            "get",
+            "deployment",
+            HORIZON_NODE_NAME,
+            "-n",
+            HORIZON_TEST_NAMESPACE,
+            "-o",
+            "jsonpath={.spec.template.spec.containers[0].image}",
+        ],
+    )?;
+    if current_image != "stellar/horizon:v21.0.0" {
+        return Err(format!(
+            "unexpected Horizon node image after create: {}",
+            current_image
+        )
+        .into());
+    }
+
+    // ── Step 3: Wait for pod to become Ready ─────────────────────────────────
+    wait_for("Pod ready", Duration::from_secs(180), || {
+        let result = run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "pods",
+                "-l",
+                &format!("app.kubernetes.io/instance={}", HORIZON_NODE_NAME),
+                "-n",
+                HORIZON_TEST_NAMESPACE,
+                "-o",
+                "jsonpath={.items[0].status.conditions[?(@.type=='Ready')].status}",
+            ],
+        );
+        match result {
+            Ok(status) => Ok(status == "True"),
+            Err(_) => Ok(false),
+        }
+    })?;
+
+    // ── Step 4: Port-forward and curl the Horizon endpoint ───────────────────
+    // Must return HTTP 200.
+    let pod_name = run_cmd(
+        "kubectl",
+        &[
+            "get",
+            "pods",
+            "-l",
+            &format!("app.kubernetes.io/instance={}", HORIZON_NODE_NAME),
+            "-n",
+            HORIZON_TEST_NAMESPACE,
+            "-o",
+            "jsonpath={.items[0].metadata.name}",
+        ],
+    )?;
+
+    // Start port-forward as a background process
+    let mut port_forward = Command::new("kubectl")
+        .args([
+            "port-forward",
+            &format!("pod/{}", pod_name),
+            "18000:8000",
+            "-n",
+            HORIZON_TEST_NAMESPACE,
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+
+    // Allow port-forward to establish
+    sleep(Duration::from_secs(3));
+
+    let curl_result = wait_for("Horizon HTTP 200", Duration::from_secs(30), || {
+        let result = run_cmd(
+            "curl",
+            &[
+                "-s",
+                "-o",
+                "/dev/null",
+                "-w",
+                "%{http_code}",
+                "http://localhost:18000/",
+            ],
+        );
+        match result {
+            Ok(code) => Ok(code.trim() == "200"),
+            Err(_) => Ok(false),
+        }
+    });
+
+    // Always kill port-forward regardless of result
+    let _ = port_forward.kill();
+    let _ = port_forward.wait();
+
+    curl_result?;
+
+    // ── Step 5: Verify StellarNode status phase is Running ───────────────────
+    wait_for(
+        "StellarNode phase Running",
+        Duration::from_secs(120),
+        || {
+            let phase = run_cmd(
+                "kubectl",
+                &[
+                    "get",
+                    "stellarnode",
+                    HORIZON_NODE_NAME,
+                    "-n",
+                    HORIZON_TEST_NAMESPACE,
+                    "-o",
+                    "jsonpath={.status.phase}",
+                ],
+            );
+            match phase {
+                Ok(p) => {
+                    let p = p.trim().to_string();
+                    Ok(p == "Running" || p == "Ready")
+                }
+                Err(_) => Ok(false),
+            }
+        },
+    )?;
+
+    // ── Step 6: Delete and verify cleanup within 60 seconds ──────────────────
+    run_cmd(
+        "kubectl",
+        &[
+            "delete",
+            "stellarnode",
+            HORIZON_NODE_NAME,
+            "-n",
+            HORIZON_TEST_NAMESPACE,
+            "--timeout=180s",
+            "--wait=true",
+        ],
+    )?;
+
+    wait_for("Workload cleanup", Duration::from_secs(60), || {
+        let deployment = run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "deployment",
+                HORIZON_NODE_NAME,
+                "-n",
+                HORIZON_TEST_NAMESPACE,
+            ],
+        );
+        let service = run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "service",
+                HORIZON_NODE_NAME,
+                "-n",
+                HORIZON_TEST_NAMESPACE,
+            ],
+        );
+        let pvc = run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "pvc",
+                &format!("{}-data", HORIZON_NODE_NAME),
+                "-n",
+                HORIZON_TEST_NAMESPACE,
+            ],
+        );
+        let config_map = run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "configmap",
+                &format!("{}-config", HORIZON_NODE_NAME),
+                "-n",
+                HORIZON_TEST_NAMESPACE,
+            ],
+        );
+        let pods = run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "pods",
+                "-l",
+                &format!("app.kubernetes.io/instance={}", HORIZON_NODE_NAME),
+                "-n",
+                HORIZON_TEST_NAMESPACE,
+                "-o",
+                "jsonpath={.items}",
+            ],
+        );
+        let pods_gone = match pods {
+            Ok(output) => output.trim() == "[]" || output.trim().is_empty(),
+            Err(_) => true,
+        };
+        Ok(deployment.is_err()
+            && service.is_err()
+            && pvc.is_err()
+            && config_map.is_err()
+            && pods_gone)
+    })?;
+
+    Ok(())
 }

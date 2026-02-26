@@ -169,6 +169,35 @@ spec:
                       minimum: 30000
                       maximum: 32767
                       description: NodePort for HTTP API access
+                snapshotSchedule:
+                  type: object
+                  description: Schedule and options for CSI VolumeSnapshots of the node data PVC (Validator only).
+                  properties:
+                    schedule:
+                      type: string
+                      description: Cron expression for scheduled snapshots (e.g. "0 2 * * *" for daily at 2 AM). If unset, snapshots only on annotation stellar.org/request-snapshot=true.
+                    volumeSnapshotClassName:
+                      type: string
+                      description: VolumeSnapshotClass name. If unset, default class for the driver is used.
+                    flushBeforeSnapshot:
+                      type: boolean
+                      default: false
+                      description: If true, attempt to flush/lock the Stellar DB briefly before creating the snapshot.
+                    retentionCount:
+                      type: integer
+                      format: int32
+                      default: 0
+                      description: Max snapshots to retain per node. 0 means no limit.
+                restoreFromSnapshot:
+                  type: object
+                  description: Bootstrap this node from an existing VolumeSnapshot (Validator only). PVC is created from the snapshot.
+                  properties:
+                    volumeSnapshotName:
+                      type: string
+                      description: Name of the VolumeSnapshot to restore from (same namespace as StellarNode).
+                    namespace:
+                      type: string
+                      description: Optional namespace of the VolumeSnapshot (CrossNamespaceVolumeDataSource).
             status:
               type: object
               properties:

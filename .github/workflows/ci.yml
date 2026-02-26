@@ -20,15 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install cargo-audit
-        run: cargo install --locked cargo-audit
-
-      - name: Audit for critical vulnerabilities
-        run: cargo audit --deny unsound
-
-      - name: Check all vulnerabilities (non-blocking)
-        run: cargo audit || echo "::warning::Some dependency advisories detected"
-        continue-on-error: true
+      - name: Audit for vulnerabilities
+        uses: actions-rust-lang/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   lint:
     name: Lint & Format
@@ -94,11 +89,14 @@ jobs:
       - name: Build release
         run: cargo build --release --locked
 
-      - name: Upload binary artifact
+      - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: stellar-operator
-          path: target/release/stellar-operator
+          name: stellar-k8s-binaries
+          path: |
+            target/release/stellar-operator
+            target/release/kubectl-stellar
+            target/release/pqc-sidecar
           retention-days: 7
 
   docker:
@@ -110,6 +108,9 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Lowercase IMAGE_NAME
+        run: echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -133,7 +134,7 @@ jobs:
           tags: |
             type=ref,event=branch
             type=ref,event=pr
-            type=sha
+            type=sha,prefix=sha-,format=long
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
@@ -160,10 +161,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Lowercase IMAGE_NAME
+        run: echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Run Trivy
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ github.sha }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH

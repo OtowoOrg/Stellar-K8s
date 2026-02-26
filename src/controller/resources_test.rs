@@ -58,6 +58,8 @@ mod tests {
             dr_config: None,
             topology_spread_constraints: None,
             cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
             read_replica_config: None,
             read_pool_endpoint: None,
             db_maintenance_config: None,

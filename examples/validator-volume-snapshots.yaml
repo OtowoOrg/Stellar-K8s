@@ -1,0 +1,92 @@
+# Zero-Downtime Ledger Snapshots via CSI VolumeSnapshots
+#
+# 1. Source validator: takes scheduled and on-demand VolumeSnapshots of its data PVC.
+# 2. New validator: bootstraps from an existing VolumeSnapshot instead of syncing from archive.
+#
+# Prerequisites:
+#   - CSI driver with snapshot support (e.g. GCE PD, EBS, Azure Disk)
+#   - Snapshot controller and VolumeSnapshot CRDs installed
+#   - At least one VolumeSnapshotClass
+#
+# See docs/volume-snapshots.md for full documentation.
+
+---
+# Source validator: schedule daily snapshots and allow on-demand via annotation
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-primary
+  namespace: stellar-nodes
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "21.0.0"
+  historyMode: Recent
+  storage:
+    storageClass: standard-rwo
+    size: "500Gi"
+    retentionPolicy: Retain
+  snapshotSchedule:
+    schedule: "0 2 * * *"   # Daily at 02:00 UTC
+    volumeSnapshotClassName: ""   # Omit to use default for the driver
+    flushBeforeSnapshot: false  # Set true if you need app-level flush (see docs)
+    retentionCount: 7          # Keep last 7 snapshots
+  validatorConfig:
+    seedSecretRef: validator-primary-seed
+    quorumSet: |
+      [
+        ["$NODE_ID", "$VALIDATOR_A", "$VALIDATOR_B"],
+        ["$VALIDATOR_C", "$VALIDATOR_D"]
+      ]
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-testnet/core_testnet_001"
+    catchupComplete: false
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+---
+# New validator: bootstrap from a VolumeSnapshot (same namespace as snapshot)
+# Replace volumeSnapshotName with an actual snapshot name (e.g. validator-primary-data-20250224-020000)
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-restored
+  namespace: stellar-nodes
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "21.0.0"
+  historyMode: Recent
+  storage:
+    storageClass: standard-rwo
+    size: "500Gi"
+    retentionPolicy: Retain
+  restoreFromSnapshot:
+    volumeSnapshotName: validator-primary-data-20250224-020000  # from snapshot schedule or manual
+    # namespace: other-namespace   # optional, for cross-namespace restore
+  validatorConfig:
+    seedSecretRef: validator-restored-seed
+    quorumSet: |
+      [
+        ["$NODE_ID", "$VALIDATOR_A", "$VALIDATOR_B"],
+        ["$VALIDATOR_C", "$VALIDATOR_D"]
+      ]
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-testnet/core_testnet_001"
+    catchupComplete: false
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+---
+# On-demand snapshot: annotate the source node to trigger one snapshot immediately
+# kubectl annotate stellarnode validator-primary stellar.org/request-snapshot=true -n stellar-nodes

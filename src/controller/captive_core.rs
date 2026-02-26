@@ -243,6 +243,8 @@ mod tests {
                 load_balancer: None,
                 global_discovery: None,
                 cross_cluster: None,
+                snapshot_schedule: None,
+                restore_from_snapshot: None,
                 strategy: Default::default(),
                 maintenance_mode: false,
                 network_policy: None,

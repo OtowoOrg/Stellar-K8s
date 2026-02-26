@@ -101,9 +101,10 @@ mod tests {
                     strategy: strategy.clone(),
                     archive_sharding: false,
                 }),
+                backup_schedule: None,
                 resource_meta: None,
-                vpa_config: None,
                 read_pool_endpoint: None,
+                vpa_config: None,
             },
             status: None,
         }

@@ -10,7 +10,7 @@ mod tests {
         BackupScheduleConfig, HistoryMode, NodeType, ResourceRequirements, ResourceSpec,
         RetentionPolicy, RolloutStrategy, StellarNetwork, StorageConfig, ValidatorConfig,
     };
-    use crate::crd::{StellarNode, StellarNodeSpec, StellarNodeStatus};
+    use crate::crd::{StellarNode, StellarNodeSpec};
 
     /// Construct a minimal `StellarNode` suitable for unit-testing resource
     /// builders.  No Kubernetes API calls are made.
@@ -78,6 +78,7 @@ mod tests {
                 read_replica_config: None,
                 backup_schedule: backup,
                 resource_meta: None,
+                read_pool_endpoint: None,
             },
             status: None,
         }
@@ -152,9 +153,7 @@ mod tests {
             Some("stellar-operator"),
         );
         assert_eq!(
-            labels
-                .get("app.kubernetes.io/instance")
-                .map(String::as_str),
+            labels.get("app.kubernetes.io/instance").map(String::as_str),
             Some("labelled-node"),
         );
     }
@@ -307,10 +306,7 @@ mod tests {
             Some("stellar-ledger-backups")
         );
         assert_eq!(get_env_value(env, "AWS_DEFAULT_REGION"), Some("us-east-1"));
-        assert_eq!(
-            get_env_value(env, "S3_PREFIX"),
-            Some("testnet/validator")
-        );
+        assert_eq!(get_env_value(env, "S3_PREFIX"), Some("testnet/validator"));
         assert_eq!(get_env_value(env, "S3_RETENTION_COUNT"), Some("10"));
     }
 

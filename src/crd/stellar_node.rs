@@ -10,11 +10,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::types::{
-    AutoscalingConfig, BackupScheduleConfig, Condition, CrossClusterConfig,
-    DisasterRecoveryConfig, DisasterRecoveryStatus, ExternalDatabaseConfig, GlobalDiscoveryConfig,
-    HistoryMode, HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig,
-    NetworkPolicyConfig, NodeType, ResourceRequirements, RetentionPolicy, RolloutStrategy,
-    SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig, VpaConfig,
+    AutoscalingConfig, BackupScheduleConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
+    DisasterRecoveryStatus, ExternalDatabaseConfig, GlobalDiscoveryConfig, HistoryMode,
+    HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig, NetworkPolicyConfig,
+    NodeType, ResourceRequirements, RetentionPolicy, RolloutStrategy, SorobanConfig,
+    StellarNetwork, StorageConfig, ValidatorConfig, VpaConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`

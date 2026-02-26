@@ -2901,12 +2901,7 @@ pub async fn ensure_backup_cronjob(client: &Client, node: &StellarNode) -> Resul
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<CronJob> = Api::namespaced(client.clone(), &namespace);
     let cronjob = build_backup_cronjob(node, backup_cfg);
-    let name = cronjob
-        .metadata
-        .name
-        .as_deref()
-        .unwrap_or("")
-        .to_string();
+    let name = cronjob.metadata.name.as_deref().unwrap_or("").to_string();
 
     info!(
         "Reconciling backup CronJob {}/{} (schedule: {})",

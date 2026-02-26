@@ -761,16 +761,10 @@ pub(crate) async fn apply_stellar_node(
     .await?;
 
     // 6b. Backup CronJob (S3-compatible ledger snapshot backups)
-    apply_or_emit(
-        ctx,
-        node,
-        ActionType::Update,
-        "Backup CronJob",
-        async {
-            resources::ensure_backup_cronjob(client, node).await?;
-            Ok(())
-        },
-    )
+    apply_or_emit(ctx, node, ActionType::Update, "Backup CronJob", async {
+        resources::ensure_backup_cronjob(client, node).await?;
+        Ok(())
+    })
     .await?;
 
     // 7. Perform health check to determine if node is ready

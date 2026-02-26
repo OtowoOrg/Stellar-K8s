@@ -8,7 +8,7 @@ use super::graph::QuorumGraph;
 use super::latency::ConsensusLatencyTracker;
 use super::scp_client::ScpClient;
 use super::types::QuorumSetInfo;
-use crate::crd::stellar_node::{StellarNode, StellarNodeStatus};
+use crate::crd::StellarNode;
 use crate::crd::types::Condition;
 use chrono::{DateTime, Utc};
 use kube::api::{Patch, PatchParams};
@@ -206,6 +206,104 @@ impl QuorumAnalyzer {
     /// Record a latency measurement
     pub fn record_latency(&mut self, validator: &str, ledger: u64, latency_ms: u64) {
         self.latency_tracker.record_latency(validator, ledger, latency_ms);
+    }
+
+    /// Update the StellarNodeStatus with quorum analysis results
+    pub async fn update_node_status(
+        &self,
+        client: &Client,
+        node: &StellarNode,
+        result: &QuorumAnalysisResult,
+    ) -> Result<()> {
+        let namespace = node.metadata.namespace.as_ref().ok_or_else(|| {
+            QuorumAnalysisError::InvalidTopology("Node has no namespace".to_string())
+        })?;
+
+        let name = node.metadata.name.as_ref().ok_or_else(|| {
+            QuorumAnalysisError::InvalidTopology("Node has no name".to_string())
+        })?;
+
+        let api: Api<StellarNode> = Api::namespaced(client.clone(), namespace);
+
+        // Build status patch
+        let mut status = node.status.clone().unwrap_or_default();
+        
+        // Update quorum fields
+        status.quorum_fragility = Some(result.fragility_score);
+        status.quorum_analysis_timestamp = Some(result.timestamp.to_rfc3339());
+
+        // Add Degraded condition if fragility > 0.7
+        if result.fragility_score > 0.7 {
+            let degraded_condition = Condition {
+                type_: "Degraded".to_string(),
+                status: "True".to_string(),
+                last_transition_time: Utc::now().to_rfc3339(),
+                reason: "QuorumFragile".to_string(),
+                message: format!(
+                    "Quorum fragility score {:.3} exceeds threshold (critical_nodes={}, min_overlap={})",
+                    result.fragility_score,
+                    result.critical_nodes.len(),
+                    result.min_overlap
+                ),
+                observed_generation: None,
+            };
+
+            // Update or add the Degraded condition
+            if let Some(pos) = status.conditions.iter().position(|c| c.type_ == "Degraded") {
+                status.conditions[pos] = degraded_condition;
+            } else {
+                status.conditions.push(degraded_condition);
+            }
+        } else {
+            // Remove Degraded condition if fragility is acceptable
+            status.conditions.retain(|c| c.type_ != "Degraded" || c.reason != "QuorumFragile");
+        }
+
+        // Patch the status
+        let patch = serde_json::json!({
+            "status": status
+        });
+
+        let _: StellarNode = api.patch_status(
+            name,
+            &PatchParams::default(),
+            &Patch::Merge(&patch),
+        )
+        .await
+        .map_err(QuorumAnalysisError::KubeError)?;
+
+        info!(
+            "Updated status for {}/{} with fragility score {:.3}",
+            namespace, name, result.fragility_score
+        );
+
+        Ok(())
+    }
+
+    /// Update node status preserving last known good score on error
+    pub async fn update_node_status_on_error(
+        &self,
+        _client: &Client,
+        node: &StellarNode,
+        error: &QuorumAnalysisError,
+    ) -> Result<()> {
+        let namespace = node.metadata.namespace.as_ref().ok_or_else(|| {
+            QuorumAnalysisError::InvalidTopology("Node has no namespace".to_string())
+        })?;
+
+        let name = node.metadata.name.as_ref().ok_or_else(|| {
+            QuorumAnalysisError::InvalidTopology("Node has no name".to_string())
+        })?;
+
+        warn!(
+            "Quorum analysis failed for {}/{}: {}",
+            namespace, name, error
+        );
+
+        // Preserve last known good score, don't update timestamp
+        // This ensures stale data is not propagated
+        
+        Ok(())
     }
 }
 

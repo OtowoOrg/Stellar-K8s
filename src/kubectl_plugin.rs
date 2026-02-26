@@ -542,6 +542,8 @@ mod tests {
                 cve_handling: None,
                 read_replica_config: None,
                 backup_schedule: None,
+                oci_snapshot: None,
+                service_mesh: None,
                 resource_meta: None,
                 read_pool_endpoint: None,
             },
@@ -560,6 +562,7 @@ mod tests {
                 replicas: 1,
                 canary_ready_replicas: 0,
                 canary_version: None,
+                canary_start_time: None,
                 last_migrated_version: None,
             }),
         }

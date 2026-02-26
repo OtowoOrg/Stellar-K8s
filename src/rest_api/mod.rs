@@ -6,5 +6,6 @@ mod custom_metrics;
 mod dto;
 mod handlers;
 mod server;
+mod sustainability;
 
 pub use server::run_server;

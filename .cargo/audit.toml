@@ -1,0 +1,18 @@
+[advisories]
+# All entries below are transitive dependencies through kube-runtime 0.94.x
+# or wasmtime 24.x. They cannot be upgraded without major ecosystem version
+# bumps that go beyond the scope of this project. None are security vulnerabilities.
+ignore = [
+    # backoff 0.4.0 – unmaintained, via kube-runtime 0.94.x
+    "RUSTSEC-2025-0012",
+    # derivative 2.2.0 – unmaintained, via kube-runtime 0.94.x
+    "RUSTSEC-2024-0388",
+    # instant 0.1.13 – unmaintained, via backoff → kube-runtime
+    "RUSTSEC-2024-0384",
+    # fxhash 0.2.1 – unmaintained, via wasmtime 24.x
+    "RUSTSEC-2025-0057",
+    # paste 1.0.15 – unmaintained, via wasmtime 24.x
+    "RUSTSEC-2024-0436",
+    # rustls-pemfile 2.2.0 – unmaintained, via kube-client / axum-server (transitive)
+    "RUSTSEC-2025-0134",
+]

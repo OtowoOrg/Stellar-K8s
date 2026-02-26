@@ -1,10 +1,12 @@
 //! History Archive Health Check Module
 //!
 //! Provides async health checking for Stellar history archive URLs.
-//! Used to verify archives are reachable before starting validator nodes.
+//! Used to verify archives are reachable before starting validator nodes,
+//! and to periodically check archive integrity by comparing ledger sequences.
 
 use crate::error::{Error, Result};
 use reqwest::Client;
+use serde::Deserialize;
 use std::time::Duration;
 use tracing::{debug, warn};
 
@@ -162,6 +164,171 @@ pub async fn check_history_archive_health(
     Ok(health_result)
 }
 
+/// Ledger lag threshold above which an archive is considered significantly behind
+pub const ARCHIVE_LAG_THRESHOLD: u64 = 20;
+
+/// Relevant subset of stellar-history.json needed for integrity checks
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StellarHistoryJson {
+    /// Latest ledger sequence covered by this archive
+    current_ledger: u64,
+}
+
+/// Result of an archive integrity check
+#[derive(Debug, Clone)]
+pub struct ArchiveIntegrityResult {
+    /// URL of the checked archive
+    pub url: String,
+    /// Ledger sequence reported by the archive (`None` if unreachable or malformed)
+    pub archive_ledger: Option<u64>,
+    /// Current ledger sequence of the node (used as reference)
+    pub node_ledger: u64,
+    /// Number of ledgers the archive is behind the node (`None` if archive is unavailable)
+    pub lag: Option<u64>,
+    /// Error message if the check failed
+    pub error: Option<String>,
+}
+
+impl ArchiveIntegrityResult {
+    /// Returns `true` when the archive is reachable and its lag is below the threshold
+    pub fn is_healthy(&self) -> bool {
+        self.lag
+            .map(|l| l <= ARCHIVE_LAG_THRESHOLD)
+            .unwrap_or(false)
+    }
+
+    /// Human-readable summary for status conditions
+    pub fn summary(&self) -> String {
+        match (self.archive_ledger, self.lag) {
+            (Some(al), Some(lag)) if lag <= ARCHIVE_LAG_THRESHOLD => {
+                format!(
+                    "archive {} is healthy (archive_ledger={}, node_ledger={}, lag={})",
+                    self.url, al, self.node_ledger, lag
+                )
+            }
+            (Some(al), Some(lag)) => {
+                format!(
+                    "archive {} is lagging by {} ledgers (archive_ledger={}, node_ledger={})",
+                    self.url, lag, al, self.node_ledger
+                )
+            }
+            _ => format!(
+                "archive {} is unreachable: {}",
+                self.url,
+                self.error.as_deref().unwrap_or("unknown error")
+            ),
+        }
+    }
+}
+
+/// Fetch and parse the `stellar-history.json` from a single archive URL
+async fn fetch_archive_ledger(client: &Client, url: &str, timeout: Duration) -> Result<u64> {
+    let base_url = url.trim_end_matches('/');
+    let json_url = format!("{base_url}/.well-known/stellar-history.json");
+
+    debug!("Fetching archive history JSON: {}", json_url);
+
+    let resp = client
+        .get(&json_url)
+        .timeout(timeout)
+        .send()
+        .await
+        .map_err(Error::HttpError)?;
+
+    if !resp.status().is_success() {
+        return Err(Error::ArchiveHealthCheckError(format!(
+            "HTTP {} from {}",
+            resp.status(),
+            json_url
+        )));
+    }
+
+    let history: StellarHistoryJson = resp.json().await.map_err(|e| {
+        Error::ArchiveHealthCheckError(format!(
+            "malformed stellar-history.json from {json_url}: {e}"
+        ))
+    })?;
+
+    Ok(history.current_ledger)
+}
+
+/// Check archive integrity by comparing the archive's ledger sequence to the node's current ledger.
+///
+/// # Arguments
+/// * `urls` - Archive URLs to check (all are checked in parallel)
+/// * `node_ledger` - The current ledger sequence of the validator node
+/// * `timeout` - Per-URL HTTP timeout (default: 10 s)
+///
+/// # Returns
+/// One [`ArchiveIntegrityResult`] per URL, with lag information.
+pub async fn check_archive_integrity(
+    urls: &[String],
+    node_ledger: u64,
+    timeout: Option<Duration>,
+) -> Vec<ArchiveIntegrityResult> {
+    if urls.is_empty() {
+        return vec![];
+    }
+
+    let timeout = timeout.unwrap_or(Duration::from_secs(10));
+
+    let client = match Client::builder()
+        .timeout(timeout)
+        .user_agent("stellar-k8s-operator/0.1.0")
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(
+                "Failed to build HTTP client for archive integrity check: {}",
+                e
+            );
+            return urls
+                .iter()
+                .map(|url| ArchiveIntegrityResult {
+                    url: url.clone(),
+                    archive_ledger: None,
+                    node_ledger,
+                    lag: None,
+                    error: Some(format!("client build error: {e}")),
+                })
+                .collect();
+        }
+    };
+
+    let checks = urls.iter().map(|url| {
+        let client = client.clone();
+        let url = url.clone();
+        async move {
+            match fetch_archive_ledger(&client, &url, timeout).await {
+                Ok(archive_ledger) => {
+                    let lag = node_ledger.saturating_sub(archive_ledger);
+                    ArchiveIntegrityResult {
+                        url,
+                        archive_ledger: Some(archive_ledger),
+                        node_ledger,
+                        lag: Some(lag),
+                        error: None,
+                    }
+                }
+                Err(e) => {
+                    warn!("Archive integrity check failed for {}: {}", url, e);
+                    ArchiveIntegrityResult {
+                        url,
+                        archive_ledger: None,
+                        node_ledger,
+                        lag: None,
+                        error: Some(e.to_string()),
+                    }
+                }
+            }
+        }
+    });
+
+    futures::future::join_all(checks).await
+}
+
 /// Calculate exponential backoff delay for retry attempts
 ///
 /// # Arguments
@@ -192,27 +359,21 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    // ── backoff ────────────────────────────────────────────────────────────
+
     #[test]
     fn test_backoff_calculation() {
-        // Attempt 0: 15 seconds
         assert_eq!(calculate_backoff(0, None, None), Duration::from_secs(15));
-
-        // Attempt 1: 30 seconds
         assert_eq!(calculate_backoff(1, None, None), Duration::from_secs(30));
-
-        // Attempt 2: 60 seconds
         assert_eq!(calculate_backoff(2, None, None), Duration::from_secs(60));
-
-        // Attempt 3: 120 seconds
         assert_eq!(calculate_backoff(3, None, None), Duration::from_secs(120));
-
-        // Attempt 4: 240 seconds
         assert_eq!(calculate_backoff(4, None, None), Duration::from_secs(240));
-
-        // Attempt 5+: capped at 300 seconds (5 minutes)
+        // capped at 300 s (5 min)
         assert_eq!(calculate_backoff(5, None, None), Duration::from_secs(300));
         assert_eq!(calculate_backoff(10, None, None), Duration::from_secs(300));
     }
+
+    // ── ArchiveHealthResult ────────────────────────────────────────────────
 
     #[test]
     fn test_health_result_summary() {
@@ -244,6 +405,174 @@ mod tests {
         assert!(!result.all_healthy);
         assert!(!result.any_healthy);
         assert_eq!(result.summary(), "No archives configured");
+    }
+
+    // ── ArchiveIntegrityResult ─────────────────────────────────────────────
+
+    fn make_integrity_result(
+        archive_ledger: Option<u64>,
+        node_ledger: u64,
+    ) -> ArchiveIntegrityResult {
+        let lag = archive_ledger.map(|al| node_ledger.saturating_sub(al));
+        let error = if archive_ledger.is_none() {
+            Some("connection refused".to_string())
+        } else {
+            None
+        };
+        ArchiveIntegrityResult {
+            url: "http://archive.example.com".to_string(),
+            archive_ledger,
+            node_ledger,
+            lag,
+            error,
+        }
+    }
+
+    #[test]
+    fn test_integrity_within_threshold_is_healthy() {
+        // Archive is exactly at threshold – should be healthy
+        let node_ledger = 1000;
+        let archive_ledger = node_ledger - ARCHIVE_LAG_THRESHOLD;
+        let result = make_integrity_result(Some(archive_ledger), node_ledger);
+        assert!(result.is_healthy());
+        assert!(result.lag == Some(ARCHIVE_LAG_THRESHOLD));
+    }
+
+    #[test]
+    fn test_integrity_exceeds_threshold_is_degraded() {
+        // Archive is one ledger past the threshold – should be degraded
+        let node_ledger = 1000;
+        let archive_ledger = node_ledger - ARCHIVE_LAG_THRESHOLD - 1;
+        let result = make_integrity_result(Some(archive_ledger), node_ledger);
+        assert!(!result.is_healthy());
+        assert!(result.lag == Some(ARCHIVE_LAG_THRESHOLD + 1));
+        assert!(result.summary().contains("lagging"));
+    }
+
+    #[test]
+    fn test_integrity_archive_ahead_of_node_is_healthy() {
+        // Archive ledger > node ledger: saturating_sub gives 0 lag
+        let result = make_integrity_result(Some(2000), 1000);
+        // lag = 1000.saturating_sub(2000) = 0
+        assert_eq!(result.lag, Some(0));
+        assert!(result.is_healthy());
+    }
+
+    #[test]
+    fn test_integrity_unreachable_archive_is_unhealthy() {
+        let result = make_integrity_result(None, 1000);
+        assert!(!result.is_healthy());
+        assert!(result.lag.is_none());
+        assert!(result.summary().contains("unreachable"));
+    }
+
+    #[tokio::test]
+    async fn test_check_archive_integrity_empty_urls() {
+        let results = check_archive_integrity(&[], 1000, None).await;
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_check_archive_integrity_unreachable_url() {
+        // Use a clearly invalid host to guarantee a connection failure
+        let urls = vec!["http://192.0.2.1:9999".to_string()]; // TEST-NET range, not routable
+        let results = check_archive_integrity(
+            &urls,
+            1000,
+            Some(Duration::from_millis(200)), // short timeout to keep the test fast
+        )
+        .await;
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].is_healthy());
+        assert!(results[0].archive_ledger.is_none());
+        assert!(results[0].error.is_some());
+        assert!(results[0].summary().contains("unreachable"));
+    }
+
+    #[tokio::test]
+    async fn test_check_archive_integrity_malformed_json() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/.well-known/stellar-history.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .mount(&mock_server)
+            .await;
+
+        let urls = vec![mock_server.uri()];
+        let results = check_archive_integrity(&urls, 1000, None).await;
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].is_healthy());
+        assert!(results[0].archive_ledger.is_none());
+        assert!(results[0].error.is_some());
+        assert!(results[0]
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("malformed stellar-history.json"));
+        assert!(results[0].summary().contains("unreachable"));
+    }
+
+    #[tokio::test]
+    async fn test_check_archive_integrity_healthy_and_in_sync() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/.well-known/stellar-history.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"currentLedger": 990}"#))
+            .mount(&mock_server)
+            .await;
+
+        let urls = vec![mock_server.uri()];
+        let node_ledger = 1000;
+        let results = check_archive_integrity(&urls, node_ledger, None).await;
+        assert_eq!(results.len(), 1);
+        assert!(results[0].is_healthy());
+        assert_eq!(results[0].archive_ledger, Some(990));
+        assert_eq!(results[0].node_ledger, node_ledger);
+        assert_eq!(results[0].lag, Some(10)); // 1000 - 990 = 10
+        assert!(results[0].error.is_none());
+        assert!(results[0].summary().contains("is healthy"));
+    }
+
+    #[tokio::test]
+    async fn test_check_archive_integrity_lagging() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/.well-known/stellar-history.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"currentLedger": 970}"#))
+            .mount(&mock_server)
+            .await;
+
+        let urls = vec![mock_server.uri()];
+        let node_ledger = 1000;
+        let results = check_archive_integrity(&urls, node_ledger, None).await;
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].is_healthy());
+        assert_eq!(results[0].archive_ledger, Some(970));
+        assert_eq!(results[0].node_ledger, node_ledger);
+        assert_eq!(results[0].lag, Some(30)); // 1000 - 970 = 30
+        assert!(results[0].error.is_none());
+        assert!(results[0].summary().contains("is lagging by 30 ledgers"));
+    }
+
+    #[tokio::test]
+    async fn test_check_archive_integrity_archive_ahead() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/.well-known/stellar-history.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"currentLedger": 1010}"#))
+            .mount(&mock_server)
+            .await;
+
+        let urls = vec![mock_server.uri()];
+        let node_ledger = 1000;
+        let results = check_archive_integrity(&urls, node_ledger, None).await;
+        assert_eq!(results.len(), 1);
+        assert!(results[0].is_healthy());
+        assert_eq!(results[0].archive_ledger, Some(1010));
+        assert_eq!(results[0].node_ledger, node_ledger);
+        assert_eq!(results[0].lag, Some(0)); // 1000.saturating_sub(1010) = 0
+        assert!(results[0].error.is_none());
+        assert!(results[0].summary().contains("is healthy"));
     }
 
     /// Test that a reachable archive with valid metadata returns healthy status

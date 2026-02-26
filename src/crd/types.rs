@@ -65,34 +65,16 @@ impl std::fmt::Display for HistoryMode {
 }
 
 /// Target Stellar network
-///
-/// Specifies which Stellar network the node connects to.
-/// This determines the network passphrase, peer addresses, and historical data sources.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use stellar_k8s::crd::StellarNetwork;
-///
-/// let network = StellarNetwork::Testnet;
-/// let passphrase = network.passphrase();
-/// assert_eq!(passphrase, "Test SDF Network ; September 2015");
-/// ```
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum StellarNetwork {
-    /// Stellar public mainnet
     Mainnet,
-    /// Stellar testnet for testing
     #[default]
     Testnet,
-    /// Futurenet for bleeding-edge features
     Futurenet,
-    /// Custom network with passphrase
     Custom(String),
 }
 
 impl StellarNetwork {
-    /// Get the network passphrase for this network
     pub fn passphrase(&self) -> &str {
         match self {
             StellarNetwork::Mainnet => "Public Global Stellar Network ; September 2015",
@@ -104,30 +86,10 @@ impl StellarNetwork {
 }
 
 /// Kubernetes-style resource requirements
-///
-/// Specifies CPU and memory resource requests and limits for the node.
-/// Follows Kubernetes conventions for resource quantities.
-///
-/// Resource quantities use the following formats:
-/// - CPU: `"500m"` (millicores), `"2"` (cores), `"1.5"`
-/// - Memory: `"512Mi"`, `"1Gi"`, `"2Gi"`
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use stellar_k8s::crd::ResourceRequirements;
-///
-/// let resources = ResourceRequirements {
-///     requests: Default::default(),
-///     limits: Default::default(),
-/// };
-/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceRequirements {
-    /// Minimum resources requested
     pub requests: ResourceSpec,
-    /// Maximum resources allowed
     pub limits: ResourceSpec,
 }
 
@@ -149,9 +111,7 @@ impl Default for ResourceRequirements {
 /// Resource specification for CPU and memory
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct ResourceSpec {
-    /// CPU cores (e.g., "500m", "2")
     pub cpu: String,
-    /// Memory (e.g., "1Gi", "4Gi")
     pub memory: String,
 }
 
@@ -165,34 +125,13 @@ impl Default for ResourceSpec {
 }
 
 /// Storage configuration for persistent data
-///
-/// Configures how node data is persisted to disk, including storage class selection,
-/// size allocation, and cleanup behavior on node deletion.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use stellar_k8s::crd::{StorageConfig, RetentionPolicy};
-///
-/// let storage = StorageConfig {
-///     storage_class: "ssd".to_string(),
-///     size: "500Gi".to_string(),
-///     retention_policy: RetentionPolicy::Delete,
-///     annotations: None,
-/// };
-/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageConfig {
-    /// Storage class name (e.g., "standard", "ssd", "premium-rwo")
     pub storage_class: String,
-    /// Size of the PersistentVolumeClaim (e.g., "100Gi")
     pub size: String,
-    /// Retention policy when the node is deleted
     #[serde(default)]
     pub retention_policy: RetentionPolicy,
-    /// Optional annotations to apply to the PersistentVolumeClaim
-    /// Useful for storage-class specific parameters (e.g., volumeBindingMode)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<BTreeMap<String, String>>,
 }
@@ -209,20 +148,10 @@ impl Default for StorageConfig {
 }
 
 /// PVC retention policy on node deletion
-///
-/// Determines whether the Persistent Volume Claim (PVC) is deleted or retained
-/// when the StellarNode resource is deleted.
-///
-/// # Variants
-///
-/// - `Delete` (default) - PVC is deleted along with the node resource
-/// - `Retain` - PVC persists for manual cleanup or data recovery
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum RetentionPolicy {
-    /// Delete the PVC when the node is deleted
     #[default]
     Delete,
-    /// Retain the PVC for manual cleanup or data recovery
     Retain,
 }
 
@@ -246,7 +175,7 @@ pub struct VpaContainerPolicy {
     pub max_allowed: Option<std::collections::BTreeMap<String, String>>,
 }
 
-/// VPA configuration — set this on a StellarNode to enable VPA management
+/// VPA configuration
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct VpaConfig {
@@ -257,36 +186,23 @@ pub struct VpaConfig {
 }
 
 /// Validator-specific configuration
-///
-/// Configuration for Stellar Core validator nodes, including seed management,
-/// quorum set configuration, history archive setup, and key source preferences.
-///
-/// Validators authenticate network participants and validate transactions.
-/// A validator must be configured with a seed key and optionally with a quorum set
-/// to participate in consensus.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use stellar_k8s::crd::{ValidatorConfig, KeySource};
-///
-/// let config = ValidatorConfig {
-///     seed_secret_ref: "my-validator-seed".to_string(),
-///     quorum_set: None,
-///     enable_history_archive: true,
-///     history_archive_urls: vec!["https://archive.example.com".to_string()],
-///     catchup_complete: false,
-///     key_source: KeySource::Secret,
-///     kms_config: None,
-///     vl_source: None,
-///     hsm_config: None,
-/// };
-/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidatorConfig {
     /// Secret name containing the validator seed (key: STELLAR_CORE_SEED)
+    /// DEPRECATED: Use seed_secret_source for KMS/ESO/CSI-backed secrets in production
+    #[serde(default)]
     pub seed_secret_ref: String,
+
+    // -------------------------------------------------------------------------
+    // NEW FIELD: KMS / External Secrets Operator / CSI secret source
+    // When set, this takes precedence over seed_secret_ref.
+    // -------------------------------------------------------------------------
+    /// Production seed source: ESO (AWS SM / GCP SM / Vault) or CSI Secret Store Driver.
+    /// Takes precedence over seed_secret_ref when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed_secret_source: Option<crate::crd::seed_secret::SeedSecretSource>,
+
     /// Quorum set configuration as TOML string
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quorum_set: Option<String>,
@@ -313,23 +229,42 @@ pub struct ValidatorConfig {
     pub hsm_config: Option<HsmConfig>,
 }
 
+// =============================================================================
+// NEW: impl block for ValidatorConfig
+// =============================================================================
+impl ValidatorConfig {
+    /// Return the effective seed source.
+    ///
+    /// Precedence: `seed_secret_source` (new, KMS/ESO/CSI) → `seed_secret_ref` (legacy).
+    /// Returns `None` only when neither field is set.
+    pub fn resolve_seed_source(&self) -> Option<crate::crd::seed_secret::SeedSecretSource> {
+        // Prefer the new typed field
+        if let Some(ref src) = self.seed_secret_source {
+            return Some(src.clone());
+        }
+        // Fall back to the legacy plain-Secret ref
+        if !self.seed_secret_ref.is_empty() {
+            return Some(crate::crd::seed_secret::SeedSecretSource {
+                local_ref: Some(crate::crd::seed_secret::LocalSecretRef {
+                    name: self.seed_secret_ref.clone(),
+                    key: None,
+                }),
+                external_ref: None,
+                csi_ref: None,
+            });
+        }
+        None
+    }
+}
+
 /// Configuration for Hardware Security Module (HSM) integration
-///
-/// Enables validators to use keys stored in Cloud HSMs (AWS CloudHSM, Azure Dedicated HSM)
-/// via PKCS#11, ensuring private keys never leave the secure hardware.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct HsmConfig {
-    /// Cloud provider for the HSM service
     pub provider: HsmProvider,
-    /// Path to the PKCS#11 library within the container
-    /// Default: "/opt/cloudhsm/lib/libcloudhsm_pkcs11.so" for AWS
     pub pkcs11_lib_path: String,
-    /// IP address of the HSM device (Required for Azure/Network HSMs)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hsm_ip: Option<String>,
-    /// Secret containing HSM credentials (PIN/Password)
-    /// The secret must have a key 'HSM_PIN' or 'HSM_PASSWORD'
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hsm_credentials_secret_ref: Option<String>,
 }
@@ -337,101 +272,43 @@ pub struct HsmConfig {
 /// Supported HSM Providers
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum HsmProvider {
-    /// AWS CloudHSM (requires cloudhsm-client sidecar)
     AWS,
-    /// Azure Dedicated HSM (network-based)
     Azure,
 }
 
 /// Source of security keys
-///
-/// Specifies where the validator seed key is stored and retrieved from.
-///
-/// # Variants
-///
-/// - `Secret` (default) - Use a standard Kubernetes Secret resource
-/// - `KMS` - Fetch keys from a cloud KMS or Vault via an init container
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum KeySource {
-    /// Use a standard Kubernetes Secret
     #[default]
     Secret,
-    /// Fetch keys from a cloud KMS or Vault via init container
     KMS,
 }
 
 /// Configuration for cloud-native KMS or Vault
-///
-/// Specifies cloud KMS (AWS KMS, GCP Cloud KMS, HashiCorp Vault) parameters
-/// for securely fetching validator seeds.
-///
-/// When `KeySource::KMS` is selected, an init container runs to fetch the key
-/// from the specified KMS before the main container starts.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use stellar_k8s::crd::KmsConfig;
-///
-/// let kms = KmsConfig {
-///     key_id: "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012".to_string(),
-///     provider: "aws".to_string(),
-///     region: Some("us-east-1".to_string()),
-///     fetcher_image: Some("stellar/kms-fetcher:latest".to_string()),
-/// };
-/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct KmsConfig {
-    /// KMS Key ID, ARN, or Vault path (e.g., "alias/my-key" or "secret/stellar/validator-key")
     pub key_id: String,
-    /// Provider name (e.g., "aws", "google", "vault")
     pub provider: String,
-    /// Cloud region (e.g., "us-east-1", "europe-west1")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
-    /// Image to use for the KMS init container (default: stellar/kms-fetcher:latest)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fetcher_image: Option<String>,
 }
 
 /// Horizon API server configuration
-///
-/// Configuration for Horizon nodes that provide a REST API to query the Stellar ledger.
-/// Horizon ingests data from Stellar Core and indexes it for fast queries.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use stellar_k8s::crd::HorizonConfig;
-///
-/// let config = HorizonConfig {
-///     database_secret_ref: "horizon-db-secret".to_string(),
-///     enable_ingest: true,
-///     stellar_core_url: "http://core.default:11626".to_string(),
-///     ingest_workers: 4,
-///     enable_experimental_ingestion: false,
-///     auto_migration: true,
-/// };
-/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HorizonConfig {
-    /// Secret reference for database credentials
     pub database_secret_ref: String,
-    /// Enable real-time ingestion from Stellar Core
     #[serde(default = "default_true")]
     pub enable_ingest: bool,
-    /// Stellar Core URL to ingest from
     pub stellar_core_url: String,
-    /// Number of parallel ingestion workers
     #[serde(default = "default_ingest_workers")]
     pub ingest_workers: u32,
-    /// Enable experimental features
     #[serde(default)]
     pub enable_experimental_ingestion: bool,
-    /// Automatically run database migrations on startup or upgrade
     #[serde(default = "default_true")]
     pub auto_migration: bool,
 }
@@ -445,230 +322,79 @@ fn default_ingest_workers() -> u32 {
 }
 
 /// Captive Core configuration for Soroban RPC
-///
-/// Structured configuration for Captive Core, which is used by Soroban RPC nodes
-/// to stream ledger data from the Stellar network.
-///
-/// This provides a type-safe alternative to raw TOML strings, ensuring configuration
-/// correctness at compile time and runtime.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use stellar_k8s::crd::CaptiveCoreConfig;
-///
-/// let config = CaptiveCoreConfig {
-///     network_passphrase: None, // Will use network default
-///     history_archive_urls: vec![
-///         "https://history.stellar.org/prd/core-live/core_live_001".to_string(),
-///         "https://history.stellar.org/prd/core-live/core_live_002".to_string(),
-///     ],
-///     peer_port: None,    // Will use default 11625
-///     http_port: None,    // Will use default 11626
-///     log_level: Some("info".to_string()),
-///     additional_config: None,
-/// };
-/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptiveCoreConfig {
-    /// Network passphrase override
-    /// If not provided, will use the passphrase from the StellarNode network field
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_passphrase: Option<String>,
-
-    /// History archive URLs for Captive Core to fetch ledger data
-    /// At least one archive URL is required
-    /// Multiple archives provide redundancy and load distribution
     #[serde(default)]
     pub history_archive_urls: Vec<String>,
-
-    /// Peer port for Stellar Core (default: 11625)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peer_port: Option<u16>,
-
-    /// HTTP port for Stellar Core (default: 11626)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http_port: Option<u16>,
-
-    /// Log level for Captive Core (default: "info")
-    /// Valid values: "fatal", "error", "warning", "info", "debug", "trace"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_level: Option<String>,
-
-    /// Additional custom TOML configuration
-    /// This is an escape hatch for advanced users who need to add
-    /// custom configuration not covered by the structured fields
-    /// The content will be appended to the generated TOML
     #[serde(skip_serializing_if = "Option::is_none")]
     pub additional_config: Option<String>,
 }
 
 /// Soroban RPC server configuration
-///
-/// Configuration for Soroban RPC nodes that handle smart contract simulation
-/// and transaction submission on Stellar's smart contract platform.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use stellar_k8s::crd::{SorobanConfig, CaptiveCoreConfig};
-///
-/// // Recommended: Use structured configuration
-/// let config = SorobanConfig {
-///     stellar_core_url: "http://core.default:11626".to_string(),
-///     captive_core_config: None, // Deprecated
-///     captive_core_structured_config: Some(CaptiveCoreConfig {
-///         network_passphrase: None,
-///         history_archive_urls: vec![
-///             "https://history.stellar.org/prd/core-testnet/core_testnet_001".to_string(),
-///         ],
-///         peer_port: None,
-///         http_port: None,
-///         log_level: Some("info".to_string()),
-///         additional_config: None,
-///     }),
-///     enable_preflight: true,
-///     max_events_per_request: 10000,
-/// };
-/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SorobanConfig {
-    /// Stellar Core endpoint URL
     pub stellar_core_url: String,
-
-    /// Captive Core configuration (TOML format)
-    ///
-    /// **DEPRECATED**: Use `captive_core_structured_config` instead.
-    /// This field is maintained for backward compatibility only.
     #[deprecated(
         since = "0.2.0",
         note = "Use captive_core_structured_config for type-safe configuration"
     )]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub captive_core_config: Option<String>,
-
-    /// Structured Captive Core configuration
-    ///
-    /// This is the recommended way to configure Captive Core.
-    /// If both this and `captive_core_config` are provided, this field takes precedence.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub captive_core_structured_config: Option<CaptiveCoreConfig>,
-
-    /// Enable transaction simulation preflight
     #[serde(default = "default_true")]
     pub enable_preflight: bool,
-
-    /// Maximum number of events to return per request
     #[serde(default = "default_max_events")]
     pub max_events_per_request: u32,
 }
 
 /// External database configuration for managed Postgres databases
-///
-/// Specifies how to reference database credentials for external managed databases.
-/// Supports AWS RDS, Google Cloud SQL, CockroachDB, and other managed services.
-///
-/// The operator injects database credentials as environment variables into the container.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use stellar_k8s::crd::{ExternalDatabaseConfig, SecretKeyRef};
-///
-/// let config = ExternalDatabaseConfig {
-///     secret_key_ref: SecretKeyRef {
-///         name: "postgres-credentials".to_string(),
-///         key: "DATABASE_URL".to_string(),
-///     },
-/// };
-/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExternalDatabaseConfig {
-    /// Reference to a Kubernetes Secret containing database credentials
     pub secret_key_ref: SecretKeyRef,
 }
 
 /// Reference to a key within a Kubernetes Secret
-///
-/// Used to reference database credentials, KMS keys, and other sensitive data
-/// stored in Kubernetes Secrets.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretKeyRef {
-    /// Name of the Secret resource
     pub name: String,
-    /// Key within the Secret to use for the database connection string
-    /// Common keys: "DATABASE_URL", "connection-string", "url"
-    /// For individual components: "host", "port", "database", "user", "password"
     pub key: String,
 }
 
-/// Ingress configuration for exposing Horizon or Soroban RPC over HTTPS
-///
-/// Configures Kubernetes Ingress for external HTTP/HTTPS access to Horizon or Soroban RPC nodes.
-/// Supports multiple hosts, path-based routing, TLS termination, and cert-manager integration.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use stellar_k8s::crd::{IngressConfig, IngressHost, IngressPath};
-///
-/// let config = IngressConfig {
-///     class_name: Some("nginx".to_string()),
-///     hosts: vec![IngressHost {
-///         host: "horizon.example.com".to_string(),
-///         paths: vec![IngressPath {
-///             path: "/".to_string(),
-///             path_type: Some("Prefix".to_string()),
-///         }],
-///     }],
-///     tls_secret_name: None,
-///     cert_manager_issuer: Some("letsencrypt-prod".to_string()),
-///     cert_manager_cluster_issuer: None,
-///     annotations: None,
-/// };
-/// ```
+/// Ingress configuration
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct IngressConfig {
-    /// Optional ingressClassName (e.g., "nginx", "traefik")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class_name: Option<String>,
-
-    /// Host rules with paths to route to the Service
     pub hosts: Vec<IngressHost>,
-
-    /// TLS secret name used by the ingress controller for HTTPS termination
-    /// If provided, all hosts are added to the TLS section
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tls_secret_name: Option<String>,
-
-    /// cert-manager issuer name (namespaced)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cert_manager_issuer: Option<String>,
-
-    /// cert-manager cluster issuer name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cert_manager_cluster_issuer: Option<String>,
-
-    /// Additional annotations to attach to the Ingress
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<BTreeMap<String, String>>,
 }
 
 /// Ingress host entry
-///
-/// Defines a single DNS host and the HTTP paths served for that host.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct IngressHost {
-    /// DNS host name (e.g., "horizon.stellar.example.com")
     pub host: String,
-
-    /// HTTP paths served for this host
     #[serde(
         default = "default_ingress_paths",
         skip_serializing_if = "Vec::is_empty"
@@ -677,15 +403,10 @@ pub struct IngressHost {
 }
 
 /// Ingress path mapping
-///
-/// Defines a single HTTP path prefix or exact path for routing traffic to the service.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct IngressPath {
-    /// HTTP path prefix (e.g., "/")
     pub path: String,
-
-    /// Path type ("Prefix" or "Exact")
     #[serde(default = "default_path_type")]
     pub path_type: Option<String>,
 }
@@ -705,130 +426,63 @@ fn default_max_events() -> u32 {
     10000
 }
 
-/// Horizontal Pod Autoscaling configuration for Horizon and SorobanRpc nodes
-///
-/// Configures Kubernetes Horizontal Pod Autoscaler (HPA) for automatic scaling
-/// of Horizon and Soroban RPC nodes based on CPU or custom metrics.
-/// Validators do not support autoscaling.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use stellar_k8s::crd::AutoscalingConfig;
-///
-/// let config = AutoscalingConfig {
-///     min_replicas: 2,
-///     max_replicas: 10,
-///     target_cpu_utilization_percentage: Some(70),
-///     custom_metrics: vec![],
-///     behavior: None,
-/// };
-/// ```
+/// Horizontal Pod Autoscaling configuration
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoscalingConfig {
-    /// Minimum number of replicas
     pub min_replicas: i32,
-
-    /// Maximum number of replicas
     pub max_replicas: i32,
-
-    /// Target CPU utilization percentage (0-100)
-    /// When set, enables CPU-based scaling
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_cpu_utilization_percentage: Option<i32>,
-
-    /// List of custom metrics to scale on (e.g., ["http_requests_per_second"])
-    /// Requires Prometheus Adapter to be installed in the cluster
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub custom_metrics: Vec<String>,
-
-    /// Behavior configuration for scale up/down
     #[serde(skip_serializing_if = "Option::is_none")]
     pub behavior: Option<ScalingBehavior>,
 }
 
 /// Scaling behavior configuration for HPA
-///
-/// Defines scale-up and scale-down policies with stabilization windows
-/// to control the rate and timing of replica changes.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScalingBehavior {
-    /// Scale up configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale_up: Option<ScalingPolicy>,
-
-    /// Scale down configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale_down: Option<ScalingPolicy>,
 }
 
-/// Scaling policy for scale up/down
-///
-/// Specifies a scaling policy with stabilization window and multiple policy options.
+/// Scaling policy
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScalingPolicy {
-    /// Stabilization window in seconds (how long to wait before scaling again)
     pub stabilization_window_seconds: Option<i32>,
-
-    /// List of policies with different percentage/pod changes
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub policies: Vec<HPAPolicy>,
 }
 
 /// Individual HPA policy
-///
-/// Defines a single scaling policy with a type (percentage or number of pods),
-/// value, and time period.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HPAPolicy {
-    /// Type of policy: "Percent" or "Pods"
     pub policy_type: String,
-
-    /// Value for the policy (percentage or number of pods)
     pub value: i32,
-
-    /// Period in seconds over which the policy is applied
     pub period_seconds: i32,
 }
 
-/// Condition for status reporting (Kubernetes convention)
-///
-/// Reports the status of a condition on the StellarNode resource.
-/// Follows Kubernetes convention for condition reporting.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use stellar_k8s::crd::Condition;
-///
-/// let condition = Condition::ready(true, "Ready", "Node is ready");
-/// ```
+/// Condition for status reporting
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Condition {
-    /// Type of condition (e.g., "Ready", "Progressing", "Degraded")
     #[serde(rename = "type")]
     pub type_: String,
-    /// Status of the condition: "True", "False", or "Unknown"
     pub status: String,
-    /// Last time the condition transitioned
     pub last_transition_time: String,
-    /// Machine-readable reason for the condition
     pub reason: String,
-    /// Human-readable message
     pub message: String,
-    /// ObservedGeneration represents the .metadata.generation that the condition was set based upon
-    /// This field is optional and should be set by controllers to track which generation was observed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_generation: Option<i64>,
 }
 
 impl Condition {
-    /// Create a new Ready condition
     pub fn ready(status: bool, reason: &str, message: &str) -> Self {
         Self {
             type_: "Ready".to_string(),
@@ -840,7 +494,6 @@ impl Condition {
         }
     }
 
-    /// Create a new Progressing condition
     pub fn progressing(reason: &str, message: &str) -> Self {
         Self {
             type_: "Progressing".to_string(),
@@ -852,7 +505,6 @@ impl Condition {
         }
     }
 
-    /// Create a new Degraded condition
     pub fn degraded(reason: &str, message: &str) -> Self {
         Self {
             type_: "Degraded".to_string(),
@@ -864,41 +516,26 @@ impl Condition {
         }
     }
 
-    /// Set the observed generation for this condition
     pub fn with_observed_generation(mut self, generation: i64) -> Self {
         self.observed_generation = Some(generation);
         self
     }
 }
 
-/// Network Policy configuration for securing node traffic
-///
-/// When enabled, creates a default deny-all ingress policy with explicit allow rules
-/// for peer-to-peer traffic (Validators), API access (Horizon/Soroban), and metrics.
+/// Network Policy configuration
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkPolicyConfig {
-    /// Enable NetworkPolicy creation (default: false)
     #[serde(default)]
     pub enabled: bool,
-
-    /// Allow ingress from specific namespaces (by namespace name)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allow_namespaces: Vec<String>,
-
-    /// Allow ingress from pods matching these labels
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_pod_selector: Option<BTreeMap<String, String>>,
-
-    /// Allow ingress from specific CIDR blocks (e.g., ["10.0.0.0/8"])
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allow_cidrs: Vec<String>,
-
-    /// Allow metrics scraping from monitoring namespace (default: true when enabled)
     #[serde(default = "default_true")]
     pub allow_metrics_scrape: bool,
-
-    /// Namespace where Prometheus/monitoring stack runs (default: "monitoring")
     #[serde(default = "default_monitoring_namespace")]
     pub metrics_namespace: String,
 }
@@ -924,10 +561,8 @@ impl Default for NetworkPolicyConfig {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum RolloutStrategy {
-    /// Standard Kubernetes rolling update
     #[default]
     RollingUpdate,
-    /// Canary deployment with traffic weighting
     Canary(CanaryConfig),
 }
 
@@ -935,11 +570,8 @@ pub enum RolloutStrategy {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CanaryConfig {
-    /// Percentage of traffic to route to the canary (0-100)
     #[serde(default = "default_canary_weight")]
     pub weight: i32,
-
-    /// Interval in seconds to wait before increasing weight or finalizing (e.g., 300)
     #[serde(default = "default_canary_interval")]
     pub check_interval_seconds: i32,
 }
@@ -952,76 +584,26 @@ fn default_canary_interval() -> i32 {
     300
 }
 
-// ============================================================================
-// MetalLB / BGP Anycast Configuration
-// ============================================================================
-
-/// Load Balancer configuration for external access via MetalLB with BGP Anycast support
-///
-/// This enables global node discovery by advertising Stellar node endpoints
-/// via BGP to upstream routers. Supports both L2 (ARP/NDP) and BGP modes.
-///
-/// # Example (BGP Anycast)
-///
-/// ```yaml
-/// loadBalancer:
-///   enabled: true
-///   mode: BGP
-///   addressPool: "stellar-anycast"
-///   loadBalancerIP: "192.0.2.100"
-///   bgp:
-///     localASN: 64512
-///     peers:
-///       - address: "192.168.1.1"
-///         asn: 64513
-///         password: "bgp-secret"
-///     communities:
-///       - "64512:100"
-///     advertisement:
-///       aggregationLength: 32
-///       aggregationLengthV6: 128
-/// ```
+/// Load Balancer configuration for external access via MetalLB
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadBalancerConfig {
-    /// Enable LoadBalancer service creation (default: false)
     #[serde(default)]
     pub enabled: bool,
-
-    /// Load balancer mode: L2 or BGP (default: L2)
     #[serde(default)]
     pub mode: LoadBalancerMode,
-
-    /// MetalLB IPAddressPool name to use for IP allocation
-    /// Must match an existing IPAddressPool in the metallb-system namespace
     #[serde(skip_serializing_if = "Option::is_none")]
     pub address_pool: Option<String>,
-
-    /// Specific IP address to request from the pool
-    /// If not specified, an IP will be automatically allocated from the pool
     #[serde(skip_serializing_if = "Option::is_none")]
     pub load_balancer_ip: Option<String>,
-
-    /// External traffic policy: Cluster or Local
-    /// - Cluster: distribute traffic across all nodes (default)
-    /// - Local: preserve client source IP, only route to local pods
     #[serde(default)]
     pub external_traffic_policy: ExternalTrafficPolicy,
-
-    /// BGP-specific configuration for anycast routing
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bgp: Option<BGPConfig>,
-
-    /// Additional annotations to apply to the LoadBalancer Service
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<BTreeMap<String, String>>,
-
-    /// Enable health check endpoint for load balancer probes
-    /// Creates an additional health check port on the service
     #[serde(default = "default_true")]
     pub health_check_enabled: bool,
-
-    /// Port for health check probes (default: 9100)
     #[serde(default = "default_health_check_port")]
     pub health_check_port: i32,
 }
@@ -1049,12 +631,8 @@ impl Default for LoadBalancerConfig {
 /// Load balancer mode selection
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LoadBalancerMode {
-    /// Layer 2 mode using ARP/NDP for local network advertisement
-    /// Simpler setup, but limited to single network segment
     #[default]
     L2,
-    /// BGP mode for anycast routing across multiple locations
-    /// Enables global node discovery and automatic failover
     BGP,
 }
 
@@ -1070,10 +648,8 @@ impl std::fmt::Display for LoadBalancerMode {
 /// External traffic policy for LoadBalancer services
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum ExternalTrafficPolicy {
-    /// Distribute traffic across all cluster nodes (may cause extra hops)
     #[default]
     Cluster,
-    /// Only route to pods on the local node (preserves source IP)
     Local,
 }
 
@@ -1087,43 +663,22 @@ impl std::fmt::Display for ExternalTrafficPolicy {
 }
 
 /// BGP configuration for MetalLB anycast routing
-///
-/// Enables advertising Stellar node IPs to upstream BGP routers,
-/// allowing for geographic load distribution and automatic failover.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BGPConfig {
-    /// Local Autonomous System Number (ASN) for this cluster
-    /// Must be coordinated with network administrators
     pub local_asn: u32,
-
-    /// BGP peer routers to advertise routes to
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub peers: Vec<BGPPeer>,
-
-    /// BGP communities to attach to advertised routes
-    /// Format: "ASN:value" (e.g., "64512:100")
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub communities: Vec<String>,
-
-    /// Large BGP communities (RFC 8092) for extended tagging
-    /// Format: "ASN:function:value" (e.g., "64512:1:100")
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub large_communities: Vec<String>,
-
-    /// BGP advertisement configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub advertisement: Option<BGPAdvertisementConfig>,
-
-    /// Enable BFD (Bidirectional Forwarding Detection) for fast failover
     #[serde(default)]
     pub bfd_enabled: bool,
-
-    /// BFD profile name to use (if bfd_enabled is true)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bfd_profile: Option<String>,
-
-    /// Node selectors to limit which nodes can be BGP speakers
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_selectors: Option<BTreeMap<String, String>>,
 }
@@ -1132,42 +687,22 @@ pub struct BGPConfig {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BGPPeer {
-    /// IP address of the BGP peer router
     pub address: String,
-
-    /// Autonomous System Number of the peer
     pub asn: u32,
-
-    /// BGP session password (optional, stored in secret)
-    /// Reference to a Kubernetes secret key
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password_secret_ref: Option<SecretKeyRef>,
-
-    /// BGP port (default: 179)
     #[serde(default = "default_bgp_port")]
     pub port: u16,
-
-    /// Hold time in seconds (default: 90)
     #[serde(default = "default_hold_time")]
     pub hold_time: u32,
-
-    /// Keepalive time in seconds (default: 30)
     #[serde(default = "default_keepalive_time")]
     pub keepalive_time: u32,
-
-    /// Router ID override (default: auto-detect from node IP)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub router_id: Option<String>,
-
-    /// Source address for BGP session
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_address: Option<String>,
-
-    /// Enable EBGP multi-hop (required when peer is not directly connected)
     #[serde(default)]
     pub ebgp_multi_hop: bool,
-
-    /// Enable graceful restart capability
     #[serde(default = "default_true")]
     pub graceful_restart: bool,
 }
@@ -1184,24 +719,16 @@ fn default_keepalive_time() -> u32 {
     30
 }
 
-/// BGP advertisement configuration for route announcement
+/// BGP advertisement configuration
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BGPAdvertisementConfig {
-    /// IPv4 aggregation length (CIDR prefix length, 0-32)
-    /// Used for route aggregation, e.g., 32 for host routes
     #[serde(default = "default_aggregation_length")]
     pub aggregation_length: u8,
-
-    /// IPv6 aggregation length (CIDR prefix length, 0-128)
     #[serde(default = "default_aggregation_length_v6")]
     pub aggregation_length_v6: u8,
-
-    /// Localpref value for this advertisement (affects route selection)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_pref: Option<u32>,
-
-    /// Node selector to limit which nodes announce the route
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_selectors: Option<BTreeMap<String, String>>,
 }
@@ -1214,41 +741,22 @@ fn default_aggregation_length_v6() -> u8 {
     128
 }
 
-/// Global node discovery configuration for Stellar network peering
-///
-/// Configures how this Stellar node advertises itself for peer discovery
-/// across geographic regions using anycast and service mesh integration.
+/// Global node discovery configuration
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalDiscoveryConfig {
-    /// Enable global node discovery via BGP anycast
     #[serde(default)]
     pub enabled: bool,
-
-    /// Geographic region identifier (e.g., "us-east", "eu-west", "ap-south")
-    /// Used for topology-aware routing and failover
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
-
-    /// Availability zone within the region
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zone: Option<String>,
-
-    /// Priority weight for this node (higher = more preferred)
-    /// Used by BGP local preference and weighted routing
     #[serde(default = "default_priority")]
     pub priority: u32,
-
-    /// Enable topology-aware hints for service routing
-    /// Requires Kubernetes 1.23+ with topology-aware hints enabled
     #[serde(default)]
     pub topology_aware_hints: bool,
-
-    /// Service mesh integration (Istio, Linkerd, etc.)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_mesh: Option<ServiceMeshConfig>,
-
-    /// External DNS configuration for automatic DNS registration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_dns: Option<ExternalDNSConfig>,
 }
@@ -1275,18 +783,11 @@ impl Default for GlobalDiscoveryConfig {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceMeshConfig {
-    /// Service mesh type (istio, linkerd, consul)
     pub mesh_type: ServiceMeshType,
-
-    /// Enable automatic sidecar injection
     #[serde(default = "default_true")]
     pub sidecar_injection: bool,
-
-    /// mTLS mode for mesh communication
     #[serde(default)]
     pub mtls_mode: MTLSMode,
-
-    /// Virtual service hostname for mesh routing
     #[serde(skip_serializing_if = "Option::is_none")]
     pub virtual_service_host: Option<String>,
 }
@@ -1304,31 +805,21 @@ pub enum ServiceMeshType {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum MTLSMode {
-    /// No mTLS (plain text)
     Disable,
-    /// Accept both mTLS and plain text
     #[default]
     Permissive,
-    /// Require mTLS for all connections
     Strict,
 }
 
-/// ExternalDNS configuration for automatic DNS record management
+/// ExternalDNS configuration
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ExternalDNSConfig {
-    /// DNS hostname to register (e.g., "stellar-node.example.com")
     pub hostname: String,
-
-    /// TTL for DNS records in seconds (default: 300)
     #[serde(default = "default_dns_ttl")]
     pub ttl: u32,
-
-    /// DNS provider (route53, cloudflare, google, etc.)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
-
-    /// Additional DNS record annotations for external-dns
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<BTreeMap<String, String>>,
 }
@@ -1337,36 +828,18 @@ fn default_dns_ttl() -> u32 {
     300
 }
 
-// ============================================================================
-// Cross-Region Disaster Recovery Configuration
-// ============================================================================
-
-/// Configuration for multi-cluster disaster recovery (DR)
-///
-/// Manages "hot standby" nodes in remote clusters and automated failover
-/// using external DNS providers (Route53, Cloudflare).
+/// Configuration for multi-cluster disaster recovery
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DisasterRecoveryConfig {
-    /// Whether DR is enabled for this node
     #[serde(default)]
     pub enabled: bool,
-
-    /// Role of this cluster in the DR pairing
     pub role: DRRole,
-
-    /// Identifier of the peer cluster/region
     pub peer_cluster_id: String,
-
-    /// Strategy for state synchronization
     #[serde(default)]
     pub sync_strategy: DRSyncStrategy,
-
-    /// DNS failover configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failover_dns: Option<ExternalDNSConfig>,
-
-    /// Check interval for health of the other region (seconds)
     #[serde(default = "default_dr_check_interval")]
     pub health_check_interval: u32,
 }
@@ -1379,9 +852,7 @@ fn default_dr_check_interval() -> u32 {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DRRole {
-    /// Primary node serving active traffic
     Primary,
-    /// Standby node ready to take over if primary fails
     Standby,
 }
 
@@ -1389,12 +860,9 @@ pub enum DRRole {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DRSyncStrategy {
-    /// Follow the network consensus normally
     #[default]
     Consensus,
-    /// Actively track the peer node's ledger sequence
     PeerTracking,
-    /// Continuous history archive sync
     ArchiveSync,
 }
 
@@ -1402,81 +870,31 @@ pub enum DRSyncStrategy {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DisasterRecoveryStatus {
-    /// Current effective role (may differ from spec during failover)
     pub current_role: Option<DRRole>,
-
-    /// Health status of the peer cluster
     pub peer_health: Option<String>,
-
-    /// Last time the peer was reachable
     pub last_peer_contact: Option<String>,
-
-    /// Sync lag between primary and standby (in ledgers)
     pub sync_lag: Option<u64>,
-
-    /// Whether failover is currently active
     pub failover_active: bool,
 }
 
-// ============================================================================
-// Cross-Cluster Communication Configuration
-// ============================================================================
-
-/// Configuration for cross-cluster communication and synchronization
-///
-/// Enables Stellar nodes to communicate across multiple Kubernetes clusters
-/// using service mesh (Submariner, Istio multi-cluster) or ExternalName services.
-///
-/// # Example (Submariner)
-///
-/// ```yaml
-/// crossCluster:
-///   enabled: true
-///   mode: ServiceMesh
-///   serviceMesh:
-///     meshType: submariner
-///     clusterSetId: "stellar-global"
-///   peerClusters:
-///     - clusterId: "us-west-1"
-///       endpoint: "stellar-validator.stellar.svc.clusterset.local"
-///       latencyThresholdMs: 100
-///     - clusterId: "eu-central-1"
-///       endpoint: "stellar-validator.stellar.svc.clusterset.local"
-///       latencyThresholdMs: 150
-/// ```
+/// Configuration for cross-cluster communication
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CrossClusterConfig {
-    /// Enable cross-cluster communication
     #[serde(default)]
     pub enabled: bool,
-
-    /// Cross-cluster networking mode
     #[serde(default)]
     pub mode: CrossClusterMode,
-
-    /// Service mesh configuration for multi-cluster networking
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_mesh: Option<CrossClusterServiceMeshConfig>,
-
-    /// ExternalName service configuration (alternative to service mesh)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_name: Option<ExternalNameConfig>,
-
-    /// List of peer clusters to communicate with
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub peer_clusters: Vec<PeerClusterConfig>,
-
-    /// Global latency threshold in milliseconds
-    /// Nodes exceeding this threshold will be deprioritized
     #[serde(default = "default_latency_threshold")]
     pub latency_threshold_ms: u32,
-
-    /// Enable automatic peer discovery across clusters
     #[serde(default)]
     pub auto_discovery: bool,
-
-    /// Health check configuration for cross-cluster peers
     #[serde(skip_serializing_if = "Option::is_none")]
     pub health_check: Option<CrossClusterHealthCheck>,
 }
@@ -1504,12 +922,9 @@ impl Default for CrossClusterConfig {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum CrossClusterMode {
-    /// Use service mesh for cross-cluster communication (Submariner, Istio, etc.)
     #[default]
     ServiceMesh,
-    /// Use ExternalName services with external DNS
     ExternalName,
-    /// Use direct IP addressing with LoadBalancer services
     DirectIP,
 }
 
@@ -1517,22 +932,13 @@ pub enum CrossClusterMode {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CrossClusterServiceMeshConfig {
-    /// Service mesh type for multi-cluster
     pub mesh_type: CrossClusterMeshType,
-
-    /// ClusterSet ID for Submariner or Istio multi-cluster
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cluster_set_id: Option<String>,
-
-    /// Enable mTLS for cross-cluster traffic
     #[serde(default = "default_true")]
     pub mtls_enabled: bool,
-
-    /// Service export configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_export: Option<ServiceExportConfig>,
-
-    /// Traffic policy for cross-cluster routing
     #[serde(default)]
     pub traffic_policy: CrossClusterTrafficPolicy,
 }
@@ -1541,33 +947,22 @@ pub struct CrossClusterServiceMeshConfig {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum CrossClusterMeshType {
-    /// Submariner for multi-cluster networking
     Submariner,
-    /// Istio multi-cluster mode
     Istio,
-    /// Linkerd multi-cluster
     Linkerd,
-    /// Cilium Cluster Mesh
     Cilium,
 }
 
-/// Service export configuration for multi-cluster service mesh
+/// Service export configuration
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceExportConfig {
-    /// Export service to other clusters in the ClusterSet
     #[serde(default = "default_true")]
     pub enabled: bool,
-
-    /// Service name to export (defaults to node service name)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_name: Option<String>,
-
-    /// Namespace to export from (defaults to node namespace)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub namespace: Option<String>,
-
-    /// Target clusters to export to (empty = all clusters in ClusterSet)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub target_clusters: Vec<String>,
 }
@@ -1576,34 +971,22 @@ pub struct ServiceExportConfig {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum CrossClusterTrafficPolicy {
-    /// Prefer local cluster, fallback to remote
     #[default]
     LocalPreferred,
-    /// Distribute traffic across all clusters
     Global,
-    /// Only route to local cluster
     LocalOnly,
-    /// Latency-based routing (route to lowest latency cluster)
     LatencyBased,
 }
 
-/// ExternalName service configuration for cross-cluster DNS
+/// ExternalName service configuration
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExternalNameConfig {
-    /// External DNS name for this service
-    /// Example: "stellar-validator.us-east-1.example.com"
     pub external_dns_name: String,
-
-    /// DNS provider for external DNS management
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dns_provider: Option<String>,
-
-    /// TTL for DNS records in seconds
     #[serde(default = "default_dns_ttl")]
     pub ttl: u32,
-
-    /// Create ExternalName services for peer clusters
     #[serde(default = "default_true")]
     pub create_external_name_services: bool,
 }
@@ -1612,33 +995,16 @@ pub struct ExternalNameConfig {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PeerClusterConfig {
-    /// Unique identifier for the peer cluster
     pub cluster_id: String,
-
-    /// Endpoint for reaching the peer cluster
-    /// For ServiceMesh: "service.namespace.svc.clusterset.local"
-    /// For ExternalName: "stellar-node.us-west-1.example.com"
-    /// For DirectIP: "203.0.113.10"
     pub endpoint: String,
-
-    /// Latency threshold for this specific peer (milliseconds)
-    /// Overrides global latency_threshold_ms if set
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latency_threshold_ms: Option<u32>,
-
-    /// Geographic region of the peer cluster
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
-
-    /// Priority weight for this peer (higher = more preferred)
     #[serde(default = "default_peer_priority")]
     pub priority: u32,
-
-    /// Port for peer communication (defaults to 11625 for validators)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
-
-    /// Enable this peer for active communication
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
@@ -1651,27 +1017,16 @@ fn default_peer_priority() -> u32 {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CrossClusterHealthCheck {
-    /// Enable health checks for peer clusters
     #[serde(default = "default_true")]
     pub enabled: bool,
-
-    /// Health check interval in seconds
     #[serde(default = "default_health_check_interval")]
     pub interval_seconds: u32,
-
-    /// Timeout for health check requests in seconds
     #[serde(default = "default_health_check_timeout")]
     pub timeout_seconds: u32,
-
-    /// Number of consecutive failures before marking peer unhealthy
     #[serde(default = "default_failure_threshold")]
     pub failure_threshold: u32,
-
-    /// Number of consecutive successes before marking peer healthy
     #[serde(default = "default_success_threshold")]
     pub success_threshold: u32,
-
-    /// Latency measurement configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latency_measurement: Option<LatencyMeasurementConfig>,
 }
@@ -1696,19 +1051,12 @@ fn default_success_threshold() -> u32 {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LatencyMeasurementConfig {
-    /// Enable latency measurements
     #[serde(default = "default_true")]
     pub enabled: bool,
-
-    /// Measurement method
     #[serde(default)]
     pub method: LatencyMeasurementMethod,
-
-    /// Number of samples to collect for averaging
     #[serde(default = "default_latency_samples")]
     pub sample_count: u32,
-
-    /// Percentile to use for latency threshold (e.g., 95 for p95)
     #[serde(default = "default_latency_percentile")]
     pub percentile: u8,
 }
@@ -1725,48 +1073,31 @@ fn default_latency_percentile() -> u8 {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum LatencyMeasurementMethod {
-    /// ICMP ping
     #[default]
     Ping,
-    /// TCP connection time
     TCP,
-    /// HTTP request time
     HTTP,
-    /// gRPC health check
     GRPC,
 }
+
 // ============================================================================
 // CVE Handling Configuration
 // ============================================================================
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CVEHandlingConfig {
-    /// Enable automatic CVE scanning and patching (default: true)
     #[serde(default = "default_cve_enabled")]
     pub enabled: bool,
-
-    /// Interval in seconds between image scans (default: 3600 = 1 hour)
     #[serde(default = "default_cve_scan_interval")]
     pub scan_interval_secs: u64,
-
-    /// Only patch critical vulnerabilities, ignore medium/low (default: false)
     #[serde(default)]
     pub critical_only: bool,
-
-    /// Maximum time in seconds to wait for canary tests to pass (default: 300 = 5 minutes)
     #[serde(default = "default_canary_timeout")]
     pub canary_test_timeout_secs: u64,
-
-    /// Minimum pass rate (0-100) required for canary tests before proceeding with rollout (default: 100)
     #[serde(default = "default_canary_pass_rate")]
     pub canary_pass_rate_threshold: f64,
-
-    /// Enable automatic rollback if consensus health degrades during rollout (default: true)
     #[serde(default = "default_enable_rollback")]
     pub enable_auto_rollback: bool,
-
-    /// Consensus health threshold (0-1) below which rollback is triggered (default: 0.95)
-    /// If current health < (baseline * threshold), rollback is initiated
     #[serde(default = "default_health_threshold")]
     pub consensus_health_threshold: f64,
 }
@@ -1776,11 +1107,11 @@ fn default_cve_enabled() -> bool {
 }
 
 fn default_cve_scan_interval() -> u64 {
-    3600 // 1 hour
+    3600
 }
 
 fn default_canary_timeout() -> u64 {
-    300 // 5 minutes
+    300
 }
 
 fn default_canary_pass_rate() -> f64 {
@@ -1817,23 +1148,13 @@ impl Default for CVEHandlingConfig {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedDatabaseConfig {
-    /// Number of database instances (replicas) for high availability
-    /// Minimum of 3 is recommended for production HA
     #[serde(default = "default_db_instances")]
     pub instances: i32,
-
-    /// Storage configuration for database data
     pub storage: StorageConfig,
-
-    /// Backup configuration via Barman
     #[serde(skip_serializing_if = "Option::is_none")]
     pub backup: Option<ManagedDatabaseBackupConfig>,
-
-    /// Connection pooling configuration via pgBouncer
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pooling: Option<PgBouncerConfig>,
-
-    /// Postgres version to use (e.g., "16")
     #[serde(default = "default_postgres_version")]
     pub postgres_version: String,
 }
@@ -1850,18 +1171,10 @@ fn default_postgres_version() -> String {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedDatabaseBackupConfig {
-    /// Enable automated backups
     #[serde(default = "default_true")]
     pub enabled: bool,
-
-    /// Barman destination (e.g., "s3://my-backups/stellar-db")
     pub destination_path: String,
-
-    /// Reference to a secret containing cloud credentials for backups
-    /// (e.g., AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
     pub credentials_secret_ref: String,
-
-    /// Retention policy for backups (e.g., "30d")
     #[serde(default = "default_retention")]
     pub retention_policy: String,
 }
@@ -1874,23 +1187,14 @@ fn default_retention() -> String {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PgBouncerConfig {
-    /// Enable pgBouncer connection pooling
     #[serde(default = "default_true")]
     pub enabled: bool,
-
-    /// Number of pgBouncer replicas
     #[serde(default = "default_pooler_replicas")]
     pub replicas: i32,
-
-    /// pgBouncer pooling mode (Session, Transaction, Statement)
     #[serde(default)]
     pub pool_mode: PgBouncerPoolMode,
-
-    /// Maximum number of client connections
     #[serde(default = "default_max_client_conn")]
     pub max_client_conn: i32,
-
-    /// Default pool size
     #[serde(default = "default_pool_size")]
     pub default_pool_size: i32,
 }
@@ -1911,12 +1215,9 @@ fn default_pool_size() -> i32 {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum PgBouncerPoolMode {
-    /// Session pooling
     Session,
-    /// Transaction pooling (recommended)
     #[default]
     Transaction,
-    /// Statement pooling
     Statement,
 }
 
@@ -2021,4 +1322,73 @@ pub struct BackupScheduleConfig {
 
 fn default_backup_schedule() -> String {
     "0 */6 * * *".to_string()
+}
+
+// ============================================================================
+// OCI Snapshot Sync (#231)
+// ============================================================================
+
+/// Strategy for generating the OCI image tag for a ledger snapshot
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TagStrategy {
+    /// Tag the image with the current ledger sequence number, e.g. `snapshot-12345678`
+    #[default]
+    LatestLedger,
+    /// Always use the same fixed tag, e.g. `latest` or `stable`
+    Fixed,
+}
+
+/// Configuration for packaging and syncing ledger snapshots via an OCI registry.
+///
+/// When `push` is enabled the operator will create a Kubernetes Job after the node
+/// reaches Ready state that tars the contents of the node's data PVC and pushes it
+/// as an OCI image layer to the configured registry.
+///
+/// When `pull` is enabled the operator will create a Job that pulls the most recent
+/// snapshot image and extracts it onto a freshly provisioned PVC before the node pod
+/// starts, enabling fast bootstrapping of new validator/RPC nodes across regions.
+///
+/// Registry credentials are read from a K8s Secret (`.dockerconfigjson` format) whose
+/// name is specified in `credential_secret_name`.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OciSnapshotConfig {
+    /// Whether the OCI snapshot feature is enabled (default: false)
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// OCI registry host, e.g. `ghcr.io` or `registry-1.docker.io`
+    pub registry: String,
+
+    /// Image name within the registry, e.g. `myorg/stellar-snapshot`
+    pub image: String,
+
+    /// Tag used when pushing/pulling the snapshot image.
+    /// With `LatestLedger` the tag is `snapshot-<ledger_seq>`; with `Fixed` the
+    /// literal `fixed_tag` value is used.
+    #[serde(default)]
+    pub tag_strategy: TagStrategy,
+
+    /// Fixed tag to use when `tag_strategy` is `Fixed` (e.g. `latest`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fixed_tag: Option<String>,
+
+    /// Name of a K8s Secret in the same namespace containing Docker registry
+    /// credentials as `config.json` (standard `~/.docker/config.json` format).
+    pub credential_secret_name: String,
+
+    /// Enable pushing snapshots to the registry (default: false)
+    #[serde(default)]
+    pub push: bool,
+
+    /// Enable pulling a snapshot to bootstrap a new node's PVC (default: false)
+    #[serde(default)]
+    pub pull: bool,
+
+    /// Image reference to pull from (full `registry/image:tag` string).
+    /// Required when `pull = true`; if omitted the operator constructs the reference
+    /// from `registry`, `image`, and `tag_strategy`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pull_image_ref: Option<String>,
 }

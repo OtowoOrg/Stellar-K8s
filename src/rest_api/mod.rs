@@ -8,4 +8,4 @@ mod handlers;
 mod server;
 mod sustainability;
 
-pub use server::run_server;
+pub use server::{build_tls_server_config, run_server};

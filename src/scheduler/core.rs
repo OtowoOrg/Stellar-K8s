@@ -73,7 +73,7 @@ impl Scheduler {
         info!("Attempting to schedule pod: {}", pod_name);
 
         // 1. Filter nodes (basic checks)
-        let filtered_nodes = self.filter_nodes(pod, nodes);
+        let filtered_nodes = self.filter_nodes(pod, nodes).await;
         if filtered_nodes.is_empty() {
             warn!("No suitable nodes found for pod {}", pod_name);
             return Ok(());
@@ -92,21 +92,29 @@ impl Scheduler {
         Ok(())
     }
 
-    fn filter_nodes<'a>(&self, _pod: &Pod, nodes: &'a [Node]) -> Vec<&'a Node> {
-        // TODO: Implement actual resource filtering (CPU/Mem)
-        // For now, return all schedulable nodes
-        nodes
-            .iter()
-            .filter(|n| {
-                // Check for unschedulable taint/flag
-                if let Some(spec) = &n.spec {
-                    if spec.unschedulable == Some(true) {
-                        return false;
-                    }
+    async fn filter_nodes<'a>(&self, _pod: &Pod, nodes: &'a [Node]) -> Vec<&'a Node> {
+        let mut filtered = Vec::new();
+
+        for n in nodes {
+            // 1. Check for unschedulable taint/flag
+            if let Some(spec) = &n.spec {
+                if spec.unschedulable == Some(true) {
+                    continue;
                 }
-                true
-            })
-            .collect()
+            }
+
+            // 2. Resource check (Stub for CPU/Mem)
+            // In a production scheduler, we would check if node has enough capacity
+
+            filtered.push(n);
+        }
+
+        // 3. Quorum-aware filtering
+        // If this is a validator, we ideally want to avoid nodes that already host a peer.
+        // However, filtering is "hard" - if all nodes have peers, we'd fail to schedule.
+        // So we keep filtering light and let scoring do the heavy lifting for "best" node.
+
+        filtered
     }
 
     async fn bind_pod(&self, pod: &Pod, node: &Node) -> Result<()> {

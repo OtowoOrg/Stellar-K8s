@@ -22,6 +22,21 @@ use prometheus_client::registry::Registry;
 const DP_EPSILON: f64 = 1.0; // Privacy budget
 const DP_SENSITIVITY: f64 = 1.0; // Sensitivity of the metric
 
+/// Labels for reactive updates
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct ReactiveLabels {
+    pub namespace: String,
+    pub name: String,
+}
+
+/// Counter tracking reactive status updates
+pub static REACTIVE_STATUS_UPDATES_TOTAL: Lazy<Family<ReactiveLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
+
+/// Counter tracking API polls avoided due to reactive updates
+pub static API_POLLS_AVOIDED_TOTAL: Lazy<Family<ReactiveLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
+
 /// Labels for the ledger sequence metric
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct NodeLabels {
@@ -68,6 +83,33 @@ pub struct ErrorLabels {
     pub kind: String,
 }
 
+/// Labels for Soroban-specific metrics
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct SorobanLabels {
+    pub namespace: String,
+    pub name: String,
+    pub network: String,
+    pub contract_id: String,
+}
+
+/// Labels for contract invocation metrics
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct ContractInvocationLabels {
+    pub namespace: String,
+    pub name: String,
+    pub network: String,
+    pub contract_type: String,
+}
+
+/// Labels for transaction result metrics
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct TransactionResultLabels {
+    pub namespace: String,
+    pub name: String,
+    pub network: String,
+    pub result: String, // "success" or "failed"
+}
+
 /// Histogram tracking reconcile duration (seconds)
 pub static RECONCILE_DURATION_SECONDS: Lazy<Family<ReconcileLabels, Histogram>> = Lazy::new(|| {
     fn reconcile_histogram() -> Histogram {
@@ -80,6 +122,53 @@ pub static RECONCILE_DURATION_SECONDS: Lazy<Family<ReconcileLabels, Histogram>> 
 
 /// Counter tracking reconcile errors
 pub static RECONCILE_ERRORS_TOTAL: Lazy<Family<ErrorLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
+
+/// Soroban-specific metrics
+/// Histogram tracking Wasm execution time in microseconds
+pub static WASM_EXECUTION_DURATION_MICROSECONDS: Lazy<Family<SorobanLabels, Histogram>> =
+    Lazy::new(|| {
+        fn wasm_histogram() -> Histogram {
+            // 1µs .. ~65ms across 16 buckets
+            Histogram::new(exponential_buckets(1.0, 2.0, 16))
+        }
+        Family::new_with_constructor(wasm_histogram)
+    });
+
+/// Histogram tracking contract storage fees in stroops
+pub static CONTRACT_STORAGE_FEE_STROOPS: Lazy<Family<SorobanLabels, Histogram>> = Lazy::new(|| {
+    fn fee_histogram() -> Histogram {
+        // 1 stroop .. ~65k stroops across 16 buckets
+        Histogram::new(exponential_buckets(1.0, 2.0, 16))
+    }
+    Family::new_with_constructor(fee_histogram)
+});
+
+/// Gauge tracking Wasm VM memory usage in bytes
+pub static WASM_VM_MEMORY_BYTES: Lazy<Family<SorobanLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking CPU instructions per contract invocation
+pub static CONTRACT_INVOCATION_CPU_INSTRUCTIONS: Lazy<
+    Family<SorobanLabels, Gauge<i64, AtomicI64>>,
+> = Lazy::new(Family::default);
+
+/// Gauge tracking memory bytes per contract invocation
+pub static CONTRACT_INVOCATION_MEMORY_BYTES: Lazy<Family<SorobanLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Counter tracking contract invocations by type
+pub static CONTRACT_INVOCATIONS_TOTAL: Lazy<
+    Family<ContractInvocationLabels, Counter<u64, AtomicU64>>,
+> = Lazy::new(Family::default);
+
+/// Counter tracking transaction results (success/failure)
+pub static TRANSACTION_RESULT_TOTAL: Lazy<
+    Family<TransactionResultLabels, Counter<u64, AtomicU64>>,
+> = Lazy::new(Family::default);
+
+/// Counter tracking host function calls
+pub static HOST_FUNCTION_CALLS_TOTAL: Lazy<Family<SorobanLabels, Counter<u64, AtomicU64>>> =
     Lazy::new(Family::default);
 
 /// Global metrics registry
@@ -123,6 +212,61 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "Ledgers the history archive is behind the validator node (0 = in-sync)",
         ARCHIVE_LEDGER_LAG.clone(),
     );
+
+    registry.register(
+        "stellar_reactive_status_updates_total",
+        "Total number of reactive status updates from DB triggers",
+        REACTIVE_STATUS_UPDATES_TOTAL.clone(),
+    );
+
+    registry.register(
+        "stellar_api_polls_avoided_total",
+        "Total number of API health check polls avoided",
+        API_POLLS_AVOIDED_TOTAL.clone(),
+    );
+
+    // Register Soroban-specific metrics
+    registry.register(
+        "soroban_rpc_wasm_execution_duration_microseconds",
+        "Wasm host function execution time in microseconds",
+        WASM_EXECUTION_DURATION_MICROSECONDS.clone(),
+    );
+    registry.register(
+        "soroban_rpc_contract_storage_fee_stroops",
+        "Contract storage fees in stroops",
+        CONTRACT_STORAGE_FEE_STROOPS.clone(),
+    );
+    registry.register(
+        "soroban_rpc_wasm_vm_memory_bytes",
+        "Wasm VM memory usage in bytes",
+        WASM_VM_MEMORY_BYTES.clone(),
+    );
+    registry.register(
+        "soroban_rpc_contract_invocation_cpu_instructions",
+        "CPU instructions consumed per contract invocation",
+        CONTRACT_INVOCATION_CPU_INSTRUCTIONS.clone(),
+    );
+    registry.register(
+        "soroban_rpc_contract_invocation_memory_bytes",
+        "Memory bytes consumed per contract invocation",
+        CONTRACT_INVOCATION_MEMORY_BYTES.clone(),
+    );
+    registry.register(
+        "soroban_rpc_contract_invocations_total",
+        "Total number of contract invocations by type",
+        CONTRACT_INVOCATIONS_TOTAL.clone(),
+    );
+    registry.register(
+        "soroban_rpc_transaction_result_total",
+        "Total number of transactions by result (success/failed)",
+        TRANSACTION_RESULT_TOTAL.clone(),
+    );
+    registry.register(
+        "soroban_rpc_host_function_calls_total",
+        "Total number of host function calls",
+        HOST_FUNCTION_CALLS_TOTAL.clone(),
+    );
+
     registry
 });
 
@@ -143,6 +287,24 @@ pub fn inc_reconcile_error(controller: &str, kind: &str) {
         kind: kind.to_string(),
     };
     RECONCILE_ERRORS_TOTAL.get_or_create(&labels).inc();
+}
+
+/// Increment reactive status updates counter
+pub fn inc_reactive_status_update(namespace: &str, name: &str) {
+    let labels = ReactiveLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+    };
+    REACTIVE_STATUS_UPDATES_TOTAL.get_or_create(&labels).inc();
+}
+
+/// Increment API polls avoided counter
+pub fn inc_api_polls_avoided(namespace: &str, name: &str) {
+    let labels = ReactiveLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+    };
+    API_POLLS_AVOIDED_TOTAL.get_or_create(&labels).inc();
 }
 
 /// Update the ledger sequence metric for a node
@@ -270,6 +432,138 @@ fn generate_laplace_noise(epsilon: f64, sensitivity: f64) -> f64 {
     -scale * sign * (1.0 - 2.0 * u.abs()).ln()
 }
 
+/// Observe Wasm execution duration in microseconds
+pub fn observe_wasm_execution_duration(
+    namespace: &str,
+    name: &str,
+    network: &str,
+    contract_id: &str,
+    duration_us: f64,
+) {
+    let labels = SorobanLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        network: network.to_string(),
+        contract_id: contract_id.to_string(),
+    };
+    WASM_EXECUTION_DURATION_MICROSECONDS
+        .get_or_create(&labels)
+        .observe(duration_us);
+}
+
+/// Observe contract storage fee in stroops
+pub fn observe_contract_storage_fee(
+    namespace: &str,
+    name: &str,
+    network: &str,
+    contract_id: &str,
+    fee_stroops: f64,
+) {
+    let labels = SorobanLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        network: network.to_string(),
+        contract_id: contract_id.to_string(),
+    };
+    CONTRACT_STORAGE_FEE_STROOPS
+        .get_or_create(&labels)
+        .observe(fee_stroops);
+}
+
+/// Set Wasm VM memory usage in bytes
+pub fn set_wasm_vm_memory(
+    namespace: &str,
+    name: &str,
+    network: &str,
+    contract_id: &str,
+    memory_bytes: i64,
+) {
+    let labels = SorobanLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        network: network.to_string(),
+        contract_id: contract_id.to_string(),
+    };
+    WASM_VM_MEMORY_BYTES
+        .get_or_create(&labels)
+        .set(memory_bytes);
+}
+
+/// Set CPU instructions per contract invocation
+pub fn set_contract_invocation_cpu(
+    namespace: &str,
+    name: &str,
+    network: &str,
+    contract_id: &str,
+    cpu_instructions: i64,
+) {
+    let labels = SorobanLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        network: network.to_string(),
+        contract_id: contract_id.to_string(),
+    };
+    CONTRACT_INVOCATION_CPU_INSTRUCTIONS
+        .get_or_create(&labels)
+        .set(cpu_instructions);
+}
+
+/// Set memory bytes per contract invocation
+pub fn set_contract_invocation_memory(
+    namespace: &str,
+    name: &str,
+    network: &str,
+    contract_id: &str,
+    memory_bytes: i64,
+) {
+    let labels = SorobanLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        network: network.to_string(),
+        contract_id: contract_id.to_string(),
+    };
+    CONTRACT_INVOCATION_MEMORY_BYTES
+        .get_or_create(&labels)
+        .set(memory_bytes);
+}
+
+/// Increment contract invocation counter
+pub fn inc_contract_invocation(namespace: &str, name: &str, network: &str, contract_type: &str) {
+    let labels = ContractInvocationLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        network: network.to_string(),
+        contract_type: contract_type.to_string(),
+    };
+    CONTRACT_INVOCATIONS_TOTAL.get_or_create(&labels).inc();
+}
+
+/// Increment transaction result counter
+pub fn inc_transaction_result(namespace: &str, name: &str, network: &str, success: bool) {
+    let labels = TransactionResultLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        network: network.to_string(),
+        result: if success {
+            "success".to_string()
+        } else {
+            "failed".to_string()
+        },
+    };
+    TRANSACTION_RESULT_TOTAL.get_or_create(&labels).inc();
+}
+
+/// Increment host function call counter
+pub fn inc_host_function_call(namespace: &str, name: &str, network: &str, contract_id: &str) {
+    let labels = SorobanLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        network: network.to_string(),
+        contract_id: contract_id.to_string(),
+    };
+    HOST_FUNCTION_CALLS_TOTAL.get_or_create(&labels).inc();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,5 +629,70 @@ mod tests {
         // Access the registry to ensure metrics are registered
         let _registry = &*REGISTRY;
         // If this doesn't panic, metrics are properly registered
+    }
+
+    #[test]
+    fn test_soroban_wasm_execution_duration() {
+        observe_wasm_execution_duration("default", "soroban-1", "testnet", "contract123", 1500.0);
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_soroban_contract_storage_fee() {
+        observe_contract_storage_fee("default", "soroban-1", "testnet", "contract123", 1000.0);
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_soroban_wasm_vm_memory() {
+        set_wasm_vm_memory("default", "soroban-1", "testnet", "contract123", 1048576);
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_soroban_contract_invocation_cpu() {
+        set_contract_invocation_cpu("default", "soroban-1", "testnet", "contract123", 50000);
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_soroban_contract_invocation_memory() {
+        set_contract_invocation_memory("default", "soroban-1", "testnet", "contract123", 524288);
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_soroban_contract_invocation_counter() {
+        inc_contract_invocation("default", "soroban-1", "testnet", "token");
+        inc_contract_invocation("default", "soroban-1", "testnet", "defi");
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_soroban_transaction_result() {
+        inc_transaction_result("default", "soroban-1", "testnet", true);
+        inc_transaction_result("default", "soroban-1", "testnet", false);
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_soroban_host_function_calls() {
+        inc_host_function_call("default", "soroban-1", "testnet", "contract123");
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_soroban_labels_creation() {
+        let labels = SorobanLabels {
+            namespace: "stellar-system".to_string(),
+            name: "soroban-prod".to_string(),
+            network: "mainnet".to_string(),
+            contract_id: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC".to_string(),
+        };
+
+        assert_eq!(labels.namespace, "stellar-system");
+        assert_eq!(labels.name, "soroban-prod");
+        assert_eq!(labels.network, "mainnet");
+        assert!(labels.contract_id.starts_with("CDLZFC"));
     }
 }

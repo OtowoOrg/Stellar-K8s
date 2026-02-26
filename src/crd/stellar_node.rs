@@ -162,6 +162,10 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub backup_schedule: Option<BackupScheduleConfig>,
 
+    /// Database maintenance configuration for automated vacuum and reindexing
+    /// Enables periodic maintenance windows for performance optimization
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub db_maintenance_config: Option<super::types::DbMaintenanceConfig>,
     /// OCI-based ledger snapshot sync for multi-region bootstrapping
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oci_snapshot: Option<OciSnapshotConfig>,
@@ -227,6 +231,7 @@ impl StellarNodeSpec {
     /// # cve_handling: None,
     /// # read_replica_config: None,
     /// # backup_schedule: None,
+    /// # db_maintenance_config: None,
     /// # oci_snapshot: None,
     /// # service_mesh: None,
     /// # vpa_config: None,
@@ -1102,6 +1107,7 @@ mod tests {
             cve_handling: None,
             read_replica_config: None,
             backup_schedule: None,
+            db_maintenance_config: None,
             oci_snapshot: None,
             service_mesh: None,
             resource_meta: None,
@@ -1154,6 +1160,7 @@ mod tests {
             cve_handling: None,
             read_replica_config: None,
             backup_schedule: None,
+            db_maintenance_config: None,
             oci_snapshot: None,
             service_mesh: None,
             resource_meta: None,

@@ -1,4 +1,8 @@
 //! Axum HTTP server for the REST API
+//!
+//! Supports mTLS with optional graceful certificate reload: when the TLS config
+//! is provided as a shared RustlsConfig, the rotation task can call
+//! `reload_from_config` to adopt new certificates without dropping connections.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -7,16 +11,52 @@ use axum::{routing::get, Router};
 use axum_server::tls_rustls::RustlsConfig;
 use rustls::server::WebPkiClientVerifier;
 use rustls::RootCertStore;
+use rustls::ServerConfig;
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::controller::ControllerState;
-use crate::{Error, MtlsConfig, Result};
+use crate::{Error, Result};
 
 use super::custom_metrics;
 use super::handlers;
+
+/// Build a rustls ServerConfig from PEM data (cert, key, CA for client verification).
+/// Used for initial server setup and after certificate rotation to reload without restart.
+pub fn build_tls_server_config(
+    cert_pem: &[u8],
+    key_pem: &[u8],
+    ca_pem: &[u8],
+) -> Result<Arc<ServerConfig>> {
+    let certs = CertificateDer::pem_slice_iter(cert_pem)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::ConfigError(format!("Failed to parse certificates: {e}")))?;
+
+    let key = PrivateKeyDer::from_pem_slice(key_pem)
+        .map_err(|e| Error::ConfigError(format!("Failed to parse private key: {e}")))?;
+
+    let mut roots = RootCertStore::empty();
+    for cert_res in CertificateDer::pem_slice_iter(ca_pem) {
+        let cert =
+            cert_res.map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {e}")))?;
+        roots
+            .add(cert)
+            .map_err(|e| Error::ConfigError(format!("Failed to add CA cert: {e}")))?;
+    }
+
+    let client_verifier = WebPkiClientVerifier::builder(roots.into())
+        .build()
+        .map_err(|e| Error::ConfigError(format!("Failed to create client verifier: {e}")))?;
+
+    let server_config = ServerConfig::builder()
+        .with_client_cert_verifier(client_verifier)
+        .with_single_cert(certs, key)
+        .map_err(|e| Error::ConfigError(format!("Failed to create server config: {e}")))?;
+
+    Ok(Arc::new(server_config))
+}
 
 /// Metrics endpoint handler
 #[cfg(feature = "metrics")]
@@ -27,10 +67,15 @@ async fn metrics_handler() -> String {
     buffer
 }
 
-/// Run the REST API server
+/// Run the REST API server.
+///
+/// When `rustls_config` is `Some`, the server runs with mTLS. The same config can be
+/// shared with a certificate rotation task: after rotating the Secret, build a new
+/// `ServerConfig` and call `reload_from_config` on the RustlsConfig to adopt the new
+/// certificate without dropping active connections.
 pub async fn run_server(
     state: Arc<ControllerState>,
-    mtls_config: Option<MtlsConfig>,
+    rustls_config: Option<RustlsConfig>,
 ) -> Result<()> {
     let mut app = Router::new()
         .route("/health", get(handlers::health))
@@ -61,42 +106,10 @@ pub async fn run_server(
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
-    if let Some(config) = mtls_config {
+    if let Some(tls_config) = rustls_config {
         info!("REST API server listening on {} with mTLS", addr);
-
-        // Load certificates
-        let certs = CertificateDer::pem_slice_iter(&config.cert_pem)
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| Error::ConfigError(format!("Failed to parse certificates: {e}")))?;
-
-        // Load private key
-        let key = PrivateKeyDer::from_pem_slice(&config.key_pem)
-            .map_err(|e| Error::ConfigError(format!("Failed to parse private key: {e}")))?;
-
-        // Load CA for client verification
-        let mut roots = RootCertStore::empty();
-        for cert_res in CertificateDer::pem_slice_iter(&config.ca_pem) {
-            let cert = cert_res
-                .map_err(|e| Error::ConfigError(format!("Failed to parse CA cert: {e}")))?;
-            roots
-                .add(cert)
-                .map_err(|e| Error::ConfigError(format!("Failed to add CA cert: {e}")))?;
-        }
-
-        let client_verifier = WebPkiClientVerifier::builder(roots.into())
-            .build()
-            .map_err(|e| Error::ConfigError(format!("Failed to create client verifier: {e}")))?;
-
-        // Create rustls ServerConfig
-        let server_config = rustls::ServerConfig::builder()
-            .with_client_cert_verifier(client_verifier)
-            .with_single_cert(certs, key)
-            .map_err(|e| Error::ConfigError(format!("Failed to create server config: {e}")))?;
-
-        let rustls_config = RustlsConfig::from_config(Arc::new(server_config));
-
         let listener = std::net::TcpListener::bind(addr)?;
-        axum_server::from_tcp_rustls(listener, rustls_config)
+        axum_server::from_tcp_rustls(listener, tls_config)
             .serve(app.into_make_service())
             .await
             .map_err(|e| Error::ConfigError(format!("Server error: {e}")))?;

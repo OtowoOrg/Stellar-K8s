@@ -75,6 +75,14 @@ pub enum Error {
     /// I/O error
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
+
+    /// Database maintenance error
+    #[error("Database maintenance error: {0}")]
+    MaintenanceError(String),
+
+    /// SQLx error
+    #[error("SQL error: {0}")]
+    SqlxError(#[from] sqlx::Error),
 }
 
 /// Result type alias for operator operations

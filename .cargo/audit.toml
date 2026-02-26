@@ -1,7 +1,6 @@
 [advisories]
-# All entries below are transitive dependencies through kube-runtime 0.94.x
-# or wasmtime 24.x. They cannot be upgraded without major ecosystem version
-# bumps that go beyond the scope of this project. None are security vulnerabilities.
+# All entries below are transitive dependencies that cannot be remediated
+# without major upstream ecosystem changes outside the scope of this project.
 ignore = [
     # backoff 0.4.0 – unmaintained, via kube-runtime 0.94.x
     "RUSTSEC-2025-0012",
@@ -15,4 +14,10 @@ ignore = [
     "RUSTSEC-2024-0436",
     # rustls-pemfile 2.2.0 – unmaintained, via kube-client / axum-server (transitive)
     "RUSTSEC-2025-0134",
+    # rsa 0.9.10 – Marvin Attack timing sidechannel, via sqlx-mysql 0.8.6.
+    # This project only uses the sqlx postgres driver; the rsa code path in
+    # sqlx-mysql is never executed. No fixed version of rsa is available
+    # upstream. Re-evaluate when https://github.com/RustSec/advisory-db/issues
+    # tracks a patched release.
+    "RUSTSEC-2023-0071",
 ]

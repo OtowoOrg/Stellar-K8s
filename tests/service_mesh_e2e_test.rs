@@ -67,6 +67,7 @@ mod tests {
                 cve_handling: None,
                 read_replica_config: None,
                 backup_schedule: None,
+                db_maintenance_config: None,
                 oci_snapshot: None,
                 service_mesh: Some(ServiceMeshConfig {
                     sidecar_injection: true,

@@ -87,6 +87,7 @@ rustls = "0.23"
 rcgen = { version = "0.13", features = ["pem", "x509-parser"] }
 axum-server = { version = "0.7.0", features = ["tls-rustls"] }
 rustls-pki-types = "1.14.0"
+x509-parser = "0.16"
 
 # Wasm runtime for custom validation plugins
 wasmtime = { version = "24.0.6", optional = true }
@@ -108,6 +109,7 @@ rand_distr = "0.5.1"
 cron = "0.15"
 flate2 = "1"
 async-trait = "0.1"
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "postgres", "chrono"] }
 
 [build-dependencies]
 chrono = "0.4"

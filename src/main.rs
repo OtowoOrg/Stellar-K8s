@@ -150,7 +150,6 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
     let mtls_config = if args.enable_mtls {
         info!("Initializing mTLS for Operator...");
 
-        // Ensure CA and Server Cert exist
         controller::mtls::ensure_ca(&client_clone, &namespace).await?;
         controller::mtls::ensure_server_cert(
             &client_clone,
@@ -162,9 +161,8 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         )
         .await?;
 
-        // Fetch the secret to get the PEM data
         let secrets: kube::Api<k8s_openapi::api::core::v1::Secret> =
-            kube::Api::namespaced(client_clone, &namespace);
+            kube::Api::namespaced(client_clone.clone(), &namespace);
         let secret = secrets
             .get(controller::mtls::SERVER_CERT_SECRET_NAME)
             .await
@@ -243,17 +241,99 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         }
     });
 
-    // Start the REST API server
-    // Start the REST API server (always running if feature enabled)
+    // Start the REST API server and optional mTLS certificate rotation
     #[cfg(feature = "rest-api")]
     {
         let api_state = state.clone();
+        let rustls_config = mtls_config
+            .as_ref()
+            .and_then(|cfg| {
+                stellar_k8s::rest_api::build_tls_server_config(
+                    &cfg.cert_pem,
+                    &cfg.key_pem,
+                    &cfg.ca_pem,
+                )
+                .ok()
+            })
+            .map(axum_server::tls_rustls::RustlsConfig::from_config);
+        let server_tls = rustls_config.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = stellar_k8s::rest_api::run_server(api_state, mtls_config).await {
+            if let Err(e) = stellar_k8s::rest_api::run_server(api_state, server_tls).await {
                 tracing::error!("REST API server error: {:?}", e);
             }
         });
+
+        // Certificate rotation: when mTLS is enabled, periodically check and rotate
+        // server cert if within threshold, then graceful reload of TLS config
+        if let (true, Some(rustls_config)) = (args.enable_mtls, rustls_config) {
+            let rotation_client = client.clone();
+            let rotation_namespace = args.namespace.clone();
+            let rotation_dns = vec![
+                "stellar-operator".to_string(),
+                format!("stellar-operator.{}", args.namespace),
+            ];
+            let rotation_threshold_days = std::env::var("CERT_ROTATION_THRESHOLD_DAYS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(controller::mtls::DEFAULT_CERT_ROTATION_THRESHOLD_DAYS);
+            let is_leader_rot = Arc::clone(&is_leader);
+
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600)); // check hourly
+                interval.tick().await; // first tick completes immediately
+                loop {
+                    interval.tick().await;
+                    if !is_leader_rot.load(Ordering::Relaxed) {
+                        continue;
+                    }
+                    match controller::mtls::maybe_rotate_server_cert(
+                        &rotation_client,
+                        &rotation_namespace,
+                        rotation_dns.clone(),
+                        rotation_threshold_days,
+                    )
+                    .await
+                    {
+                        Ok(true) => {
+                            // Rotation performed: fetch new secret and reload TLS
+                            let secrets: kube::Api<k8s_openapi::api::core::v1::Secret> =
+                                kube::Api::namespaced(rotation_client.clone(), &rotation_namespace);
+                            if let Ok(secret) =
+                                secrets.get(controller::mtls::SERVER_CERT_SECRET_NAME).await
+                            {
+                                if let (Some(cert), Some(key), Some(ca)) = (
+                                    secret.data.as_ref().and_then(|d| d.get("tls.crt")),
+                                    secret.data.as_ref().and_then(|d| d.get("tls.key")),
+                                    secret.data.as_ref().and_then(|d| d.get("ca.crt")),
+                                ) {
+                                    match stellar_k8s::rest_api::build_tls_server_config(
+                                        &cert.0, &key.0, &ca.0,
+                                    ) {
+                                        Ok(new_config) => {
+                                            rustls_config.reload_from_config(new_config);
+                                            info!(
+                                                "TLS server config reloaded with new certificate"
+                                            );
+                                        }
+                                        Err(e) => {
+                                            tracing::error!(
+                                                "Failed to build TLS config after rotation: {:?}",
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Ok(false) => {}
+                        Err(e) => {
+                            tracing::error!("Certificate rotation check failed: {:?}", e);
+                        }
+                    }
+                }
+            });
+        }
     }
 
     // Run the main controller loop

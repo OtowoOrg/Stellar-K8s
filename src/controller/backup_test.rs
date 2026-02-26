@@ -45,6 +45,7 @@ mod tests {
                 },
                 validator_config: Some(ValidatorConfig {
                     seed_secret_ref: "validator-seed".to_string(),
+                    seed_secret_source: None,
                     quorum_set: None,
                     enable_history_archive: false,
                     history_archive_urls: vec![],
@@ -77,6 +78,8 @@ mod tests {
                 cve_handling: None,
                 read_replica_config: None,
                 backup_schedule: backup,
+                oci_snapshot: None,
+                service_mesh: None,
                 resource_meta: None,
                 read_pool_endpoint: None,
             },

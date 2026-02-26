@@ -94,7 +94,7 @@ impl QuorumGraph {
         // Get all quorum slices for each validator
         let mut validator_slices: HashMap<String, Vec<HashSet<String>>> = HashMap::new();
         
-        for (validator_key, _) in &self.nodes {
+        for validator_key in self.nodes.keys() {
             let slices = self.compute_quorum_slices(validator_key);
             validator_slices.insert(validator_key.clone(), slices);
         }
@@ -236,7 +236,7 @@ impl QuorumGraph {
         // Get all quorum slices for all validators
         let mut all_slices = Vec::new();
         
-        for (validator_key, _) in &self.nodes {
+        for validator_key in self.nodes.keys() {
             let slices = self.compute_quorum_slices(validator_key);
             all_slices.extend(slices);
         }

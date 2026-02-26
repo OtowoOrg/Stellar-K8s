@@ -10,6 +10,7 @@ use tracing::{debug, warn};
 /// Client for querying Stellar Core HTTP API
 pub struct ScpClient {
     http_client: Client,
+    #[allow(dead_code)]
     timeout: Duration,
 }
 
@@ -168,7 +169,7 @@ impl ScpClient {
                             max_attempts
                         );
                         last_error = Some(QuorumAnalysisError::HttpError(
-                            reqwest::Error::from(response.error_for_status().unwrap_err())
+                            response.error_for_status().unwrap_err()
                         ));
                     }
                 }

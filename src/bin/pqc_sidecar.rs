@@ -92,8 +92,8 @@ async fn sign(Json(payload): Json<SignRequest>) -> Json<SignResponse> {
     let sig = detached_sign(payload.message.as_bytes(), sk);
     Json(SignResponse {
         message: payload.message,
-        signature_b64: STANDARD.encode(sig.as_bytes()),
-        public_key_b64: STANDARD.encode(pk.as_bytes()),
+        signature_b64: STANDARD.encode(pqcrypto_traits::sign::DetachedSignature::as_bytes(&sig)),
+        public_key_b64: STANDARD.encode(pqcrypto_traits::sign::PublicKey::as_bytes(pk)),
     })
 }
 

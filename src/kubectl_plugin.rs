@@ -15,6 +15,8 @@ use stellar_k8s::controller::check_node_health;
 use stellar_k8s::crd::StellarNode;
 use stellar_k8s::error::{Error, Result};
 
+mod explain;
+
 /// Helper function to get phase from node status, deriving from conditions if needed
 fn get_node_phase(node: &StellarNode) -> String {
     node.status
@@ -73,7 +75,6 @@ enum Commands {
     /// Alias for status command
     #[command(name = "sync-status")]
     SyncStatus {
-        /// Name of a specific StellarNode (optional, shows all if omitted)
         node_name: Option<String>,
         /// Show all namespaces
         #[arg(short = 'A', long)]
@@ -90,6 +91,11 @@ enum Commands {
         #[arg(short, long)]
         ephemeral: bool,
     },
+    /// Explain a Stellar error code
+    Explain {
+        /// The Stellar error code to explain (e.g., tx_bad_auth, op_no_destination)
+        error_code: String,
+    },
 }
 
 #[tokio::main]
@@ -103,10 +109,9 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> Result<()> {
-    let client = Client::try_default().await.map_err(Error::KubeError)?;
-
     match cli.command {
         Commands::List { all_namespaces } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
             let namespace = if all_namespaces {
                 None
             } else {
@@ -120,6 +125,7 @@ async fn run(cli: Cli) -> Result<()> {
             follow,
             tail,
         } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
             let namespace = cli.namespace.as_deref().unwrap_or("default");
             logs(
                 &client,
@@ -135,6 +141,7 @@ async fn run(cli: Cli) -> Result<()> {
             node_name,
             all_namespaces,
         } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
             status(
                 &client,
                 node_name.as_deref(),
@@ -148,6 +155,7 @@ async fn run(cli: Cli) -> Result<()> {
             node_name,
             all_namespaces,
         } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
             status(
                 &client,
                 node_name.as_deref(),
@@ -162,8 +170,13 @@ async fn run(cli: Cli) -> Result<()> {
             shell,
             ephemeral,
         } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
             let namespace = cli.namespace.as_deref().unwrap_or("default");
             debug(&client, namespace, &node_name, &shell, ephemeral).await
+        }
+        Commands::Explain { error_code } => {
+            explain::explain_error(&error_code);
+            Ok(())
         }
     }
 }

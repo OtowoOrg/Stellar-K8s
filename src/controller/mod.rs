@@ -10,6 +10,9 @@ pub mod conditions;
 pub mod cross_cluster;
 pub mod cve;
 mod cve_reconciler;
+pub mod migration;
+#[cfg(test)]
+mod migration_test;
 #[cfg(test)]
 mod cve_test;
 pub mod dr;
@@ -52,6 +55,7 @@ pub use cross_cluster::{check_peer_latency, ensure_cross_cluster_services, PeerL
 pub use cve_reconciler::reconcile_cve_patches;
 pub use finalizers::STELLAR_NODE_FINALIZER;
 pub use health::{check_node_health, HealthCheckResult};
+pub use migration::{migrate_config, reconcile_migration};
 pub use peer_discovery::{
     get_peers_from_config_map, trigger_peer_config_reload, PeerDiscoveryConfig,
     PeerDiscoveryManager, PeerInfo,

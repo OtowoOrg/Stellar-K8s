@@ -1141,6 +1141,45 @@ impl Default for CVEHandlingConfig {
 }
 
 // ============================================================================
+// Migration Status
+// ============================================================================
+
+/// Status of an ongoing node type migration
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MigrationStatus {
+    /// Source node type (e.g., Horizon)
+    pub from_type: String,
+    /// Target node type (e.g., SorobanRpc)
+    pub to_type: String,
+    /// Current phase of migration
+    pub phase: MigrationPhase,
+    /// Timestamp when migration started
+    pub start_time: String,
+    /// Timestamp when migration completed (if finished)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_time: Option<String>,
+    /// Human-readable message about migration progress
+    pub message: String,
+}
+
+/// Phase of the migration process
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
+pub enum MigrationPhase {
+    /// Migration has been initiated
+    Starting,
+    /// Both old and new deployments running in parallel
+    ParallelExecution,
+    /// New deployment is syncing
+    Syncing,
+    /// Migration completed successfully
+    Complete,
+    /// Migration failed
+    Failed,
+}
+
+// ============================================================================
 // CloudNativePG Managed Database Configuration
 // ============================================================================
 

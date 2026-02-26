@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 use super::types::{
     AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
     DisasterRecoveryStatus, ExternalDatabaseConfig, GlobalDiscoveryConfig, HistoryMode,
-    HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig, NetworkPolicyConfig,
-    NodeType, OciSnapshotConfig, ResourceRequirements, RetentionPolicy, RolloutStrategy,
-    SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig, VpaConfig,
+    HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig, MigrationStatus,
+    NetworkPolicyConfig, NodeType, OciSnapshotConfig, ResourceRequirements, RetentionPolicy,
+    RolloutStrategy, SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig, VpaConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`
@@ -846,6 +846,10 @@ pub struct StellarNodeStatus {
     /// Version of the database schema after last successful migration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_migrated_version: Option<String>,
+
+    /// Migration status for node type transitions (e.g., Horizon to Soroban RPC)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migration_status: Option<MigrationStatus>,
 }
 
 /// BGP advertisement status information

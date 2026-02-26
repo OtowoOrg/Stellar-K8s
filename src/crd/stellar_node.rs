@@ -811,6 +811,10 @@ pub struct StellarNodeStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ledger_sequence: Option<u64>,
 
+    /// Timestamp of the last ledger update (RFC3339)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ledger_updated_at: Option<String>,
+
     /// Endpoint where the node is accessible (Service ClusterIP or external)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,

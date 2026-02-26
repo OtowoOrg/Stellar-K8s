@@ -249,6 +249,7 @@ impl WebhookServer {
             .route("/ready", get(ready_handler))
             .route("/validate", post(validate_handler))
             .route("/mutate", post(mutate_handler))
+            .route("/db-trigger", post(db_trigger_handler))
             .route("/plugins", get(list_plugins_handler))
             .route("/plugins", post(add_plugin_handler))
             .route(
@@ -407,6 +408,111 @@ async fn mutate_handler(
                 ),
             )
         }
+    }
+}
+
+#[instrument(skip(state, payload))]
+async fn db_trigger_handler(
+    State(state): State<Arc<WebhookServer>>,
+    Json(payload): Json<super::types::DbTriggerInput>,
+) -> impl IntoResponse {
+    let plugins = state.plugins.read().await.clone();
+    if plugins.is_empty() {
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({"status": "ignored", "message": "No plugins configured"})),
+        );
+    }
+
+    let mut updated_nodes = Vec::new();
+    let mut errors = Vec::new();
+
+    for plugin in plugins {
+        if !plugin.enabled || !plugin.operations.contains(&Operation::DbTrigger) {
+            continue;
+        }
+
+        match state
+            .runtime
+            .execute_db_trigger(
+                &plugin.metadata.name,
+                &payload,
+                Some(plugin.metadata.limits.clone()),
+            )
+            .await
+        {
+            Ok(result) => {
+                let output = result.output;
+                info!(
+                    "DB Trigger plugin {} processed event for node {}/{}",
+                    plugin.metadata.name, output.namespace, output.name
+                );
+
+                // Initialize Kube client to update status
+                match kube::Client::try_default().await {
+                    Ok(client) => {
+                        let api: kube::Api<StellarNode> =
+                            kube::Api::namespaced(client.clone(), &output.namespace);
+                        let now = chrono::Utc::now().to_rfc3339();
+                        let patch = serde_json::json!({
+                            "status": {
+                                "ledgerSequence": output.ledger_sequence,
+                                "ledgerUpdatedAt": now
+                            }
+                        });
+
+                        match api
+                            .patch_status(
+                                &output.name,
+                                &kube::api::PatchParams::apply("stellar-operator-reactive"),
+                                &kube::api::Patch::Merge(&patch),
+                            )
+                            .await
+                        {
+                            Ok(_) => {
+                                // Record metrics
+                                crate::controller::metrics::inc_reactive_status_update(
+                                    &output.namespace,
+                                    &output.name,
+                                );
+                                crate::controller::metrics::inc_api_polls_avoided(
+                                    &output.namespace,
+                                    &output.name,
+                                );
+                                updated_nodes.push(output.name.clone());
+                            }
+                            Err(e) => {
+                                error!("Failed to update node status reactively: {}", e);
+                                errors.push(e.to_string());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to create Kube client: {}", e);
+                        errors.push(e.to_string());
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Plugin {} failed on db trigger: {}",
+                    plugin.metadata.name, e
+                );
+                errors.push(e.to_string());
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"status": "completed_with_errors", "errors": errors})),
+        )
+    } else {
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({"status": "success", "updated_nodes": updated_nodes})),
+        )
     }
 }
 

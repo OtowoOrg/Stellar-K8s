@@ -12,7 +12,7 @@ use crate::error::Result;
 use super::conditions;
 
 const MIGRATION_ANNOTATION: &str = "stellar.org/migration-in-progress";
-const MIGRATION_SOURCE_TYPE: &str = "stellar.org/migration-source-type";
+pub const MIGRATION_SOURCE_TYPE: &str = "stellar.org/migration-source-type";
 
 /// Reconcile migration from Horizon to Soroban RPC
 ///
@@ -157,7 +157,11 @@ async fn check_migration_complete(client: &Client, node: &StellarNode) -> Result
                 .as_ref()
                 .and_then(|s| s.ready_replicas)
                 .unwrap_or(0);
-            let desired = deployment.spec.as_ref().and_then(|s| s.replicas).unwrap_or(0);
+            let desired = deployment
+                .spec
+                .as_ref()
+                .and_then(|s| s.replicas)
+                .unwrap_or(0);
 
             Ok(ready >= desired && ready > 0)
         }

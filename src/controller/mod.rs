@@ -10,9 +10,6 @@ pub mod conditions;
 pub mod cross_cluster;
 pub mod cve;
 mod cve_reconciler;
-pub mod migration;
-#[cfg(test)]
-mod migration_test;
 #[cfg(test)]
 mod cve_test;
 pub mod dr;
@@ -25,6 +22,9 @@ mod health_test;
 pub mod kms_secret;
 #[cfg(feature = "metrics")]
 pub mod metrics;
+pub mod migration;
+#[cfg(test)]
+mod migration_test;
 pub mod mtls;
 pub mod oci_snapshot;
 pub mod peer_discovery;

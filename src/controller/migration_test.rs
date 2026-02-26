@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::crd::{HorizonConfig, NodeType, SorobanConfig, StellarNetwork, StellarNode, StellarNodeSpec};
+    use crate::controller::migration::{migrate_config, MIGRATION_SOURCE_TYPE};
+    use crate::crd::{HorizonConfig, NodeType, SorobanConfig, StellarNetwork, StellarNode};
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
     use std::collections::BTreeMap;
 
@@ -10,12 +10,13 @@ mod tests {
             metadata: ObjectMeta {
                 name: Some("test-node".to_string()),
                 namespace: Some("default".to_string()),
-                annotations: Some(BTreeMap::from([
-                    (MIGRATION_SOURCE_TYPE.to_string(), "Horizon".to_string()),
-                ])),
+                annotations: Some(BTreeMap::from([(
+                    MIGRATION_SOURCE_TYPE.to_string(),
+                    "Horizon".to_string(),
+                )])),
                 ..Default::default()
             },
-            spec: StellarNodeSpec {
+            spec: crate::crd::StellarNodeSpec {
                 node_type: NodeType::Horizon,
                 network: StellarNetwork::Testnet,
                 version: "v21.0.0".to_string(),
@@ -27,6 +28,7 @@ mod tests {
                     enable_experimental_ingestion: false,
                     auto_migration: true,
                 }),
+                replicas: 1,
                 ..Default::default()
             },
             status: None,
@@ -37,13 +39,16 @@ mod tests {
         let mut node = create_test_horizon_node();
         node.spec.node_type = NodeType::SorobanRpc;
         node.spec.horizon_config = None;
-        node.spec.soroban_config = Some(SorobanConfig {
-            stellar_core_url: "http://core:11626".to_string(),
-            captive_core_config: None,
-            captive_core_structured_config: None,
-            enable_preflight: true,
-            max_events_per_request: 10000,
-        });
+        #[allow(deprecated)]
+        {
+            node.spec.soroban_config = Some(SorobanConfig {
+                stellar_core_url: "http://core:11626".to_string(),
+                captive_core_config: None,
+                captive_core_structured_config: None,
+                enable_preflight: true,
+                max_events_per_request: 10000,
+            });
+        }
         node
     }
 
@@ -67,13 +72,13 @@ mod tests {
     #[test]
     fn test_migration_annotation_detection() {
         let node = create_test_soroban_node();
-        
+
         let source_type = node
             .metadata
             .annotations
             .as_ref()
             .and_then(|a| a.get(MIGRATION_SOURCE_TYPE));
-        
+
         assert_eq!(source_type, Some(&"Horizon".to_string()));
     }
 

@@ -55,9 +55,9 @@ use super::dr;
 use super::finalizers::STELLAR_NODE_FINALIZER;
 use super::health;
 use super::kms_secret;
-use super::migration;
 #[cfg(feature = "metrics")]
 use super::metrics;
+use super::migration;
 use super::mtls;
 use super::oci_snapshot;
 use super::peer_discovery;

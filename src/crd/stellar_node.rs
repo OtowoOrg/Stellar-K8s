@@ -275,7 +275,7 @@ impl StellarNodeSpec {
         if self.storage.mode == crate::crd::types::StorageMode::Local {
             // Usually local storage requires node alignment or specific classes
             if self.storage.node_affinity.is_none() && self.storage.storage_class.is_empty() {
-                 errors.push(SpecValidationError::new(
+                errors.push(SpecValidationError::new(
                      "spec.storage",
                      "LocalStorage mode requires either a specific storage_class or node_affinity to be set",
                      "Provide a node_affinity definition to pin the volume, or provide a Local StorageClass name.",

@@ -98,7 +98,9 @@ pub async fn ensure_pvc(client: &Client, node: &StellarNode) -> Result<()> {
 
     // Dynamic resolution of storage class for local mode
     let mut resolved_storage_class = node.spec.storage.storage_class.clone();
-    if node.spec.storage.mode == crate::crd::types::StorageMode::Local && resolved_storage_class.is_empty() {
+    if node.spec.storage.mode == crate::crd::types::StorageMode::Local
+        && resolved_storage_class.is_empty()
+    {
         // Fallback or auto-detect `local-path`
         let sc_api: Api<k8s_openapi::api::storage::v1::StorageClass> = Api::all(client.clone());
         if sc_api.get("local-path").await.is_ok() {
@@ -106,8 +108,8 @@ pub async fn ensure_pvc(client: &Client, node: &StellarNode) -> Result<()> {
         } else if sc_api.get("local-storage").await.is_ok() {
             resolved_storage_class = "local-storage".to_string();
         } else {
-             // Let it fall through, the standard validation might complain if it's strictly empty and local
-             warn!("Local StorageMode requested but no storageClass provided and local-path/local-storage auto-detection failed.");
+            // Let it fall through, the standard validation might complain if it's strictly empty and local
+            warn!("Local StorageMode requested but no storageClass provided and local-path/local-storage auto-detection failed.");
         }
     }
 
@@ -173,7 +175,11 @@ fn build_pvc(node: &StellarNode, storage_class_name: String) -> PersistentVolume
         ),
         spec: Some(PersistentVolumeClaimSpec {
             access_modes: Some(vec!["ReadWriteOnce".to_string()]),
-            storage_class_name: if storage_class_name.is_empty() { None } else { Some(storage_class_name) },
+            storage_class_name: if storage_class_name.is_empty() {
+                None
+            } else {
+                Some(storage_class_name)
+            },
             data_source,
             resources: Some(VolumeResourceRequirements {
                 requests: Some(requests),
@@ -1203,9 +1209,11 @@ fn build_pod_template(
             &node.spec,
             &node.name_any(),
         )),
-        affinity: node.spec.storage.node_affinity.clone().map(|na| k8s_openapi::api::core::v1::Affinity {
-            node_affinity: Some(na),
-            ..Default::default()
+        affinity: node.spec.storage.node_affinity.clone().map(|na| {
+            k8s_openapi::api::core::v1::Affinity {
+                node_affinity: Some(na),
+                ..Default::default()
+            }
         }),
         ..Default::default()
     };

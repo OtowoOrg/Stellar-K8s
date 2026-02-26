@@ -699,6 +699,8 @@ mod tests {
                 canary_start_time: None,
                 last_migrated_version: None,
                 ledger_updated_at: None,
+                quorum_fragility: None,
+                quorum_analysis_timestamp: None,
             }),
         }
     }

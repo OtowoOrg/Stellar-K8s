@@ -908,6 +908,15 @@ pub struct StellarNodeStatus {
     /// Version of the database schema after last successful migration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_migrated_version: Option<String>,
+
+    /// Quorum fragility score (0.0 = resilient, 1.0 = fragile)
+    /// Only populated for validator nodes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quorum_fragility: Option<f64>,
+
+    /// Timestamp of last quorum analysis (RFC3339)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quorum_analysis_timestamp: Option<String>,
 }
 
 /// BGP advertisement status information

@@ -27,6 +27,12 @@ pub async fn health() -> Json<HealthResponse> {
     })
 }
 
+/// Kubernetes-convention liveness probe (lightweight, no auth required)
+#[instrument]
+pub async fn healthz() -> &'static str {
+    "ok"
+}
+
 /// Leader status endpoint - returns whether this replica is the active leader
 #[instrument(skip(state))]
 pub async fn leader_status(State(state): State<Arc<ControllerState>>) -> Json<LeaderResponse> {

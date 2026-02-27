@@ -240,8 +240,11 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
             &client_clone,
             &namespace,
             vec![
+                "localhost".to_string(),
                 "stellar-operator".to_string(),
                 format!("stellar-operator.{}", namespace),
+                format!("stellar-operator.{}.svc", namespace),
+                format!("stellar-operator.{}.svc.cluster.local", namespace),
             ],
         )
         .await?;

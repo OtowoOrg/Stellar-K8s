@@ -4242,6 +4242,7 @@ dependencies = [
  "tracing-subscriber",
  "wasmtime",
  "wasmtime-wasi",
+ "wat",
  "wiremock",
  "x509-parser",
 ]

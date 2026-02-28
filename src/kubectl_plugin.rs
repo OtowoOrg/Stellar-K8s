@@ -666,6 +666,8 @@ mod tests {
                 load_balancer: None,
                 global_discovery: None,
                 cross_cluster: None,
+                snapshot_schedule: None,
+                restore_from_snapshot: None,
                 strategy: Default::default(),
                 maintenance_mode: false,
                 network_policy: None,
@@ -697,6 +699,9 @@ mod tests {
                 canary_version: None,
                 canary_start_time: None,
                 last_migrated_version: None,
+                ledger_updated_at: None,
+                quorum_fragility: None,
+                quorum_analysis_timestamp: None,
             }),
         }
     }

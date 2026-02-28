@@ -2,6 +2,8 @@ use anyhow::Result;
 use k8s_openapi::api::core::v1::{Node, Pod};
 use kube::{Client, ResourceExt};
 use std::collections::HashMap;
+use toml;
+use tracing;
 
 // Topology labels
 const LABEL_ZONE: &str = "topology.kubernetes.io/zone";
@@ -12,13 +14,199 @@ pub async fn score_nodes<'a>(
     candidates: &[&'a Node],
     client: &Client,
 ) -> Result<Option<&'a Node>> {
-    // 1. Check if carbon-aware scheduling should be used
+    // 1. Check for Quorum Proximity scheduling (Stellar Validators)
+    if is_validator_pod(pod) {
+        if let Ok(Some(node)) = score_nodes_quorum_proximity(pod, candidates, client).await {
+            return Ok(Some(node));
+        }
+    }
+
+    // 2. Check if carbon-aware scheduling should be used
     if should_use_carbon_aware_scheduling(pod) {
         return score_nodes_carbon_aware(pod, candidates, client).await;
     }
 
-    // 2. Traditional topology-based scoring
+    // 3. Traditional topology-based scoring
     score_nodes_topology_based(pod, candidates, client).await
+}
+
+/// Check if pod is a Stellar validator
+fn is_validator_pod(pod: &Pod) -> bool {
+    pod.metadata
+        .labels
+        .as_ref()
+        .and_then(|l| l.get("stellar.org/node-type"))
+        .map(|s| s == "Validator")
+        .unwrap_or(false)
+}
+
+/// Score nodes based on Stellar quorum set proximity and redundancy.
+/// Prioritizes nodes that provide the best latency/redundancy balance.
+async fn score_nodes_quorum_proximity<'a>(
+    pod: &Pod,
+    candidates: &[&'a Node],
+    client: &Client,
+) -> Result<Option<&'a Node>> {
+    let instance_name = pod
+        .metadata
+        .labels
+        .as_ref()
+        .and_then(|l| l.get("app.kubernetes.io/instance"))
+        .ok_or_else(|| anyhow::anyhow!("Pod missing instance label"))?;
+
+    let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
+    let stellar_nodes: kube::Api<crate::crd::StellarNode> =
+        kube::Api::namespaced(client.clone(), namespace);
+
+    let node_cr = match stellar_nodes.get(instance_name).await {
+        Ok(n) => n,
+        Err(_) => return Ok(None),
+    };
+
+    let quorum_set_toml = match node_cr
+        .spec
+        .validator_config
+        .as_ref()
+        .and_then(|c| c.quorum_set.as_ref())
+    {
+        Some(q) => q,
+        None => return Ok(None),
+    };
+
+    // Parse peer names/keys from quorumSet TOML
+    let peer_names = extract_peer_names_from_toml(quorum_set_toml);
+    if peer_names.is_empty() {
+        return Ok(None);
+    }
+
+    // Find where peers are currently running
+    let mut peer_nodes = Vec::new();
+    let all_pods: kube::Api<Pod> = kube::Api::all(client.clone());
+    let all_nodes: kube::Api<Node> = kube::Api::all(client.clone());
+
+    for peer_name in peer_names {
+        // Find pods for this peer instance
+        let lp = kube::api::ListParams::default()
+            .labels(&format!("app.kubernetes.io/instance={}", peer_name));
+        if let Ok(pods) = all_pods.list(&lp).await {
+            for p in pods {
+                if let Some(node_name) = p.spec.as_ref().and_then(|s| s.node_name.as_ref()) {
+                    if let Ok(node) = all_nodes.get(node_name).await {
+                        peer_nodes.push(node);
+                    }
+                }
+            }
+        }
+    }
+
+    if peer_nodes.is_empty() {
+        // Fallback to topology-based if no peers found running
+        return Ok(None);
+    }
+
+    // Score candidates
+    let mut best_score = i64::MIN;
+    let mut best_node = None;
+
+    for node in candidates {
+        let mut score: i64 = 0;
+        let node_name = node.name_any();
+        let node_zone = node
+            .metadata
+            .labels
+            .as_ref()
+            .and_then(|l| l.get(LABEL_ZONE));
+        let node_region = node
+            .metadata
+            .labels
+            .as_ref()
+            .and_then(|l| l.get(LABEL_REGION));
+
+        for peer_node in &peer_nodes {
+            let peer_node_name = peer_node.name_any();
+            let peer_zone = peer_node
+                .metadata
+                .labels
+                .as_ref()
+                .and_then(|l| l.get(LABEL_ZONE));
+            let peer_region = peer_node
+                .metadata
+                .labels
+                .as_ref()
+                .and_then(|l| l.get(LABEL_REGION));
+
+            // 1. Anti-affinity: Strongly discourage same node
+            if node_name == peer_node_name {
+                score -= 1000;
+            }
+
+            // 2. Redundancy: Prefer different zones
+            if let (Some(nz), Some(pz)) = (node_zone, peer_zone) {
+                if nz != pz {
+                    score += 100;
+                } else {
+                    score -= 50; // Same zone penalty
+                }
+            }
+
+            // 3. Latency: Prefer same region (low latency)
+            if let (Some(nr), Some(pr)) = (node_region, peer_region) {
+                if nr == pr {
+                    score += 50;
+                } else {
+                    score -= 20; // Different region penalty
+                }
+            }
+        }
+
+        if score > best_score {
+            best_score = score;
+            best_node = Some(*node);
+        }
+    }
+
+    tracing::info!(
+        "Quorum Proximity scoring for pod {}: selected node {} with score {}",
+        pod.name_any(),
+        best_node.map(|n| n.name_any()).unwrap_or_default(),
+        best_score
+    );
+
+    Ok(best_node)
+}
+
+/// Helper to extract peer instance names from Stellar Core quorum set TOML.
+/// Handles both [VALIDATORS] map and [QUORUM_SET] VSL formats.
+fn extract_peer_names_from_toml(toml_str: &str) -> Vec<String> {
+    let mut names = Vec::new();
+
+    // Try to parse as TOML Table
+    if let Ok(value) = toml_str.parse::<toml::Value>() {
+        // Case 1: [VALIDATORS] section
+        if let Some(validators) = value.get("VALIDATORS").and_then(|v| v.as_table()) {
+            for key in validators.keys() {
+                names.push(key.clone());
+            }
+        }
+
+        // Case 2: [QUORUM_SET] section (from VSL)
+        if let Some(qs) = value.get("QUORUM_SET").and_then(|v| v.as_table()) {
+            if let Some(validators) = qs.get("VALIDATORS").and_then(|v| v.as_array()) {
+                for v in validators {
+                    if let Some(s) = v.as_str() {
+                        // VSL uses public keys, but in K8S we might use names
+                        // For now, if it looks like a public key (starts with G),
+                        // we'd need a mapping. If it's a simple name, use it.
+                        if !s.starts_with('G') {
+                            names.push(s.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    names
 }
 
 /// Check if pod should use carbon-aware scheduling

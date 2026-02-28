@@ -931,6 +931,19 @@ pub(crate) async fn apply_stellar_node(
     )
     .await?;
 
+    // 6a. CSI VolumeSnapshot schedule (Validator only)
+    if node.spec.node_type == NodeType::Validator {
+        if let Some(ref snapshot_config) = node.spec.snapshot_schedule {
+            if let Err(e) = super::snapshot::reconcile_snapshot(client, node, snapshot_config).await
+            {
+                warn!(
+                    "Snapshot reconciliation failed for {}/{}: {}",
+                    namespace, name, e
+                );
+            }
+        }
+    }
+
     // 6b. Backup CronJob (S3-compatible ledger snapshot backups)
     apply_or_emit(ctx, node, ActionType::Update, "Backup CronJob", async {
         resources::ensure_backup_cronjob(client, node).await?;
@@ -939,7 +952,33 @@ pub(crate) async fn apply_stellar_node(
     .await?;
 
     // 7. Perform health check to determine if node is ready
-    let health_result = health::check_node_health(client, node, ctx.mtls_config.as_ref()).await?;
+    //
+    // Measure reduction in API polling overhead: Reactive Status check
+    // If the DB trigger updated the status very recently (e.g. < 15 seconds ago), we can skip the health check API poll
+    let mut skipped_poll = false;
+    let mut recent_health = None;
+    if let Some(ref status) = node.status {
+        if let Some(updated_at_str) = &status.ledger_updated_at {
+            if let Ok(updated_at) = chrono::DateTime::parse_from_rfc3339(updated_at_str) {
+                let age = chrono::Utc::now()
+                    .signed_duration_since(updated_at.with_timezone(&chrono::Utc))
+                    .num_seconds();
+                if age < 15 {
+                    info!("Skipping health polling for {}/{}, DB trigger recently updated status {}s ago", namespace, name, age);
+                    crate::controller::metrics::inc_api_polls_avoided(&namespace, &name);
+                    skipped_poll = true;
+                    // Assume node is healthy, use the reactively set ledger sequence
+                    recent_health = Some(health::HealthCheckResult::synced(status.ledger_sequence));
+                }
+            }
+        }
+    }
+
+    let health_result = if skipped_poll {
+        recent_health.unwrap()
+    } else {
+        health::check_node_health(client, node, ctx.mtls_config.as_ref()).await?
+    };
 
     debug!(
         "Health check result for {}/{}: healthy={}, synced={}, message={}",
@@ -962,6 +1001,14 @@ pub(crate) async fn apply_stellar_node(
                 "Failed to trigger peer config reload for {}/{}: {}",
                 namespace, name, e
             );
+        }
+    }
+
+    // 6.5. Quorum analysis for validators
+    if node.spec.node_type == NodeType::Validator && health_result.healthy {
+        if let Err(e) = perform_quorum_analysis(client, node).await {
+            warn!("Quorum analysis failed for {}/{}: {}", namespace, name, e);
+            // Don't fail reconciliation on quorum analysis errors
         }
     }
 
@@ -2159,4 +2206,92 @@ pub(crate) fn error_policy(
     };
 
     Action::requeue(retry_duration)
+}
+
+/// Perform quorum analysis for validator nodes
+async fn perform_quorum_analysis(client: &Client, node: &StellarNode) -> Result<()> {
+    use super::quorum::QuorumAnalyzer;
+
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let name = node.name_any();
+
+    // Get pod IPs for all validator pods
+    let pod_api: Api<k8s_openapi::api::core::v1::Pod> = Api::namespaced(client.clone(), &namespace);
+    let lp =
+        kube::api::ListParams::default().labels(&format!("app.kubernetes.io/instance={}", name));
+
+    let pods = pod_api.list(&lp).await.map_err(Error::KubeError)?;
+    let pod_ips: Vec<String> = pods
+        .items
+        .iter()
+        .filter_map(|pod| pod.status.as_ref()?.pod_ip.clone())
+        .collect();
+
+    if pod_ips.is_empty() {
+        debug!(
+            "No pod IPs found for quorum analysis of {}/{}",
+            namespace, name
+        );
+        return Ok(());
+    }
+
+    // Create analyzer and run analysis with timeout
+    let mut analyzer = QuorumAnalyzer::new(Duration::from_secs(10), 100);
+
+    let analysis_future = analyzer.analyze_quorum(pod_ips);
+    let result = tokio::time::timeout(Duration::from_secs(30), analysis_future)
+        .await
+        .map_err(|_| Error::ConfigError("Quorum analysis timeout".to_string()))?
+        .map_err(|e| Error::ConfigError(format!("Quorum analysis failed: {}", e)))?;
+
+    // Update metrics
+    #[cfg(feature = "metrics")]
+    {
+        let node_type = node.spec.node_type.to_string();
+        let network = match &node.spec.network {
+            crate::crd::StellarNetwork::Mainnet => "mainnet",
+            crate::crd::StellarNetwork::Testnet => "testnet",
+            crate::crd::StellarNetwork::Futurenet => "futurenet",
+            crate::crd::StellarNetwork::Custom(_) => "custom",
+        };
+
+        metrics::set_quorum_critical_nodes(
+            &namespace,
+            &name,
+            &node_type,
+            network,
+            result.critical_nodes.len() as i64,
+        );
+        metrics::set_quorum_min_overlap(
+            &namespace,
+            &name,
+            &node_type,
+            network,
+            result.min_overlap as i64,
+        );
+        metrics::set_quorum_fragility_score(
+            &namespace,
+            &name,
+            &node_type,
+            network,
+            result.fragility_score,
+        );
+    }
+
+    // Update status
+    analyzer
+        .update_node_status(client, node, &result)
+        .await
+        .map_err(|e| Error::ConfigError(format!("Failed to update status: {}", e)))?;
+
+    info!(
+        "Quorum analysis complete for {}/{}: fragility={:.3}, critical_nodes={}, min_overlap={}",
+        namespace,
+        name,
+        result.fragility_score,
+        result.critical_nodes.len(),
+        result.min_overlap
+    );
+
+    Ok(())
 }

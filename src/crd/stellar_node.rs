@@ -13,8 +13,9 @@ use super::types::{
     AutoscalingConfig, BackupScheduleConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
     DisasterRecoveryStatus, ExternalDatabaseConfig, GlobalDiscoveryConfig, HistoryMode,
     HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig, NetworkPolicyConfig,
-    NodeType, OciSnapshotConfig, ResourceRequirements, RetentionPolicy, RolloutStrategy,
-    SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig, VpaConfig,
+    NodeType, OciSnapshotConfig, ResourceRequirements, RestoreFromSnapshotConfig, RetentionPolicy,
+    RolloutStrategy, SnapshotScheduleConfig, SorobanConfig, StellarNetwork, StorageConfig,
+    ValidatorConfig, VpaConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`
@@ -148,6 +149,16 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cve_handling: Option<super::types::CVEHandlingConfig>,
 
+    /// Schedule and options for taking CSI VolumeSnapshots of the node's data PVC (Validator only).
+    /// Enables zero-downtime backups and creating new nodes from snapshots.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_schedule: Option<SnapshotScheduleConfig>,
+
+    /// Bootstrap this node from an existing VolumeSnapshot instead of an empty volume (Validator only).
+    /// The PVC will be created from the specified snapshot for near-instant startup.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restore_from_snapshot: Option<RestoreFromSnapshotConfig>,
+
     /// Read replica pool configuration for horizontal scaling
     /// Enables creating read-only replicas with traffic routing strategies
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -223,6 +234,8 @@ impl StellarNodeSpec {
     /// # load_balancer: None,
     /// # global_discovery: None,
     /// # cross_cluster: None,
+    /// # snapshot_schedule: None,
+    /// # restore_from_snapshot: None,
     /// # strategy: Default::default(),
     /// # maintenance_mode: false,
     /// # network_policy: None,
@@ -327,8 +340,29 @@ impl StellarNodeSpec {
                         "Use RollingUpdate strategy for Validator nodes; canary is only supported for Horizon and SorobanRpc.",
                     ));
                 }
+                // Snapshot schedule and restore only apply to Validators (ledger data)
+                if (self.snapshot_schedule.is_some() || self.restore_from_snapshot.is_some())
+                    && self
+                        .restore_from_snapshot
+                        .as_ref()
+                        .map(|r| r.volume_snapshot_name.is_empty())
+                        .unwrap_or(false)
+                {
+                    errors.push(SpecValidationError::new(
+                        "spec.restoreFromSnapshot.volumeSnapshotName",
+                        "volumeSnapshotName must not be empty when restoreFromSnapshot is set",
+                        "Set spec.restoreFromSnapshot.volumeSnapshotName to an existing VolumeSnapshot name.",
+                    ));
+                }
             }
             NodeType::Horizon => {
+                if self.snapshot_schedule.is_some() || self.restore_from_snapshot.is_some() {
+                    errors.push(SpecValidationError::new(
+                        "spec.snapshotSchedule / spec.restoreFromSnapshot",
+                        "snapshot and restore are only supported for Validator nodes",
+                        "Remove spec.snapshotSchedule and spec.restoreFromSnapshot for Horizon nodes.",
+                    ));
+                }
                 // Horizon config required
                 if self.horizon_config.is_none() {
                     errors.push(SpecValidationError::new(
@@ -358,6 +392,13 @@ impl StellarNodeSpec {
                 }
             }
             NodeType::SorobanRpc => {
+                if self.snapshot_schedule.is_some() || self.restore_from_snapshot.is_some() {
+                    errors.push(SpecValidationError::new(
+                        "spec.snapshotSchedule / spec.restoreFromSnapshot",
+                        "snapshot and restore are only supported for Validator nodes",
+                        "Remove spec.snapshotSchedule and spec.restoreFromSnapshot for SorobanRpc nodes.",
+                    ));
+                }
                 // Soroban config required
                 if self.soroban_config.is_none() {
                     errors.push(SpecValidationError::new(
@@ -860,6 +901,10 @@ pub struct StellarNodeStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ledger_sequence: Option<u64>,
 
+    /// Timestamp of the last ledger update (RFC3339)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ledger_updated_at: Option<String>,
+
     /// Endpoint where the node is accessible (Service ClusterIP or external)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
@@ -895,6 +940,15 @@ pub struct StellarNodeStatus {
     /// Version of the database schema after last successful migration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_migrated_version: Option<String>,
+
+    /// Quorum fragility score (0.0 = resilient, 1.0 = fragile)
+    /// Only populated for validator nodes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quorum_fragility: Option<f64>,
+
+    /// Timestamp of last quorum analysis (RFC3339)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quorum_analysis_timestamp: Option<String>,
 }
 
 /// BGP advertisement status information
@@ -1105,6 +1159,8 @@ mod tests {
             topology_spread_constraints: None,
             cross_cluster: None,
             cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
             read_replica_config: None,
             backup_schedule: None,
             db_maintenance_config: None,
@@ -1158,6 +1214,8 @@ mod tests {
             topology_spread_constraints: None,
             cross_cluster: None,
             cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
             read_replica_config: None,
             backup_schedule: None,
             db_maintenance_config: None,

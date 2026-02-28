@@ -110,6 +110,9 @@ cron = "0.15"
 flate2 = "1"
 async-trait = "0.1"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "postgres", "chrono"] }
+pqcrypto-dilithium = "0.5.0"
+pqcrypto-kyber = "0.8.1"
+pqcrypto-traits = "0.3.5"
 
 [build-dependencies]
 chrono = "0.4"
@@ -133,6 +136,7 @@ axum = ["dep:axum"]
 tokio-test = "0.4"
 tempfile = "3"
 wiremock = "0.6"
+wat = "1.245"
 
 [[bin]]
 name = "stellar-operator"

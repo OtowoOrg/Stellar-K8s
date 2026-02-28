@@ -43,6 +43,8 @@ mod tests {
             dr_config: None,
             topology_spread_constraints: None,
             cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
             read_replica_config: None,
             backup_schedule: None,
             db_maintenance_config: None,
@@ -98,6 +100,8 @@ mod tests {
                 dr_config: None,
                 topology_spread_constraints: None,
                 cve_handling: None,
+                snapshot_schedule: None,
+                restore_from_snapshot: None,
                 read_replica_config: Some(ReadReplicaConfig {
                     replicas: 3,
                     resources: ResourceRequirements::default(),
@@ -157,6 +161,8 @@ mod tests {
                 topology_spread_constraints: None,
                 db_maintenance_config: None,
                 cve_handling: None,
+                snapshot_schedule: None,
+                restore_from_snapshot: None,
                 read_replica_config: None,
                 backup_schedule: None,
                 oci_snapshot: None,
@@ -726,10 +732,8 @@ mod tests {
     #[test]
     fn test_pod_list_params_label_selector() {
         let node_name = "test-node";
-        let label_selector = format!(
-            "app.kubernetes.io/instance={},stellar.org/role=read-replica",
-            node_name
-        );
+        let label_selector =
+            format!("app.kubernetes.io/instance={node_name},stellar.org/role=read-replica");
 
         // Verify label selector format is correct for Kubernetes API
         assert!(label_selector.contains("app.kubernetes.io/instance="));

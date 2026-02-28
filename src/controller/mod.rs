@@ -30,6 +30,7 @@ pub mod oci_snapshot;
 pub mod peer_discovery;
 #[cfg(test)]
 mod peer_discovery_test;
+pub mod quorum;
 pub mod read_pool;
 mod reconciler;
 #[cfg(test)]
@@ -41,6 +42,7 @@ mod resources;
 #[cfg(test)]
 mod resources_test;
 pub mod service_mesh;
+mod snapshot;
 pub mod traffic;
 #[cfg(test)]
 mod traffic_test;

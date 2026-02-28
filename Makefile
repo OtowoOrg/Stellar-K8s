@@ -1,4 +1,4 @@
-.PHONY: help build test fmt lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark run-dev
+.PHONY: help build test fmt lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all run-dev
 
 # Default target
 .DEFAULT_GOAL := help
@@ -84,6 +84,22 @@ benchmark: ## Run k6 performance benchmarks
 	@echo "→ Running k6 benchmarks..."
 	@command -v k6 >/dev/null 2>&1 || (echo "✗ k6 not installed. Install: https://k6.io/docs/get-started/installation/" && exit 1)
 	cd benchmarks && k6 run k6/operator-load-test.js
+
+benchmark-webhook: ## Run webhook performance benchmarks
+	@echo "→ Running webhook benchmarks..."
+	@command -v k6 >/dev/null 2>&1 || (echo "✗ k6 not installed. Install: https://k6.io/docs/get-started/installation/" && exit 1)
+	@./benchmarks/run-webhook-benchmark.sh run
+
+benchmark-webhook-health: ## Check webhook health
+	@./benchmarks/run-webhook-benchmark.sh health
+
+benchmark-webhook-compare: ## Compare webhook results with baseline
+	@./benchmarks/run-webhook-benchmark.sh compare
+
+benchmark-webhook-save: ## Save current results as baseline
+	@./benchmarks/run-webhook-benchmark.sh save-baseline
+
+benchmark-all: benchmark benchmark-webhook ## Run all benchmarks
 
 run: build ## Run locally
 	RUST_LOG=info ./target/release/stellar-operator

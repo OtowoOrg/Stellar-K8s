@@ -48,7 +48,7 @@ pub use mutation::apply_mutations;
 pub use runtime::{WasmRuntime, WasmRuntimeBuilder};
 pub use server::{LoadPluginRequest, PluginInfo, PluginListResponse, TlsConfig, WebhookServer};
 pub use types::{
-    AggregatedValidationResult, ConfigMapRef, Operation, PluginConfig, PluginExecutionResult,
-    PluginLimits, PluginMetadata, SecretRef, UserInfo, ValidationError, ValidationErrorType,
-    ValidationInput, ValidationOutput,
+    AggregatedValidationResult, ConfigMapRef, DbTriggerInput, DbTriggerOutput, Operation,
+    PluginConfig, PluginExecutionResult, PluginLimits, PluginMetadata, SecretRef, UserInfo,
+    ValidationError, ValidationErrorType, ValidationInput, ValidationOutput,
 };

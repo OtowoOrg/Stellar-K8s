@@ -524,7 +524,7 @@ host = "v3.example.com"
     fn test_parse_unsigned_vsl_succeeds_with_warning() {
         let raw = minimal_unsigned_vsl();
         let result = parse_and_verify_vsl(&raw);
-        assert!(result.is_ok(), "unsigned VSL should parse: {:?}", result);
+        assert!(result.is_ok(), "unsigned VSL should parse: {result:?}");
         let qs = result.unwrap();
         assert_eq!(qs.validators.len(), 3);
     }
@@ -581,7 +581,7 @@ host = "v3.example.com"
         // Temporarily override trusted signers by calling verify directly
         // (we can't mutate the const in tests, so we test the verify path directly)
         let result = verify_ed25519_signature(&pubkey_b64, &sig_b64, &canonical);
-        assert!(result.is_ok(), "signature should verify: {:?}", result);
+        assert!(result.is_ok(), "signature should verify: {result:?}");
     }
 
     #[test]

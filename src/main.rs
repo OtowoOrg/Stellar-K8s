@@ -21,6 +21,8 @@ struct Args {
 enum Commands {
     /// Run the operator
     Run(RunArgs),
+    /// Run the admission webhook server
+    Webhook(WebhookArgs),
     /// Show version and build information
     Version,
     /// Show cluster information
@@ -57,6 +59,25 @@ struct InfoArgs {
     namespace: String,
 }
 
+#[derive(Parser, Debug)]
+struct WebhookArgs {
+    /// Bind address for the webhook server
+    #[arg(long, env = "WEBHOOK_BIND", default_value = "0.0.0.0:8443")]
+    bind: String,
+
+    /// TLS certificate path
+    #[arg(long, env = "WEBHOOK_CERT_PATH")]
+    cert_path: Option<String>,
+
+    /// TLS key path
+    #[arg(long, env = "WEBHOOK_KEY_PATH")]
+    key_path: Option<String>,
+
+    /// Log level (trace, debug, info, warn, error)
+    #[arg(long, env = "LOG_LEVEL", default_value = "info")]
+    log_level: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
@@ -75,6 +96,9 @@ async fn main() -> Result<(), Error> {
         Commands::Run(run_args) => {
             return run_operator(run_args).await;
         }
+        Commands::Webhook(webhook_args) => {
+            return run_webhook(webhook_args).await;
+        }
     }
 }
 
@@ -92,6 +116,67 @@ async fn run_info(args: InfoArgs) -> Result<(), Error> {
 
     println!("Managed Stellar Nodes: {}", nodes.items.len());
     Ok(())
+}
+
+#[cfg(feature = "admission-webhook")]
+async fn run_webhook(args: WebhookArgs) -> Result<(), Error> {
+    use stellar_k8s::webhook::{runtime::WasmRuntime, server::WebhookServer};
+
+    // Initialize tracing
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(args.log_level.parse().unwrap_or(Level::INFO.into()))
+        .from_env_lossy();
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt::layer().with_target(true))
+        .init();
+
+    info!(
+        "Starting Webhook Server v{} on {}",
+        env!("CARGO_PKG_VERSION"),
+        args.bind
+    );
+
+    // Parse bind address
+    let addr: std::net::SocketAddr = args
+        .bind
+        .parse()
+        .map_err(|e| Error::ConfigError(format!("Invalid bind address: {}", e)))?;
+
+    // Initialize Wasm runtime
+    let runtime = WasmRuntime::new()
+        .map_err(|e| Error::ConfigError(format!("Failed to initialize Wasm runtime: {}", e)))?;
+
+    // Create webhook server
+    let mut server = WebhookServer::new(runtime);
+
+    // Configure TLS if provided
+    if let (Some(cert_path), Some(key_path)) = (args.cert_path, args.key_path) {
+        info!(
+            "Configuring TLS with cert: {}, key: {}",
+            cert_path, key_path
+        );
+        server = server.with_tls(cert_path, key_path);
+    } else {
+        warn!("Running webhook server without TLS (not recommended for production)");
+    }
+
+    // Start the server
+    info!("Webhook server listening on {}", addr);
+    server
+        .start(addr)
+        .await
+        .map_err(|e| Error::ConfigError(format!("Webhook server error: {}", e)))?;
+
+    Ok(())
+}
+
+#[cfg(not(feature = "admission-webhook"))]
+async fn run_webhook(_args: WebhookArgs) -> Result<(), Error> {
+    Err(Error::ConfigError(
+        "Webhook feature not enabled. Rebuild with --features admission-webhook".to_string(),
+    ))
 }
 
 async fn run_operator(args: RunArgs) -> Result<(), Error> {

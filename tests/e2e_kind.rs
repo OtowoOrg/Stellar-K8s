@@ -208,8 +208,8 @@ fn e2e_soroban_manifest(version: &str) -> String {
         r#"apiVersion: stellar.org/v1alpha1
 kind: StellarNode
 metadata:
-  name: {node_name}
-  namespace: {namespace}
+  name: {E2E_NODE_NAME}
+  namespace: {TEST_NAMESPACE}
 spec:
   nodeType: SorobanRpc
   network: Testnet
@@ -229,9 +229,6 @@ spec:
     size: "1Gi"
     retentionPolicy: Delete
 "#,
-        node_name = E2E_NODE_NAME,
-        namespace = TEST_NAMESPACE,
-        version = version,
     )
 }
 
@@ -390,7 +387,7 @@ fn e2e_kind_install_crud_upgrade_delete() -> Result<(), Box<dyn Error>> {
             &[
                 "get",
                 "configmap",
-                &format!("{}-config", NODE_NAME),
+                &format!("{NODE_NAME}-config"),
                 "-n",
                 TEST_NAMESPACE,
             ],
@@ -404,7 +401,7 @@ fn e2e_kind_install_crud_upgrade_delete() -> Result<(), Box<dyn Error>> {
             &[
                 "get",
                 "pvc",
-                &format!("{}-data", NODE_NAME),
+                &format!("{NODE_NAME}-data"),
                 "-n",
                 TEST_NAMESPACE,
             ],
@@ -425,7 +422,7 @@ fn e2e_kind_install_crud_upgrade_delete() -> Result<(), Box<dyn Error>> {
         ],
     )?;
     if current_image != "stellar/soroban-rpc:v21.0.0" {
-        return Err(format!("unexpected node image after create: {}", current_image).into());
+        return Err(format!("unexpected node image after create: {current_image}").into());
     }
 
     run_cmd(
@@ -502,7 +499,7 @@ fn e2e_kind_install_crud_upgrade_delete() -> Result<(), Box<dyn Error>> {
             &[
                 "get",
                 "pvc",
-                &format!("{}-data", NODE_NAME),
+                &format!("{NODE_NAME}-data"),
                 "-n",
                 TEST_NAMESPACE,
             ],
@@ -512,7 +509,7 @@ fn e2e_kind_install_crud_upgrade_delete() -> Result<(), Box<dyn Error>> {
             &[
                 "get",
                 "configmap",
-                &format!("{}-config", NODE_NAME),
+                &format!("{NODE_NAME}-config"),
                 "-n",
                 TEST_NAMESPACE,
             ],
@@ -548,8 +545,7 @@ fn run_cmd(program: &str, args: &[&str]) -> Result<String, Box<dyn Error>> {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "command failed: {} {:?}\nstdout:\n{}\nstderr:\n{}",
-            program, args, stdout, stderr
+            "command failed: {program} {args:?}\nstdout:\n{stdout}\nstderr:\n{stderr}"
         )
         .into());
     }
@@ -578,8 +574,7 @@ fn run_cmd_with_stdin(program: &str, args: &[&str], input: &str) -> Result<(), B
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "command failed: {} {:?}\nstdout:\n{}\nstderr:\n{}",
-            program, args, stdout, stderr
+            "command failed: {program} {args:?}\nstdout:\n{stdout}\nstderr:\n{stderr}"
         )
         .into());
     }
@@ -599,8 +594,7 @@ where
         attempts += 1;
         if start.elapsed() > timeout {
             return Err(format!(
-                "timeout while waiting for {} after {:?} (attempts={})",
-                label, timeout, attempts
+                "timeout while waiting for {label} after {timeout:?} (attempts={attempts})"
             )
             .into());
         }
@@ -624,13 +618,13 @@ fn operator_manifest(image: &str) -> String {
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {operator_name}
-  namespace: {operator_namespace}
+  name: {OPERATOR_NAME}
+  namespace: {OPERATOR_NAMESPACE}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {operator_name}
+  name: {OPERATOR_NAME}
 rules:
   - apiGroups: ["stellar.org"]
     resources: ["stellarnodes"]
@@ -672,43 +666,40 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {operator_name}
+  name: {OPERATOR_NAME}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {operator_name}
+  name: {OPERATOR_NAME}
 subjects:
   - kind: ServiceAccount
-    name: {operator_name}
-    namespace: {operator_namespace}
+    name: {OPERATOR_NAME}
+    namespace: {OPERATOR_NAMESPACE}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {operator_name}
-  namespace: {operator_namespace}
+  name: {OPERATOR_NAME}
+  namespace: {OPERATOR_NAMESPACE}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: {operator_name}
+      app: {OPERATOR_NAME}
   template:
     metadata:
       labels:
-        app: {operator_name}
+        app: {OPERATOR_NAME}
     spec:
-      serviceAccountName: {operator_name}
+      serviceAccountName: {OPERATOR_NAME}
       containers:
         - name: operator
           image: {image}
           imagePullPolicy: IfNotPresent
           env:
             - name: OPERATOR_NAMESPACE
-              value: {operator_namespace}
-"#,
-        operator_name = OPERATOR_NAME,
-        operator_namespace = OPERATOR_NAMESPACE,
-        image = image
+              value: {OPERATOR_NAMESPACE}
+"#
     )
 }
 
@@ -787,8 +778,8 @@ fn soroban_node_manifest(version: &str, replicas: i32, suspended: bool) -> Strin
         r#"apiVersion: stellar.org/v1alpha1
 kind: StellarNode
 metadata:
-  name: {node_name}
-  namespace: {namespace}
+  name: {NODE_NAME}
+  namespace: {TEST_NAMESPACE}
 spec:
   nodeType: SorobanRpc
   network: Testnet
@@ -808,12 +799,7 @@ spec:
     storageClass: "standard"
     size: "1Gi"
     retentionPolicy: Delete
-"#,
-        node_name = NODE_NAME,
-        namespace = TEST_NAMESPACE,
-        version = version,
-        replicas = replicas,
-        suspended = suspended
+"#
     )
 }
 
@@ -830,8 +816,8 @@ fn horizon_node_manifest(version: &str) -> String {
         r#"apiVersion: stellar.org/v1alpha1
 kind: StellarNode
 metadata:
-  name: {node_name}
-  namespace: {namespace}
+  name: {HORIZON_NODE_NAME}
+  namespace: {HORIZON_TEST_NAMESPACE}
 spec:
   nodeType: Horizon
   network: Testnet
@@ -858,14 +844,11 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: horizon-db-credentials
-  namespace: {namespace}
+  namespace: {HORIZON_TEST_NAMESPACE}
 type: Opaque
 stringData:
   DATABASE_URL: "postgres://horizon:password@postgres:5432/horizon?sslmode=disable"
 "#,
-        node_name = HORIZON_NODE_NAME,
-        namespace = HORIZON_TEST_NAMESPACE,
-        version = version,
     )
 }
 
@@ -1054,7 +1037,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
             &[
                 "get",
                 "configmap",
-                &format!("{}-config", HORIZON_NODE_NAME),
+                &format!("{HORIZON_NODE_NAME}-config"),
                 "-n",
                 HORIZON_TEST_NAMESPACE,
             ],
@@ -1068,7 +1051,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
             &[
                 "get",
                 "pvc",
-                &format!("{}-data", HORIZON_NODE_NAME),
+                &format!("{HORIZON_NODE_NAME}-data"),
                 "-n",
                 HORIZON_TEST_NAMESPACE,
             ],
@@ -1090,11 +1073,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
         ],
     )?;
     if current_image != "stellar/horizon:v21.0.0" {
-        return Err(format!(
-            "unexpected Horizon node image after create: {}",
-            current_image
-        )
-        .into());
+        return Err(format!("unexpected Horizon node image after create: {current_image}").into());
     }
 
     // ── Step 3: Wait for pod to become Ready ─────────────────────────────────
@@ -1105,7 +1084,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
                 "get",
                 "pods",
                 "-l",
-                &format!("app.kubernetes.io/instance={}", HORIZON_NODE_NAME),
+                &format!("app.kubernetes.io/instance={HORIZON_NODE_NAME}"),
                 "-n",
                 HORIZON_TEST_NAMESPACE,
                 "-o",
@@ -1126,7 +1105,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
             "get",
             "pods",
             "-l",
-            &format!("app.kubernetes.io/instance={}", HORIZON_NODE_NAME),
+            &format!("app.kubernetes.io/instance={HORIZON_NODE_NAME}"),
             "-n",
             HORIZON_TEST_NAMESPACE,
             "-o",
@@ -1138,7 +1117,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
     let mut port_forward = Command::new("kubectl")
         .args([
             "port-forward",
-            &format!("pod/{}", pod_name),
+            &format!("pod/{pod_name}"),
             "18000:8000",
             "-n",
             HORIZON_TEST_NAMESPACE,
@@ -1241,7 +1220,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
             &[
                 "get",
                 "pvc",
-                &format!("{}-data", HORIZON_NODE_NAME),
+                &format!("{HORIZON_NODE_NAME}-data"),
                 "-n",
                 HORIZON_TEST_NAMESPACE,
             ],
@@ -1251,7 +1230,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
             &[
                 "get",
                 "configmap",
-                &format!("{}-config", HORIZON_NODE_NAME),
+                &format!("{HORIZON_NODE_NAME}-config"),
                 "-n",
                 HORIZON_TEST_NAMESPACE,
             ],
@@ -1262,7 +1241,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
                 "get",
                 "pods",
                 "-l",
-                &format!("app.kubernetes.io/instance={}", HORIZON_NODE_NAME),
+                &format!("app.kubernetes.io/instance={HORIZON_NODE_NAME}"),
                 "-n",
                 HORIZON_TEST_NAMESPACE,
                 "-o",

@@ -146,6 +146,23 @@ See [wasm-webhook.md](docs/wasm-webhook.md) for complete documentation and examp
 
 ---
 
+## 📊 Monitoring & Observability
+
+Stellar-K8s comes with built-in Prometheus metrics and a pre-configured Grafana dashboard that provides a comprehensive overview of both the operator's health and the managed Stellar nodes.
+
+### Importing the Grafana Dashboard
+
+1. Open your Grafana instance.
+2. Navigate to **Dashboards** -> **Import**.
+3. Upload the `monitoring/grafana-dashboard.json` file provided in this repository.
+4. Select your Prometheus data source when prompted.
+5. The dashboard will now automatically visualize:
+   - Node availability, sync status, and peer connectivity
+   - Controller reconciliation rates and duration (p50, p95, p99)
+   - Error rates and operator resource usage (CPU/Memory)
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on our development process, coding standards, and how to submit pull requests.
@@ -175,6 +192,39 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - [ ] Automated failover for high-availability setups
 - [ ] Disaster Recovery automation (backup/restore from history)
 - [ ] Multi-region federation support
+
+---
+
+## 💾 High-Performance Local Storage (NVMe)
+
+Standard cloud Persistent Volumes (like AWS EBS or GCP Persistent Disks) can sometimes bottleneck Stellar Core's highly demanding database I/O, leading to ledger sync lag. Stellar-K8s supports a specialized `LocalStorage` mode to take advantage of low-latency local NVMe drives directly attached to your Kubernetes nodes.
+
+### Standard PVCs vs Local NVMe (Testnet Workload Benchmark)
+
+| Storage Type         | Peak IOPS | Read Latency | Write Latency | Avg Sync Lag |
+|----------------------|-----------|--------------|---------------|--------------|
+| Cloud Standard (EBS) | ~3,000    | 1.5 - 2.5ms  | 2.0 - 5.0ms   | 5 - 15s      |
+| Local NVMe           | 100,000+  | < 0.1ms      | < 0.1ms       | **< 1s**     |
+
+### Enabling LocalStorage
+
+Simply set `spec.storage.mode` to `Local`. Stellar-K8s will automatically attempt to use a provisioner like `local-path` (often bundled with K3s/Kind/EKS). You can also explicitly pin to a specific node using `nodeAffinity` or specify a dedicated `storageClass`.
+
+```yaml
+spec:
+  nodeType: Validator
+  storage:
+    mode: Local
+    # Automatically detects "local-path" or "local-storage" if omitted 
+    # Or explicitly pin to specific nodes:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: ["my-nvme-node-1"]
+```
 
 ---
 

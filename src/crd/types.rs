@@ -1297,6 +1297,109 @@ pub enum PgBouncerPoolMode {
     Statement,
 }
 
+// ===========================================================================
+// S3 Ledger Snapshot Backup
+// ===========================================================================
+
+/// Configuration for automated ledger snapshot backups to S3-compatible storage.
+///
+/// When set on a `StellarNode`, the operator provisions a Kubernetes `CronJob`
+/// that periodically compresses the node's ledger data directory and uploads
+/// the resulting archive to an S3-compatible object store (AWS S3, MinIO, GCS,
+/// etc.).
+///
+/// # Credential Secret layout
+///
+/// The Kubernetes `Secret` referenced by `credentialsSecret` must contain the
+/// following keys:
+///
+/// | Key                     | Required |
+/// |-------------------------|----------|
+/// | `AWS_ACCESS_KEY_ID`     | yes      |
+/// | `AWS_SECRET_ACCESS_KEY` | yes      |
+/// | `AWS_SESSION_TOKEN`     | no       |
+///
+/// # Example
+///
+/// ```yaml
+/// backupSchedule:
+///   enabled: true
+///   bucket: my-stellar-backups
+///   region: us-east-1
+///   credentialsSecret: stellar-s3-creds
+///   schedule: "0 */6 * * *"
+///   retentionCount: 12
+/// ```
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupScheduleConfig {
+    /// Enable automated ledger backups.
+    pub enabled: bool,
+
+    /// S3 bucket name where snapshots are stored.
+    pub bucket: String,
+
+    /// AWS/S3 region (e.g. `"us-east-1"`).
+    pub region: String,
+
+    /// Custom S3-compatible endpoint URL.
+    ///
+    /// Set this when targeting MinIO (`http://minio:9000`), GCS
+    /// (`https://storage.googleapis.com`), or any other S3-compatible
+    /// backend.  Leave unset to use the default AWS S3 endpoint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+
+    /// Object key prefix inside the bucket (e.g. `"stellar/mainnet/ledger"`).
+    ///
+    /// Defaults to `"snapshots"` when not provided.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+
+    /// Name of the Kubernetes `Secret` that holds S3 credentials.
+    ///
+    /// The secret must contain `AWS_ACCESS_KEY_ID` and
+    /// `AWS_SECRET_ACCESS_KEY`.  `AWS_SESSION_TOKEN` is optional and
+    /// injected only when the key is present in the secret.
+    pub credentials_secret: String,
+
+    /// Cron expression that controls how often snapshots are taken.
+    ///
+    /// Defaults to `"0 */6 * * *"` (every six hours).
+    #[serde(default = "default_backup_schedule")]
+    pub schedule: String,
+
+    /// Compress the ledger archive with gzip before uploading.
+    ///
+    /// Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub compression: bool,
+
+    /// Absolute path to the ledger data directory inside the node container.
+    ///
+    /// Defaults to `"/data"` when not provided.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ledger_path: Option<String>,
+
+    /// Maximum number of snapshots to retain in the bucket.
+    ///
+    /// After each successful upload, snapshots beyond this limit are deleted
+    /// (oldest first).  Set to `0` to keep all snapshots indefinitely.
+    #[serde(default)]
+    pub retention_count: u32,
+
+    /// Container image used by the backup `CronJob`.
+    ///
+    /// The image must include the `aws` CLI binary.
+    /// Defaults to `"amazon/aws-cli:latest"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+}
+
+fn default_backup_schedule() -> String {
+    "0 */6 * * *".to_string()
+}
+
 // ============================================================================
 // OCI Snapshot Sync (#231)
 // ============================================================================

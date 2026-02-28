@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::types::{
-    AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
+    AutoscalingConfig, BackupScheduleConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
     DisasterRecoveryStatus, ExternalDatabaseConfig, GlobalDiscoveryConfig, HistoryMode,
     HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig, NetworkPolicyConfig,
     NodeType, OciSnapshotConfig, ResourceRequirements, RestoreFromSnapshotConfig, RetentionPolicy,
@@ -164,6 +164,15 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_replica_config: Option<super::read_replica::ReadReplicaConfig>,
 
+    /// Automated ledger snapshot backup configuration.
+    ///
+    /// When set, the operator creates a `CronJob` that periodically compresses
+    /// the node's ledger data directory and uploads the archive to the
+    /// configured S3-compatible object store.  Credentials are sourced from a
+    /// referenced Kubernetes `Secret`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup_schedule: Option<BackupScheduleConfig>,
+
     /// Database maintenance configuration for automated vacuum and reindexing
     /// Enables periodic maintenance windows for performance optimization
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -234,6 +243,7 @@ impl StellarNodeSpec {
     /// # topology_spread_constraints: None,
     /// # cve_handling: None,
     /// # read_replica_config: None,
+    /// # backup_schedule: None,
     /// # db_maintenance_config: None,
     /// # oci_snapshot: None,
     /// # service_mesh: None,
@@ -431,6 +441,40 @@ impl StellarNodeSpec {
         }
         if let Some(ref mesh) = self.service_mesh {
             validate_service_mesh(mesh, &mut errors);
+        }
+
+        // Validate backup schedule if configured
+        if let Some(ref backup) = self.backup_schedule {
+            if backup.enabled {
+                if backup.bucket.trim().is_empty() {
+                    errors.push(SpecValidationError::new(
+                        "spec.backupSchedule.bucket",
+                        "backupSchedule.bucket must not be empty when backups are enabled",
+                        "Set spec.backupSchedule.bucket to a valid S3 bucket name.",
+                    ));
+                }
+                if backup.region.trim().is_empty() {
+                    errors.push(SpecValidationError::new(
+                        "spec.backupSchedule.region",
+                        "backupSchedule.region must not be empty when backups are enabled",
+                        "Set spec.backupSchedule.region to a valid AWS/S3 region (e.g. \"us-east-1\").",
+                    ));
+                }
+                if backup.credentials_secret.trim().is_empty() {
+                    errors.push(SpecValidationError::new(
+                        "spec.backupSchedule.credentialsSecret",
+                        "backupSchedule.credentialsSecret must not be empty when backups are enabled",
+                        "Set spec.backupSchedule.credentialsSecret to the name of a Kubernetes Secret containing AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.",
+                    ));
+                }
+                if backup.schedule.trim().is_empty() {
+                    errors.push(SpecValidationError::new(
+                        "spec.backupSchedule.schedule",
+                        "backupSchedule.schedule must not be empty",
+                        "Set spec.backupSchedule.schedule to a valid cron expression (e.g. \"0 */6 * * *\").",
+                    ));
+                }
+            }
         }
 
         if errors.is_empty() {
@@ -1118,6 +1162,7 @@ mod tests {
             snapshot_schedule: None,
             restore_from_snapshot: None,
             read_replica_config: None,
+            backup_schedule: None,
             db_maintenance_config: None,
             oci_snapshot: None,
             service_mesh: None,
@@ -1172,6 +1217,7 @@ mod tests {
             snapshot_schedule: None,
             restore_from_snapshot: None,
             read_replica_config: None,
+            backup_schedule: None,
             db_maintenance_config: None,
             oci_snapshot: None,
             service_mesh: None,

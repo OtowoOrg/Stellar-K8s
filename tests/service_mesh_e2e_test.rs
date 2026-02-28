@@ -68,6 +68,7 @@ mod tests {
                 snapshot_schedule: None,
                 restore_from_snapshot: None,
                 read_replica_config: None,
+                backup_schedule: None,
                 db_maintenance_config: None,
                 oci_snapshot: None,
                 service_mesh: Some(ServiceMeshConfig {

@@ -170,7 +170,7 @@ pub async fn get_pod_metric(
                 kind: "Status".to_string(),
                 api_version: "v1".to_string(),
                 metadata: BTreeMap::new(),
-                message: format!("Metric '{}' not found", metric_name),
+                message: format!("Metric '{metric_name}' not found"),
                 reason: "MetricNotFound".to_string(),
                 code: 404,
             };
@@ -229,7 +229,7 @@ pub async fn get_stellar_node_metric(
                 kind: "Status".to_string(),
                 api_version: "v1".to_string(),
                 metadata: BTreeMap::new(),
-                message: format!("Metric '{}' not found", metric_name),
+                message: format!("Metric '{metric_name}' not found"),
                 reason: "MetricNotFound".to_string(),
                 code: 404,
             };

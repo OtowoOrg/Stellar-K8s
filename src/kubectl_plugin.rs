@@ -766,8 +766,7 @@ mod tests {
             let show_namespace = all_namespaces || (node_name.is_none() && namespace.is_none());
             assert_eq!(
                 show_namespace, expected_show,
-                "Failed for all_namespaces={:?}, node_name={:?}, namespace={:?}",
-                all_namespaces, node_name, namespace
+                "Failed for all_namespaces={all_namespaces:?}, node_name={node_name:?}, namespace={namespace:?}"
             );
         }
     }

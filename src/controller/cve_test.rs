@@ -448,12 +448,12 @@ mod tests {
     fn test_multiple_critical_vulnerabilities() {
         let vulns: Vec<Vulnerability> = (0..5)
             .map(|i| Vulnerability {
-                cve_id: format!("CVE-2024-{:04}", i),
+                cve_id: format!("CVE-2024-{i:04}"),
                 severity: VulnerabilitySeverity::Critical,
-                package: format!("pkg-{}", i),
+                package: format!("pkg-{i}"),
                 installed_version: "1.0.0".to_string(),
                 fixed_version: Some("1.0.1".to_string()),
-                description: format!("Critical vuln {}", i),
+                description: format!("Critical vuln {i}"),
             })
             .collect();
 

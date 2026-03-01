@@ -30,7 +30,7 @@ mod tests {
                 name: Some(name.to_string()),
                 namespace: Some(namespace.to_string()),
                 generation: Some(1),
-                uid: Some(format!("test-uid-{}", name)),
+                uid: Some(format!("test-uid-{name}")),
                 finalizers: Some(vec![]),
                 ..Default::default()
             },
@@ -115,7 +115,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 name: Some(name.to_string()),
                 namespace: Some(namespace.to_string()),
                 generation: Some(1),
-                uid: Some(format!("test-uid-{}", name)),
+                uid: Some(format!("test-uid-{name}")),
                 finalizers: Some(vec![]),
                 ..Default::default()
             },
@@ -200,7 +200,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 name: Some(name.to_string()),
                 namespace: Some(namespace.to_string()),
                 generation: Some(1),
-                uid: Some(format!("test-uid-{}", name)),
+                uid: Some(format!("test-uid-{name}")),
                 finalizers: Some(vec![]),
                 ..Default::default()
             },

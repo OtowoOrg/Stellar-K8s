@@ -36,7 +36,7 @@ jobs:
 
     steps:
       # ── 1. Checkout ─────────────────────────────────────────────────────────
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # ── 2. Build the operator binary ────────────────────────────────────────
       - name: Install Rust toolchain
@@ -56,7 +56,7 @@ jobs:
 
       # ── 4. Create kind cluster ───────────────────────────────────────────────
       - name: Create kind cluster
-        uses: helm/kind-action@v1.13.0
+        uses: helm/kind-action@v1.14.0
         with:
           cluster_name: ${{ env.CLUSTER_NAME }}
           config: |
@@ -286,7 +286,7 @@ jobs:
       # ── 13. Upload logs as artifacts ──────────────────────────────────────────
       - name: Upload experiment logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: chaos-test-logs-${{ github.run_id }}
           path: /tmp/exp*.txt

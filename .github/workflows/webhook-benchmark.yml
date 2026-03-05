@@ -33,7 +33,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -58,7 +58,7 @@ jobs:
         run: cargo build --release --locked
 
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stellar-operator-webhook-${{ steps.version.outputs.version }}
           path: target/release/stellar-operator
@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-webhook
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install k6
         run: |
@@ -81,7 +81,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq bc
 
       - name: Download webhook binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: stellar-operator-webhook-${{ needs.build-webhook.outputs.version }}
           path: target/release
@@ -273,7 +273,7 @@ jobs:
           EOF
 
       - name: Upload benchmark artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: webhook-benchmark-results-${{ needs.build-webhook.outputs.version }}
           path: |
@@ -319,10 +319,10 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download benchmark results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: webhook-benchmark-results-${{ needs.build-webhook.outputs.version }}
           path: results/
@@ -401,7 +401,7 @@ jobs:
           EOF
 
       - name: Post comment
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: pr-comment.md

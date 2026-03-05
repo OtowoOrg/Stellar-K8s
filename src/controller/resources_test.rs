@@ -61,10 +61,11 @@ mod tests {
             snapshot_schedule: None,
             restore_from_snapshot: None,
             read_replica_config: None,
-            read_pool_endpoint: None,
+            backup_schedule: None,
             db_maintenance_config: None,
             oci_snapshot: None,
             service_mesh: None,
+            read_pool_endpoint: None,
             resource_meta: None,
         }
     }

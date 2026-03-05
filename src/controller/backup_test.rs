@@ -42,6 +42,7 @@ mod tests {
                     size: "100Gi".to_string(),
                     retention_policy: RetentionPolicy::Delete,
                     annotations: None,
+                    ..Default::default()
                 },
                 validator_config: Some(ValidatorConfig {
                     seed_secret_ref: "validator-seed".to_string(),

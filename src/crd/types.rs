@@ -124,25 +124,41 @@ impl Default for ResourceSpec {
     }
 }
 
+/// Storage mode for persistent data
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub enum StorageMode {
+    #[default]
+    PersistentVolume,
+    Local,
+}
+
 /// Storage configuration for persistent data
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageConfig {
+    #[serde(default)]
+    pub mode: StorageMode,
     pub storage_class: String,
     pub size: String,
     #[serde(default)]
     pub retention_policy: RetentionPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<BTreeMap<String, String>>,
+    /// Node affinity for local storage mode (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<serde_json::Value>")]
+    pub node_affinity: Option<k8s_openapi::api::core::v1::NodeAffinity>,
 }
 
 impl Default for StorageConfig {
     fn default() -> Self {
         Self {
+            mode: StorageMode::default(),
             storage_class: "standard".to_string(),
             size: "100Gi".to_string(),
             retention_policy: RetentionPolicy::default(),
             annotations: None,
+            node_affinity: None,
         }
     }
 }
@@ -1185,7 +1201,7 @@ impl Default for CVEHandlingConfig {
 // ============================================================================
 
 /// Configuration for managed High-Availability Postgres clusters via CloudNativePG
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedDatabaseConfig {
     #[serde(default = "default_db_instances")]

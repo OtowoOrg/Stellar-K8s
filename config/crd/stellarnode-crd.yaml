@@ -51,6 +51,30 @@ spec:
                   type: boolean
                   default: false
                   description: Suspend the node without deleting resources
+                natTraversal:
+                  type: object
+                  description: STUN/TURN sidecar for NAT traversal and ICE-oriented discovery
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    stunServers:
+                      type: array
+                      items:
+                        type: string
+                    sidecarImage:
+                      type: string
+                      description: Coturn-compatible image (default coturn/coturn)
+                    turn:
+                      type: object
+                      properties:
+                        realm:
+                          type: string
+                        listeningPort:
+                          type: integer
+                        staticAuthSecretRef:
+                          type: string
+                          description: Secret name with key static-auth-secret
                 resources:
                   type: object
                   properties:

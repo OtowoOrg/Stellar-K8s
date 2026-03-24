@@ -85,6 +85,56 @@ impl StellarNetwork {
     }
 }
 
+/// Optional STUN probing and TURN relay sidecar for validators (and other node types) behind NAT.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NatTraversalConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// STUN `host:port` entries used for ICE-style reachability probes (e.g. `stun.l.google.com:19302`).
+    #[serde(default)]
+    pub stun_servers: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn: Option<TurnRelayConfig>,
+    /// Container image providing `turnserver`, `turnutils_stunclient`, etc. (coturn-compatible).
+    #[serde(default = "default_nat_sidecar_image")]
+    pub sidecar_image: String,
+}
+
+fn default_nat_sidecar_image() -> String {
+    "coturn/coturn:4.6.2".to_string()
+}
+
+/// TURN relay settings (long-term credential mode via static auth secret).
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnRelayConfig {
+    #[serde(default = "default_turn_realm")]
+    pub realm: String,
+    #[serde(default = "default_turn_port")]
+    pub listening_port: u16,
+    /// Secret in the same namespace as the StellarNode; must contain key `static-auth-secret`.
+    pub static_auth_secret_ref: Option<String>,
+}
+
+fn default_turn_realm() -> String {
+    "stellar-k8s".to_string()
+}
+
+fn default_turn_port() -> u16 {
+    3478
+}
+
+impl NatTraversalConfig {
+    pub fn comma_separated_stun_servers(&self) -> String {
+        if self.stun_servers.is_empty() {
+            "stun.l.google.com:19302".to_string()
+        } else {
+            self.stun_servers.join(",")
+        }
+    }
+}
+
 /// Kubernetes-style resource requirements
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]

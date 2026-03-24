@@ -59,6 +59,7 @@ mod stellar_node_spec_validation {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            nat_traversal: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
@@ -109,6 +110,7 @@ mod stellar_node_spec_validation {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            nat_traversal: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
@@ -159,6 +161,7 @@ mod stellar_node_spec_validation {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            nat_traversal: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
@@ -195,6 +198,38 @@ mod stellar_node_spec_validation {
     #[test]
     fn test_valid_validator_passes_validation() {
         let spec = valid_validator_spec();
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_nat_turn_without_secret_fails() {
+        use crate::crd::types::{NatTraversalConfig, TurnRelayConfig};
+
+        let mut spec = valid_validator_spec();
+        spec.nat_traversal = Some(NatTraversalConfig {
+            enabled: true,
+            stun_servers: vec![],
+            turn: Some(TurnRelayConfig {
+                realm: "realm".to_string(),
+                listening_port: 3478,
+                static_auth_secret_ref: None,
+            }),
+            sidecar_image: "coturn/coturn:4.6.2".to_string(),
+        });
+        assert!(spec.validate().is_err());
+    }
+
+    #[test]
+    fn test_nat_stun_only_validates() {
+        use crate::crd::types::NatTraversalConfig;
+
+        let mut spec = valid_validator_spec();
+        spec.nat_traversal = Some(NatTraversalConfig {
+            enabled: true,
+            stun_servers: vec!["stun.example.com:3478".to_string()],
+            turn: None,
+            sidecar_image: "coturn/coturn:4.6.2".to_string(),
+        });
         assert!(spec.validate().is_ok());
     }
 

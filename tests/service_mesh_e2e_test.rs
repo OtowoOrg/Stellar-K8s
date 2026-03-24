@@ -89,6 +89,7 @@ mod tests {
                     linkerd: None,
                 }),
                 forensic_snapshot: None,
+                nat_traversal: None,
                 read_pool_endpoint: None,
                 resource_meta: None,
             },

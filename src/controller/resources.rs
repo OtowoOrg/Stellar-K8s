@@ -43,6 +43,7 @@ use crate::crd::{
     SecretKeySelector as CnpgSecretKeySelector, StellarNode, StorageConfiguration,
     WalBackupConfiguration,
 };
+use crate::crd::types::NatTraversalConfig;
 use crate::error::{Error, Result};
 
 /// Get the standard labels for a StellarNode's resources
@@ -1168,6 +1169,117 @@ pub async fn delete_ingress(client: &Client, node: &StellarNode) -> Result<()> {
     Ok(())
 }
 
+const NAT_TRAVERSAL_LOOP_SCRIPT: &str = r#"set -e
+mkdir -p /shared/nat
+STUN_LIST="${STUN_SERVERS:-stun.l.google.com:19302}"
+if [ -n "${TURN_STATIC_AUTH_SECRET:-}" ] && [ -n "${TURN_LISTENING_PORT:-}" ]; then
+  turnserver -n --log-file=stdout --no-cli \
+    --listening-ip=0.0.0.0 --listening-port="${TURN_LISTENING_PORT}" \
+    --realm="${TURN_REALM:-stellar-k8s}" --use-auth-secret --static-auth-secret="${TURN_STATIC_AUTH_SECRET}" \
+    --no-tls --no-dtls &
+  echo "turn:127.0.0.1:${TURN_LISTENING_PORT}?transport=udp" > /shared/nat/turn-uri.txt
+fi
+while true; do
+  for h in $(echo "$STUN_LIST" | tr ',' ' '); do
+    turnutils_stunclient "$h" > /shared/nat/stun-last.txt 2>&1 || true
+  done
+  sleep "${ICE_PROBE_INTERVAL_SECONDS:-30}"
+done
+"#;
+
+fn inject_nat_traversal_sidecar(pod_spec: &mut PodSpec, nt: &NatTraversalConfig) {
+    let stun_csv = nt.comma_separated_stun_servers();
+    let mut sidecar_env = vec![
+        EnvVar {
+            name: "STUN_SERVERS".to_string(),
+            value: Some(stun_csv.clone()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "ICE_PROBE_INTERVAL_SECONDS".to_string(),
+            value: Some("30".to_string()),
+            ..Default::default()
+        },
+    ];
+    if let Some(turn) = &nt.turn {
+        sidecar_env.push(EnvVar {
+            name: "TURN_REALM".to_string(),
+            value: Some(turn.realm.clone()),
+            ..Default::default()
+        });
+        sidecar_env.push(EnvVar {
+            name: "TURN_LISTENING_PORT".to_string(),
+            value: Some(turn.listening_port.to_string()),
+            ..Default::default()
+        });
+        if let Some(sec) = turn.static_auth_secret_ref.as_ref().filter(|s| !s.is_empty()) {
+            sidecar_env.push(EnvVar {
+                name: "TURN_STATIC_AUTH_SECRET".to_string(),
+                value_from: Some(EnvVarSource {
+                    secret_key_ref: Some(SecretKeySelector {
+                        name: Some(sec.clone()),
+                        key: "static-auth-secret".to_string(),
+                        optional: Some(false),
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+        }
+    }
+
+    pod_spec
+        .volumes
+        .get_or_insert_with(Vec::new)
+        .push(Volume {
+            name: "nat-ice".to_string(),
+            empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource::default()),
+            ..Default::default()
+        });
+
+    pod_spec.containers.push(Container {
+        name: "nat-traversal".to_string(),
+        image: Some(nt.sidecar_image.clone()),
+        command: Some(vec![
+            "/bin/bash".to_string(),
+            "-lc".to_string(),
+            NAT_TRAVERSAL_LOOP_SCRIPT.to_string(),
+        ]),
+        env: Some(sidecar_env),
+        volume_mounts: Some(vec![VolumeMount {
+            name: "nat-ice".to_string(),
+            mount_path: "/shared/nat".to_string(),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    });
+
+    if let Some(main) = pod_spec.containers.first_mut() {
+        let env = main.env.get_or_insert_with(Vec::new);
+        env.push(EnvVar {
+            name: "STELLAR_ICE_STUN_SERVERS".to_string(),
+            value: Some(stun_csv),
+            ..Default::default()
+        });
+        if nt.turn.is_some() {
+            let port = nt.turn.as_ref().map(|t| t.listening_port).unwrap_or(3478);
+            env.push(EnvVar {
+                name: "STELLAR_ICE_TURN_URI".to_string(),
+                value: Some(format!("turn:127.0.0.1:{port}?transport=udp")),
+                ..Default::default()
+            });
+        }
+        main.volume_mounts
+            .get_or_insert_with(Vec::new)
+            .push(VolumeMount {
+                name: "nat-ice".to_string(),
+                mount_path: "/shared/nat".to_string(),
+                read_only: Some(true),
+                ..Default::default()
+            });
+    }
+}
+
 // ============================================================================
 // Pod Template Builder
 // ============================================================================
@@ -1335,6 +1447,20 @@ fn build_pod_template(
                 }
             }
         }
+    }
+
+    if node
+        .spec
+        .nat_traversal
+        .as_ref()
+        .is_some_and(|n| n.enabled)
+    {
+        let nt = node
+            .spec
+            .nat_traversal
+            .as_ref()
+            .expect("nat_traversal checked enabled");
+        inject_nat_traversal_sidecar(&mut pod_spec, nt);
     }
 
     // ==========================================================================

@@ -66,6 +66,7 @@ mod tests {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            nat_traversal: None,
             resource_meta: None,
         }
     }

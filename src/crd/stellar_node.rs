@@ -13,7 +13,7 @@ use super::types::{
     AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
     DisasterRecoveryStatus, ExternalDatabaseConfig, ForensicSnapshotConfig, GlobalDiscoveryConfig,
     HistoryMode, HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig,
-    NetworkPolicyConfig, NodeType, OciSnapshotConfig, ResourceRequirements,
+    NatTraversalConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig, ResourceRequirements,
     RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy, SnapshotScheduleConfig,
     SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig, VpaConfig,
 };
@@ -181,6 +181,10 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forensic_snapshot: Option<ForensicSnapshotConfig>,
 
+    /// STUN/TURN sidecar for NAT-aware P2P (ICE-oriented discovery and optional TURN relay).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nat_traversal: Option<NatTraversalConfig>,
+
     #[schemars(skip)]
     pub resource_meta: Option<ObjectMeta>,
 }
@@ -243,6 +247,7 @@ impl StellarNodeSpec {
     /// # oci_snapshot: None,
     /// # service_mesh: None,
     /// # forensic_snapshot: None,
+    /// # nat_traversal: None,
     /// # vpa_config: None,
     /// # resource_meta: None,
     /// # read_pool_endpoint: None,
@@ -275,6 +280,25 @@ impl StellarNodeSpec {
                 "Cannot specify both minAvailable and maxUnavailable in PDB configuration",
                 "Set either spec.minAvailable or spec.maxUnavailable in the spec, but not both at the same time.",
             ));
+        }
+
+        if let Some(nt) = &self.nat_traversal {
+            if nt.enabled {
+                if let Some(turn) = &nt.turn {
+                    let ref_ok = turn
+                        .static_auth_secret_ref
+                        .as_ref()
+                        .map(|s| !s.trim().is_empty())
+                        .unwrap_or(false);
+                    if !ref_ok {
+                        errors.push(SpecValidationError::new(
+                            "spec.natTraversal.turn.staticAuthSecretRef",
+                            "staticAuthSecretRef is required when spec.natTraversal.turn is configured",
+                            "Create a Secret with key `static-auth-secret` and set spec.natTraversal.turn.staticAuthSecretRef, or remove the turn block to use STUN-only discovery.",
+                        ));
+                    }
+                }
+            }
         }
 
         // 2a. Storage Mode Validation
@@ -1148,6 +1172,7 @@ mod tests {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            nat_traversal: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
@@ -1203,6 +1228,7 @@ mod tests {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            nat_traversal: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,

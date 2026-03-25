@@ -35,6 +35,7 @@ use kube::api::{Api, DeleteParams, Patch, PatchParams, PostParams};
 use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
+use crate::crd::types::NatTraversalConfig;
 use crate::crd::{
     BackupConfiguration, BarmanObjectStore, BootstrapConfiguration, Cluster, ClusterSpec,
     HistoryMode, HsmProvider, IngressConfig, InitDbConfiguration, KeySource, ManagedDatabaseConfig,
@@ -43,7 +44,6 @@ use crate::crd::{
     SecretKeySelector as CnpgSecretKeySelector, StellarNode, StorageConfiguration,
     WalBackupConfiguration,
 };
-use crate::crd::types::NatTraversalConfig;
 use crate::error::{Error, Result};
 
 /// Get the standard labels for a StellarNode's resources
@@ -1212,7 +1212,11 @@ fn inject_nat_traversal_sidecar(pod_spec: &mut PodSpec, nt: &NatTraversalConfig)
             value: Some(turn.listening_port.to_string()),
             ..Default::default()
         });
-        if let Some(sec) = turn.static_auth_secret_ref.as_ref().filter(|s| !s.is_empty()) {
+        if let Some(sec) = turn
+            .static_auth_secret_ref
+            .as_ref()
+            .filter(|s| !s.is_empty())
+        {
             sidecar_env.push(EnvVar {
                 name: "TURN_STATIC_AUTH_SECRET".to_string(),
                 value_from: Some(EnvVarSource {
@@ -1228,14 +1232,11 @@ fn inject_nat_traversal_sidecar(pod_spec: &mut PodSpec, nt: &NatTraversalConfig)
         }
     }
 
-    pod_spec
-        .volumes
-        .get_or_insert_with(Vec::new)
-        .push(Volume {
-            name: "nat-ice".to_string(),
-            empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource::default()),
-            ..Default::default()
-        });
+    pod_spec.volumes.get_or_insert_with(Vec::new).push(Volume {
+        name: "nat-ice".to_string(),
+        empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource::default()),
+        ..Default::default()
+    });
 
     pod_spec.containers.push(Container {
         name: "nat-traversal".to_string(),
@@ -1449,12 +1450,7 @@ fn build_pod_template(
         }
     }
 
-    if node
-        .spec
-        .nat_traversal
-        .as_ref()
-        .is_some_and(|n| n.enabled)
-    {
+    if node.spec.nat_traversal.as_ref().is_some_and(|n| n.enabled) {
         let nt = node
             .spec
             .nat_traversal

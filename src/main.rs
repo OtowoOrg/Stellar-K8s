@@ -7,7 +7,7 @@ use k8s_openapi::api::coordination::v1::Lease;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::MicroTime;
 use kube::api::{Api, ObjectMeta, Patch, PatchParams, PostParams};
 use stellar_k8s::{controller, crd::StellarNode, Error};
-use tracing::{info, info_span, warn, Instrument, Level};
+use tracing::{debug, info, warn, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser, Debug)]
@@ -572,6 +572,7 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
     }
 
     // Create shared controller state
+    let operator_config = stellar_k8s::controller::OperatorConfig::load();
     let state = Arc::new(controller::ControllerState {
         client: client.clone(),
         enable_mtls: args.enable_mtls,
@@ -579,7 +580,7 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         mtls_config: mtls_config.clone(),
         dry_run: args.dry_run,
         is_leader: Arc::clone(&is_leader),
-        reconcile_id_counter: AtomicU64::new(0),
+        operator_config: Arc::new(operator_config),
     });
 
     // Start the peer discovery manager
@@ -700,13 +701,91 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         }
     }
 
-    // Run the main controller loop
-    let result = controller::run_controller(state).await;
+    // Run the main controller loop.
+    // The kube-rs controller already listens for OS signals via .shutdown_on_signal(),
+    // so this select! adds explicit lease release before the process exits.
+    let shutdown_state = state.clone();
+    let shutdown_client = client.clone();
+    let shutdown_namespace = args.namespace.clone();
+    let shutdown_is_leader = Arc::clone(&is_leader);
+    let shutdown_identity = holder_identity.clone();
+
+    let result = tokio::select! {
+        res = controller::run_controller(state) => {
+            res
+        }
+        _ = wait_for_shutdown_signal() => {
+            info!("Shutdown signal received – draining reconciliations and releasing leader lease...");
+            // Mark as non-leader so the renewal loop stops promoting us.
+            shutdown_is_leader.store(false, std::sync::atomic::Ordering::Relaxed);
+            drop(shutdown_state); // release controller state references
+            // Release the Kubernetes Lease so a peer can take over immediately.
+            release_leader_lease(&shutdown_client, &shutdown_namespace, &shutdown_identity).await;
+            // The controller future's .shutdown_on_signal() will have already
+            // stopped processing new work by this point; return cleanly.
+            Ok(())
+        }
+    };
 
     // Flush any remaining traces
     stellar_k8s::telemetry::shutdown_telemetry();
 
     result
+}
+
+/// Wait for SIGTERM or SIGINT (Ctrl-C).
+async fn wait_for_shutdown_signal() {
+    use tokio::signal;
+    #[cfg(unix)]
+    {
+        use signal::unix::{signal as unix_signal, SignalKind};
+        let mut sigterm =
+            unix_signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
+        let mut sigint =
+            unix_signal(SignalKind::interrupt()).expect("Failed to register SIGINT handler");
+        tokio::select! {
+            _ = sigterm.recv() => { info!("Received SIGTERM"); }
+            _ = sigint.recv()  => { info!("Received SIGINT");  }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        signal::ctrl_c().await.expect("Failed to listen for Ctrl-C");
+        info!("Received Ctrl-C");
+    }
+}
+
+/// Clear holderIdentity on the leader Lease so peers can promote immediately.
+/// Errors are logged but not propagated – we are already shutting down.
+async fn release_leader_lease(client: &kube::Client, namespace: &str, identity: &str) {
+    use k8s_openapi::api::coordination::v1::Lease;
+    use kube::api::{Api, Patch, PatchParams};
+
+    let leases: Api<Lease> = Api::namespaced(client.clone(), namespace);
+    let existing = match leases.get(LEASE_NAME).await {
+        Ok(l) => l,
+        Err(e) => {
+            warn!("Could not fetch lease for release: {:?}", e);
+            return;
+        }
+    };
+    let currently_held_by = existing
+        .spec
+        .as_ref()
+        .and_then(|s| s.holder_identity.as_deref())
+        .unwrap_or("");
+    if currently_held_by != identity {
+        debug!("Lease is held by {currently_held_by:?}, skipping release");
+        return;
+    }
+    let patch = serde_json::json!({ "spec": { "holderIdentity": null } });
+    match leases
+        .patch(LEASE_NAME, &PatchParams::default(), &Patch::Merge(&patch))
+        .await
+    {
+        Ok(_) => info!("Released leader lease {LEASE_NAME}"),
+        Err(e) => warn!("Failed to release leader lease: {:?}", e),
+    }
 }
 
 const LEASE_NAME: &str = "stellar-operator-leader";

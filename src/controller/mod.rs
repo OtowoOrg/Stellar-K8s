@@ -8,6 +8,7 @@ pub mod resource_meta;
 mod archive_health;
 pub mod captive_core;
 pub mod conditions;
+pub mod cost;
 pub mod cross_cluster;
 pub mod cve;
 mod cve_reconciler;
@@ -27,6 +28,7 @@ pub mod kms_secret;
 pub mod metrics;
 pub mod mtls;
 pub mod oci_snapshot;
+pub mod operator_config;
 pub mod peer_discovery;
 #[cfg(test)]
 mod peer_discovery_test;
@@ -57,6 +59,7 @@ pub use cross_cluster::{check_peer_latency, ensure_cross_cluster_services, PeerL
 pub use cve_reconciler::reconcile_cve_patches;
 pub use finalizers::STELLAR_NODE_FINALIZER;
 pub use health::{check_node_health, HealthCheckResult};
+pub use operator_config::{hardcoded_defaults, OperatorConfig};
 pub use peer_discovery::{
     get_peers_from_config_map, trigger_peer_config_reload, PeerDiscoveryConfig,
     PeerDiscoveryManager, PeerInfo,

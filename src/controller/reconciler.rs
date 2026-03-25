@@ -62,6 +62,7 @@ use super::kms_secret;
 use super::metrics;
 use super::mtls;
 use super::oci_snapshot;
+use super::operator_config::{hardcoded_defaults, OperatorConfig};
 use super::peer_discovery;
 use super::remediation;
 use super::resources;
@@ -85,14 +86,8 @@ pub struct ControllerState {
     pub mtls_config: Option<crate::MtlsConfig>,
     pub dry_run: bool,
     pub is_leader: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    /// Monotonically increasing id for each reconciliation attempt.
-    pub reconcile_id_counter: AtomicU64,
-}
-
-impl ControllerState {
-    pub fn next_reconcile_id(&self) -> u64 {
-        self.reconcile_id_counter.fetch_add(1, Ordering::Relaxed)
-    }
+    /// Operator-level config loaded from the Helm-rendered ConfigMap (defaultResources).
+    pub operator_config: std::sync::Arc<OperatorConfig>,
 }
 
 /// Main entry point to start the controller
@@ -130,6 +125,7 @@ impl ControllerState {
 ///         operator_namespace: "stellar-operator".to_string(),
 ///         dry_run: false,
 ///         is_leader: Arc::new(AtomicBool::new(true)),
+///         operator_config: Arc::new(Default::default()),
 ///     });
 ///     run_controller(state).await?;
 ///     Ok(())
@@ -171,6 +167,7 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
 }
 
 /// Helper to emit a Kubernetes Event
+#[instrument(skip(client, node, event_type, reason, message), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn emit_event(
     client: &Client,
     node: &StellarNode,
@@ -351,6 +348,38 @@ pub(crate) async fn apply_stellar_node(
     let name = node.name_any();
 
     info!("Applying StellarNode: {}/{}", namespace, name);
+
+    // Resolve effective resource requirements:
+    // Precedence: spec.resources (non-empty) > Helm defaults > hardcoded fallback.
+    let effective_resources = {
+        let spec_resources = &node.spec.resources;
+        if !spec_resources.requests.cpu.is_empty() {
+            // Spec wins — use as-is
+            spec_resources.clone()
+        } else if let Some(helm_d) = ctx.operator_config.defaults_for(&node.spec.node_type) {
+            crate::crd::ResourceRequirements {
+                requests: crate::crd::ResourceSpec {
+                    cpu: helm_d.requests.cpu.clone(),
+                    memory: helm_d.requests.memory.clone(),
+                },
+                limits: crate::crd::ResourceSpec {
+                    cpu: helm_d.limits.cpu.clone(),
+                    memory: helm_d.limits.memory.clone(),
+                },
+            }
+        } else {
+            hardcoded_defaults(&node.spec.node_type)
+        }
+    };
+    debug!(
+        "Effective resources for {}/{}: requests={}/{} limits={}/{}",
+        namespace,
+        name,
+        effective_resources.requests.cpu,
+        effective_resources.requests.memory,
+        effective_resources.limits.cpu,
+        effective_resources.limits.memory,
+    );
 
     // Validate the spec
     if let Err(errors) = node.spec.validate() {
@@ -1269,6 +1298,19 @@ pub(crate) async fn apply_stellar_node(
         .await?;
     }
 
+    // Cost estimation: annotate and export metric (non-fatal).
+    {
+        let cost = super::cost::estimate_monthly_cost(node);
+        if let Err(e) = super::cost::annotate_node_cost(client, node, cost).await {
+            warn!(
+                "Failed to annotate node cost for {}/{}: {:?}",
+                namespace, name, e
+            );
+        }
+        #[cfg(feature = "metrics")]
+        super::cost::report_cost_metric(&namespace, &name, &node.spec.node_type.to_string(), cost);
+    }
+
     // 13. Update status to Running with ready replica count
     Ok(Action::requeue(Duration::from_secs(if phase == "Ready" {
         60
@@ -1444,6 +1486,7 @@ pub(crate) async fn cleanup_stellar_node(
 }
 
 /// Fetch the ready replicas from the Deployment or StatefulSet status
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn get_ready_replicas(client: &Client, node: &StellarNode) -> Result<i32> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
@@ -1490,6 +1533,7 @@ async fn get_ready_replicas(client: &Client, node: &StellarNode) -> Result<i32> 
 
 /// Fetch the ready replicas for the canary deployment
 #[allow(dead_code)]
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn get_canary_ready_replicas(client: &Client, node: &StellarNode) -> Result<i32> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = format!("{}-canary", node.name_any());
@@ -1509,6 +1553,7 @@ async fn get_canary_ready_replicas(client: &Client, node: &StellarNode) -> Resul
 }
 
 /// Get the current version of the stable deployment
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn get_current_deployment_version(
     client: &Client,
     node: &StellarNode,
@@ -1535,6 +1580,7 @@ async fn get_current_deployment_version(
 
 /// Check health of canary pods
 #[allow(dead_code)]
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn check_canary_health(
     client: &Client,
     node: &StellarNode,
@@ -1551,6 +1597,7 @@ async fn check_canary_health(
 
 /// Update status for suspended nodes
 #[allow(deprecated)]
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn update_suspended_status(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
@@ -1603,6 +1650,7 @@ async fn update_suspended_status(client: &Client, node: &StellarNode) -> Result<
 
 /// Update the status subresource of a StellarNode using Kubernetes conditions pattern
 #[allow(deprecated)]
+#[instrument(skip(client, node, message), fields(name = %node.name_any(), namespace = node.namespace(), phase))]
 async fn update_status(
     client: &Client,
     node: &StellarNode,
@@ -1843,6 +1891,7 @@ async fn update_status(
 ///
 /// The function is intentionally fire-and-forget on individual per-URL errors so that a
 /// single unreachable archive does not block the rest of reconciliation.
+#[instrument(skip(client, node, archive_urls), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn run_archive_integrity_check(
     client: &Client,
     node: &StellarNode,
@@ -1948,6 +1997,7 @@ async fn run_archive_integrity_check(
     Ok(())
 }
 
+#[instrument(skip(client, node, result), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn update_archive_health_status(
     client: &Client,
     node: &StellarNode,
@@ -2016,6 +2066,7 @@ async fn update_archive_health_status(
 
 /// Update the status subresource with health check results
 #[allow(deprecated)]
+#[instrument(skip(client, node, message, health), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn update_status_with_health(
     client: &Client,
     node: &StellarNode,
@@ -2196,6 +2247,7 @@ async fn get_latest_network_ledger(network: &crate::crd::StellarNetwork) -> Resu
     Ok(ledger)
 }
 /// Update the status with DR results
+#[instrument(skip(client, node, dr_status), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn update_dr_status(
     client: &Client,
     node: &StellarNode,
@@ -2255,6 +2307,7 @@ pub(crate) fn error_policy(
 }
 
 /// Perform quorum analysis for validator nodes
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn perform_quorum_analysis(client: &Client, node: &StellarNode) -> Result<()> {
     use super::quorum::QuorumAnalyzer;
 

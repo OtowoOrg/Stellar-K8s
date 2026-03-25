@@ -1325,7 +1325,19 @@ pub(crate) async fn apply_stellar_node(
         super::cost::report_cost_metric(&namespace, &name, &node.spec.node_type.to_string(), cost);
     }
 
-    // 13. Update status to Running with ready replica count
+    // 13. Stamp audit annotations for the permanent reconcile trail.
+    {
+        use super::audit::actions;
+        let action = match node.spec.node_type {
+            crate::crd::NodeType::Validator => actions::UPDATED_STATEFULSET,
+            crate::crd::NodeType::Horizon | crate::crd::NodeType::SorobanRpc => {
+                actions::UPDATED_DEPLOYMENT
+            }
+        };
+        super::audit::patch_audit_annotations(client, node, action).await;
+    }
+
+    // 14. Update status to Running with ready replica count
     Ok(Action::requeue(Duration::from_secs(if phase == "Ready" {
         60
     } else {

@@ -85,13 +85,46 @@ pub(crate) fn resource_name(node: &StellarNode, suffix: &str) -> String {
     format!("{}-{}", node.name_any(), suffix)
 }
 
+/// Create PostParams with dry-run support
+fn post_params(dry_run: bool) -> PostParams {
+    if dry_run {
+        PostParams {
+            dry_run: true,
+            ..Default::default()
+        }
+    } else {
+        PostParams::default()
+    }
+}
+
+/// Create PatchParams with dry-run support
+fn patch_params(dry_run: bool) -> PatchParams {
+    let mut params = PatchParams::apply("stellar-operator").force();
+    if dry_run {
+        params.dry_run = true;
+    }
+    params
+}
+
+/// Create DeleteParams with dry-run support
+fn delete_params(dry_run: bool) -> DeleteParams {
+    if dry_run {
+        DeleteParams {
+            dry_run: true,
+            ..Default::default()
+        }
+    } else {
+        DeleteParams::default()
+    }
+}
+
 // ============================================================================
 // PersistentVolumeClaim
 // ============================================================================
 
 /// Ensure a PersistentVolumeClaim exists for the node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_pvc(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_pvc(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<PersistentVolumeClaim> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "data");
@@ -121,7 +154,7 @@ pub async fn ensure_pvc(client: &Client, node: &StellarNode) -> Result<()> {
         }
         Err(kube::Error::Api(e)) if e.code == 404 => {
             info!("Creating PVC {}", name);
-            api.create(&PostParams::default(), &pvc).await?;
+            api.create(&post_params(dry_run), &pvc).await?;
         }
         Err(e) => return Err(Error::KubeError(e)),
     }
@@ -193,12 +226,12 @@ fn build_pvc(node: &StellarNode, storage_class_name: String) -> PersistentVolume
 
 /// Delete the PersistentVolumeClaim for a node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_pvc(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_pvc(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<PersistentVolumeClaim> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "data");
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("Deleted PVC {}", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {
             warn!("PVC {} not found, already deleted", name);
@@ -220,6 +253,7 @@ pub async fn ensure_config_map(
     node: &StellarNode,
     quorum_override: Option<crate::controller::vsl::QuorumSet>,
     enable_mtls: bool,
+    dry_run: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
@@ -228,12 +262,7 @@ pub async fn ensure_config_map(
     let cm = build_config_map(node, quorum_override, enable_mtls);
 
     let patch = Patch::Apply(&cm);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     Ok(())
 }
@@ -358,12 +387,12 @@ fn build_config_map(
 
 /// Delete the ConfigMap for a node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_config_map(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_config_map(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "config");
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("Deleted ConfigMap {}", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {
             warn!("ConfigMap {} not found", name);
@@ -384,6 +413,7 @@ pub async fn ensure_deployment(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
+    dry_run: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
@@ -392,12 +422,7 @@ pub async fn ensure_deployment(
     let deployment = build_deployment(node, enable_mtls);
 
     let patch = Patch::Apply(&deployment);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     Ok(())
 }
@@ -407,6 +432,7 @@ pub async fn ensure_canary_deployment(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
+    dry_run: bool,
 ) -> Result<()> {
     let canary_version = match node
         .status
@@ -445,12 +471,7 @@ pub async fn ensure_canary_deployment(
     }
 
     let patch = Patch::Apply(&deployment);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     Ok(())
 }
@@ -504,8 +525,8 @@ pub async fn ensure_statefulset(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
-    // *** NEW PARAMETER ***
     seed_injection: Option<&kms_secret::SeedInjectionSpec>,
+    dry_run: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<StatefulSet> = Api::namespaced(client.clone(), &namespace);
@@ -515,12 +536,7 @@ pub async fn ensure_statefulset(
     let statefulset = build_statefulset(node, enable_mtls, seed_injection);
 
     let patch = Patch::Apply(&statefulset);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     Ok(())
 }
@@ -571,14 +587,14 @@ fn build_statefulset(
 
 /// Delete the workload (Deployment or StatefulSet) for a node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_workload(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_workload(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
 
     match node.spec.node_type {
         NodeType::Validator => {
             let api: Api<StatefulSet> = Api::namespaced(client.clone(), &namespace);
-            match api.delete(&name, &DeleteParams::default()).await {
+            match api.delete(&name, &delete_params(dry_run)).await {
                 Ok(_) => info!("Deleted StatefulSet {}", name),
                 Err(kube::Error::Api(e)) if e.code == 404 => {
                     warn!("StatefulSet {} not found", name);
@@ -588,7 +604,7 @@ pub async fn delete_workload(client: &Client, node: &StellarNode) -> Result<()> 
         }
         _ => {
             let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
-            match api.delete(&name, &DeleteParams::default()).await {
+            match api.delete(&name, &delete_params(dry_run)).await {
                 Ok(_) => info!("Deleted Deployment {}", name),
                 Err(kube::Error::Api(e)) if e.code == 404 => {
                     warn!("Deployment {} not found", name);
@@ -607,7 +623,12 @@ pub async fn delete_workload(client: &Client, node: &StellarNode) -> Result<()> 
 
 /// Ensure a Service exists for the node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_service(client: &Client, node: &StellarNode, enable_mtls: bool) -> Result<()> {
+pub async fn ensure_service(
+    client: &Client,
+    node: &StellarNode,
+    enable_mtls: bool,
+    dry_run: bool,
+) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
@@ -615,12 +636,7 @@ pub async fn ensure_service(client: &Client, node: &StellarNode, enable_mtls: bo
     let service = build_service(node, enable_mtls);
 
     let patch = Patch::Apply(&service);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     Ok(())
 }
@@ -630,6 +646,7 @@ pub async fn ensure_canary_service(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
+    dry_run: bool,
 ) -> Result<()> {
     if node
         .status
@@ -659,12 +676,7 @@ pub async fn ensure_canary_service(
     }
 
     let patch = Patch::Apply(&service);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     Ok(())
 }
@@ -748,12 +760,12 @@ pub async fn delete_metallb_config(_client: &Client, _node: &StellarNode) -> Res
 
 /// Delete the Service for a node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_service(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_service(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("Deleted Service {}", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {
             warn!("Service {} not found", name);
@@ -769,7 +781,7 @@ pub async fn delete_service(client: &Client, node: &StellarNode) -> Result<()> {
 // ============================================================================
 
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_cnpg_cluster(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_cnpg_cluster(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let managed_db = match &node.spec.managed_database {
         Some(cfg) => cfg,
         None => return Ok(()),
@@ -782,12 +794,7 @@ pub async fn ensure_cnpg_cluster(client: &Client, node: &StellarNode) -> Result<
     let cluster = build_cnpg_cluster(node, managed_db);
 
     let patch = Patch::Apply(&cluster);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     info!("CNPG Cluster ensured for {}/{}", namespace, name);
     Ok(())
@@ -870,7 +877,7 @@ fn build_cnpg_cluster(node: &StellarNode, config: &ManagedDatabaseConfig) -> Clu
 }
 
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_cnpg_pooler(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_cnpg_pooler(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let managed_db = match &node.spec.managed_database {
         Some(cfg) => cfg,
         None => return Ok(()),
@@ -888,12 +895,7 @@ pub async fn ensure_cnpg_pooler(client: &Client, node: &StellarNode) -> Result<(
     let pooler = build_cnpg_pooler(node, pgbouncer);
 
     let patch = Patch::Apply(&pooler);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     info!("CNPG Pooler ensured for {}/{}", namespace, name);
     Ok(())
@@ -948,7 +950,11 @@ fn build_cnpg_pooler(node: &StellarNode, config: &crate::crd::PgBouncerConfig) -
 }
 
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_cnpg_resources(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_cnpg_resources(
+    client: &Client,
+    node: &StellarNode,
+    dry_run: bool,
+) -> Result<()> {
     if node.spec.managed_database.is_none() {
         return Ok(());
     }
@@ -958,13 +964,13 @@ pub async fn delete_cnpg_resources(client: &Client, node: &StellarNode) -> Resul
     let pooler_api: Api<Pooler> = Api::namespaced(client.clone(), &namespace);
     let pooler_name = resource_name(node, "pooler");
     let _ = pooler_api
-        .delete(&pooler_name, &DeleteParams::default())
+        .delete(&pooler_name, &delete_params(dry_run))
         .await;
 
     let cluster_api: Api<Cluster> = Api::namespaced(client.clone(), &namespace);
     let cluster_name = node.name_any();
     let _ = cluster_api
-        .delete(&cluster_name, &DeleteParams::default())
+        .delete(&cluster_name, &delete_params(dry_run))
         .await;
 
     Ok(())
@@ -975,7 +981,7 @@ pub async fn delete_cnpg_resources(client: &Client, node: &StellarNode) -> Resul
 // ============================================================================
 
 #[allow(dead_code)]
-pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_ingress(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let ingress_cfg = match &node.spec.ingress {
         Some(cfg)
             if matches!(
@@ -994,12 +1000,8 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
 
     let ingress = build_ingress(node, ingress_cfg);
 
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &Patch::Apply(&ingress),
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &Patch::Apply(&ingress))
+        .await?;
 
     info!("Ingress ensured for {}/{}", namespace, name);
 
@@ -1050,14 +1052,14 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
 
             api.patch(
                 &canary_name,
-                &PatchParams::apply("stellar-operator").force(),
+                &patch_params(dry_run),
                 &Patch::Apply(&canary_ingress),
             )
             .await?;
             info!("Canary Ingress ensured for {}/{}", namespace, canary_name);
         } else {
             let canary_name = format!("{name}-canary");
-            let _ = api.delete(&canary_name, &DeleteParams::default()).await;
+            let _ = api.delete(&canary_name, &delete_params(dry_run)).await;
         }
     }
 
@@ -1148,7 +1150,7 @@ fn build_ingress(node: &StellarNode, config: &IngressConfig) -> Ingress {
     }
 }
 
-pub async fn delete_ingress(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_ingress(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     if node.spec.ingress.is_none() {
         return Ok(());
     }
@@ -1157,7 +1159,7 @@ pub async fn delete_ingress(client: &Client, node: &StellarNode) -> Result<()> {
     let api: Api<Ingress> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "ingress");
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("Deleted Ingress {}", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {
             warn!("Ingress {} not found, already deleted", name);
@@ -1694,7 +1696,7 @@ fn build_horizon_migration_container(node: &StellarNode) -> Container {
 // HorizontalPodAutoscaler — unchanged
 // ============================================================================
 
-pub async fn ensure_hpa(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_hpa(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     if !matches!(
         node.spec.node_type,
         NodeType::Horizon | NodeType::SorobanRpc
@@ -1710,12 +1712,7 @@ pub async fn ensure_hpa(client: &Client, node: &StellarNode) -> Result<()> {
     let hpa = build_hpa(node)?;
 
     let patch = Patch::Apply(&hpa);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     info!("HPA ensured for {}/{}", namespace, name);
     Ok(())
@@ -1725,12 +1722,12 @@ pub async fn ensure_hpa(client: &Client, node: &StellarNode) -> Result<()> {
 // Alerting — unchanged
 // ============================================================================
 
-pub async fn ensure_alerting(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_alerting(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = resource_name(node, "alerts");
 
     if !node.spec.alerting {
-        return delete_alerting(client, node).await;
+        return delete_alerting(client, node, dry_run).await;
     }
 
     let labels = standard_labels(node);
@@ -1787,12 +1784,7 @@ pub async fn ensure_alerting(client: &Client, node: &StellarNode) -> Result<()> 
 
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
     let patch = Patch::Apply(&cm);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     info!(
         "Alerting ConfigMap {} ensured for {}/{}",
@@ -1922,7 +1914,7 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
     Ok(hpa)
 }
 
-pub async fn delete_hpa(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_hpa(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     if node.spec.autoscaling.is_none() {
         return Ok(());
     }
@@ -1931,7 +1923,7 @@ pub async fn delete_hpa(client: &Client, node: &StellarNode) -> Result<()> {
     let api: Api<HorizontalPodAutoscaler> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "hpa");
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => {
             info!("HPA deleted for {}/{}", namespace, name);
         }
@@ -1986,12 +1978,12 @@ pub async fn delete_service_monitor(_client: &Client, node: &StellarNode) -> Res
     Ok(())
 }
 
-pub async fn delete_alerting(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_alerting(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = resource_name(node, "alerts");
 
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("Deleted alerting ConfigMap {}", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {}
         Err(e) => return Err(Error::KubeError(e)),
@@ -2000,22 +1992,26 @@ pub async fn delete_alerting(client: &Client, node: &StellarNode) -> Result<()> 
     Ok(())
 }
 
-pub async fn delete_canary_resources(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_canary_resources(
+    client: &Client,
+    node: &StellarNode,
+    dry_run: bool,
+) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
     let canary_name = format!("{name}-canary");
 
     if node.spec.ingress.is_some() {
         let api: Api<Ingress> = Api::namespaced(client.clone(), &namespace);
-        let _ = api.delete(&canary_name, &DeleteParams::default()).await;
+        let _ = api.delete(&canary_name, &delete_params(dry_run)).await;
     }
 
     let api_svc: Api<Service> = Api::namespaced(client.clone(), &namespace);
-    let _ = api_svc.delete(&canary_name, &DeleteParams::default()).await;
+    let _ = api_svc.delete(&canary_name, &delete_params(dry_run)).await;
 
     let api_deploy: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
     let _ = api_deploy
-        .delete(&canary_name, &DeleteParams::default())
+        .delete(&canary_name, &delete_params(dry_run))
         .await;
 
     Ok(())
@@ -2026,7 +2022,11 @@ pub async fn delete_canary_resources(client: &Client, node: &StellarNode) -> Res
 // ============================================================================
 
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_network_policy(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_network_policy(
+    client: &Client,
+    node: &StellarNode,
+    dry_run: bool,
+) -> Result<()> {
     let policy_cfg = match &node.spec.network_policy {
         Some(cfg) if cfg.enabled => cfg,
         _ => return Ok(()),
@@ -2040,7 +2040,7 @@ pub async fn ensure_network_policy(client: &Client, node: &StellarNode) -> Resul
 
     api.patch(
         &name,
-        &PatchParams::apply("stellar-operator").force(),
+        &patch_params(dry_run),
         &Patch::Apply(&network_policy),
     )
     .await?;
@@ -2203,12 +2203,16 @@ fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> Net
 }
 
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_network_policy(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_network_policy(
+    client: &Client,
+    node: &StellarNode,
+    dry_run: bool,
+) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<NetworkPolicy> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "netpol");
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("NetworkPolicy {} deleted", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {
             info!("NetworkPolicy {} not found, skipping delete", name);
@@ -2262,9 +2266,9 @@ fn build_pdb(node: &StellarNode) -> Option<PodDisruptionBudget> {
     })
 }
 
-pub async fn ensure_pdb(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_pdb(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     if node.spec.replicas <= 1 {
-        return delete_pdb(client, node).await;
+        return delete_pdb(client, node, dry_run).await;
     }
 
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
@@ -2274,7 +2278,7 @@ pub async fn ensure_pdb(client: &Client, node: &StellarNode) -> Result<()> {
         let name = pdb.metadata.name.clone().unwrap();
 
         info!("Reconciling PodDisruptionBudget {}/{}", namespace, name);
-        let params = PatchParams::apply("stellar-operator").force();
+        let params = patch_params(dry_run);
         api.patch(&name, &params, &Patch::Apply(&pdb))
             .await
             .map_err(Error::KubeError)?;
@@ -2283,13 +2287,13 @@ pub async fn ensure_pdb(client: &Client, node: &StellarNode) -> Result<()> {
     Ok(())
 }
 
-pub async fn delete_pdb(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_pdb(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
 
     let api: Api<PodDisruptionBudget> = Api::namespaced(client.clone(), &namespace);
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("Deleted PodDisruptionBudget {}/{}", namespace, name),
         Err(kube::Error::Api(e)) if e.code == 404 => {}
         Err(e) => return Err(Error::KubeError(e)),

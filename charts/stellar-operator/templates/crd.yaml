@@ -49,6 +49,11 @@ spec:
                   type: boolean
                   default: false
                   description: Suspend the node without deleting resources
+                podAntiAffinity:
+                  type: string
+                  enum: [Hard, Soft, Disabled]
+                  default: Hard
+                  description: Pod anti-affinity strength for same-network stellar-node pods
                 strategy:
                   type: object
                   properties:

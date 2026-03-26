@@ -1,0 +1,61 @@
+# Docker Compose Development Environment for Stellar-K8s
+# Provides a local development setup without requiring a full K8s cluster
+version: '3.8'
+
+services:
+  # K3s lightweight Kubernetes in Docker
+  k3s:
+    image: rancher/k3s:v1.28.5-k3s1
+    command: server --disable traefik --disable servicelb --disable metrics-server
+    privileged: true
+    environment:
+      - K3S_TOKEN=stellar-dev-token
+      - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+      - K3S_KUBECONFIG_MODE=666
+    volumes:
+      - k3s-server:/var/lib/rancher/k3s
+      - ./kubeconfig:/output
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "6443:6443"  # Kubernetes API
+      - "8080:8080"  # Operator REST API
+      - "9090:9090"  # Operator Metrics
+    tmpfs:
+      - /run
+      - /var/run
+    networks:
+      - stellar-dev
+    healthcheck:
+      test: ["CMD", "kubectl", "get", "nodes"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Stellar Operator in dry-run mode
+  stellar-operator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["stellar-operator", "run", "--namespace", "stellar-system", "--dry-run"]
+    environment:
+      - RUST_LOG=info,stellar_k8s=debug
+      - OPERATOR_NAMESPACE=stellar-system
+      - DRY_RUN=true
+      - KUBECONFIG=/kubeconfig/kubeconfig.yaml
+    volumes:
+      - ./kubeconfig:/kubeconfig:ro
+      - ./config:/etc/stellar-operator:ro
+    depends_on:
+      k3s:
+        condition: service_healthy
+    networks:
+      - stellar-dev
+    restart: unless-stopped
+
+volumes:
+  k3s-server:
+    driver: local
+
+networks:
+  stellar-dev:
+    driver: bridge

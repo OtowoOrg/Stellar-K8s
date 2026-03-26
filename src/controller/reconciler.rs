@@ -27,12 +27,13 @@ use k8s_openapi::api::policy::v1::PodDisruptionBudget;
 
 use futures::StreamExt;
 use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
-use k8s_openapi::api::core::v1::{Event, PersistentVolumeClaim, Service};
+use k8s_openapi::api::core::v1::{PersistentVolumeClaim, Service};
 use kube::{
-    api::{Api, Patch, PatchParams, PostParams},
+    api::{Api, Patch, PatchParams},
     client::Client,
     runtime::{
         controller::{Action, Controller},
+        events::{Event as K8sRecorderEvent, EventType, Recorder, Reporter},
         finalizer::{finalizer, Event as FinalizerEvent},
         watcher::Config,
     },
@@ -82,9 +83,14 @@ pub struct ControllerState {
     pub client: Client,
     pub enable_mtls: bool,
     pub operator_namespace: String,
+    /// Restrict the operator to only watch and manage StellarNode resources in this namespace.
+    /// If None, the operator watches all namespaces.
+    pub watch_namespace: Option<String>,
     pub mtls_config: Option<crate::MtlsConfig>,
     pub dry_run: bool,
     pub is_leader: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Identifies this operator when publishing Kubernetes Events via [`Recorder`].
+    pub event_reporter: Reporter,
     /// Operator-level config loaded from the Helm-rendered ConfigMap (defaultResources).
     pub operator_config: std::sync::Arc<OperatorConfig>,
 }
@@ -122,8 +128,13 @@ pub struct ControllerState {
 ///         enable_mtls: false,
 ///         mtls_config: None,
 ///         operator_namespace: "stellar-operator".to_string(),
+///         watch_namespace: None,
 ///         dry_run: false,
 ///         is_leader: Arc::new(AtomicBool::new(true)),
+///         event_reporter: kube::runtime::events::Reporter {
+///             controller: "stellar-operator".to_string(),
+///             instance: None,
+///         },
 ///         operator_config: Arc::new(Default::default()),
 ///     });
 ///     run_controller(state).await?;
@@ -132,9 +143,23 @@ pub struct ControllerState {
 /// ```
 pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
     let client = state.client.clone();
-    let stellar_nodes: Api<StellarNode> = Api::all(client.clone());
+    let stellar_nodes: Api<StellarNode> = if let Some(ns) = &state.watch_namespace {
+        Api::namespaced(client.clone(), ns)
+    } else {
+        Api::all(client.clone())
+    };
 
-    info!("Starting StellarNode controller");
+    info!(
+        "Starting StellarNode controller (mode: {})",
+        if state.watch_namespace.is_some() {
+            format!(
+                "namespace-scoped: {}",
+                state.watch_namespace.as_ref().unwrap()
+            )
+        } else {
+            "cluster-scoped".to_string()
+        }
+    );
 
     // Verify CRD exists
     match stellar_nodes.list(&Default::default()).await {
@@ -152,11 +177,46 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
 
     Controller::new(stellar_nodes, Config::default())
         // Watch owned resources for changes
-        .owns::<Deployment>(Api::all(client.clone()), Config::default())
-        .owns::<StatefulSet>(Api::all(client.clone()), Config::default())
-        .owns::<Service>(Api::all(client.clone()), Config::default())
-        .owns::<PersistentVolumeClaim>(Api::all(client.clone()), Config::default())
-        .owns::<PodDisruptionBudget>(Api::all(client.clone()), Config::default())
+        .owns::<Deployment>(
+            if let Some(ns) = &state.watch_namespace {
+                Api::namespaced(client.clone(), ns)
+            } else {
+                Api::all(client.clone())
+            },
+            Config::default(),
+        )
+        .owns::<StatefulSet>(
+            if let Some(ns) = &state.watch_namespace {
+                Api::namespaced(client.clone(), ns)
+            } else {
+                Api::all(client.clone())
+            },
+            Config::default(),
+        )
+        .owns::<Service>(
+            if let Some(ns) = &state.watch_namespace {
+                Api::namespaced(client.clone(), ns)
+            } else {
+                Api::all(client.clone())
+            },
+            Config::default(),
+        )
+        .owns::<PersistentVolumeClaim>(
+            if let Some(ns) = &state.watch_namespace {
+                Api::namespaced(client.clone(), ns)
+            } else {
+                Api::all(client.clone())
+            },
+            Config::default(),
+        )
+        .owns::<PodDisruptionBudget>(
+            if let Some(ns) = &state.watch_namespace {
+                Api::namespaced(client.clone(), ns)
+            } else {
+                Api::all(client.clone())
+            },
+            Config::default(),
+        )
         .shutdown_on_signal()
         .run(reconcile, error_policy, state)
         .for_each(|res| async move {
@@ -170,39 +230,81 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
     Ok(())
 }
 
+fn recorder_for(client: &Client, reporter: &Reporter, node: &StellarNode) -> Recorder {
+    Recorder::new(client.clone(), reporter.clone(), node.object_ref(&()))
+}
+
+/// Publish a Kubernetes Event attached to the StellarNode using kube-rs [`Recorder`].
+async fn publish_object_event(
+    recorder: &Recorder,
+    type_: EventType,
+    reason: &str,
+    action: &str,
+    note: &str,
+) -> Result<()> {
+    recorder
+        .publish(K8sRecorderEvent {
+            type_,
+            reason: reason.to_string(),
+            action: action.to_string(),
+            note: Some(note.to_string()),
+            secondary: None,
+        })
+        .await
+        .map_err(Error::KubeError)
+}
+
 /// Helper to emit a Kubernetes Event
-#[instrument(skip(client, node, event_type, reason, message), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[instrument(skip(client, reporter, node, reason, note), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn emit_event(
     client: &Client,
+    reporter: &Reporter,
     node: &StellarNode,
-    event_type: &str,
+    type_: EventType,
     reason: &str,
-    message: &str,
+    action: &str,
+    note: &str,
 ) -> Result<()> {
+    let recorder = recorder_for(client, reporter, node);
+    publish_object_event(&recorder, type_, reason, action, note).await
+}
+
+/// Convenience wrapper — identical to [`emit_event`]; used by callers that
+/// prefer the `publish_stellar_event` name for clarity.
+async fn publish_stellar_event(
+    client: &Client,
+    reporter: &Reporter,
+    node: &StellarNode,
+    type_: EventType,
+    reason: &str,
+    action: &str,
+    note: &str,
+) -> Result<()> {
+    emit_event(client, reporter, node, type_, reason, action, note).await
+}
+
+/// Returns whether the primary workload (Deployment or StatefulSet) for this node already exists.
+async fn workload_resource_exists(client: &Client, node: &StellarNode) -> Result<bool> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let events: Api<Event> = Api::namespaced(client.clone(), &namespace);
-
-    let time = chrono::Utc::now();
-    let event = Event {
-        metadata: kube::api::ObjectMeta {
-            generate_name: Some(format!("{}-event-", node.name_any())),
-            ..Default::default()
-        },
-        type_: Some(event_type.to_string()),
-        reason: Some(reason.to_string()),
-        message: Some(message.to_string()),
-        involved_object: node.object_ref(&()),
-        first_timestamp: Some(k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(time)),
-        last_timestamp: Some(k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(time)),
-        count: Some(1),
-        ..Default::default()
-    };
-
-    events
-        .create(&PostParams::default(), &event)
-        .await
-        .map_err(Error::KubeError)?;
-    Ok(())
+    let name = node.name_any();
+    match node.spec.node_type {
+        NodeType::Validator => {
+            let api: Api<StatefulSet> = Api::namespaced(client.clone(), &namespace);
+            match api.get(&name).await {
+                Ok(_) => Ok(true),
+                Err(kube::Error::Api(e)) if e.code == 404 => Ok(false),
+                Err(e) => Err(Error::KubeError(e)),
+            }
+        }
+        NodeType::Horizon | NodeType::SorobanRpc => {
+            let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
+            match api.get(&name).await {
+                Ok(_) => Ok(true),
+                Err(kube::Error::Api(e)) if e.code == 404 => Ok(false),
+                Err(e) => Err(Error::KubeError(e)),
+            }
+        }
+    }
 }
 
 /// Format structured spec validation errors into a user-friendly message
@@ -220,11 +322,21 @@ fn format_spec_validation_errors(errors: &[SpecValidationError]) -> String {
 /// Emit a single grouped Kubernetes Event for all spec validation errors
 async fn emit_spec_validation_event(
     client: &Client,
+    reporter: &Reporter,
     node: &StellarNode,
     errors: &[SpecValidationError],
 ) -> Result<()> {
     let message = format_spec_validation_errors(errors);
-    emit_event(client, node, "Warning", "SpecValidationFailed", &message).await
+    publish_stellar_event(
+        client,
+        reporter,
+        node,
+        EventType::Warning,
+        "SpecValidationFailed",
+        "ValidationFailed",
+        &message,
+    )
+    .await
 }
 /// Action types for apply_or_emit helper
 #[derive(Debug, Clone, Copy)]
@@ -263,6 +375,16 @@ where
         };
         let message = format!("Dry Run: Would {action} {resource_info}");
         info!("{}", message);
+        publish_stellar_event(
+            &ctx.client,
+            &ctx.event_reporter,
+            node,
+            EventType::Normal,
+            reason,
+            "DryRun",
+            &message,
+        )
+        .await?;
         // Enhanced logging with resource type and namespace
         let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
         let name = node.name_any();
@@ -270,7 +392,6 @@ where
             "Dry Run: {} {}/{} - {}",
             action, namespace, name, resource_info
         );
-        emit_event(&ctx.client, node, "Normal", reason, &message).await?;
         Ok(())
     } else {
         fut.await
@@ -383,7 +504,7 @@ pub(crate) async fn apply_stellar_node(
     if let Err(errors) = node.spec.validate() {
         let message = format_spec_validation_errors(&errors);
         warn!("Validation failed for {}/{}: {}", namespace, name, message);
-        emit_spec_validation_event(client, node, &errors).await?;
+        emit_spec_validation_event(client, &ctx.event_reporter, node, &errors).await?;
         update_status(client, node, "Failed", Some(&message), 0, true).await?;
         return Err(Error::ValidationError(message));
     }
@@ -496,11 +617,13 @@ pub(crate) async fn apply_stellar_node(
                         namespace, name, current_version
                     );
 
-                    emit_event(
+                    publish_stellar_event(
                         client,
+                        &ctx.event_reporter,
                         node,
-                        "Normal",
+                        EventType::Normal,
                         "DatabaseMigrationRequired",
+                        "Migrate",
                         &format!(
                             "Database migration will be performed via InitContainer for version {current_version}"
                         ),
@@ -543,11 +666,13 @@ pub(crate) async fn apply_stellar_node(
                         );
 
                         // Emit Kubernetes Event
-                        emit_event(
+                        publish_stellar_event(
                             client,
+                            &ctx.event_reporter,
                             node,
-                            "Warning",
+                            EventType::Warning,
                             "ArchiveHealthCheckFailed",
+                            "ArchiveHealth",
                             &format!(
                                 "None of the configured archives are reachable:\n{}",
                                 health_result.error_details()
@@ -631,6 +756,7 @@ pub(crate) async fn apply_stellar_node(
                 if should_run {
                     if let Err(e) = run_archive_integrity_check(
                         client,
+                        &ctx.event_reporter,
                         node,
                         &validator_config.history_archive_urls,
                     )
@@ -680,11 +806,13 @@ pub(crate) async fn apply_stellar_node(
                     }
                     Err(e) => {
                         warn!("Failed to fetch VSL for {}/{}: {}", namespace, name, e);
-                        emit_event(
+                        publish_stellar_event(
                             client,
+                            &ctx.event_reporter,
                             node,
-                            "Warning",
+                            EventType::Warning,
                             "VSLFetchFailed",
+                            "VSLFetch",
                             &format!("Failed to fetch VSL from {vl_source}: {e}"),
                         )
                         .await?;
@@ -740,6 +868,10 @@ pub(crate) async fn apply_stellar_node(
         Ok(())
     })
     .await?;
+
+    let workload_existed_before = workload_resource_exists(client, node)
+        .await
+        .unwrap_or(false);
 
     // 5. Create/update the Deployment/StatefulSet based on node type
     apply_or_emit(
@@ -906,6 +1038,7 @@ pub(crate) async fn apply_stellar_node(
                                                 // Create a k8s event for the rollback
                                                 let _ = remediation::emit_remediation_event(
                                                     client,
+                                                    &ctx.event_reporter,
                                                     node,
                                                     remediation::RemediationLevel::Restart, // Not exactly a restart but conceptually similar action
                                                     &message,
@@ -939,6 +1072,24 @@ pub(crate) async fn apply_stellar_node(
         },
     )
     .await?;
+
+    if !ctx.dry_run {
+        let workload_exists_after = workload_resource_exists(client, node).await.unwrap_or(true);
+        if !workload_existed_before && workload_exists_after {
+            let recorder = recorder_for(client, &ctx.event_reporter, node);
+            if let Err(e) = publish_object_event(
+                &recorder,
+                EventType::Normal,
+                "SuccessfulReconciliation",
+                "Created",
+                "Managed workload and related Kubernetes resources were created for this StellarNode.",
+            )
+            .await
+            {
+                warn!("Failed to publish SuccessfulReconciliation event: {e}");
+            }
+        }
+    }
 
     // 5a. MetalLB / LoadBalancer
     apply_or_emit(
@@ -1100,7 +1251,27 @@ pub(crate) async fn apply_stellar_node(
     }
 
     // 8. Disaster Recovery reconciliation
+    let prev_dr_failover = node
+        .status
+        .as_ref()
+        .and_then(|s| s.dr_status.as_ref())
+        .map(|d| d.failover_active)
+        .unwrap_or(false);
     if let Some(mut dr_status) = dr::reconcile_dr(client, node).await? {
+        if dr_status.failover_active && !prev_dr_failover {
+            let recorder = recorder_for(client, &ctx.event_reporter, node);
+            if let Err(e) = publish_object_event(
+                &recorder,
+                EventType::Normal,
+                "NodePromotedToPrimary",
+                "Failover",
+                "DR failover activated; this standby node is now primary.",
+            )
+            .await
+            {
+                warn!("Failed to publish NodePromotedToPrimary event: {e}");
+            }
+        }
         // 8a. Check if DR drill should be executed
         if let Some(drill_config) = &node
             .spec
@@ -1142,6 +1313,7 @@ pub(crate) async fn apply_stellar_node(
                     async {
                         remediation::emit_remediation_event(
                             client,
+                            &ctx.event_reporter,
                             node,
                             remediation::RemediationLevel::Restart,
                             "Stale ledger",
@@ -1175,6 +1347,28 @@ pub(crate) async fn apply_stellar_node(
                 Ok(())
             })
             .await?;
+        }
+    }
+
+    let prev_ready_reason = node.status.as_ref().and_then(|s| {
+        conditions::find_condition(&s.conditions, conditions::CONDITION_TYPE_READY)
+            .map(|c| c.reason.clone())
+    });
+    let sync_lag_begun = health_result.healthy
+        && !health_result.synced
+        && prev_ready_reason.as_deref() != Some("NodeSyncing");
+    if sync_lag_begun {
+        let recorder = recorder_for(client, &ctx.event_reporter, node);
+        if let Err(e) = publish_object_event(
+            &recorder,
+            EventType::Warning,
+            "SyncLagDetected",
+            "Syncing",
+            &health_result.message,
+        )
+        .await
+        {
+            warn!("Failed to publish SyncLagDetected event: {e}");
         }
     }
 
@@ -1258,11 +1452,13 @@ pub(crate) async fn apply_stellar_node(
                         "Failed to create OCI snapshot push Job for {}/{}: {}",
                         namespace, name, e
                     );
-                    emit_event(
+                    publish_stellar_event(
                         client,
+                        &ctx.event_reporter,
                         node,
-                        "Warning",
+                        EventType::Warning,
                         "OciSnapshotPushFailed",
+                        "Snapshot",
                         &format!("Could not create snapshot push Job: {e}"),
                     )
                     .await
@@ -1280,11 +1476,13 @@ pub(crate) async fn apply_stellar_node(
                         "Failed to create OCI snapshot pull Job for {}/{}: {}",
                         namespace, name, e
                     );
-                    emit_event(
+                    publish_stellar_event(
                         client,
+                        &ctx.event_reporter,
                         node,
-                        "Warning",
+                        EventType::Warning,
                         "OciSnapshotPullFailed",
+                        "Snapshot",
                         &format!("Could not create snapshot pull Job: {e}"),
                     )
                     .await
@@ -1338,10 +1536,13 @@ pub(crate) async fn apply_stellar_node(
     }
 
     // 14. Update status to Running with ready replica count
+    // Use configured requeue interval for healthy reconciliation
+    let requeue_interval = ctx.operator_config.reconciler.requeue_interval;
     Ok(Action::requeue(Duration::from_secs(if phase == "Ready" {
-        60
+        requeue_interval
     } else {
-        15
+        // Use shorter interval for non-ready phases
+        requeue_interval / 4
     })))
 }
 
@@ -1356,6 +1557,19 @@ pub(crate) async fn cleanup_stellar_node(
     let name = node.name_any();
 
     info!("Cleaning up StellarNode: {}/{}", namespace, name);
+
+    let recorder = recorder_for(client, &ctx.event_reporter, node);
+    if let Err(e) = publish_object_event(
+        &recorder,
+        EventType::Normal,
+        "FinalizerCleanupStarted",
+        "Finalize",
+        "Finalizer cleanup started; removing managed Kubernetes resources for this StellarNode.",
+    )
+    .await
+    {
+        warn!("Failed to publish FinalizerCleanupStarted event: {e}");
+    }
 
     // Delete resources in reverse order of creation
 
@@ -1920,6 +2134,7 @@ async fn update_status(
 #[instrument(skip(client, node, archive_urls), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn run_archive_integrity_check(
     client: &Client,
+    reporter: &Reporter,
     node: &StellarNode,
     archive_urls: &[String],
 ) -> Result<()> {
@@ -1979,11 +2194,13 @@ async fn run_archive_integrity_check(
             "Archive integrity degraded for {}/{}: {}",
             namespace, name, message
         );
-        emit_event(
+        publish_stellar_event(
             client,
+            reporter,
             node,
-            "Warning",
+            EventType::Warning,
             "ArchiveIntegrityDegraded",
+            "ArchiveIntegrity",
             &format!("History archive(s) are lagging (max lag={max_lag}): {message}"),
         )
         .await?;
@@ -2303,16 +2520,37 @@ async fn update_dr_status(
 pub(crate) fn error_policy(
     node: Arc<StellarNode>,
     error: &Error,
-    _ctx: Arc<ControllerState>,
+    ctx: Arc<ControllerState>,
 ) -> Action {
     error!("Reconciliation error for {}: {:?}", node.name_any(), error);
 
-    // Use shorter retry for retriable errors
+    // Get retry count from annotations (default to 0)
+    let retry_count = node
+        .metadata
+        .annotations
+        .as_ref()
+        .and_then(|a| a.get("stellar.org/error-retry-count"))
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+
+    // Calculate backoff based on error type and retry count
     let retry_duration = if error.is_retriable() {
-        Duration::from_secs(15)
+        // Use exponential backoff for retriable errors
+        ctx.operator_config
+            .reconciler
+            .calculate_backoff(retry_count)
     } else {
-        Duration::from_secs(60)
+        // Use fixed interval for non-retriable errors
+        Duration::from_secs(ctx.operator_config.reconciler.requeue_interval)
     };
+
+    debug!(
+        "Requeuing {} after {:?} (retry_count: {}, retriable: {})",
+        node.name_any(),
+        retry_duration,
+        retry_count,
+        error.is_retriable()
+    );
 
     Action::requeue(retry_duration)
 }

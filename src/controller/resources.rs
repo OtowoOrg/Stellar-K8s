@@ -17,10 +17,11 @@ use k8s_openapi::api::autoscaling::v2::{
     MetricTarget, ObjectMetricSource,
 };
 use k8s_openapi::api::core::v1::{
-    ConfigMap, Container, ContainerPort, EnvVar, EnvVarSource, PersistentVolumeClaim,
-    PersistentVolumeClaimSpec, PodSpec, PodTemplateSpec, ResourceRequirements as K8sResources,
-    SecretKeySelector, Service, ServicePort, ServiceSpec, TypedLocalObjectReference, Volume,
-    VolumeMount, VolumeResourceRequirements,
+    Affinity, ConfigMap, Container, ContainerPort, EnvVar, EnvVarSource, PersistentVolumeClaim,
+    PersistentVolumeClaimSpec, PodAffinityTerm, PodAntiAffinity, PodSpec, PodTemplateSpec,
+    ResourceRequirements as K8sResources, SecretKeySelector, Service, ServicePort, ServiceSpec,
+    TypedLocalObjectReference, Volume, VolumeMount, VolumeResourceRequirements,
+    WeightedPodAffinityTerm,
 };
 use k8s_openapi::api::networking::v1::{
     HTTPIngressPath, HTTPIngressRuleValue, IPBlock, Ingress, IngressBackend, IngressRule,
@@ -35,12 +36,13 @@ use kube::api::{Api, DeleteParams, Patch, PatchParams, PostParams};
 use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
+use crate::crd::types::PodAntiAffinityStrength;
 use crate::crd::{
     BackupConfiguration, BarmanObjectStore, BootstrapConfiguration, Cluster, ClusterSpec,
     HistoryMode, HsmProvider, IngressConfig, InitDbConfiguration, KeySource, ManagedDatabaseConfig,
     MonitoringConfiguration, NetworkPolicyConfig, NodeType, PgBouncerSpec, Pooler, PoolerCluster,
     PoolerSpec, PostgresConfiguration, RolloutStrategy, S3Credentials,
-    SecretKeySelector as CnpgSecretKeySelector, StellarNode, StorageConfiguration,
+    SecretKeySelector as CnpgSecretKeySelector, StellarNode, StellarNodeSpec, StorageConfiguration,
     WalBackupConfiguration,
 };
 use crate::error::{Error, Result};
@@ -64,6 +66,10 @@ pub(crate) fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
     labels.insert(
         "stellar.org/node-type".to_string(),
         node.spec.node_type.to_string(),
+    );
+    labels.insert(
+        "stellar-network".to_string(),
+        node.spec.network.scheduling_label_value(),
     );
     labels
 }
@@ -1211,12 +1217,7 @@ fn build_pod_template(
             &node.spec,
             &node.name_any(),
         )),
-        affinity: node.spec.storage.node_affinity.clone().map(|na| {
-            k8s_openapi::api::core::v1::Affinity {
-                node_affinity: Some(na),
-                ..Default::default()
-            }
-        }),
+        affinity: merge_workload_affinity(node),
         ..Default::default()
     };
 
@@ -1388,14 +1389,80 @@ fn build_pod_template(
     }
 }
 
+fn network_spread_label_selector(spec: &StellarNodeSpec) -> LabelSelector {
+    LabelSelector {
+        match_labels: Some(BTreeMap::from([
+            (
+                "app.kubernetes.io/name".to_string(),
+                "stellar-node".to_string(),
+            ),
+            (
+                "stellar-network".to_string(),
+                spec.network.scheduling_label_value(),
+            ),
+            (
+                "app.kubernetes.io/component".to_string(),
+                spec.node_type.to_string().to_lowercase(),
+            ),
+        ])),
+        ..Default::default()
+    }
+}
+
+pub(crate) fn merge_workload_affinity(node: &StellarNode) -> Option<Affinity> {
+    let mut aff = Affinity::default();
+    if let Some(na) = node.spec.storage.node_affinity.clone() {
+        aff.node_affinity = Some(na);
+    }
+    if let Some(pa) = build_network_pod_anti_affinity(node) {
+        aff.pod_anti_affinity = Some(pa);
+    }
+    if aff.node_affinity.is_none() && aff.pod_anti_affinity.is_none() {
+        None
+    } else {
+        Some(aff)
+    }
+}
+
+fn build_network_pod_anti_affinity(node: &StellarNode) -> Option<PodAntiAffinity> {
+    match node.spec.pod_anti_affinity {
+        PodAntiAffinityStrength::Disabled => None,
+        PodAntiAffinityStrength::Hard => {
+            let term = PodAffinityTerm {
+                label_selector: Some(network_spread_label_selector(&node.spec)),
+                topology_key: "kubernetes.io/hostname".to_string(),
+                ..Default::default()
+            };
+            Some(PodAntiAffinity {
+                required_during_scheduling_ignored_during_execution: Some(vec![term]),
+                ..Default::default()
+            })
+        }
+        PodAntiAffinityStrength::Soft => {
+            let term = PodAffinityTerm {
+                label_selector: Some(network_spread_label_selector(&node.spec)),
+                topology_key: "kubernetes.io/hostname".to_string(),
+                ..Default::default()
+            };
+            Some(PodAntiAffinity {
+                preferred_during_scheduling_ignored_during_execution: Some(vec![
+                    WeightedPodAffinityTerm {
+                        weight: 100,
+                        pod_affinity_term: term,
+                    },
+                ]),
+                ..Default::default()
+            })
+        }
+    }
+}
+
 /// Build `TopologySpreadConstraints` for a pod spec.
 pub fn build_topology_spread_constraints(
     spec: &crate::crd::StellarNodeSpec,
-    node_name: &str,
+    _node_name: &str,
 ) -> Vec<k8s_openapi::api::core::v1::TopologySpreadConstraint> {
     use k8s_openapi::api::core::v1::TopologySpreadConstraint;
-    use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
-    use std::collections::BTreeMap;
 
     if let Some(constraints) = &spec.topology_spread_constraints {
         if !constraints.is_empty() {
@@ -1403,32 +1470,27 @@ pub fn build_topology_spread_constraints(
         }
     }
 
-    let selector = LabelSelector {
-        match_labels: Some(BTreeMap::from([
-            (
-                "app.kubernetes.io/name".to_string(),
-                "stellar-node".to_string(),
-            ),
-            (
-                "app.kubernetes.io/instance".to_string(),
-                node_name.to_string(),
-            ),
-        ])),
-        ..Default::default()
+    let when_unsatisfiable = match spec.pod_anti_affinity {
+        PodAntiAffinityStrength::Soft => "ScheduleAnyway".to_string(),
+        PodAntiAffinityStrength::Hard | PodAntiAffinityStrength::Disabled => {
+            "DoNotSchedule".to_string()
+        }
     };
+
+    let selector = network_spread_label_selector(spec);
 
     vec![
         TopologySpreadConstraint {
             max_skew: 1,
             topology_key: "kubernetes.io/hostname".to_string(),
-            when_unsatisfiable: "DoNotSchedule".to_string(),
+            when_unsatisfiable: when_unsatisfiable.clone(),
             label_selector: Some(selector.clone()),
             ..Default::default()
         },
         TopologySpreadConstraint {
             max_skew: 1,
             topology_key: "topology.kubernetes.io/zone".to_string(),
-            when_unsatisfiable: "DoNotSchedule".to_string(),
+            when_unsatisfiable,
             label_selector: Some(selector),
             ..Default::default()
         },
@@ -2300,4 +2362,41 @@ pub async fn delete_pdb(client: &Client, node: &StellarNode, dry_run: bool) -> R
     }
 
     Ok(())
+}
+
+// ============================================================================
+// Test helpers — thin wrappers that expose private builders for unit tests
+// (Issue #298)
+// ============================================================================
+
+#[cfg(test)]
+pub(crate) fn build_pvc_for_test(
+    node: &StellarNode,
+    storage_class: String,
+) -> k8s_openapi::api::core::v1::PersistentVolumeClaim {
+    build_pvc(node, storage_class)
+}
+
+#[cfg(test)]
+pub(crate) fn build_config_map_for_test(node: &StellarNode) -> ConfigMap {
+    build_config_map(node, None, false)
+}
+
+#[cfg(test)]
+pub(crate) fn build_deployment_for_test(
+    node: &StellarNode,
+) -> k8s_openapi::api::apps::v1::Deployment {
+    build_deployment(node, false)
+}
+
+#[cfg(test)]
+pub(crate) fn build_statefulset_for_test(
+    node: &StellarNode,
+) -> k8s_openapi::api::apps::v1::StatefulSet {
+    build_statefulset(node, false, None)
+}
+
+#[cfg(test)]
+pub(crate) fn build_service_for_test(node: &StellarNode) -> k8s_openapi::api::core::v1::Service {
+    build_service(node, false)
 }

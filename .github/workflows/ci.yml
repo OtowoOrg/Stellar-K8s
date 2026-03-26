@@ -26,7 +26,7 @@ jobs:
           version: "3.14.0"
 
       - name: Lint chart with default values
-        run: helm lint charts/stellar-operator
+        run: make helm-lint
 
       - name: Lint chart with strict mode
         run: helm lint charts/stellar-operator --strict
@@ -37,7 +37,7 @@ jobs:
           operator:
             logLevel: verbose
           EOF
-          if helm lint charts/stellar-operator -f /tmp/bad-loglevel.yaml 2>&1 | grep -q "validation error"; then
+          if helm lint charts/stellar-operator -f /tmp/bad-loglevel.yaml 2>&1 | grep -q "meet the specifications"; then
             echo "Schema correctly rejected invalid logLevel"
           else
             echo "ERROR: Schema did not reject invalid logLevel" && exit 1
@@ -49,7 +49,7 @@ jobs:
           service:
             type: ExternalName
           EOF
-          if helm lint charts/stellar-operator -f /tmp/bad-service.yaml 2>&1 | grep -q "validation error"; then
+          if helm lint charts/stellar-operator -f /tmp/bad-service.yaml 2>&1 | grep -q "meet the specifications"; then
             echo "Schema correctly rejected invalid service type"
           else
             echo "ERROR: Schema did not reject invalid service type" && exit 1
@@ -61,7 +61,7 @@ jobs:
           image:
             pullPolicy: Whenever
           EOF
-          if helm lint charts/stellar-operator -f /tmp/bad-pullpolicy.yaml 2>&1 | grep -q "validation error"; then
+          if helm lint charts/stellar-operator -f /tmp/bad-pullpolicy.yaml 2>&1 | grep -q "meet the specifications"; then
             echo "Schema correctly rejected invalid pullPolicy"
           else
             echo "ERROR: Schema did not reject invalid pullPolicy" && exit 1
@@ -102,10 +102,10 @@ jobs:
           shared-key: "ci-lint"
 
       - name: Check formatting
-        run: cargo fmt --all --check
+        run: make fmt-check
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: make lint
 
   test:
     name: Test
@@ -122,11 +122,8 @@ jobs:
         with:
           shared-key: "ci-test"
 
-      - name: Run tests
-        run: cargo test --workspace --all-features --verbose
-
-      - name: Run doc tests
-        run: cargo test --doc --workspace
+      - name: Run tests (Unit and Doc)
+        run: make test
 
   build:
     name: Build
@@ -144,7 +141,7 @@ jobs:
           shared-key: "ci-build"
 
       - name: Build release
-        run: cargo build --release --locked
+        run: make build
 
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4

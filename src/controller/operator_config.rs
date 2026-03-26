@@ -8,6 +8,7 @@
 
 use crate::crd::{NodeType, ResourceRequirements, ResourceSpec};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use tracing::warn;
 
 /// Per-node-type default resources from Helm `defaultResources.*`
@@ -41,6 +42,85 @@ impl Default for NodeResourceDefaults {
 #[serde(rename_all = "camelCase")]
 pub struct OperatorConfig {
     pub default_resources: DefaultResources,
+    #[serde(default)]
+    pub reconciler: ReconcilerConfig,
+}
+
+/// Reconciler configuration for requeue intervals and backoff
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconcilerConfig {
+    /// Base requeue interval for healthy reconciliation loops (seconds)
+    #[serde(default = "default_requeue_interval")]
+    pub requeue_interval: u64,
+
+    /// Base backoff duration for error retries (seconds)
+    #[serde(default = "default_error_backoff_base")]
+    pub error_backoff_base: u64,
+
+    /// Maximum backoff duration (seconds)
+    #[serde(default = "default_max_backoff")]
+    pub max_backoff: u64,
+
+    /// Enable jitter for backoff calculations
+    #[serde(default = "default_enable_jitter")]
+    pub enable_jitter: bool,
+}
+
+fn default_requeue_interval() -> u64 {
+    60
+}
+
+fn default_error_backoff_base() -> u64 {
+    15
+}
+
+fn default_max_backoff() -> u64 {
+    300
+}
+
+fn default_enable_jitter() -> bool {
+    true
+}
+
+impl Default for ReconcilerConfig {
+    fn default() -> Self {
+        Self {
+            requeue_interval: default_requeue_interval(),
+            error_backoff_base: default_error_backoff_base(),
+            max_backoff: default_max_backoff(),
+            enable_jitter: default_enable_jitter(),
+        }
+    }
+}
+
+impl ReconcilerConfig {
+    /// Calculate exponential backoff with optional jitter
+    ///
+    /// # Arguments
+    /// * `retry_count` - Number of retries attempted (0-indexed)
+    ///
+    /// # Returns
+    /// Duration to wait before next retry
+    pub fn calculate_backoff(&self, retry_count: u32) -> Duration {
+        // Exponential backoff: base * 2^retry_count
+        let backoff_secs = self
+            .error_backoff_base
+            .saturating_mul(2u64.saturating_pow(retry_count))
+            .min(self.max_backoff);
+
+        let backoff_secs = if self.enable_jitter {
+            // Add jitter: random value between 0.5x and 1.5x of calculated backoff
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            let jitter_factor = rng.gen_range(0.5..=1.5);
+            ((backoff_secs as f64) * jitter_factor) as u64
+        } else {
+            backoff_secs
+        };
+
+        Duration::from_secs(backoff_secs)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -225,5 +305,101 @@ defaultResources:
         let cfg: OperatorConfig = serde_yaml::from_str(yaml).unwrap();
         let d = cfg.defaults_for(&NodeType::Validator).unwrap();
         assert_eq!(d.requests.cpu, "999m");
+    }
+
+    #[test]
+    fn test_reconciler_config_defaults() {
+        let config = ReconcilerConfig::default();
+        assert_eq!(config.requeue_interval, 60);
+        assert_eq!(config.error_backoff_base, 15);
+        assert_eq!(config.max_backoff, 300);
+        assert!(config.enable_jitter);
+    }
+
+    #[test]
+    fn test_calculate_backoff_exponential() {
+        let config = ReconcilerConfig {
+            requeue_interval: 60,
+            error_backoff_base: 10,
+            max_backoff: 300,
+            enable_jitter: false,
+        };
+
+        // Test exponential growth: base * 2^retry_count
+        assert_eq!(config.calculate_backoff(0).as_secs(), 10); // 10 * 2^0 = 10
+        assert_eq!(config.calculate_backoff(1).as_secs(), 20); // 10 * 2^1 = 20
+        assert_eq!(config.calculate_backoff(2).as_secs(), 40); // 10 * 2^2 = 40
+        assert_eq!(config.calculate_backoff(3).as_secs(), 80); // 10 * 2^3 = 80
+        assert_eq!(config.calculate_backoff(4).as_secs(), 160); // 10 * 2^4 = 160
+    }
+
+    #[test]
+    fn test_calculate_backoff_max_cap() {
+        let config = ReconcilerConfig {
+            requeue_interval: 60,
+            error_backoff_base: 10,
+            max_backoff: 100,
+            enable_jitter: false,
+        };
+
+        // Should cap at max_backoff
+        assert_eq!(config.calculate_backoff(5).as_secs(), 100); // Would be 320, capped at 100
+        assert_eq!(config.calculate_backoff(10).as_secs(), 100); // Would be 10240, capped at 100
+    }
+
+    #[test]
+    fn test_calculate_backoff_with_jitter() {
+        let config = ReconcilerConfig {
+            requeue_interval: 60,
+            error_backoff_base: 10,
+            max_backoff: 300,
+            enable_jitter: true,
+        };
+
+        // With jitter, result should be between 0.5x and 1.5x of base calculation
+        let backoff = config.calculate_backoff(2).as_secs(); // Base would be 40
+        assert!(
+            (20..=60).contains(&backoff),
+            "Backoff {backoff} not in range [20, 60]"
+        );
+    }
+
+    #[test]
+    fn test_calculate_backoff_overflow_protection() {
+        let config = ReconcilerConfig {
+            requeue_interval: 60,
+            error_backoff_base: u64::MAX / 2,
+            max_backoff: 300,
+            enable_jitter: false,
+        };
+
+        // Should handle overflow gracefully and cap at max_backoff
+        assert_eq!(config.calculate_backoff(10).as_secs(), 300);
+    }
+
+    #[test]
+    fn test_load_config_with_reconciler_settings() {
+        let yaml = r#"
+defaultResources:
+  validator:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits: { cpu: "2", memory: "4Gi" }
+  horizon:
+    requests: { cpu: "250m", memory: "512Mi" }
+    limits: { cpu: "1", memory: "2Gi" }
+  sorobanRpc:
+    requests: { cpu: "500m", memory: "2Gi" }
+    limits: { cpu: "4", memory: "8Gi" }
+reconciler:
+  requeueInterval: 120
+  errorBackoffBase: 30
+  maxBackoff: 600
+  enableJitter: false
+"#;
+        let cfg: OperatorConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.reconciler.requeue_interval, 120);
+        assert_eq!(cfg.reconciler.error_backoff_base, 30);
+        assert_eq!(cfg.reconciler.max_backoff, 600);
+        assert!(!cfg.reconciler.enable_jitter);
     }
 }

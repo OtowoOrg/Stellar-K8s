@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stellar-operator-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook-weight: "-5"
+data:
+  # Feature flags — set to "true" or "false" to toggle at runtime without restart.
+  # See docs/quickstart.md and src/controller/feature_flags.rs for full documentation.
+  enable_cve_scanning: {{ .Values.featureFlags.enableCveScanning | quote }}
+  enable_read_pool: {{ .Values.featureFlags.enableReadPool | quote }}
+  enable_dr: {{ .Values.featureFlags.enableDr | quote }}
+  enable_peer_discovery: {{ .Values.featureFlags.enablePeerDiscovery | quote }}
+  enable_archive_health: {{ .Values.featureFlags.enableArchiveHealth | quote }}
+  enable_soroban_metrics: {{ .Values.featureFlags.enableSorobanMetrics | quote }}

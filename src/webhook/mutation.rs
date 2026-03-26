@@ -203,6 +203,10 @@ fn get_standard_labels(spec: &StellarNodeSpec, name: &str) -> BTreeMap<String, S
         format!("{:?}", spec.network).to_lowercase(),
     );
     labels.insert(
+        "stellar-network".to_string(),
+        spec.network.scheduling_label_value(),
+    );
+    labels.insert(
         "stellar.org/node-type".to_string(),
         format!("{:?}", spec.node_type).to_lowercase(),
     );
@@ -299,6 +303,7 @@ mod tests {
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
+            pod_anti_affinity: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
             snapshot_schedule: None,
@@ -359,6 +364,7 @@ mod tests {
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
+            pod_anti_affinity: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
             snapshot_schedule: None,

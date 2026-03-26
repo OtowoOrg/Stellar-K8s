@@ -2,6 +2,7 @@ use std::error::Error;
 use std::process::{Command, Stdio};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
+use tracing::info;
 
 /// Returns true if the given binary is accessible in PATH.
 fn tool_available(binary: &str) -> bool {
@@ -73,7 +74,7 @@ fn e2e_stellarnode_reconciliation() -> Result<(), Box<dyn std::error::Error>> {
         )?;
     }
 
-    let operator_yaml = operator_manifest(&image);
+    let operator_yaml = operator_manifest(&image, None);
     let _cleanup = E2eCleanup::new(operator_yaml.clone(), E2E_NODE_NAME);
 
     // Create operator namespace
@@ -310,7 +311,7 @@ fn e2e_kind_install_crud_upgrade_delete() -> Result<(), Box<dyn Error>> {
         )?;
     }
 
-    let operator_yaml = operator_manifest(&image);
+    let operator_yaml = operator_manifest(&image, None);
     let _cleanup = Cleanup::new(operator_yaml.clone());
 
     run_cmd(
@@ -612,7 +613,29 @@ fn env_true(name: &str, default: bool) -> bool {
     }
 }
 
-fn operator_manifest(image: &str) -> String {
+fn operator_manifest(image: &str, watch_namespace: Option<&str>) -> String {
+    let rbac_kind = if watch_namespace.is_some() {
+        "Role"
+    } else {
+        "ClusterRole"
+    };
+    let rbac_binding_kind = if watch_namespace.is_some() {
+        "RoleBinding"
+    } else {
+        "ClusterRoleBinding"
+    };
+    let rbac_namespace = if let Some(ns) = watch_namespace {
+        format!("\n  namespace: {ns}")
+    } else {
+        "".to_string()
+    };
+
+    let watch_arg = if let Some(ns) = watch_namespace {
+        format!("\n            - --watch-namespace={ns}")
+    } else {
+        "".to_string()
+    };
+
     format!(
         r#"---
 apiVersion: v1
@@ -622,9 +645,9 @@ metadata:
   namespace: {OPERATOR_NAMESPACE}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: {rbac_kind}
 metadata:
-  name: {OPERATOR_NAME}
+  name: {OPERATOR_NAME}{rbac_namespace}
 rules:
   - apiGroups: ["stellar.org"]
     resources: ["stellarnodes"]
@@ -664,12 +687,12 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: {rbac_binding_kind}
 metadata:
-  name: {OPERATOR_NAME}
+  name: {OPERATOR_NAME}{rbac_namespace}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: {rbac_kind}
   name: {OPERATOR_NAME}
 subjects:
   - kind: ServiceAccount
@@ -696,6 +719,9 @@ spec:
         - name: operator
           image: {image}
           imagePullPolicy: IfNotPresent
+          args:
+            - run
+            - --namespace={OPERATOR_NAMESPACE} {watch_arg}
           env:
             - name: OPERATOR_NAMESPACE
               value: {OPERATOR_NAMESPACE}
@@ -934,7 +960,7 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
         )?;
     }
 
-    let operator_yaml = operator_manifest(&image);
+    let operator_yaml = operator_manifest(&image, None);
     let _cleanup = HorizonCleanup::new(operator_yaml.clone());
 
     // ── Install CRD ──────────────────────────────────────────────────────────
@@ -1258,6 +1284,139 @@ fn e2e_kind_horizon_lifecycle() -> Result<(), Box<dyn Error>> {
             && config_map.is_err()
             && pods_gone)
     })?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Issue #322: Namespace-scoped mode test
+// ---------------------------------------------------------------------------
+
+#[test]
+#[ignore]
+fn e2e_namespace_scoped_reconciliation() -> Result<(), Box<dyn Error>> {
+    const SCOPED_NAMESPACE: &str = "stellar-scoped";
+    const IGNORED_NAMESPACE: &str = "stellar-ignored";
+    const SCOPED_NODE: &str = "scoped-node";
+    const IGNORED_NODE: &str = "ignored-node";
+
+    if std::env::var("E2E_KIND").is_err() {
+        eprintln!("E2E_KIND is not set; skipping namespace-scoped E2E test.");
+        return Ok(());
+    }
+
+    let cluster_name = std::env::var("KIND_CLUSTER_NAME").unwrap_or_else(|_| "stellar-e2e".into());
+    ensure_kind_cluster(&cluster_name)?;
+
+    let image =
+        std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
+
+    // Deploy operator watching ONLY SCOPED_NAMESPACE
+    let operator_yaml = operator_manifest(&image, Some(SCOPED_NAMESPACE));
+
+    // Manual cleanup for this test
+    let _ = run_cmd_quiet(
+        "kubectl",
+        &[
+            "delete",
+            "namespace",
+            SCOPED_NAMESPACE,
+            IGNORED_NAMESPACE,
+            OPERATOR_NAMESPACE,
+            "--ignore-not-found=true",
+        ],
+    );
+
+    run_cmd(
+        "kubectl",
+        &["apply", "-f", "config/crd/stellarnode-crd.yaml"],
+    )?;
+    run_cmd("kubectl", &["create", "namespace", OPERATOR_NAMESPACE])?;
+    run_cmd("kubectl", &["create", "namespace", SCOPED_NAMESPACE])?;
+    run_cmd("kubectl", &["create", "namespace", IGNORED_NAMESPACE])?;
+
+    kubectl_apply(&operator_yaml)?;
+    run_cmd(
+        "kubectl",
+        &[
+            "rollout",
+            "status",
+            "deployment/stellar-operator",
+            "-n",
+            OPERATOR_NAMESPACE,
+            "--timeout=180s",
+        ],
+    )?;
+
+    // 1. Create node in SCOPED namespace -> Should work
+    let scoped_manifest = format!(
+        r#"apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: {SCOPED_NODE}
+  namespace: {SCOPED_NAMESPACE}
+spec:
+  nodeType: SorobanRpc
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  sorobanConfig:
+    stellarCoreUrl: "http://stellar-core.default:11626"
+"#
+    );
+    kubectl_apply(&scoped_manifest)?;
+
+    wait_for("Scoped node deployment", Duration::from_secs(90), || {
+        Ok(run_cmd(
+            "kubectl",
+            &["get", "deployment", SCOPED_NODE, "-n", SCOPED_NAMESPACE],
+        )
+        .is_ok())
+    })?;
+    info!("✓ Scoped node reconciliation verified");
+
+    // 2. Create node in IGNORED namespace -> Should NOT work
+    let ignored_manifest = format!(
+        r#"apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: {IGNORED_NODE}
+  namespace: {IGNORED_NAMESPACE}
+spec:
+  nodeType: SorobanRpc
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  sorobanConfig:
+    stellarCoreUrl: "http://stellar-core.default:11626"
+"#
+    );
+    kubectl_apply(&ignored_manifest)?;
+
+    // Wait a bit and verify NO deployment exists in the ignored namespace
+    sleep(Duration::from_secs(20));
+    let deployment = run_cmd(
+        "kubectl",
+        &["get", "deployment", IGNORED_NODE, "-n", IGNORED_NAMESPACE],
+    );
+    if deployment.is_ok() {
+        return Err("Operator reconciled a node in an ignored namespace!".into());
+    }
+    info!("✓ Ignored node isolation verified");
+
+    // Cleanup
+    let _ = run_cmd_with_stdin_quiet("kubectl", &["delete", "-f", "-"], &operator_yaml);
+    let _ = run_cmd_quiet(
+        "kubectl",
+        &[
+            "delete",
+            "namespace",
+            SCOPED_NAMESPACE,
+            IGNORED_NAMESPACE,
+            OPERATOR_NAMESPACE,
+            "--ignore-not-found=true",
+        ],
+    );
 
     Ok(())
 }

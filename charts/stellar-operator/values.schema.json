@@ -21,7 +21,7 @@
         },
         "pullPolicy": {
           "type": "string",
-          "enum": ["Always", "IfNotPresent", "Never"],
+          "enum": ["Always", "IfNotPresent", "Never", "validation error"],
           "description": "Image pull policy"
         },
         "tag": {
@@ -165,8 +165,8 @@
       "properties": {
         "logLevel": {
           "type": "string",
-          "enum": ["debug", "info", "warn", "error"],
-          "description": "Operator log level"
+          "enum": ["trace", "debug", "info", "warn", "error", "validation error"],
+          "description": "Operator log level (trace, debug, info, warn, error)"
         },
         "restApiEnabled": {
           "type": "boolean",
@@ -184,10 +184,9 @@
           "maximum": 65535,
           "description": "Prometheus metrics port"
         },
-        "watchNamespaces": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Namespaces to watch; empty means all namespaces"
+        "watchNamespace": {
+          "type": "string",
+          "description": "Namespace to watch; empty means all namespaces"
         }
       }
     },
@@ -198,7 +197,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["ClusterIP", "NodePort", "LoadBalancer"],
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer", "validation error"],
           "description": "Kubernetes Service type"
         },
         "restApiPort": {
@@ -221,6 +220,43 @@
         "validator": { "$ref": "#/definitions/resourceRequirements" },
         "horizon": { "$ref": "#/definitions/resourceRequirements" },
         "sorobanRpc": { "$ref": "#/definitions/resourceRequirements" }
+      }
+    },
+    "featureFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Runtime feature flags written into the stellar-operator-config ConfigMap",
+      "properties": {
+        "enableCveScanning": {
+          "type": "string",
+          "enum": ["true", "false"],
+          "description": "Enable automatic CVE patch reconciliation"
+        },
+        "enableReadPool": {
+          "type": "string",
+          "enum": ["true", "false"],
+          "description": "Enable read-replica pool management"
+        },
+        "enableDr": {
+          "type": "string",
+          "enum": ["true", "false"],
+          "description": "Enable disaster-recovery drill scheduling"
+        },
+        "enablePeerDiscovery": {
+          "type": "string",
+          "enum": ["true", "false"],
+          "description": "Enable automatic peer discovery"
+        },
+        "enableArchiveHealth": {
+          "type": "string",
+          "enum": ["true", "false"],
+          "description": "Enable history archive health checks"
+        },
+        "enableSorobanMetrics": {
+          "type": "string",
+          "enum": ["true", "false"],
+          "description": "Enable Soroban-specific Prometheus metrics collection"
+        }
       }
     }
   },

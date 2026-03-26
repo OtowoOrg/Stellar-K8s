@@ -99,3 +99,29 @@ service:
   type: ClusterIP
   restApiPort: 9090
   metricsPort: 9090
+
+# Default resource requests/limits for managed StellarNode pods.
+# Precedence: StellarNode spec.resources > Helm defaults > operator hardcoded fallback.
+# These are written into a ConfigMap that the operator reads at startup.
+defaultResources:
+  validator:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  horizon:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  sorobanRpc:
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"

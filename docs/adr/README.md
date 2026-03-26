@@ -26,6 +26,9 @@ We follow the [MADR (Markdown Architecture Decision Record)](https://adr.github.
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
 | [0001](0001-wasm-admission-webhook.md) | Wasm-Based Admission Webhook for Custom Validation | Accepted | 2024-02-24 |
+| [0002](0002-rust-language-choice.md) | Choice of Rust Programming Language | Accepted | 2024-03-25 |
+| [0003](0003-kube-rs-finalizers.md) | Use of kube-rs Finalizers | Accepted | 2024-03-25 |
+| [0004](0004-crd-versioning-strategy.md) | CRD Versioning Strategy | Accepted | 2024-03-25 |
 
 ## Creating a New ADR
 

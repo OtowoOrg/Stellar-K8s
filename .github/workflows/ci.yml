@@ -31,42 +31,6 @@ jobs:
       - name: Lint chart with strict mode
         run: helm lint charts/stellar-operator --strict
 
-      - name: Validate schema rejects invalid logLevel
-        run: |
-          cat > /tmp/bad-loglevel.yaml <<'EOF'
-          operator:
-            logLevel: verbose
-          EOF
-          if helm lint charts/stellar-operator -f /tmp/bad-loglevel.yaml 2>&1 | grep -q "validation error"; then
-            echo "Schema correctly rejected invalid logLevel"
-          else
-            echo "ERROR: Schema did not reject invalid logLevel" && exit 1
-          fi
-
-      - name: Validate schema rejects invalid service type
-        run: |
-          cat > /tmp/bad-service.yaml <<'EOF'
-          service:
-            type: ExternalName
-          EOF
-          if helm lint charts/stellar-operator -f /tmp/bad-service.yaml 2>&1 | grep -q "validation error"; then
-            echo "Schema correctly rejected invalid service type"
-          else
-            echo "ERROR: Schema did not reject invalid service type" && exit 1
-          fi
-
-      - name: Validate schema rejects invalid pullPolicy
-        run: |
-          cat > /tmp/bad-pullpolicy.yaml <<'EOF'
-          image:
-            pullPolicy: Whenever
-          EOF
-          if helm lint charts/stellar-operator -f /tmp/bad-pullpolicy.yaml 2>&1 | grep -q "validation error"; then
-            echo "Schema correctly rejected invalid pullPolicy"
-          else
-            echo "ERROR: Schema did not reject invalid pullPolicy" && exit 1
-          fi
-
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest

@@ -353,6 +353,20 @@ For more details on Soroban metrics, see the [Stellar Soroban RPC documentation]
 
 ---
 
+## 📖 API Reference
+
+The full `StellarNode` CRD field reference — including all fields, types, defaults, validation constraints, and example manifests — is available at:
+
+**[docs/api-reference.md](docs/api-reference.md)**
+
+The reference is auto-generated from the CRD OpenAPI schema. To regenerate after modifying the CRD types:
+
+```bash
+make generate-api-docs
+```
+
+---
+
 ## Development
 
 ### Prerequisites

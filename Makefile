@@ -65,6 +65,20 @@ quick: fmt-check ## Quick pre-commit check
 clean: ## Clean build artifacts
 	$(CARGO) clean
 
+generate-api-docs: ## Generate API reference docs from CRD schema
+	@echo "→ Generating API reference docs..."
+	@python3 scripts/generate-api-docs.py \
+		--crd config/crd/stellarnode-crd.yaml \
+		--output docs/api-reference.md
+	@echo "✓ Generated docs/api-reference.md"
+
+check-api-docs: ## Check API docs are up to date (used in CI)
+	@echo "→ Checking API reference docs are up to date..."
+	@python3 scripts/generate-api-docs.py \
+		--crd config/crd/stellarnode-crd.yaml \
+		--output docs/api-reference.md \
+		--check
+
 install-crd: ## Install CRDs
 	$(KUBECTL) apply -f config/crd/stellarnode-crd.yaml
 

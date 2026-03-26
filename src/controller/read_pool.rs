@@ -508,6 +508,7 @@ fn build_read_pod_template(
                 }),
                 ..Default::default()
             }]),
+            affinity: super::resources::merge_workload_affinity(node),
             topology_spread_constraints: Some(super::resources::build_topology_spread_constraints(
                 &node.spec,
                 &node.name_any(),

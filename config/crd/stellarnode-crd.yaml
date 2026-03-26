@@ -51,6 +51,13 @@ spec:
                   type: boolean
                   default: false
                   description: Suspend the node without deleting resources
+                podAntiAffinity:
+                  type: string
+                  enum: [Hard, Soft, Disabled]
+                  default: Hard
+                  description: >
+                    Controls default pod anti-affinity for pods sharing the same stellar-network label.
+                    Hard uses requiredDuringScheduling; Soft uses preferredDuringScheduling; Disabled skips pod anti-affinity.
                 resources:
                   type: object
                   properties:

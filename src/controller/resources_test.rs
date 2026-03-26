@@ -11,7 +11,7 @@ mod tests {
 
     use crate::controller::resources::build_topology_spread_constraints;
     use crate::crd::{
-        types::{ResourceRequirements, ResourceSpec, StorageConfig},
+        types::{PodAntiAffinityStrength, ResourceRequirements, ResourceSpec, StorageConfig},
         NodeType, StellarNetwork, StellarNodeSpec,
     };
 
@@ -56,6 +56,7 @@ mod tests {
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
+            pod_anti_affinity: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
             snapshot_schedule: None,
@@ -139,10 +140,9 @@ mod tests {
     }
 
     #[test]
-    fn test_default_label_selector_matches_app_instance() {
+    fn test_default_label_selector_matches_network_and_component() {
         let spec = minimal_spec(NodeType::Horizon);
-        let node_name = "my-horizon-node";
-        let constraints = build_topology_spread_constraints(&spec, node_name);
+        let constraints = build_topology_spread_constraints(&spec, "ignored-instance");
 
         for c in &constraints {
             let selector = c
@@ -154,10 +154,29 @@ mod tests {
                 .as_ref()
                 .expect("matchLabels must be set");
             assert_eq!(
-                labels.get("app.kubernetes.io/instance").map(|s| s.as_str()),
-                Some(node_name),
-                "labelSelector must target the node instance"
+                labels.get("app.kubernetes.io/name").map(|s| s.as_str()),
+                Some("stellar-node"),
             );
+            assert_eq!(
+                labels.get("stellar-network").map(|s| s.as_str()),
+                Some("testnet"),
+            );
+            assert_eq!(
+                labels
+                    .get("app.kubernetes.io/component")
+                    .map(|s| s.as_str()),
+                Some("horizon"),
+            );
+        }
+    }
+
+    #[test]
+    fn test_soft_anti_affinity_uses_schedule_anyway_for_topology_spread() {
+        let mut spec = minimal_spec(NodeType::Validator);
+        spec.pod_anti_affinity = PodAntiAffinityStrength::Soft;
+        let constraints = build_topology_spread_constraints(&spec, "val");
+        for c in &constraints {
+            assert_eq!(c.when_unsatisfiable, "ScheduleAnyway");
         }
     }
 

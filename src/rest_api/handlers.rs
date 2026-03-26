@@ -159,9 +159,7 @@ pub async fn readyz(
 /// /livez - verifies the reconciler loop is not stuck.
 /// Returns 200 if a successful reconcile occurred within the last 60 seconds,
 /// or if no reconcile has run yet (operator just started, within a 120s grace period).
-pub async fn livez(
-    State(state): State<Arc<ControllerState>>,
-) -> (StatusCode, Json<ProbeResponse>) {
+pub async fn livez(State(state): State<Arc<ControllerState>>) -> (StatusCode, Json<ProbeResponse>) {
     const MAX_STALE_SECS: u64 = 60;
     const STARTUP_GRACE_SECS: u64 = 120;
 

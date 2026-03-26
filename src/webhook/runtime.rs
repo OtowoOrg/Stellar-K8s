@@ -229,10 +229,8 @@ impl WasmRuntime {
             let input = input.clone();
             let runtime = self.clone_for_execution();
 
-            let handle = tokio::spawn(async move {
-                runtime.execute(&name, &input, limits).await
-            })
-            .instrument(current_span.clone());
+            let handle = tokio::spawn(async move { runtime.execute(&name, &input, limits).await })
+                .instrument(current_span.clone());
 
             handles.push((plugin.clone(), handle));
         }

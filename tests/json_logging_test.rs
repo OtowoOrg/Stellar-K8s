@@ -75,8 +75,7 @@ fn json_log_output_contains_node_namespace_reconcile_id_fields() {
         .find(|l| !l.trim().is_empty())
         .expect("expected at least one JSON log line");
 
-    let v: Value = serde_json::from_str(first_line)
-        .expect("log line should be valid JSON");
+    let v: Value = serde_json::from_str(first_line).expect("log line should be valid JSON");
 
     for key in ["node_name", "namespace", "reconcile_id"] {
         assert!(
@@ -90,4 +89,3 @@ fn json_log_output_contains_node_namespace_reconcile_id_fields() {
         "expected JSON log to contain an event message, got: {v}"
     );
 }
-

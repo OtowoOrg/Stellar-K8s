@@ -281,9 +281,7 @@ where
 /// - The requeue timer expires
 async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<Action> {
     let node_name = obj.name_any();
-    let namespace = obj
-        .namespace()
-        .unwrap_or_else(|| "default".to_string());
+    let namespace = obj.namespace().unwrap_or_else(|| "default".to_string());
     let reconcile_id = ctx.next_reconcile_id();
 
     let node_name_for_span = node_name.clone();
@@ -313,9 +311,7 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
 
         info!(
             "Reconciling StellarNode {}/{} (type: {:?})",
-            namespace,
-            node_name,
-            obj.spec.node_type
+            namespace, node_name, obj.spec.node_type
         );
 
         // Use kube-rs built-in finalizer helper for clean lifecycle management
@@ -2319,9 +2315,7 @@ pub(crate) fn error_policy(
     ctx: Arc<ControllerState>,
 ) -> Action {
     let node_name = node.name_any();
-    let namespace = node
-        .namespace()
-        .unwrap_or_else(|| "default".to_string());
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let reconcile_id = ctx.next_reconcile_id();
 
     let node_name_for_span = node_name.clone();

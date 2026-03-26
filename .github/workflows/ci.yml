@@ -90,6 +90,53 @@ jobs:
       - name: Run Helm unit tests
         run: helm unittest charts/stellar-operator --strict --color
 
+      - name: Validate schema rejects invalid logLevel
+        run: |
+          cat > /tmp/bad-loglevel.yaml <<'EOF'
+          operator:
+            logLevel: verbose
+          EOF
+          if helm lint charts/stellar-operator -f /tmp/bad-loglevel.yaml 2>&1 | grep -q "validation error"; then
+            echo "Schema correctly rejected invalid logLevel"
+          else
+            echo "ERROR: Schema did not reject invalid logLevel" && exit 1
+          fi
+
+      - name: Validate schema accepts valid logLevel values
+        run: |
+          for level in trace debug info warn error; do
+            echo "operator:" > /tmp/test-loglevel.yaml
+            echo "  logLevel: $level" >> /tmp/test-loglevel.yaml
+            if helm lint charts/stellar-operator -f /tmp/test-loglevel.yaml 2>&1 | grep -q "validation error"; then
+              echo "ERROR: Schema incorrectly rejected valid logLevel '$level'" && exit 1
+            fi
+            echo "OK: logLevel=$level accepted"
+          done
+
+      - name: Validate schema rejects invalid imagePullPolicy
+        run: |
+          cat > /tmp/bad-pullpolicy.yaml <<'EOF'
+          image:
+            pullPolicy: Whenever
+          EOF
+          if helm lint charts/stellar-operator -f /tmp/bad-pullpolicy.yaml 2>&1 | grep -q "validation error"; then
+            echo "Schema correctly rejected invalid pullPolicy"
+          else
+            echo "ERROR: Schema did not reject invalid pullPolicy" && exit 1
+          fi
+
+      - name: Validate schema rejects invalid service type
+        run: |
+          cat > /tmp/bad-svctype.yaml <<'EOF'
+          service:
+            type: Magical
+          EOF
+          if helm lint charts/stellar-operator -f /tmp/bad-svctype.yaml 2>&1 | grep -q "validation error"; then
+            echo "Schema correctly rejected invalid service type"
+          else
+            echo "ERROR: Schema did not reject invalid service type" && exit 1
+          fi
+
   build:
     name: Build
     runs-on: ubuntu-latest

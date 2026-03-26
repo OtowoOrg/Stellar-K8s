@@ -125,3 +125,14 @@ defaultResources:
     limits:
       cpu: "4"
       memory: "8Gi"
+
+# Prometheus alerts
+prometheusAlerts:
+  enabled: true
+  labels: {}
+  annotations: {}
+  rules:
+    syncLagThreshold: 100
+    memoryPressurePercent: 90
+    reconcileFor: "5m"
+    historyThreshold: 5

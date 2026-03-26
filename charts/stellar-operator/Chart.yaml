@@ -1,4 +1,4 @@
-apiVersion: v2
+piVersion: v2
 name: stellar-operator
 description: A Helm chart for the Stellar-K8s Kubernetes Operator
 type: application

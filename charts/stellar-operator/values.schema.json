@@ -1,4 +1,4 @@
-{
+
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "stellar-operator Helm values",
   "type": "object",

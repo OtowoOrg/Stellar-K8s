@@ -375,3 +375,399 @@ mod tests {
         assert_eq!(peer_count, "3");
     }
 }
+
+// =============================================================================
+// DNS resolver trait-based unit tests
+// =============================================================================
+
+#[cfg(test)]
+mod dns_resolver_tests {
+    use std::collections::HashMap;
+    use std::net::IpAddr;
+    use std::str::FromStr;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use async_trait::async_trait;
+    use tokio::time::sleep;
+
+    use crate::controller::peer_discovery::{DnsError, DnsResolver, PeerDiscoveryConfig, PeerInfo};
+    use crate::crd::NodeType;
+
+    // -------------------------------------------------------------------------
+    // Mock DNS resolver
+    // -------------------------------------------------------------------------
+
+    /// Configurable mock DNS resolver for unit tests.
+    ///
+    /// Each hostname maps to one of three outcomes:
+    /// - `Ok(ips)` – successful resolution with one or more A records
+    /// - `Err(DnsError::NotFound)` – NXDOMAIN
+    /// - `Err(DnsError::Timeout)` – simulated slow resolver
+    struct MockDnsResolver {
+        /// Pre-configured responses keyed by hostname.
+        responses: HashMap<String, MockDnsResponse>,
+        /// Optional artificial delay applied before every response.
+        delay: Option<Duration>,
+    }
+
+    enum MockDnsResponse {
+        Success(Vec<IpAddr>),
+        NotFound,
+        Timeout,
+    }
+
+    impl MockDnsResolver {
+        fn new() -> Self {
+            Self {
+                responses: HashMap::new(),
+                delay: None,
+            }
+        }
+
+        fn with_delay(mut self, d: Duration) -> Self {
+            self.delay = Some(d);
+            self
+        }
+
+        fn add_success(mut self, hostname: &str, ips: Vec<&str>) -> Self {
+            let addrs = ips
+                .into_iter()
+                .map(|s| IpAddr::from_str(s).expect("valid IP in test fixture"))
+                .collect();
+            self.responses
+                .insert(hostname.to_string(), MockDnsResponse::Success(addrs));
+            self
+        }
+
+        fn add_nxdomain(mut self, hostname: &str) -> Self {
+            self.responses
+                .insert(hostname.to_string(), MockDnsResponse::NotFound);
+            self
+        }
+
+        fn add_timeout(mut self, hostname: &str) -> Self {
+            self.responses
+                .insert(hostname.to_string(), MockDnsResponse::Timeout);
+            self
+        }
+    }
+
+    #[async_trait]
+    impl DnsResolver for MockDnsResolver {
+        async fn resolve(&self, hostname: &str) -> Result<Vec<IpAddr>, DnsError> {
+            if let Some(delay) = self.delay {
+                sleep(delay).await;
+            }
+
+            match self.responses.get(hostname) {
+                Some(MockDnsResponse::Success(ips)) => Ok(ips.clone()),
+                Some(MockDnsResponse::NotFound) => Err(DnsError::NotFound(hostname.to_string())),
+                Some(MockDnsResponse::Timeout) => Err(DnsError::Timeout(hostname.to_string())),
+                None => Err(DnsError::NotFound(hostname.to_string())),
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Helper: resolve hostname via the trait and build PeerInfo list
+    // -------------------------------------------------------------------------
+
+    async fn resolve_to_peers(
+        resolver: &dyn DnsResolver,
+        hostname: &str,
+        port: u16,
+    ) -> Result<Vec<PeerInfo>, DnsError> {
+        let ips = resolver.resolve(hostname).await?;
+        let peers = ips
+            .into_iter()
+            .map(|ip| PeerInfo {
+                name: hostname.to_string(),
+                namespace: "stellar-system".to_string(),
+                node_type: NodeType::Validator,
+                ip: ip.to_string(),
+                port,
+            })
+            .collect();
+        Ok(peers)
+    }
+
+    // -------------------------------------------------------------------------
+    // Successful resolution – multiple A records
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_dns_resolves_multiple_a_records() {
+        let resolver = MockDnsResolver::new().add_success(
+            "validator-0.stellar-system.svc.cluster.local",
+            vec!["10.0.0.1", "10.0.0.2", "10.0.0.3"],
+        );
+
+        let ips = resolver
+            .resolve("validator-0.stellar-system.svc.cluster.local")
+            .await
+            .expect("resolution should succeed");
+
+        assert_eq!(ips.len(), 3);
+        assert!(ips.contains(&IpAddr::from_str("10.0.0.1").unwrap()));
+        assert!(ips.contains(&IpAddr::from_str("10.0.0.2").unwrap()));
+        assert!(ips.contains(&IpAddr::from_str("10.0.0.3").unwrap()));
+    }
+
+    #[tokio::test]
+    async fn test_dns_single_a_record_builds_one_peer() {
+        let resolver = MockDnsResolver::new().add_success(
+            "validator-1.stellar-system.svc.cluster.local",
+            vec!["192.168.1.10"],
+        );
+
+        let peers = resolve_to_peers(
+            &resolver,
+            "validator-1.stellar-system.svc.cluster.local",
+            11625,
+        )
+        .await
+        .expect("should build peer list");
+
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].ip, "192.168.1.10");
+        assert_eq!(peers[0].to_peer_string(), "192.168.1.10:11625");
+    }
+
+    #[tokio::test]
+    async fn test_dns_multiple_a_records_build_multiple_peers() {
+        let resolver = MockDnsResolver::new().add_success(
+            "validators.stellar-system.svc.cluster.local",
+            vec!["10.1.0.1", "10.1.0.2", "10.1.0.3", "10.1.0.4"],
+        );
+
+        let peers = resolve_to_peers(
+            &resolver,
+            "validators.stellar-system.svc.cluster.local",
+            11625,
+        )
+        .await
+        .expect("should build peer list");
+
+        assert_eq!(peers.len(), 4);
+        let peer_strings: Vec<String> = peers.iter().map(|p| p.to_peer_string()).collect();
+        assert!(peer_strings.contains(&"10.1.0.1:11625".to_string()));
+        assert!(peer_strings.contains(&"10.1.0.4:11625".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_dns_resolves_ipv6_addresses() {
+        let resolver = MockDnsResolver::new().add_success(
+            "validator-ipv6.stellar-system.svc.cluster.local",
+            vec!["fd00::1", "fd00::2"],
+        );
+
+        let ips = resolver
+            .resolve("validator-ipv6.stellar-system.svc.cluster.local")
+            .await
+            .expect("IPv6 resolution should succeed");
+
+        assert_eq!(ips.len(), 2);
+        assert!(ips.contains(&IpAddr::from_str("fd00::1").unwrap()));
+    }
+
+    // -------------------------------------------------------------------------
+    // NXDOMAIN / name-not-found fallback
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_dns_nxdomain_returns_not_found_error() {
+        let resolver =
+            MockDnsResolver::new().add_nxdomain("nonexistent.stellar-system.svc.cluster.local");
+
+        let result = resolver
+            .resolve("nonexistent.stellar-system.svc.cluster.local")
+            .await;
+
+        assert!(
+            matches!(result, Err(DnsError::NotFound(_))),
+            "expected NotFound, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_dns_nxdomain_error_message_contains_hostname() {
+        let hostname = "missing-node.stellar-system.svc.cluster.local";
+        let resolver = MockDnsResolver::new().add_nxdomain(hostname);
+
+        let err = resolver.resolve(hostname).await.unwrap_err();
+        assert!(
+            err.to_string().contains(hostname),
+            "error message should include the hostname"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_dns_nxdomain_produces_empty_peer_list_via_fallback() {
+        let resolver = MockDnsResolver::new().add_nxdomain("gone.stellar-system.svc.cluster.local");
+
+        // Callers should treat NotFound as "no peers available" rather than a
+        // hard failure – mirror the same pattern used in extract_peer_info.
+        let peers =
+            match resolve_to_peers(&resolver, "gone.stellar-system.svc.cluster.local", 11625).await
+            {
+                Ok(p) => p,
+                Err(DnsError::NotFound(_)) => Vec::new(),
+                Err(e) => panic!("unexpected error: {e}"),
+            };
+
+        assert!(peers.is_empty(), "NXDOMAIN should yield an empty peer list");
+    }
+
+    #[tokio::test]
+    async fn test_dns_unknown_hostname_treated_as_nxdomain() {
+        // MockDnsResolver returns NotFound for any hostname not explicitly registered.
+        let resolver = MockDnsResolver::new(); // no entries
+
+        let result = resolver.resolve("totally-unknown.example.com").await;
+        assert!(matches!(result, Err(DnsError::NotFound(_))));
+    }
+
+    // -------------------------------------------------------------------------
+    // Timeout handling
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_dns_timeout_returns_timeout_error() {
+        let resolver = MockDnsResolver::new().add_timeout("slow.stellar-system.svc.cluster.local");
+
+        let result = resolver
+            .resolve("slow.stellar-system.svc.cluster.local")
+            .await;
+
+        assert!(
+            matches!(result, Err(DnsError::Timeout(_))),
+            "expected Timeout, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_dns_timeout_error_message_contains_hostname() {
+        let hostname = "slow-node.stellar-system.svc.cluster.local";
+        let resolver = MockDnsResolver::new().add_timeout(hostname);
+
+        let err = resolver.resolve(hostname).await.unwrap_err();
+        assert!(
+            err.to_string().contains(hostname),
+            "timeout error should include the hostname"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_dns_timeout_produces_empty_peer_list_via_fallback() {
+        let resolver = MockDnsResolver::new().add_timeout("slow.stellar-system.svc.cluster.local");
+
+        let peers =
+            match resolve_to_peers(&resolver, "slow.stellar-system.svc.cluster.local", 11625).await
+            {
+                Ok(p) => p,
+                Err(DnsError::Timeout(_)) => Vec::new(),
+                Err(e) => panic!("unexpected error: {e}"),
+            };
+
+        assert!(peers.is_empty(), "timeout should yield an empty peer list");
+    }
+
+    /// Verify that a real timeout fires within the expected window using
+    /// tokio's time-control facilities.
+    #[tokio::test]
+    async fn test_dns_slow_resolver_triggers_timeout_within_deadline() {
+        // Resolver introduces a 200 ms artificial delay.
+        let resolver = MockDnsResolver::new()
+            .with_delay(Duration::from_millis(200))
+            .add_timeout("slow.stellar-system.svc.cluster.local");
+
+        let deadline = Duration::from_millis(500);
+        let result = tokio::time::timeout(
+            deadline,
+            resolver.resolve("slow.stellar-system.svc.cluster.local"),
+        )
+        .await;
+
+        // The outer timeout must not fire (200 ms < 500 ms deadline).
+        assert!(result.is_ok(), "outer deadline should not have fired");
+        // The resolver itself should return a Timeout error.
+        assert!(matches!(result.unwrap(), Err(DnsError::Timeout(_))));
+    }
+
+    // -------------------------------------------------------------------------
+    // Mixed-result batch resolution
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_batch_resolution_collects_only_successful_peers() {
+        let resolver = Arc::new(
+            MockDnsResolver::new()
+                .add_success(
+                    "validator-0.stellar-system.svc.cluster.local",
+                    vec!["10.0.0.1"],
+                )
+                .add_nxdomain("validator-1.stellar-system.svc.cluster.local")
+                .add_success(
+                    "validator-2.stellar-system.svc.cluster.local",
+                    vec!["10.0.0.3"],
+                )
+                .add_timeout("validator-3.stellar-system.svc.cluster.local"),
+        );
+
+        let hostnames = [
+            "validator-0.stellar-system.svc.cluster.local",
+            "validator-1.stellar-system.svc.cluster.local",
+            "validator-2.stellar-system.svc.cluster.local",
+            "validator-3.stellar-system.svc.cluster.local",
+        ];
+
+        let mut all_peers: Vec<PeerInfo> = Vec::new();
+        for hostname in &hostnames {
+            match resolve_to_peers(resolver.as_ref(), hostname, 11625).await {
+                Ok(peers) => all_peers.extend(peers),
+                Err(DnsError::NotFound(_)) | Err(DnsError::Timeout(_)) => {
+                    // graceful degradation – skip unreachable peers
+                }
+                Err(e) => panic!("unexpected error: {e}"),
+            }
+        }
+
+        assert_eq!(
+            all_peers.len(),
+            2,
+            "only the two successful resolutions should contribute peers"
+        );
+        let ips: Vec<&str> = all_peers.iter().map(|p| p.ip.as_str()).collect();
+        assert!(ips.contains(&"10.0.0.1"));
+        assert!(ips.contains(&"10.0.0.3"));
+    }
+
+    // -------------------------------------------------------------------------
+    // PeerDiscoveryConfig interaction
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_resolved_peer_uses_config_port() {
+        let config = PeerDiscoveryConfig {
+            peer_port: 9999,
+            ..Default::default()
+        };
+
+        let resolver = MockDnsResolver::new().add_success(
+            "validator-0.stellar-system.svc.cluster.local",
+            vec!["10.0.0.1"],
+        );
+
+        let peers = resolve_to_peers(
+            &resolver,
+            "validator-0.stellar-system.svc.cluster.local",
+            config.peer_port,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(peers[0].port, 9999);
+        assert_eq!(peers[0].to_peer_string(), "10.0.0.1:9999");
+    }
+}

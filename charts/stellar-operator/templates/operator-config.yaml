@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-config
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    defaultResources:
+      validator:
+        requests:
+          cpu: {{ .Values.defaultResources.validator.requests.cpu | quote }}
+          memory: {{ .Values.defaultResources.validator.requests.memory | quote }}
+        limits:
+          cpu: {{ .Values.defaultResources.validator.limits.cpu | quote }}
+          memory: {{ .Values.defaultResources.validator.limits.memory | quote }}
+      horizon:
+        requests:
+          cpu: {{ .Values.defaultResources.horizon.requests.cpu | quote }}
+          memory: {{ .Values.defaultResources.horizon.requests.memory | quote }}
+        limits:
+          cpu: {{ .Values.defaultResources.horizon.limits.cpu | quote }}
+          memory: {{ .Values.defaultResources.horizon.limits.memory | quote }}
+      sorobanRpc:
+        requests:
+          cpu: {{ .Values.defaultResources.sorobanRpc.requests.cpu | quote }}
+          memory: {{ .Values.defaultResources.sorobanRpc.requests.memory | quote }}
+        limits:
+          cpu: {{ .Values.defaultResources.sorobanRpc.limits.cpu | quote }}
+          memory: {{ .Values.defaultResources.sorobanRpc.limits.memory | quote }}

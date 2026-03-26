@@ -117,6 +117,14 @@ kubectl stellar logs my-validator -f
 
 See [kubectl-plugin.md](docs/kubectl-plugin.md) for complete documentation.
 
+### Architecture Decision Records (ADRs)
+
+Major architectural decisions are documented in our [ADR directory](docs/adr/README.md), including:
+
+- **Choice of Rust** - Rationale for selecting Rust as the programming language
+- **kube-rs Finalizers** - Strategy for resource cleanup and lifecycle management  
+- **CRD Versioning** - Approach to API evolution and backward compatibility
+
 ### 4. Custom Validation Policies with WebAssembly
 
 Stellar-K8s supports custom validation policies written in WebAssembly, allowing you to enforce organization-specific requirements without modifying the operator code.

@@ -127,6 +127,12 @@ struct RunArgs {
     /// Example: --dump-config
     #[arg(long)]
     dump_config: bool,
+
+    /// Run preflight checks and exit without starting the operator.
+    ///
+    /// Env: PREFLIGHT_ONLY
+    #[arg(long, env = "PREFLIGHT_ONLY")]
+    preflight_only: bool,
 }
 
 impl RunArgs {
@@ -143,9 +149,6 @@ impl RunArgs {
         }
         Ok(())
     }
-    /// Run preflight checks and exit without starting the operator
-    #[arg(long, env = "PREFLIGHT_ONLY")]
-    preflight_only: bool,
 }
 
 #[derive(Parser, Debug)]

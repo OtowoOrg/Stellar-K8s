@@ -1,4 +1,4 @@
----
+--
 # ClusterRole for the Stellar Operator
 # Grants permissions to watch/manage StellarNode CRDs and related resources
 apiVersion: rbac.authorization.k8s.io/v1

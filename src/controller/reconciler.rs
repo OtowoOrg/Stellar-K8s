@@ -88,6 +88,17 @@ pub struct ControllerState {
     pub is_leader: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Operator-level config loaded from the Helm-rendered ConfigMap (defaultResources).
     pub operator_config: std::sync::Arc<OperatorConfig>,
+    /// Monotonically increasing counter for each reconciliation attempt.
+    pub reconcile_id_counter: AtomicU64,
+    /// Unix timestamp (seconds) of the last successful reconcile cycle.
+    /// Zero means no successful reconcile has occurred yet.
+    pub last_reconcile_success: AtomicU64,
+}
+
+impl ControllerState {
+    pub fn next_reconcile_id(&self) -> u64 {
+        self.reconcile_id_counter.fetch_add(1, Ordering::Relaxed)
+    }
 }
 
 /// Main entry point to start the controller
@@ -1347,6 +1358,13 @@ pub(crate) async fn apply_stellar_node(
     }
 
     // 14. Update status to Running with ready replica count
+    ctx.last_reconcile_success.store(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        Ordering::Relaxed,
+    );
     Ok(Action::requeue(Duration::from_secs(if phase == "Ready" {
         60
     } else {

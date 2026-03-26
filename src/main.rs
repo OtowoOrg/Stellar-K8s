@@ -501,14 +501,12 @@ async fn run_webhook(args: WebhookArgs) -> Result<(), Error> {
         .from_env_lossy();
 
     let fmt_layer = match args.log_format {
-        LogFormat::Json => {
-            fmt::layer()
-                .json()
-                .flatten_event(true)
-                .with_current_span(true)
-                .with_span_list(true)
-                .with_target(true)
-        }
+        LogFormat::Json => fmt::layer()
+            .json()
+            .flatten_event(true)
+            .with_current_span(true)
+            .with_span_list(true)
+            .with_target(true),
         LogFormat::Pretty => fmt::layer().with_target(true),
     };
 
@@ -519,7 +517,8 @@ async fn run_webhook(args: WebhookArgs) -> Result<(), Error> {
         .with(fmt_layer)
         .init();
 
-    let root_span = info_span!("operator", node_name = "-", namespace = %namespace, reconcile_id = "-");
+    let root_span =
+        info_span!("operator", node_name = "-", namespace = %namespace, reconcile_id = "-");
     let _root_enter = root_span.enter();
 
     info!(
@@ -594,14 +593,12 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         .from_env_lossy();
 
     let fmt_layer = match args.log_format {
-        LogFormat::Json => {
-            fmt::layer()
-                .json()
-                .flatten_event(true)
-                .with_current_span(true)
-                .with_span_list(true)
-                .with_target(true)
-        }
+        LogFormat::Json => fmt::layer()
+            .json()
+            .flatten_event(true)
+            .with_current_span(true)
+            .with_span_list(true)
+            .with_target(true),
         LogFormat::Pretty => fmt::layer().with_target(true),
     };
 
@@ -741,9 +738,12 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         let identity = holder_identity.clone();
         let is_leader_bg = Arc::clone(&is_leader);
 
-        tokio::spawn(async move {
-            run_leader_election(lease_client, &lease_ns, &identity, is_leader_bg).await;
-        }.instrument(root_span.clone()));
+        tokio::spawn(
+            async move {
+                run_leader_election(lease_client, &lease_ns, &identity, is_leader_bg).await;
+            }
+            .instrument(root_span.clone()),
+        );
     }
 
     // Create shared controller state
@@ -756,18 +756,23 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         dry_run: args.dry_run,
         is_leader: Arc::clone(&is_leader),
         operator_config: Arc::new(operator_config),
+        reconcile_id_counter: AtomicU64::new(0),
+        last_reconcile_success: AtomicU64::new(0),
     });
 
     // Start the peer discovery manager
     let peer_discovery_client = client.clone();
     let peer_discovery_config = controller::PeerDiscoveryConfig::default();
-    tokio::spawn(async move {
-        let manager =
-            controller::PeerDiscoveryManager::new(peer_discovery_client, peer_discovery_config);
-        if let Err(e) = manager.run().await {
-            tracing::error!("Peer discovery manager error: {:?}", e);
+    tokio::spawn(
+        async move {
+            let manager =
+                controller::PeerDiscoveryManager::new(peer_discovery_client, peer_discovery_config);
+            if let Err(e) = manager.run().await {
+                tracing::error!("Peer discovery manager error: {:?}", e);
+            }
         }
-    }.instrument(root_span.clone()));
+        .instrument(root_span.clone()),
+    );
 
     // Start the REST API server and optional mTLS certificate rotation
     #[cfg(feature = "rest-api")]
@@ -786,11 +791,14 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
             .map(axum_server::tls_rustls::RustlsConfig::from_config);
         let server_tls = rustls_config.clone();
 
-        tokio::spawn(async move {
-            if let Err(e) = stellar_k8s::rest_api::run_server(api_state, server_tls).await {
-                tracing::error!("REST API server error: {:?}", e);
+        tokio::spawn(
+            async move {
+                if let Err(e) = stellar_k8s::rest_api::run_server(api_state, server_tls).await {
+                    tracing::error!("REST API server error: {:?}", e);
+                }
             }
-        }.instrument(root_span.clone()));
+            .instrument(root_span.clone()),
+        );
 
         // Certificate rotation: when mTLS is enabled, periodically check and rotate
         // server cert if within threshold, then graceful reload of TLS config
@@ -807,60 +815,66 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
                 .unwrap_or(controller::mtls::DEFAULT_CERT_ROTATION_THRESHOLD_DAYS);
             let is_leader_rot = Arc::clone(&is_leader);
 
-            tokio::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600)); // check hourly
-                interval.tick().await; // first tick completes immediately
-                loop {
-                    interval.tick().await;
-                    if !is_leader_rot.load(Ordering::Relaxed) {
-                        continue;
-                    }
-                    match controller::mtls::maybe_rotate_server_cert(
-                        &rotation_client,
-                        &rotation_namespace,
-                        rotation_dns.clone(),
-                        rotation_threshold_days,
-                    )
-                    .await
-                    {
-                        Ok(true) => {
-                            // Rotation performed: fetch new secret and reload TLS
-                            let secrets: kube::Api<k8s_openapi::api::core::v1::Secret> =
-                                kube::Api::namespaced(rotation_client.clone(), &rotation_namespace);
-                            if let Ok(secret) =
-                                secrets.get(controller::mtls::SERVER_CERT_SECRET_NAME).await
-                            {
-                                if let (Some(cert), Some(key), Some(ca)) = (
-                                    secret.data.as_ref().and_then(|d| d.get("tls.crt")),
-                                    secret.data.as_ref().and_then(|d| d.get("tls.key")),
-                                    secret.data.as_ref().and_then(|d| d.get("ca.crt")),
-                                ) {
-                                    match stellar_k8s::rest_api::build_tls_server_config(
-                                        &cert.0, &key.0, &ca.0,
+            tokio::spawn(
+                async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600)); // check hourly
+                    interval.tick().await; // first tick completes immediately
+                    loop {
+                        interval.tick().await;
+                        if !is_leader_rot.load(Ordering::Relaxed) {
+                            continue;
+                        }
+                        match controller::mtls::maybe_rotate_server_cert(
+                            &rotation_client,
+                            &rotation_namespace,
+                            rotation_dns.clone(),
+                            rotation_threshold_days,
+                        )
+                        .await
+                        {
+                            Ok(true) => {
+                                // Rotation performed: fetch new secret and reload TLS
+                                let secrets: kube::Api<k8s_openapi::api::core::v1::Secret> =
+                                    kube::Api::namespaced(
+                                        rotation_client.clone(),
+                                        &rotation_namespace,
+                                    );
+                                if let Ok(secret) =
+                                    secrets.get(controller::mtls::SERVER_CERT_SECRET_NAME).await
+                                {
+                                    if let (Some(cert), Some(key), Some(ca)) = (
+                                        secret.data.as_ref().and_then(|d| d.get("tls.crt")),
+                                        secret.data.as_ref().and_then(|d| d.get("tls.key")),
+                                        secret.data.as_ref().and_then(|d| d.get("ca.crt")),
                                     ) {
-                                        Ok(new_config) => {
-                                            rustls_config.reload_from_config(new_config);
-                                            info!(
+                                        match stellar_k8s::rest_api::build_tls_server_config(
+                                            &cert.0, &key.0, &ca.0,
+                                        ) {
+                                            Ok(new_config) => {
+                                                rustls_config.reload_from_config(new_config);
+                                                info!(
                                                 "TLS server config reloaded with new certificate"
                                             );
-                                        }
-                                        Err(e) => {
-                                            tracing::error!(
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
                                                 "Failed to build TLS config after rotation: {:?}",
                                                 e
                                             );
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                        Ok(false) => {}
-                        Err(e) => {
-                            tracing::error!("Certificate rotation check failed: {:?}", e);
+                            Ok(false) => {}
+                            Err(e) => {
+                                tracing::error!("Certificate rotation check failed: {:?}", e);
+                            }
                         }
                     }
                 }
-            }.instrument(root_span.clone()));
+                .instrument(root_span.clone()),
+            );
         }
     }
 

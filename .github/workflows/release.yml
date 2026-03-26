@@ -239,28 +239,14 @@ jobs:
           cd release-assets && sha256sum * > SHA256SUMS
 
       - name: Generate changelog
-        id: changelog
-        run: |
-          VERSION=${{ needs.validate.outputs.version }}
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-
-          {
-            echo "## Release v${VERSION}"
-            echo ""
-            echo "### Container Images"
-            echo '```'
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
-            echo '```'
-            echo ""
-            
-            if [[ -n "$PREV_TAG" ]]; then
-              echo "### Changes since ${PREV_TAG}"
-              echo ""
-              git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges
-            else
-              echo "### Initial Release"
-            fi
-          } > changelog.md
+        uses: orhun/git-cliff-action@v4
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: changelog.md
+          GITHUB_REPO: ${{ github.repository }}
 
       - name: Create release
         uses: softprops/action-gh-release@v2

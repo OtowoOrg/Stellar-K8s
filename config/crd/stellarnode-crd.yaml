@@ -75,6 +75,13 @@ spec:
                         staticAuthSecretRef:
                           type: string
                           description: Secret name with key static-auth-secret
+                podAntiAffinity:
+                  type: string
+                  enum: [Hard, Soft, Disabled]
+                  default: Hard
+                  description: >
+                    Controls default pod anti-affinity for pods sharing the same stellar-network label.
+                    Hard uses requiredDuringScheduling; Soft uses preferredDuringScheduling; Disabled skips pod anti-affinity.
                 resources:
                   type: object
                   properties:

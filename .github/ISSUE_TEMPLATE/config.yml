@@ -1,0 +1,16 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: "\U0001F512 Report a Security Vulnerability"
+    url: https://github.com/OtowoOrg/Stellar-K8s/security/advisories/new
+    about: >
+      Please use GitHub's private security advisory system to report vulnerabilities.
+      Do NOT open a public issue for security reports.
+
+  - name: "\U0001F41B Bug Report"
+    url: https://github.com/OtowoOrg/Stellar-K8s/issues/new?template=bug_report.yml
+    about: Report a non-security bug
+
+  - name: "\U0001F4AC Discussions"
+    url: https://github.com/OtowoOrg/Stellar-K8s/discussions
+    about: Ask questions or discuss ideas

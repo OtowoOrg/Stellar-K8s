@@ -14,7 +14,84 @@
 //! - Triggers config reload on healthy validators
 
 use std::collections::{BTreeMap, HashSet};
+use std::net::IpAddr;
 use std::time::Duration;
+
+use async_trait::async_trait;
+
+/// Errors that can occur during DNS resolution.
+#[derive(Debug, thiserror::Error)]
+pub enum DnsError {
+    /// The hostname does not exist (NXDOMAIN / no records found).
+    #[error("DNS resolution failed for '{0}': name not found (NXDOMAIN)")]
+    NotFound(String),
+    /// The resolver timed out before receiving a response.
+    #[error("DNS resolution timed out for '{0}'")]
+    Timeout(String),
+    /// Any other resolution error.
+    #[error("DNS resolution error for '{0}': {1}")]
+    Other(String, String),
+}
+
+/// Trait that abstracts DNS A-record resolution.
+///
+/// Implement this trait to swap in a real resolver or a test double.
+#[async_trait]
+pub trait DnsResolver: Send + Sync {
+    /// Resolve `hostname` to a list of IP addresses.
+    ///
+    /// Returns `Err(DnsError::NotFound)` when the name does not exist,
+    /// `Err(DnsError::Timeout)` when the query exceeds the deadline, and
+    /// `Ok(ips)` (possibly empty) on success.
+    async fn resolve(&self, hostname: &str) -> Result<Vec<IpAddr>, DnsError>;
+}
+
+/// Production DNS resolver backed by Tokio's async DNS lookup.
+pub struct TokioDnsResolver {
+    timeout: Duration,
+}
+
+impl TokioDnsResolver {
+    pub fn new(timeout: Duration) -> Self {
+        Self { timeout }
+    }
+}
+
+impl Default for TokioDnsResolver {
+    fn default() -> Self {
+        Self::new(Duration::from_secs(5))
+    }
+}
+
+#[async_trait]
+impl DnsResolver for TokioDnsResolver {
+    async fn resolve(&self, hostname: &str) -> Result<Vec<IpAddr>, DnsError> {
+        let hostname = hostname.to_string();
+        let timeout = self.timeout;
+
+        let lookup =
+            tokio::time::timeout(timeout, tokio::net::lookup_host(format!("{hostname}:0")))
+                .await
+                .map_err(|_| DnsError::Timeout(hostname.clone()))?
+                .map_err(|e| {
+                    let msg = e.to_string();
+                    if msg.contains("NXDOMAIN")
+                        || msg.contains("not found")
+                        || msg.contains("No such host")
+                    {
+                        DnsError::NotFound(hostname.clone())
+                    } else {
+                        DnsError::Other(hostname.clone(), msg)
+                    }
+                })?;
+
+        let ips: Vec<IpAddr> = lookup.map(|addr| addr.ip()).collect();
+        if ips.is_empty() {
+            return Err(DnsError::NotFound(hostname));
+        }
+        Ok(ips)
+    }
+}
 
 use k8s_openapi::api::core::v1::{ConfigMap, Service};
 use kube::{

@@ -1,44 +1,41 @@
-﻿{
+{
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "stellar-operator Helm values",
   "type": "object",
   "additionalProperties": false,
-  "properties": {
-    "replicaCount": {
-      "type": "integer",
-      "minimum": 1,
-      "description": "Number of operator replicas"
+  "definitions": {
+    "resourceList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpu": { "type": "string" },
+        "memory": { "type": "string" }
+      }
     },
+    "resourceRequirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": { "$ref": "#/definitions/resourceList" },
+        "limits": { "$ref": "#/definitions/resourceList" }
+      }
+    }
+  },
+  "properties": {
+    "replicaCount": { "type": "integer", "minimum": 1 },
     "image": {
       "type": "object",
       "additionalProperties": false,
       "required": ["repository", "pullPolicy"],
       "properties": {
-        "repository": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Container image repository"
-        },
-        "pullPolicy": {
-          "type": "string",
-          "enum": ["Always", "IfNotPresent", "Never"],
-          "description": "Image pull policy"
-        },
-        "tag": {
-          "type": "string",
-          "description": "Image tag (defaults to chart appVersion)"
-        }
+        "repository": { "type": "string", "minLength": 1 },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] },
+        "tag": { "type": "string" }
       }
     },
     "imagePullSecrets": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["name"],
-        "properties": {
-          "name": { "type": "string" }
-        }
-      }
+      "items": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" } } }
     },
     "nameOverride": { "type": "string" },
     "fullnameOverride": { "type": "string" },
@@ -46,18 +43,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "create": {
-          "type": "boolean",
-          "description": "Whether to create a ServiceAccount"
-        },
-        "annotations": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
-        },
-        "name": {
-          "type": "string",
-          "description": "ServiceAccount name override"
-        }
+        "create": { "type": "boolean" },
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } },
+        "name": { "type": "string" }
       }
     },
     "secrets": {
@@ -76,37 +64,16 @@
               "required": ["name", "kind"],
               "properties": {
                 "name": { "type": "string", "minLength": 1 },
-                "kind": {
-                  "type": "string",
-                  "enum": ["SecretStore", "ClusterSecretStore"]
-                }
+                "kind": { "type": "string", "enum": ["SecretStore", "ClusterSecretStore"] }
               }
             },
-            "refreshInterval": {
-              "type": "string",
-              "pattern": "^[0-9]+(s|m|h)$",
-              "description": "Refresh interval, e.g. 1h, 30m, 60s"
-            }
+            "refreshInterval": { "type": "string" }
           }
         },
-        "items": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["key", "value"],
-            "properties": {
-              "key": { "type": "string", "minLength": 1 },
-              "value": { "type": "string" }
-            }
-          }
-        }
+        "items": { "type": "object" }
       }
     },
-    "podAnnotations": {
-      "type": "object",
-      "additionalProperties": { "type": "string" }
-    },
+    "podAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },
     "podSecurityContext": {
       "type": "object",
       "properties": {
@@ -130,49 +97,29 @@
         }
       }
     },
-    "resources": {
-      "$ref": "#/definitions/resourceRequirements"
-    },
-    "nodeSelector": {
+    "resources": { "$ref": "#/definitions/resourceRequirements" },
+    "defaultResources": {
       "type": "object",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": false,
+      "properties": {
+        "validator": { "$ref": "#/definitions/resourceRequirements" },
+        "horizon": { "$ref": "#/definitions/resourceRequirements" },
+        "sorobanRpc": { "$ref": "#/definitions/resourceRequirements" }
+      }
     },
-    "tolerations": {
-      "type": "array",
-      "items": { "type": "object" }
-    },
+    "nodeSelector": { "type": "object", "additionalProperties": { "type": "string" } },
+    "tolerations": { "type": "array", "items": { "type": "object" } },
     "affinity": { "type": "object" },
     "operator": {
       "type": "object",
       "additionalProperties": false,
       "required": ["logLevel", "restApiEnabled", "restApiPort", "metricsPort"],
       "properties": {
-        "logLevel": {
-          "type": "string",
-          "enum": ["trace", "debug", "info", "warn", "error"],
-          "description": "Operator log level"
-        },
-        "restApiEnabled": {
-          "type": "boolean",
-          "description": "Enable the REST API"
-        },
-        "restApiPort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535,
-          "description": "REST API port"
-        },
-        "metricsPort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535,
-          "description": "Prometheus metrics port"
-        },
-        "watchNamespaces": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Namespaces to watch; empty means all namespaces"
-        }
+        "logLevel": { "type": "string", "enum": ["trace", "debug", "info", "warn", "error"] },
+        "restApiEnabled": { "type": "boolean" },
+        "restApiPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "metricsPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "watchNamespaces": { "type": "array", "items": { "type": "string" } }
       }
     },
     "service": {
@@ -180,45 +127,9 @@
       "additionalProperties": false,
       "required": ["type", "restApiPort", "metricsPort"],
       "properties": {
-        "type": {
-          "type": "string",
-          "enum": ["ClusterIP", "NodePort", "LoadBalancer", "ExternalName"],
-          "description": "Kubernetes Service type"
-        },
-        "restApiPort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
-        },
-        "metricsPort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
-        }
-      }
-    }
-  },
-  "definitions": {
-    "resourceList": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "cpu": {
-          "type": "string",
-          "description": "CPU quantity, e.g. 500m or 2"
-        },
-        "memory": {
-          "type": "string",
-          "description": "Memory quantity, e.g. 128Mi or 4Gi"
-        }
-      }
-    },
-    "resourceRequirements": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "requests": { "$ref": "#/definitions/resourceList" },
-        "limits": { "$ref": "#/definitions/resourceList" }
+        "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer", "ExternalName"] },
+        "restApiPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "metricsPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
       }
     }
   }

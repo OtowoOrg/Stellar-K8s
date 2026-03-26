@@ -6,6 +6,7 @@ pub mod maintenance;
 pub mod resource_meta;
 
 mod archive_health;
+pub mod audit;
 pub mod captive_core;
 pub mod conditions;
 pub mod cost;

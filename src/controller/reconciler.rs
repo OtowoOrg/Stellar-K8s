@@ -263,6 +263,13 @@ where
         };
         let message = format!("Dry Run: Would {action} {resource_info}");
         info!("{}", message);
+        // Enhanced logging with resource type and namespace
+        let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+        let name = node.name_any();
+        debug!(
+            "Dry Run: {} {}/{} - {}",
+            action, namespace, name, resource_info
+        );
         emit_event(&ctx.client, node, "Normal", reason, &message).await?;
         Ok(())
     } else {
@@ -383,16 +390,16 @@ pub(crate) async fn apply_stellar_node(
 
     // 1. Core infrastructure (PVC and ConfigMap) always managed by operator
     apply_or_emit(ctx, node, ActionType::Update, "PVC and ConfigMap", async {
-        resources::ensure_pvc(client, node).await?;
-        resources::ensure_config_map(client, node, None, ctx.enable_mtls).await?;
+        resources::ensure_pvc(client, node, ctx.dry_run).await?;
+        resources::ensure_config_map(client, node, None, ctx.enable_mtls, ctx.dry_run).await?;
         Ok(())
     })
     .await?;
 
     // 1a. Managed Database (CloudNativePG)
     apply_or_emit(ctx, node, ActionType::Update, "Managed Database", async {
-        resources::ensure_cnpg_cluster(client, node).await?;
-        resources::ensure_cnpg_pooler(client, node).await?;
+        resources::ensure_cnpg_cluster(client, node, ctx.dry_run).await?;
+        resources::ensure_cnpg_pooler(client, node, ctx.dry_run).await?;
         Ok(())
     })
     .await?;
@@ -405,20 +412,29 @@ pub(crate) async fn apply_stellar_node(
             ActionType::Update,
             "Suspended state resources",
             async {
-                resources::ensure_pvc(client, node).await?;
-                resources::ensure_config_map(client, node, None, ctx.enable_mtls).await?;
+                resources::ensure_pvc(client, node, ctx.dry_run).await?;
+                resources::ensure_config_map(client, node, None, ctx.enable_mtls, ctx.dry_run)
+                    .await?;
 
                 match node.spec.node_type {
                     NodeType::Validator => {
                         // Suspended validators don't need seed injection resolved
-                        resources::ensure_statefulset(client, node, ctx.enable_mtls, None).await?;
+                        resources::ensure_statefulset(
+                            client,
+                            node,
+                            ctx.enable_mtls,
+                            None,
+                            ctx.dry_run,
+                        )
+                        .await?;
                     }
                     NodeType::Horizon | NodeType::SorobanRpc => {
-                        resources::ensure_deployment(client, node, ctx.enable_mtls).await?;
+                        resources::ensure_deployment(client, node, ctx.enable_mtls, ctx.dry_run)
+                            .await?;
                     }
                 }
 
-                resources::ensure_service(client, node, ctx.enable_mtls).await?;
+                resources::ensure_service(client, node, ctx.enable_mtls, ctx.dry_run).await?;
                 Ok(())
             },
         )
@@ -647,7 +663,7 @@ pub(crate) async fn apply_stellar_node(
 
     // 1. Create/update the PersistentVolumeClaim
     apply_or_emit(ctx, node, ActionType::Create, "PVC", async {
-        resources::ensure_pvc(client, node).await?;
+        resources::ensure_pvc(client, node, ctx.dry_run).await?;
         Ok(())
     })
     .await?;
@@ -680,8 +696,14 @@ pub(crate) async fn apply_stellar_node(
 
     // 3. Create/update the ConfigMap for node configuration
     apply_or_emit(ctx, node, ActionType::Update, "ConfigMap", async {
-        resources::ensure_config_map(client, node, quorum_override.clone(), ctx.enable_mtls)
-            .await?;
+        resources::ensure_config_map(
+            client,
+            node,
+            quorum_override.clone(),
+            ctx.enable_mtls,
+            ctx.dry_run,
+        )
+        .await?;
         Ok(())
     })
     .await?;
@@ -756,6 +778,7 @@ pub(crate) async fn apply_stellar_node(
                         node,
                         ctx.enable_mtls,
                         seed_injection.as_ref(),
+                        ctx.dry_run,
                     )
                     .await?;
                     kms_secret::reconcile_vault_secret_rotation(
@@ -814,15 +837,15 @@ pub(crate) async fn apply_stellar_node(
 
                         if is_canary_active {
                             // 2. Monitor Canary: we are in the middle of a rollout
-                            resources::ensure_canary_deployment(client, node, ctx.enable_mtls).await?;
-                            resources::ensure_canary_service(client, node, ctx.enable_mtls).await?;
+                            resources::ensure_canary_deployment(client, node, ctx.enable_mtls, ctx.dry_run).await?;
+                            resources::ensure_canary_service(client, node, ctx.enable_mtls, ctx.dry_run).await?;
 
                             let mut stable_node = node.clone();
                             // Recover the stable version from the existing deployment if possible
                             if let Some(cv) = &current_version {
                                 stable_node.spec.version = cv.clone();
                             }
-                            resources::ensure_deployment(client, &stable_node, ctx.enable_mtls).await?;
+                            resources::ensure_deployment(client, &stable_node, ctx.enable_mtls, ctx.dry_run).await?;
 
                             // Check if the canary interval has elapsed
                             if let Some(status) = &node.status {
@@ -844,8 +867,8 @@ pub(crate) async fn apply_stellar_node(
                                             if canary_health.healthy {
                                                 // 4a. Promote Canary
                                                 info!("Canary {}/{} is healthy. Promoting to stable.", namespace, name);
-                                                resources::ensure_deployment(client, node, ctx.enable_mtls).await?;
-                                                resources::delete_canary_resources(client, node).await?;
+                                                resources::ensure_deployment(client, node, ctx.enable_mtls, ctx.dry_run).await?;
+                                                resources::delete_canary_resources(client, node, ctx.dry_run).await?;
 
                                                 let patch = serde_json::json!({
                                                     "status": {
@@ -862,7 +885,7 @@ pub(crate) async fn apply_stellar_node(
                                             } else {
                                                 // 4b. Rollback Canary
                                                 warn!("Canary {}/{} is unhealthy. Rolling back.", namespace, name);
-                                                resources::delete_canary_resources(client, node).await?;
+                                                resources::delete_canary_resources(client, node, ctx.dry_run).await?;
 
                                                 // Clean up canary status, emitting failure message
                                                 let message = format!("Canary rollback triggered due to failed health check: {}", canary_health.message);
@@ -899,16 +922,16 @@ pub(crate) async fn apply_stellar_node(
                             }
                         } else {
                             // No canary active, regular deployment ensure
-                            resources::ensure_deployment(client, node, ctx.enable_mtls).await?;
-                            resources::delete_canary_resources(client, node).await?;
+                            resources::ensure_deployment(client, node, ctx.enable_mtls, ctx.dry_run).await?;
+                            resources::delete_canary_resources(client, node, ctx.dry_run).await?;
                         }
                     } else {
                         // RPC nodes use Deployment
-                        resources::ensure_deployment(client, node, ctx.enable_mtls).await?;
+                        resources::ensure_deployment(client, node, ctx.enable_mtls, ctx.dry_run).await?;
                         info!("Deployment ensured for RPC node {}/{}", namespace, name);
 
                         // Clean up canary resources if they exist
-                        resources::delete_canary_resources(client, node).await?;
+                        resources::delete_canary_resources(client, node, ctx.dry_run).await?;
                     }
                 }
             }
@@ -955,7 +978,7 @@ pub(crate) async fn apply_stellar_node(
         async {
             if node.spec.autoscaling.is_some() {
                 resources::ensure_service_monitor(client, node).await?;
-                resources::ensure_hpa(client, node).await?;
+                resources::ensure_hpa(client, node, ctx.dry_run).await?;
             }
 
             // VPA Integration
@@ -969,9 +992,9 @@ pub(crate) async fn apply_stellar_node(
                 }
             }
 
-            resources::ensure_pdb(client, node).await?;
-            resources::ensure_alerting(client, node).await?;
-            resources::ensure_network_policy(client, node).await?;
+            resources::ensure_pdb(client, node, ctx.dry_run).await?;
+            resources::ensure_alerting(client, node, ctx.dry_run).await?;
+            resources::ensure_network_policy(client, node, ctx.dry_run).await?;
             Ok(())
         },
     )
@@ -1302,7 +1325,19 @@ pub(crate) async fn apply_stellar_node(
         super::cost::report_cost_metric(&namespace, &name, &node.spec.node_type.to_string(), cost);
     }
 
-    // 13. Update status to Running with ready replica count
+    // 13. Stamp audit annotations for the permanent reconcile trail.
+    {
+        use super::audit::actions;
+        let action = match node.spec.node_type {
+            crate::crd::NodeType::Validator => actions::UPDATED_STATEFULSET,
+            crate::crd::NodeType::Horizon | crate::crd::NodeType::SorobanRpc => {
+                actions::UPDATED_DEPLOYMENT
+            }
+        };
+        super::audit::patch_audit_annotations(client, node, action).await;
+    }
+
+    // 14. Update status to Running with ready replica count
     Ok(Action::requeue(Duration::from_secs(if phase == "Ready" {
         60
     } else {
@@ -1326,7 +1361,7 @@ pub(crate) async fn cleanup_stellar_node(
 
     // 0a. Delete Managed Database Resources
     apply_or_emit(ctx, node, ActionType::Delete, "Managed Database", async {
-        if let Err(e) = resources::delete_cnpg_resources(client, node).await {
+        if let Err(e) = resources::delete_cnpg_resources(client, node, ctx.dry_run).await {
             warn!("Failed to delete CNPG resources: {:?}", e);
         }
         Ok(())
@@ -1335,7 +1370,7 @@ pub(crate) async fn cleanup_stellar_node(
 
     // 0. Delete Alerting
     apply_or_emit(ctx, node, ActionType::Delete, "Alerting", async {
-        if let Err(e) = resources::delete_alerting(client, node).await {
+        if let Err(e) = resources::delete_alerting(client, node, ctx.dry_run).await {
             warn!("Failed to delete alerting: {:?}", e);
         }
         Ok(())
@@ -1353,7 +1388,7 @@ pub(crate) async fn cleanup_stellar_node(
 
     // 1. Delete HPA (if autoscaling was configured)
     apply_or_emit(ctx, node, ActionType::Delete, "HPA", async {
-        if let Err(e) = resources::delete_hpa(client, node).await {
+        if let Err(e) = resources::delete_hpa(client, node, ctx.dry_run).await {
             warn!("Failed to delete HPA: {:?}", e);
         }
         Ok(())
@@ -1371,7 +1406,7 @@ pub(crate) async fn cleanup_stellar_node(
 
     // 3. Delete Ingress
     apply_or_emit(ctx, node, ActionType::Delete, "Ingress", async {
-        if let Err(e) = resources::delete_ingress(client, node).await {
+        if let Err(e) = resources::delete_ingress(client, node, ctx.dry_run).await {
             warn!("Failed to delete Ingress: {:?}", e);
         }
         Ok(())
@@ -1380,7 +1415,7 @@ pub(crate) async fn cleanup_stellar_node(
 
     // 3a. Delete NetworkPolicy
     apply_or_emit(ctx, node, ActionType::Delete, "NetworkPolicy", async {
-        if let Err(e) = resources::delete_network_policy(client, node).await {
+        if let Err(e) = resources::delete_network_policy(client, node, ctx.dry_run).await {
             warn!("Failed to delete NetworkPolicy: {:?}", e);
         }
         Ok(())
@@ -1416,7 +1451,7 @@ pub(crate) async fn cleanup_stellar_node(
 
     // 3d. Delete PDB
     apply_or_emit(ctx, node, ActionType::Delete, "PDB", async {
-        if let Err(e) = resources::delete_pdb(client, node).await {
+        if let Err(e) = resources::delete_pdb(client, node, ctx.dry_run).await {
             warn!("Failed to delete PodDisruptionBudget: {:?}", e);
         }
         Ok(())
@@ -1425,7 +1460,7 @@ pub(crate) async fn cleanup_stellar_node(
 
     // 4. Delete Service
     apply_or_emit(ctx, node, ActionType::Delete, "Service", async {
-        if let Err(e) = resources::delete_service(client, node).await {
+        if let Err(e) = resources::delete_service(client, node, ctx.dry_run).await {
             warn!("Failed to delete Service: {:?}", e);
         }
         Ok(())
@@ -1434,7 +1469,7 @@ pub(crate) async fn cleanup_stellar_node(
 
     // 5. Delete Deployment/StatefulSet
     apply_or_emit(ctx, node, ActionType::Delete, "Workload", async {
-        if let Err(e) = resources::delete_workload(client, node).await {
+        if let Err(e) = resources::delete_workload(client, node, ctx.dry_run).await {
             warn!("Failed to delete workload: {:?}", e);
         }
         Ok(())
@@ -1443,7 +1478,7 @@ pub(crate) async fn cleanup_stellar_node(
 
     // 6. Delete ConfigMap
     apply_or_emit(ctx, node, ActionType::Delete, "ConfigMap", async {
-        if let Err(e) = resources::delete_config_map(client, node).await {
+        if let Err(e) = resources::delete_config_map(client, node, ctx.dry_run).await {
             warn!("Failed to delete ConfigMap: {:?}", e);
         }
         Ok(())
@@ -1457,7 +1492,7 @@ pub(crate) async fn cleanup_stellar_node(
             namespace, name
         );
         apply_or_emit(ctx, node, ActionType::Delete, "PVC", async {
-            if let Err(e) = resources::delete_pvc(client, node).await {
+            if let Err(e) = resources::delete_pvc(client, node, ctx.dry_run).await {
                 warn!("Failed to delete PVC: {:?}", e);
             }
             Ok(())

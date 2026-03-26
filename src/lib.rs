@@ -8,6 +8,7 @@ pub mod carbon_aware;
 pub mod controller;
 pub mod crd;
 pub mod error;
+pub mod preflight;
 pub mod scheduler;
 pub mod telemetry;
 

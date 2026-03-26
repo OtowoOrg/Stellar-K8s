@@ -7,14 +7,14 @@
 //! StellarNode `spec.resources` > Helm defaults (this file) > hardcoded fallback.
 
 use crate::crd::{NodeType, ResourceRequirements, ResourceSpec};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 /// Per-node-type default resources from Helm `defaultResources.*`
 ///
 /// `Default` uses **empty** cpu/memory strings so that `defaults_for()`
 /// can detect "no Helm value provided" and fall through to hardcoded fallbacks.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeResourceDefaults {
     pub requests: ResourceSpec,
@@ -37,13 +37,13 @@ impl Default for NodeResourceDefaults {
 }
 
 /// Top-level operator config file schema
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OperatorConfig {
     pub default_resources: DefaultResources,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DefaultResources {
     pub validator: NodeResourceDefaults,

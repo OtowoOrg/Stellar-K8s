@@ -4,6 +4,7 @@ description: A Helm chart for the Stellar-K8s Kubernetes Operator
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+icon: https://stellar.org/img/stellar-logo.png
 keywords:
   - stellar
   - kubernetes
@@ -15,3 +16,4 @@ maintainers:
     url: https://github.com/stellar/stellar-k8s
 sources:
   - https://github.com/stellar/stellar-k8s
+

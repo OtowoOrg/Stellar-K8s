@@ -1,6 +1,6 @@
-{{- if .Values.prometheusAlerts.enabled }}
-{{- $labels := .Values.prometheusAlerts.labels | default dict }}
-{{- $annotations := .Values.prometheusAlerts.annotations | default dict }}
+{{- if .Values.monitoring.prometheusAlerts.enabled }}
+{{- $labels := .Values.monitoring.prometheusAlerts.labels | default dict }}
+{{- $annotations := .Values.monitoring.prometheusAlerts.annotations | default dict }}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -17,9 +17,9 @@ spec:
     # StellarNode Sync Lag Alert
     - alert: StellarNodeSyncLag
       expr: |
-        stellar_core_ledger_age_seconds{job=~"stellar-operator.*"} > {{ .Values.prometheusAlerts.rules.syncLagThreshold | default 100 }}
+        stellar_core_ledger_age_seconds{job=~"stellar-operator.*"} > {{ .Values.monitoring.prometheusAlerts.rules.syncLagThreshold | default 100 }}
         or
-        stellar_node_ingestion_lag_seconds{job=~"stellar-operator.*"} > {{ .Values.prometheusAlerts.rules.syncLagThreshold | default 100 }}
+        stellar_node_ingestion_lag_seconds{job=~"stellar-operator.*"} > {{ .Values.monitoring.prometheusAlerts.rules.syncLagThreshold | default 100 }}
       for: 5m
       labels:
         severity: warning
@@ -36,7 +36,7 @@ spec:
         sum(container_memory_working_set_bytes{job=~"stellar-operator/stellar-node",container!~"POD|bridge|host"}) by (instance)
         /
         sum(container_spec_memory_limit_bytes{job=~"stellar-operator/stellar-node",container!~"POD|bridge|host"}) by (instance)
-        > bool {{ .Values.prometheusAlerts.rules.memoryPressurePercent | default 90 }} / 100
+        > bool {{ .Values.monitoring.prometheusAlerts.rules.memoryPressurePercent | default 90 }} / 100
       for: 10m
       labels:
         severity: warning
@@ -50,7 +50,7 @@ spec:
     # Operator Reconcile Errors
     - alert: StellarOperatorReconcileErrors
       expr: increase(stellar_reconcile_errors_total[5m]) > 0.1
-      for: {{ .Values.prometheusAlerts.rules.reconcileFor | default "5m" }}
+      for: {{ .Values.monitoring.prometheusAlerts.rules.reconcileFor | default "5m" }}
       labels:
         severity: critical
       annotations:
@@ -63,7 +63,7 @@ spec:
     # History Archive Unresponsive (using ingestion lag as proxy)
     - alert: StellarHistoryArchiveUnresponsive
       expr: |
-        stellar_node_ingestion_lag_seconds{job=~"stellar-operator/stellar-node",node_type=\"Horizon\"} > {{ .Values.prometheusAlerts.rules.historyThreshold | default 300 }}
+        stellar_node_ingestion_lag_seconds{job=~"stellar-operator/stellar-node",node_type=\"Horizon\"} > {{ .Values.monitoring.prometheusAlerts.rules.historyThreshold | default 300 }}
       for: 10m
       labels:
         severity: critical
@@ -74,3 +74,4 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
 {{- end }}
+

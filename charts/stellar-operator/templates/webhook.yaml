@@ -1,4 +1,4 @@
---
+---
 # Namespace for the webhook
 apiVersion: v1
 kind: Namespace

@@ -83,6 +83,36 @@ impl StellarNetwork {
             StellarNetwork::Custom(passphrase) => passphrase,
         }
     }
+
+    /// Stable, DNS-1123-friendly label value for topology spread and anti-affinity.
+    pub fn scheduling_label_value(&self) -> String {
+        match self {
+            StellarNetwork::Mainnet => "mainnet".to_string(),
+            StellarNetwork::Testnet => "testnet".to_string(),
+            StellarNetwork::Futurenet => "futurenet".to_string(),
+            StellarNetwork::Custom(passphrase) => {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut h = DefaultHasher::new();
+                passphrase.hash(&mut h);
+                format!("custom-{:x}", h.finish())
+            }
+        }
+    }
+}
+
+/// Controls default pod anti-affinity for spreading pods that share the same
+/// [`StellarNetwork`] across nodes.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
+pub enum PodAntiAffinityStrength {
+    /// `requiredDuringScheduling` — do not place on a node that already runs a matching pod.
+    #[default]
+    Hard,
+    /// `preferredDuringScheduling` — best-effort separation with weight 100.
+    Soft,
+    /// Do not inject pod anti-affinity (topology spread defaults still apply unless overridden).
+    Disabled,
 }
 
 /// Kubernetes-style resource requirements

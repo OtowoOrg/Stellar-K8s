@@ -93,6 +93,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 maintenance_mode: false,
                 network_policy: None,
                 dr_config: None,
+                pod_anti_affinity: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -181,6 +182,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 maintenance_mode: false,
                 network_policy: None,
                 dr_config: None,
+                pod_anti_affinity: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -267,6 +269,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 maintenance_mode: false,
                 network_policy: None,
                 dr_config: None,
+                pod_anti_affinity: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -304,9 +307,14 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             client,
             enable_mtls: false,
             operator_namespace: "stellar-operator".to_string(),
+            watch_namespace: None,
             mtls_config: None,
             dry_run: true,
             is_leader: Arc::new(AtomicBool::new(true)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
             operator_config: Arc::new(Default::default()),
         });
 
@@ -333,9 +341,14 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             client,
             enable_mtls: false,
             operator_namespace: "stellar-operator".to_string(),
+            watch_namespace: None,
             mtls_config: None,
             dry_run: true,
             is_leader: Arc::new(AtomicBool::new(true)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
             operator_config: Arc::new(Default::default()),
         });
 
@@ -361,9 +374,14 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             client,
             enable_mtls: false,
             operator_namespace: "stellar-operator".to_string(),
+            watch_namespace: None,
             mtls_config: None,
             dry_run: true,
             is_leader: Arc::new(AtomicBool::new(true)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
             operator_config: Arc::new(Default::default()),
         });
 
@@ -581,9 +599,14 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             client: client.clone(),
             enable_mtls: true,
             operator_namespace: "test-namespace".to_string(),
+            watch_namespace: None,
             mtls_config: None,
             dry_run: false,
             is_leader: Arc::new(AtomicBool::new(true)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
             operator_config: Arc::new(Default::default()),
         };
 
@@ -605,9 +628,14 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             client,
             enable_mtls: false,
             operator_namespace: "default".to_string(),
+            watch_namespace: None,
             mtls_config: None,
             dry_run: true,
             is_leader: Arc::new(AtomicBool::new(true)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
             operator_config: Arc::new(Default::default()),
         };
 

@@ -1,0 +1,30 @@
+# Development Dockerfile with cargo-watch for hot-reloading
+FROM rust:1.93-bookworm
+
+WORKDIR /app
+
+# Install cargo-watch for hot-reloading
+RUN cargo install cargo-watch
+
+# Install kubectl for K8s API interaction
+RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+    && chmod +x kubectl \
+    && mv kubectl /usr/local/bin/
+
+# Copy dependency manifests for caching
+COPY Cargo.toml Cargo.lock ./
+COPY build.rs ./
+
+# Create dummy source to cache dependencies
+RUN mkdir -p src && \
+    echo "fn main() {}" > src/main.rs && \
+    cargo build && \
+    rm -rf src
+
+# Copy actual source code
+COPY . .
+
+# Expose ports
+EXPOSE 8080 9090
+
+CMD ["cargo", "watch", "-x", "run -- run --namespace stellar-system --dry-run"]

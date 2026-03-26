@@ -13,9 +13,10 @@ use super::types::{
     AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
     DisasterRecoveryStatus, ExternalDatabaseConfig, ForensicSnapshotConfig, GlobalDiscoveryConfig,
     HistoryMode, HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig,
-    NetworkPolicyConfig, NodeType, OciSnapshotConfig, ResourceRequirements,
-    RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy, SnapshotScheduleConfig,
-    SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig, VpaConfig,
+    NetworkPolicyConfig, NodeType, OciSnapshotConfig, PodAntiAffinityStrength,
+    ResourceRequirements, RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy,
+    SnapshotScheduleConfig, SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig,
+    VpaConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`
@@ -139,6 +140,11 @@ pub struct StellarNodeSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dr_config: Option<DisasterRecoveryConfig>,
 
+    /// When not `Disabled`, the operator adds default pod anti-affinity so pods with the same
+    /// `stellar-network` label (and same component) are not co-located on one node.
+    #[serde(default)]
+    pub pod_anti_affinity: PodAntiAffinityStrength,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Vec<serde_json::Value>>")]
     pub topology_spread_constraints:
@@ -236,6 +242,7 @@ impl StellarNodeSpec {
     /// # maintenance_mode: false,
     /// # network_policy: None,
     /// # dr_config: None,
+    /// # pod_anti_affinity: Default::default(),
     /// # topology_spread_constraints: None,
     /// # cve_handling: None,
     /// # read_replica_config: None,
@@ -463,7 +470,12 @@ impl StellarNodeSpec {
             NodeType::Validator => "stellar-core",
             _ => "horizon",
         };
-        format!("stellar/{}:{}", name, self.version)
+        let separator = if self.version.starts_with("sha256:") {
+            "@"
+        } else {
+            ":"
+        };
+        format!("stellar/{}{}{}", name, separator, self.version)
     }
 
     pub fn should_delete_pvc(&self) -> bool {
@@ -1138,6 +1150,7 @@ mod tests {
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
+            pod_anti_affinity: Default::default(),
             topology_spread_constraints: None,
             cross_cluster: None,
             cve_handling: None,
@@ -1193,6 +1206,7 @@ mod tests {
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
+            pod_anti_affinity: Default::default(),
             topology_spread_constraints: None,
             cross_cluster: None,
             cve_handling: None,
@@ -1209,5 +1223,73 @@ mod tests {
         };
 
         assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_container_image_formats() {
+        // 1. Standard tag
+        let mut spec = StellarNodeSpec {
+            node_type: NodeType::Validator,
+            network: StellarNetwork::Testnet,
+            version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
+            resources: Default::default(),
+            storage: Default::default(),
+            validator_config: None,
+            horizon_config: None,
+            soroban_config: None,
+            replicas: 1,
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            managed_database: None,
+            autoscaling: None,
+            vpa_config: None,
+            ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            cross_cluster: None,
+            strategy: Default::default(),
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            pod_anti_affinity: Default::default(),
+            topology_spread_constraints: None,
+            cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
+            read_replica_config: None,
+            db_maintenance_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
+            forensic_snapshot: None,
+            resource_meta: None,
+            read_pool_endpoint: None,
+        };
+        assert_eq!(spec.container_image(), "stellar/stellar-core:v21.0.0");
+
+        // 2. Pure digest
+        spec.version =
+            "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678".to_string();
+        assert_eq!(
+            spec.container_image(),
+            "stellar/stellar-core@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+        );
+
+        // 3. Tag with digest
+        spec.version =
+            "v21.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+                .to_string();
+        assert_eq!(
+            spec.container_image(),
+            "stellar/stellar-core:v21.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+        );
+
+        // 4. Horizon node
+        spec.node_type = NodeType::Horizon;
+        spec.version = "v2.10.0".to_string();
+        assert_eq!(spec.container_image(), "stellar/horizon:v2.10.0");
     }
 }

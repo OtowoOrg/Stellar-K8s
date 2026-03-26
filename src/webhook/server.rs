@@ -24,7 +24,7 @@ use super::types::{
     Operation, PluginConfig, PluginExecutionResult, PluginMetadata, UserInfo, ValidationInput,
     ValidationOutput,
 };
-use crate::crd::StellarNode;
+use crate::crd::{StellarNode, StellarNodeSpec};
 use crate::error::{Error, Result};
 
 /// Webhook server state
@@ -177,10 +177,17 @@ impl WebhookServer {
     /// Validate a StellarNode (built-in spec validation first, then Wasm plugins)
     #[instrument(skip(self, input))]
     pub async fn validate(&self, input: ValidationInput) -> ServerValidationResult {
-        // Built-in validation: reject invalid nodeType or missing required fields before plugins
+        let mut warnings = Vec::new();
+
         if let Some(ref object) = input.object {
             if matches!(input.operation, Operation::Create | Operation::Update) {
-                if let Some(builtin) = validate_spec_builtin(object) {
+                // Collect image pinning warnings
+                if let Ok(node) = serde_json::from_value::<StellarNode>(object.clone()) {
+                    warnings.extend(check_image_pinning(&node.spec));
+                }
+
+                if let Some(mut builtin) = validate_spec_builtin(object) {
+                    builtin.warnings.extend(warnings);
                     return builtin;
                 }
             }
@@ -192,7 +199,7 @@ impl WebhookServer {
             return ServerValidationResult {
                 allowed: true,
                 message: Some("No validation plugins configured".to_string()),
-                warnings: vec![],
+                warnings,
                 plugin_results: vec![],
                 total_execution_time_ms: 0,
             };
@@ -203,7 +210,7 @@ impl WebhookServer {
 
         let mut allowed = true;
         let mut messages = Vec::new();
-        let mut warnings = Vec::new();
+        let mut warnings_from_plugins = Vec::new();
         let mut plugin_results = Vec::new();
 
         for result in results {
@@ -215,7 +222,7 @@ impl WebhookServer {
                             messages.push(format!("{}: {}", exec_result.plugin_name, msg));
                         }
                     }
-                    warnings.extend(exec_result.output.warnings.clone());
+                    warnings_from_plugins.extend(exec_result.output.warnings.clone());
                     plugin_results.push(exec_result);
                 }
                 Err(e) => {
@@ -239,7 +246,11 @@ impl WebhookServer {
             } else {
                 Some(messages.join("; "))
             },
-            warnings,
+            warnings: {
+                let mut w = warnings;
+                w.extend(warnings_from_plugins);
+                w
+            },
             plugin_results,
             total_execution_time_ms: start.elapsed().as_millis() as u64,
         }
@@ -621,6 +632,25 @@ fn validate_spec_builtin(object: &serde_json::Value) -> Option<ServerValidationR
         plugin_results: vec![],
         total_execution_time_ms: 0,
     })
+}
+
+/// Check if image is pinned by digest and return warnings if not.
+fn check_image_pinning(spec: &StellarNodeSpec) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if !spec.version.contains("@sha256:") {
+        if spec.version == "latest" {
+            warnings.push(format!(
+                "Using mutable tag 'latest' is a security risk. For production, always use an image digest (e.g., 'version: {}@sha256:...') to ensure reproducibility and prevent supply chain attacks.",
+                spec.version
+            ));
+        } else {
+            warnings.push(format!(
+                "Mutable image tag '{}' used. For production, it is recommended to pin the image by digest (e.g., 'version: {}@sha256:...') for better security.",
+                spec.version, spec.version
+            ));
+        }
+    }
+    warnings
 }
 
 /// Build ValidationInput from AdmissionRequest

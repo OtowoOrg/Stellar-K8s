@@ -352,6 +352,23 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         DR_DRILL_TIME_TO_RECOVERY_MS.clone(),
     );
 
+    // Register operator build-info and leader metrics
+    registry.register(
+        "stellar_operator_info",
+        "Operator build information (version, git_sha, rust_version); always 1",
+        OPERATOR_INFO.clone(),
+    );
+    registry.register(
+        "stellar_operator_leader_status",
+        "1 if this operator instance is the current leader, 0 otherwise",
+        OPERATOR_LEADER_STATUS.clone(),
+    );
+    registry.register(
+        "stellar_operator_uptime_seconds",
+        "Total uptime of the operator process in seconds",
+        OPERATOR_UPTIME_SECONDS.clone(),
+    );
+
     registry
 });
 
@@ -747,6 +764,53 @@ pub fn set_dr_drill_time_to_recovery(namespace: &str, name: &str, status: &str, 
     DR_DRILL_TIME_TO_RECOVERY_MS
         .get_or_create(&labels)
         .set(ttr_ms);
+}
+
+// ============================================================================
+// Operator build-info and leader metrics (Issue #301)
+// ============================================================================
+
+/// Labels for the operator info gauge.
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct OperatorInfoLabels {
+    /// Semantic version from `CARGO_PKG_VERSION`.
+    pub version: String,
+    /// Git commit SHA from `GIT_SHA` build env var.
+    pub git_sha: String,
+    /// Rust compiler version from `RUST_VERSION` build env var.
+    pub rust_version: String,
+}
+
+/// Gauge that is always set to `1` and carries version/build labels.
+/// Equivalent to the common `build_info` pattern used by many Prometheus exporters.
+pub static OPERATOR_INFO: Lazy<Family<OperatorInfoLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking whether this instance is the current leader (1 = leader, 0 = follower).
+pub static OPERATOR_LEADER_STATUS: Lazy<Gauge<i64, AtomicI64>> = Lazy::new(Gauge::default);
+
+/// Counter tracking operator uptime in seconds since process start.
+pub static OPERATOR_UPTIME_SECONDS: Lazy<Counter<u64, AtomicU64>> = Lazy::new(Counter::default);
+
+/// Initialise the `stellar_operator_info` gauge with build-time labels.
+/// Call once at startup after the registry is first accessed.
+pub fn init_operator_info() {
+    let labels = OperatorInfoLabels {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        git_sha: option_env!("GIT_SHA").unwrap_or("unknown").to_string(),
+        rust_version: option_env!("RUST_VERSION").unwrap_or("unknown").to_string(),
+    };
+    OPERATOR_INFO.get_or_create(&labels).set(1);
+}
+
+/// Update the leader-status gauge. Call from the leader-election loop.
+pub fn set_leader_status(is_leader: bool) {
+    OPERATOR_LEADER_STATUS.set(if is_leader { 1 } else { 0 });
+}
+
+/// Increment the uptime counter by `delta_secs`. Call from a periodic task.
+pub fn inc_uptime_seconds(delta_secs: u64) {
+    OPERATOR_UPTIME_SECONDS.inc_by(delta_secs);
 }
 
 #[cfg(test)]

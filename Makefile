@@ -75,6 +75,17 @@ crd-gen: ## Generate CRDs
 	@echo "→ Generating CRDs..."
 	@$(CARGO) run --bin crdgen > config/crd/stellarnode-crd.yaml
 
+completions: ## Generate shell completion scripts
+	@echo "→ Generating shell completions..."
+	@mkdir -p completions
+	@$(CARGO) run --bin stellar-completions completions bash > completions/stellar-operator.bash
+	@$(CARGO) run --bin stellar-completions completions zsh > completions/_stellar-operator
+	@$(CARGO) run --bin stellar-completions completions fish > completions/stellar-operator.fish
+	@echo "✓ Completions generated in ./completions/"
+	@echo "  Bash: source completions/stellar-operator.bash"
+	@echo "  Zsh:  Copy completions/_stellar-operator to your fpath"
+	@echo "  Fish: Copy completions/stellar-operator.fish to ~/.config/fish/completions/"
+
 helm-lint: ## Helm lint check
 	@echo "→ Linting Helm charts..."
 	helm lint charts/stellar-operator

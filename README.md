@@ -136,12 +136,39 @@ kubectl stellar logs my-validator -f
 
 See [kubectl-plugin.md](docs/kubectl-plugin.md) for complete documentation.
 
+### 4. Shell Completion
+
+Generate shell completion scripts for the stellar-operator CLI to enable tab completion:
+
+```bash
+# Generate completions for all shells
+make completions
+
+# Or generate for a specific shell
+cargo run --bin stellar-completions completions bash > stellar-operator.bash
+cargo run --bin stellar-completions completions zsh > _stellar-operator
+cargo run --bin stellar-completions completions fish > stellar-operator.fish
+```
+
+**Installation:**
+
+- **Bash**: `source completions/stellar-operator.bash` or copy to `/etc/bash_completion.d/`
+- **Zsh**: Copy `completions/_stellar-operator` to a directory in your `$fpath`
+- **Fish**: Copy `completions/stellar-operator.fish` to `~/.config/fish/completions/`
+
+After installation, you can use tab completion with the `stellar-operator` command:
+
+```bash
+stellar-operator <TAB>        # Shows available subcommands
+stellar-operator run --<TAB>  # Shows available flags
+```
+
 ### Architecture Decision Records (ADRs)
 
 Major architectural decisions are documented in our [ADR directory](docs/adr/README.md), including:
 
 - **Choice of Rust** - Rationale for selecting Rust as the programming language
-- **kube-rs Finalizers** - Strategy for resource cleanup and lifecycle management  
+- **kube-rs Finalizers** - Strategy for resource cleanup and lifecycle management
 - **CRD Versioning** - Approach to API evolution and backward compatibility
 
 ### 4. Custom Validation Policies with WebAssembly
@@ -153,17 +180,18 @@ Stellar-K8s supports custom validation policies written in WebAssembly, allowing
 #[no_mangle]
 pub extern "C" fn validate() -> i32 {
     let input = read_validation_input()?;
-    
+
     // Check if image is from approved registry
     if !is_approved_registry(&input.object.spec.version) {
         return deny("Image must be from approved registry");
     }
-    
+
     allow()
 }
 ```
 
 Features:
+
 - **Sandboxed Execution**: Plugins run in a secure, isolated Wasm environment
 - **Dynamic Loading**: Load plugins from ConfigMaps at runtime
 - **Multi-Language Support**: Write policies in Rust, Go, C++, or any language that compiles to Wasm
@@ -181,11 +209,11 @@ Stellar-K8s comes with built-in Prometheus metrics and a pre-configured Grafana 
 
 The operator exposes the following production-readiness metrics:
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `stellar_operator_info` | Gauge | Always `1`; carries `version`, `git_sha`, `rust_version` labels |
-| `stellar_operator_leader_status` | Gauge | `1` if this instance is the current leader, `0` otherwise |
-| `stellar_operator_uptime_seconds_total` | Counter | Total uptime of the operator process in seconds |
+| Metric                                  | Type    | Description                                                     |
+| --------------------------------------- | ------- | --------------------------------------------------------------- |
+| `stellar_operator_info`                 | Gauge   | Always `1`; carries `version`, `git_sha`, `rust_version` labels |
+| `stellar_operator_leader_status`        | Gauge   | `1` if this instance is the current leader, `0` otherwise       |
+| `stellar_operator_uptime_seconds_total` | Counter | Total uptime of the operator process in seconds                 |
 
 ### Importing the Grafana Dashboard
 
@@ -220,14 +248,14 @@ data:
   enable_soroban_metrics: "true"
 ```
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `enable_cve_scanning` | `true` | Automatic CVE patch reconciliation |
-| `enable_read_pool` | `false` | Read-replica pool management |
-| `enable_dr` | `false` | Disaster-recovery drill scheduling |
-| `enable_peer_discovery` | `true` | Automatic peer discovery |
-| `enable_archive_health` | `true` | History archive health checks |
-| `enable_soroban_metrics` | `true` | Soroban-specific Prometheus metrics |
+| Flag                     | Default | Description                         |
+| ------------------------ | ------- | ----------------------------------- |
+| `enable_cve_scanning`    | `true`  | Automatic CVE patch reconciliation  |
+| `enable_read_pool`       | `false` | Read-replica pool management        |
+| `enable_dr`              | `false` | Disaster-recovery drill scheduling  |
+| `enable_peer_discovery`  | `true`  | Automatic peer discovery            |
+| `enable_archive_health`  | `true`  | History archive health checks       |
+| `enable_soroban_metrics` | `true`  | Soroban-specific Prometheus metrics |
 
 When using the Helm chart, set flags via `values.yaml`:
 
@@ -278,7 +306,7 @@ Standard cloud Persistent Volumes (like AWS EBS or GCP Persistent Disks) can som
 ### Standard PVCs vs Local NVMe (Testnet Workload Benchmark)
 
 | Storage Type         | Peak IOPS | Read Latency | Write Latency | Avg Sync Lag |
-|----------------------|-----------|--------------|---------------|--------------|
+| -------------------- | --------- | ------------ | ------------- | ------------ |
 | Cloud Standard (EBS) | ~3,000    | 1.5 - 2.5ms  | 2.0 - 5.0ms   | 5 - 15s      |
 | Local NVMe           | 100,000+  | < 0.1ms      | < 0.1ms       | **< 1s**     |
 
@@ -291,7 +319,7 @@ spec:
   nodeType: Validator
   storage:
     mode: Local
-    # Automatically detects "local-path" or "local-storage" if omitted 
+    # Automatically detects "local-path" or "local-storage" if omitted
     # Or explicitly pin to specific nodes:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
@@ -313,26 +341,31 @@ Stellar-K8s provides comprehensive monitoring for Soroban RPC nodes with special
 A dedicated Soroban monitoring dashboard is available at `monitoring/grafana-soroban.json`. This dashboard provides real-time visibility into:
 
 #### Smart Contract Metrics
+
 - **Wasm Execution Time**: Histogram showing p50, p95, and p99 latencies for host function execution
 - **Contract Storage Fees**: Distribution of storage fees charged across contract operations
 - **Host Function Calls**: Breakdown of which host functions are being invoked most frequently
 
 #### Resource Consumption
+
 - **CPU per Invocation**: CPU instructions consumed by each contract invocation
 - **Memory per Invocation**: Wasm VM memory usage and per-invocation memory consumption
 - **Process Resources**: Overall CPU and memory usage of the Soroban RPC process
 
 #### Transaction Metrics
+
 - **Success/Failure Rate**: Real-time success and failure rates for Soroban transactions
 - **Transaction Ingestion Rate**: Rate of transactions being processed (10m sliding window)
 - **Events Ingestion Rate**: Rate of contract events being ingested
 
 #### Performance Indicators
+
 - **RPC Request Latency**: p50, p95, p99 latencies for JSON RPC methods
 - **Database Round Trip Time**: Database query performance monitoring
 - **Ledger Ingestion Lag**: How far behind the network the RPC node is
 
 #### Runtime Health
+
 - **Active Goroutines**: Number of concurrent goroutines in the Go runtime
 - **Memory Allocations**: Rate of memory allocations
 - **GC Pause Time**: Garbage collection pause duration
@@ -374,18 +407,21 @@ soroban_rpc_host_function_calls_total{namespace, name, network, contract_id}
 ### Example Queries
 
 **Average Wasm execution time (last 5m)**:
+
 ```promql
-rate(soroban_rpc_wasm_execution_duration_microseconds_sum[5m]) / 
+rate(soroban_rpc_wasm_execution_duration_microseconds_sum[5m]) /
 rate(soroban_rpc_wasm_execution_duration_microseconds_count[5m])
 ```
 
 **Transaction success rate**:
+
 ```promql
 sum(rate(soroban_rpc_transaction_result_total{result="success"}[5m])) /
 sum(rate(soroban_rpc_transaction_result_total[5m]))
 ```
 
 **Top 5 most invoked contracts**:
+
 ```promql
 topk(5, sum(rate(soroban_rpc_contract_invocations_total[5m])) by (contract_type))
 ```
@@ -405,7 +441,7 @@ groups:
           severity: warning
         annotations:
           summary: "High Wasm execution latency (p99 > 100ms)"
-          
+
       - alert: HighTransactionFailureRate
         expr: |
           sum(rate(soroban_rpc_transaction_result_total{result="failed"}[5m])) /
@@ -415,7 +451,7 @@ groups:
           severity: critical
         annotations:
           summary: "Transaction failure rate above 10%"
-          
+
       - alert: HighLedgerIngestionLag
         expr: soroban_rpc_ingest_ledger_lag > 10
         for: 5m

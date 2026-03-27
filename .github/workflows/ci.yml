@@ -101,6 +101,13 @@ jobs:
         with:
           shared-key: "ci-lint"
 
+      - name: Shellcheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          path_to_shell_files: .
+          severity: error
+          upload_annotation: true
+
       - name: Check formatting
         run: make fmt-check
 

@@ -355,6 +355,50 @@ impl StellarNodeSpec {
                         "Use RollingUpdate strategy for Validator nodes; canary is only supported for Horizon and SorobanRpc.",
                     ));
                 }
+
+                // High-security seed handling for HSM-backed validators:
+                // disallow seed sources that materialize the validator seed into Kubernetes Secrets (stored in etcd).
+                if let Some(vc) = &self.validator_config {
+                    if vc.hsm_config.is_some() {
+                        match &vc.seed_secret_source {
+                            Some(src) => {
+                                if let Err(e) = src.validate() {
+                                    errors.push(SpecValidationError::new(
+                                        "spec.validatorConfig.seedSecretSource",
+                                        format!("Invalid seedSecretSource: {e}"),
+                                        "Configure exactly one of localRef, externalRef, csiRef, or vaultRef.",
+                                    ));
+                                } else {
+                                    let uses_k8s_secret =
+                                        src.local_ref.is_some() || src.external_ref.is_some();
+                                    if uses_k8s_secret {
+                                        errors.push(SpecValidationError::new(
+                                            "spec.validatorConfig.seedSecretSource",
+                                            "HSM config requires a seed source that does not materialize seeds into Kubernetes Secrets (etcd).",
+                                            "Use seedSecretSource.csiRef (Secrets Store CSI) or seedSecretSource.vaultRef (Vault Agent Injector). Avoid seedSecretSource.localRef/externalRef.",
+                                        ));
+                                    }
+                                }
+                            }
+                            None => {
+                                // Legacy seedSecretRef is a plain Kubernetes Secret reference.
+                                if !vc.seed_secret_ref.is_empty() {
+                                    errors.push(SpecValidationError::new(
+                                        "spec.validatorConfig.seedSecretRef",
+                                        "HSM config forbids the legacy seedSecretRef (materializes into Kubernetes Secret / etcd).",
+                                        "Switch to spec.validatorConfig.seedSecretSource.csiRef or spec.validatorConfig.seedSecretSource.vaultRef.",
+                                    ));
+                                } else {
+                                    errors.push(SpecValidationError::new(
+                                        "spec.validatorConfig.seedSecretSource",
+                                        "HSM config requires seedSecretSource.csiRef or seedSecretSource.vaultRef.",
+                                        "Configure a non-Kubernetes-Secret seed backend for high-security operation.",
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
                 // Snapshot schedule and restore only apply to Validators (ledger data)
                 if (self.snapshot_schedule.is_some() || self.restore_from_snapshot.is_some())
                     && self

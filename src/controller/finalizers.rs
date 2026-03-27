@@ -105,9 +105,150 @@ pub fn has_finalizer(node: &StellarNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crd::{
+        NodeType, ResourceRequirements, ResourceSpec, StellarNetwork, StellarNodeSpec,
+        StorageConfig,
+    };
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
+    use kube::api::ObjectMeta;
+
+    fn create_test_spec() -> StellarNodeSpec {
+        StellarNodeSpec {
+            node_type: NodeType::Validator,
+            network: StellarNetwork::Testnet,
+            version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
+            resources: ResourceRequirements {
+                requests: ResourceSpec {
+                    cpu: "500m".to_string(),
+                    memory: "1Gi".to_string(),
+                },
+                limits: ResourceSpec {
+                    cpu: "2".to_string(),
+                    memory: "4Gi".to_string(),
+                },
+            },
+            storage: StorageConfig {
+                storage_class: "standard".to_string(),
+                size: "100Gi".to_string(),
+                retention_policy: Default::default(),
+                annotations: None,
+                ..Default::default()
+            },
+            validator_config: None,
+            horizon_config: None,
+            soroban_config: None,
+            replicas: 1,
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            managed_database: None,
+            autoscaling: None,
+            vpa_config: None,
+            ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            cross_cluster: None,
+            strategy: Default::default(),
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            pod_anti_affinity: Default::default(),
+            topology_spread_constraints: None,
+            cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
+            read_replica_config: None,
+            db_maintenance_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
+            forensic_snapshot: None,
+            read_pool_endpoint: None,
+            resource_meta: None,
+        }
+    }
 
     #[test]
     fn test_finalizer_name() {
         assert_eq!(STELLAR_NODE_FINALIZER, "stellarnode.stellar.org/finalizer");
+    }
+
+    #[test]
+    fn test_has_finalizer_returns_true_when_present() {
+        let node = StellarNode {
+            metadata: ObjectMeta {
+                name: Some("test-node".to_string()),
+                namespace: Some("default".to_string()),
+                finalizers: Some(vec![STELLAR_NODE_FINALIZER.to_string()]),
+                ..Default::default()
+            },
+            spec: create_test_spec(),
+            status: None,
+        };
+
+        assert!(has_finalizer(&node), "Should detect finalizer when present");
+    }
+
+    #[test]
+    fn test_has_finalizer_returns_false_when_absent() {
+        let node = StellarNode {
+            metadata: ObjectMeta {
+                name: Some("test-node".to_string()),
+                namespace: Some("default".to_string()),
+                finalizers: Some(vec!["other.finalizer/test".to_string()]),
+                ..Default::default()
+            },
+            spec: create_test_spec(),
+            status: None,
+        };
+
+        assert!(
+            !has_finalizer(&node),
+            "Should not detect finalizer when absent"
+        );
+    }
+
+    #[test]
+    fn test_is_being_deleted_returns_true_when_deletion_timestamp_set() {
+        use chrono::Utc;
+
+        let node = StellarNode {
+            metadata: ObjectMeta {
+                name: Some("test-node".to_string()),
+                namespace: Some("default".to_string()),
+                deletion_timestamp: Some(Time(Utc::now())),
+                finalizers: Some(vec![STELLAR_NODE_FINALIZER.to_string()]),
+                ..Default::default()
+            },
+            spec: create_test_spec(),
+            status: None,
+        };
+
+        assert!(
+            is_being_deleted(&node),
+            "Should detect deletion when timestamp is set"
+        );
+    }
+
+    #[test]
+    fn test_is_being_deleted_returns_false_when_no_deletion_timestamp() {
+        let node = StellarNode {
+            metadata: ObjectMeta {
+                name: Some("test-node".to_string()),
+                namespace: Some("default".to_string()),
+                deletion_timestamp: None,
+                finalizers: Some(vec![STELLAR_NODE_FINALIZER.to_string()]),
+                ..Default::default()
+            },
+            spec: create_test_spec(),
+            status: None,
+        };
+
+        assert!(
+            !is_being_deleted(&node),
+            "Should not detect deletion when timestamp is absent"
+        );
     }
 }

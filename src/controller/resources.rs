@@ -1335,6 +1335,31 @@ fn build_pod_template(
                         }]),
                         ..Default::default()
                     });
+                } else if hsm_config.provider == HsmProvider::Azure {
+                    volumes.push(Volume {
+                        name: "dedicatedhsm-socket".to_string(),
+                        empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource {
+                            medium: Some("Memory".to_string()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    });
+
+                    let containers = &mut pod_spec.containers;
+                    containers.push(Container {
+                        name: "dedicatedhsm-client".to_string(),
+                        image: Some("azure/dedicated-hsm-client:latest".to_string()),
+                        command: Some(
+                            vec!["/opt/dedicatedhsm/bin/dedicatedhsm_client".to_string()],
+                        ),
+                        args: Some(vec!["--foreground".to_string()]),
+                        volume_mounts: Some(vec![VolumeMount {
+                            name: "dedicatedhsm-socket".to_string(),
+                            mount_path: "/var/run/dedicatedhsm".to_string(),
+                            ..Default::default()
+                        }]),
+                        ..Default::default()
+                    });
                 }
             }
         }
@@ -1673,6 +1698,13 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
                     extra_volume_mounts.push(VolumeMount {
                         name: "cloudhsm-socket".to_string(),
                         mount_path: "/var/run/cloudhsm".to_string(),
+                        ..Default::default()
+                    });
+                } else if hsm_config.provider == HsmProvider::Azure {
+                    // Sidecar bridge for PKCS#11 access to Azure Dedicated HSM.
+                    extra_volume_mounts.push(VolumeMount {
+                        name: "dedicatedhsm-socket".to_string(),
+                        mount_path: "/var/run/dedicatedhsm".to_string(),
                         ..Default::default()
                     });
                 }

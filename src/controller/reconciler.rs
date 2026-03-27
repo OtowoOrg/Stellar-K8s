@@ -19,7 +19,6 @@
 //! 6. Update StellarNode status with current state
 //! 7. Schedule requeue for periodic health checks
 
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -422,13 +421,13 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
 
     // Attach per-reconcile structured fields so every log event during reconciliation
     // can be correlated in JSON logs (node_name/namespace/reconcile_id).
-    let _reconcile_enter = info_span!(
+    let _reconcile_span = info_span!(
         "reconcile_attempt",
         node_name = %node_name_for_span,
         namespace = %namespace_for_span,
         reconcile_id = %reconcile_id
-    )
-    .enter();
+    );
+    let _reconcile_enter = _reconcile_span.enter();
 
     #[cfg(feature = "metrics")]
     let reconcile_start = std::time::Instant::now();
@@ -2558,13 +2557,13 @@ pub(crate) fn error_policy(
     let node_name_for_span = node_name.clone();
     let namespace_for_span = namespace.clone();
 
-    let _enter = info_span!(
+    let _error_span = info_span!(
         "reconcile_error",
         node_name = %node_name_for_span,
         namespace = %namespace_for_span,
         reconcile_id = %reconcile_id
-    )
-    .enter();
+    );
+    let _enter = _error_span.enter();
 
     error!("Reconciliation error for {}: {:?}", node_name, error);
 

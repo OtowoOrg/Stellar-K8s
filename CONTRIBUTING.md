@@ -1,113 +1,112 @@
 # Contributing to Stellar-K8s
 
-Thank you for your interest in contributing to Stellar-K8s! This project aims to provide a robust, cloud-native Kubernetes operator for managing Stellar infrastructure.
+First off, thank you for considering contributing to Stellar-K8s! This project aims to provide a robust, cloud-native Kubernetes operator for managing Stellar infrastructure. 
 
-## Development Environment
+This document provides a clear guide on how to contribute to the project, covering everything from our developer workflow to commit structures.
+
+## 1. Fork Workflow
+
+We use a standard fork and pull request workflow for contributions:
+
+1. **Fork the repository** on GitHub.
+2. **Clone your fork** locally:
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/stellar-k8s.git
+   cd stellar-k8s
+   ```
+3. **Add the upstream remote** so you can keep your fork synced:
+   ```bash
+   git remote add upstream https://github.com/stellar/stellar-k8s.git
+   ```
+4. **Create a new branch** for your feature or bugfix (see *Branch Naming* below).
+5. **Commit your changes**, keeping them focused and atomic.
+6. **Push to your fork** on GitHub.
+7. **Open a Pull Request** against the `main` branch of the upstream repository.
+
+## 2. Branch Naming
+
+Please use descriptive branch names based on the nature of your contribution. We recommend the following prefixes:
+
+- `feat/` for new features (e.g., `feat/auto-mtls`)
+- `fix/` for bug fixes (e.g., `fix/panic-on-startup`)
+- `docs/` for documentation updates (e.g., `docs/update-architecture`)
+- `chore/` for maintenance tasks, refactoring, or dependency updates (e.g., `chore/bump-kube-rs`)
+- `test/` for adding or improving tests (e.g., `test/e2e-service-mesh`)
+
+## 3. Commit Conventions
+
+We strictly follow [Conventional Commits](https://www.conventionalcommits.org/). This allows us to automate our changelog generation and semantic versioning. 
+
+Your commit messages should be formatted as follows:
+```
+<type>(<optional scope>): <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+**Common types include:**
+- `feat:` A new feature
+- `fix:` A bug fix
+- `docs:` Documentation only changes
+- `chore:` Changes to the build process or auxiliary tools and libraries
+- `refactor:` A code change that neither fixes a bug nor adds a feature
+- `test:` Adding missing tests or correcting existing tests
+
+## 4. Developer Certificate of Origin (DCO) Sign-off
+
+To comply with open-source legal standards, **all commits must include a `Signed-off-by` line indicating that you agree to the [Developer Certificate of Origin (DCO)](https://developercertificate.org/)**.
+
+You can automatically add this sign-off to your commits by using the `-s` or `--signoff` flag:
+```bash
+git commit -s -m "feat: your feature description"
+```
+
+This will append the following line to your commit message:
+`Signed-off-by: Jane Doe <jane.doe@example.com>`
+
+**Note:** The name and email used in the sign-off must match the author of the commit. PRs with unsigned commits will fail our CI pipeline checks.
+
+## 5. Pull Request Template Usage
+
+When you open a Pull Request, a template will automatically populate the description box. **You must fill out this template completely.**
+
+The PR template includes a checklist to ensure your code:
+- Passes all CI tests (`cargo test`)
+- Is properly formatted (`cargo fmt`)
+- Passes linting (`cargo clippy`)
+- Includes a DCO sign-off
+
+Please do not delete the template sections. PRs with empty descriptions or unchecked vital requirements will be heavily delayed or closed.
+
+## 6. Development Environment
 
 ### Prerequisites
 
-- **Rust**: Latest stable version (1.75+)
+- **Rust**: Latest stable version (1.88+)
 - **Kubernetes**: A local cluster like `kind` or `minikube`
 - **Docker**: For building container images
 - **Cargo-audit**: For security scans (`cargo install cargo-audit`)
 
-### Setup
+### Setup & Local Checks
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/OtowoOrg/Stellar-K8s.git
-   cd Stellar-K8s
-   ```
-2. Setup development environment:
-
+1. Setup development environment:
    ```bash
    make dev-setup
    ```
-
-3. Run local checks before committing:
-
+2. Run local checks before committing:
    ```bash
-   # Quick check
-   make quick
-
-   # Or comprehensive pre-push check
-   make ci-local
+   make quick     # Use this for a fast compilation check
+   make ci-local  # Comprehensive pre-push check mimicking CI
    ```
 
-   **See [CI Commands Reference](.github/CI_COMMANDS.md) for the exact commands that run in CI, which you can run manually.**
-
-## Coding Standards
+### Coding Standards
 
 - **Formatting**: Always run `cargo fmt` before committing.
-- **Linting**: We use Clippy for linting. Ensure `cargo clippy --all-targets --all-features -- -D warnings` passes. We follow a "zero-warning" policy for pushes to `main`.
+- **Linting**: We use Clippy. Ensure `cargo clippy --all-targets --all-features -- -D warnings` passes.
 - **Security**: All dependencies must be audited. We resolve all `RUSTSEC` advisories immediately.
-- **Error Handling**: Use `thiserror` for library errors and `anyhow` for application-level logic. Prefer the `Result<T>` type defined in `src/error.rs`.
+- **Error Handling**: Prefer the `Result<T>` type defined in `src/error.rs` using `thiserror`.
 
-## Security Policy
-
-We take security seriously. If you find a vulnerability (e.g., in a dependency or the code), please do not open a public issue. Instead, follow the security reporting process described in [SECURITY.md](SECURITY.md) (if available) or contact the maintainers directly.
-
-### Mitigating RUSTSEC Advisories
-
-If a dependency scan fails due to a RUSTSEC advisory:
-
-1. Identify the crate and version causing the issue.
-2. Upgrade the dependency in `Cargo.toml`.
-3. If the vulnerability is in an internal transitive dependency, use `cargo tree -i <vulnerable-crate>` to find the source and upgrade the parent.
-
-## Pull Request Process
-
-1. Create a new branch for your feature or fix.
-2. Ensure all tests pass locally: `make ci-local` or use your personalized commands for your tests and changes. 
-3. Ensure all 62+ unit tests pass, including the `StellarNodeSpec` validation tests.
-4. Submit your PR against the `main` branch.
-5. Wait for CI checks to pass (all workflows must be green ✓).
-6. Fix conflicts if any and ensure your tests pass once you fix conflicts.
-
-## Continuous Integration
-
-Our CI pipeline (GitHub Actions) runs:
-
-- **Security Audit**: Checks for known vulnerabilities (blocks unsound code).
-- **Lint & Format**: Checks code style and Clippy warnings.
-- **Test Suite**: Runs all unit tests.
-- **Build**: Creates release binary.
-- **Docker Build**: Multi-arch images (amd64/arm64).
-- **Security Scan**: Runs Trivy on the container image.
-
-**View the exact commands in [CI Commands Reference](.github/CI_COMMANDS.md).**
-
-## Local Development Commands
-
-```bash
-make help          # Show all available targets
-make fmt           # Auto-format code
-make lint          # Run clippy
-make audit         # Security audit
-make test          # Run tests
-make build         # Build release binary
-make docker-build  # Build Docker image
-make ci-local      # Full CI validation
-```
-
-## Troubleshooting
-
-### Build Failures
-
-```bash
-cargo clean
-make build
-```
-
-### Test Failures
-
-```bash
-cargo test --workspace --verbose -- --nocapture
-```
-
-### Dependency Issues
-
-```bash
-cargo update
-cargo tree -i <crate-name>  # Find what depends on a crate
-```
+## Need Help?
+If you're stuck, feel free to open a Draft PR or reach out in the repository's discussions/issues!

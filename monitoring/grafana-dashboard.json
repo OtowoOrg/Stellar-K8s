@@ -905,6 +905,67 @@
           "unit": "bytes"
         }
       }
+    },
+    {
+      "type": "stat",
+      "title": "Operator Version",
+      "description": "Running version of the stellar-k8s operator (from stellar_operator_info gauge).",
+      "id": 200,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 100 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "stellar_operator_info",
+          "legendFormat": "{{version}} ({{git_sha}})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Operator Leader Status",
+      "description": "1 = this instance is the current leader, 0 = follower.",
+      "id": 201,
+      "gridPos": { "h": 4, "w": 4, "x": 6, "y": 100 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "mappings": [
+          { "type": "value", "options": { "0": { "text": "Follower", "color": "yellow" }, "1": { "text": "Leader", "color": "green" } } }
+        ]
+      },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "yellow", "value": null }, { "color": "green", "value": 1 }] } } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "stellar_operator_leader_status",
+          "legendFormat": "Leader",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Operator Uptime",
+      "description": "Total uptime of the operator process in seconds.",
+      "id": 202,
+      "gridPos": { "h": 4, "w": 4, "x": 10, "y": 100 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "stellar_operator_uptime_seconds_total",
+          "legendFormat": "Uptime",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "10s",
@@ -945,6 +1006,7 @@
   "timezone": "browser",
   "title": "Stellar Infrastructure Overview",
   "uid": "stellar_k8s_overview",
-  "version": 1,
-  "weekStart": ""
+  "version": 2,
+  "weekStart": "",
+  "panels_operator_info_note": "Panels below added for Issue #301 — operator version, leader status, uptime"
 }

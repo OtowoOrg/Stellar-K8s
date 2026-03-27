@@ -14,6 +14,59 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  helm-lint:
+    name: Helm Lint & Schema Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14.0"
+
+      - name: Lint chart with default values
+        run: make helm-lint
+
+      - name: Lint chart with strict mode
+        run: helm lint charts/stellar-operator --strict
+
+      - name: Validate schema rejects invalid logLevel
+        run: |
+          cat > /tmp/bad-loglevel.yaml <<'EOF'
+          operator:
+            logLevel: verbose
+          EOF
+          if helm lint charts/stellar-operator -f /tmp/bad-loglevel.yaml 2>&1 | grep -q "meet the specifications"; then
+            echo "Schema correctly rejected invalid logLevel"
+          else
+            echo "ERROR: Schema did not reject invalid logLevel" && exit 1
+          fi
+
+      - name: Validate schema rejects invalid service type
+        run: |
+          cat > /tmp/bad-service.yaml <<'EOF'
+          service:
+            type: ExternalName
+          EOF
+          if helm lint charts/stellar-operator -f /tmp/bad-service.yaml 2>&1 | grep -q "meet the specifications"; then
+            echo "Schema correctly rejected invalid service type"
+          else
+            echo "ERROR: Schema did not reject invalid service type" && exit 1
+          fi
+
+      - name: Validate schema rejects invalid pullPolicy
+        run: |
+          cat > /tmp/bad-pullpolicy.yaml <<'EOF'
+          image:
+            pullPolicy: Whenever
+          EOF
+          if helm lint charts/stellar-operator -f /tmp/bad-pullpolicy.yaml 2>&1 | grep -q "meet the specifications"; then
+            echo "Schema correctly rejected invalid pullPolicy"
+          else
+            echo "ERROR: Schema did not reject invalid pullPolicy" && exit 1
+          fi
+
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -38,18 +91,28 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88"
+          components: rustfmt, clippy
 
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "ci-lint"
 
+      - name: Shellcheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          path_to_shell_files: .
+          severity: error
+          upload_annotation: true
+
       - name: Check formatting
-        run: cargo fmt --all --check
+        run: make fmt-check
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: make lint
 
   test:
     name: Test
@@ -66,11 +129,8 @@ jobs:
         with:
           shared-key: "ci-test"
 
-      - name: Run tests
-        run: cargo test --workspace --all-features --verbose
-
-      - name: Run doc tests
-        run: cargo test --doc --workspace
+      - name: Run tests (Unit and Doc)
+        run: make test
 
   helm-test:
     name: Helm Unit Tests
@@ -134,7 +194,7 @@ jobs:
           shared-key: "ci-build"
 
       - name: Build release
-        run: cargo build --release --locked
+        run: make build
 
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4

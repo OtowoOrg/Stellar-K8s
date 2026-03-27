@@ -40,6 +40,7 @@ anyhow = "1"
 
 # CLI argument parsing
 clap = { version = "4.5", features = ["derive", "env"] }
+clap_complete = "4.5"
 
 # Date/time handling
 chrono = { version = "0.4", features = ["serde"] }
@@ -149,3 +150,7 @@ path = "src/main.rs"
 [[bin]]
 name = "kubectl-stellar"
 path = "src/kubectl_plugin.rs"
+
+[[bin]]
+name = "stellar-completions"
+path = "src/bin/completions.rs"

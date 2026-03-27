@@ -1,0 +1,37 @@
+# Docker Compose Development Overlay
+# Extends docker-compose.yml with hot-reloading for active development
+version: '3.8'
+
+services:
+  # Override stellar-operator with development build and hot-reload
+  stellar-operator-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["cargo", "watch", "-x", "run -- run --namespace stellar-system --dry-run"]
+    environment:
+      - RUST_LOG=debug,stellar_k8s=trace
+      - OPERATOR_NAMESPACE=stellar-system
+      - DRY_RUN=true
+      - KUBECONFIG=/kubeconfig/kubeconfig.yaml
+      - RUST_BACKTRACE=1
+    volumes:
+      - ./:/app:cached
+      - ./kubeconfig:/kubeconfig:ro
+      - ./config:/etc/stellar-operator:ro
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/app/target
+    depends_on:
+      k3s:
+        condition: service_healthy
+    networks:
+      - stellar-dev
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+volumes:
+  cargo-cache:
+    driver: local
+  target-cache:
+    driver: local

@@ -9,6 +9,7 @@ pub mod graph;
 pub mod latency;
 pub mod scp_client;
 pub mod types;
+pub mod uptime;
 
 pub use analyzer::{QuorumAnalysisResult, QuorumAnalyzer};
 pub use error::QuorumAnalysisError;
@@ -16,3 +17,4 @@ pub use graph::{CriticalNodeAnalysis, OverlapAnalysis, QuorumGraph};
 pub use latency::{ConsensusLatencyTracker, LatencyMeasurement, LatencyStats};
 pub use scp_client::ScpClient;
 pub use types::{BallotState, NominationState, QuorumSetInfo, ScpState};
+pub use uptime::PeerUptimeTracker;

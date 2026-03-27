@@ -44,6 +44,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Show version information for the plugin and operator
+    Version,
     /// List all StellarNode resources
     List {
         /// Show all namespaces
@@ -96,6 +98,12 @@ enum Commands {
         /// The Stellar error code to explain (e.g., tx_bad_auth, op_no_destination)
         error_code: String,
     },
+    /// Generate shell completion scripts
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 #[tokio::main]
@@ -110,6 +118,35 @@ async fn main() {
 
 async fn run(cli: Cli) -> Result<()> {
     match cli.command {
+        Commands::Version => {
+            // Fetch operator version from cluster if available
+            let operator_version = {
+                match Client::try_default().await {
+                    Ok(client) => {
+                        // Try to get operator deployment version
+                        let deployments: kube::Api<k8s_openapi::api::apps::v1::Deployment> =
+                            kube::Api::namespaced(client, "stellar-system");
+                        match deployments.get("stellar-operator").await {
+                            Ok(deploy) => deploy
+                                .spec
+                                .and_then(|s| s.template.spec)
+                                .and_then(|p| p.containers.first().cloned())
+                                .and_then(|c| c.image)
+                                .unwrap_or_else(|| "unknown".to_string()),
+                            Err(_) => "not deployed".to_string(),
+                        }
+                    }
+                    Err(_) => "cluster not accessible".to_string(),
+                }
+            };
+
+            println!("kubectl-stellar v{}", env!("CARGO_PKG_VERSION"));
+            println!("Operator version: {operator_version}");
+            println!("Build Date: {}", env!("BUILD_DATE"));
+            println!("Git SHA: {}", env!("GIT_SHA"));
+            println!("Rust Version: {}", env!("RUST_VERSION"));
+            Ok(())
+        }
         Commands::List { all_namespaces } => {
             let client = Client::try_default().await.map_err(Error::KubeError)?;
             let namespace = if all_namespaces {
@@ -176,6 +213,14 @@ async fn run(cli: Cli) -> Result<()> {
         }
         Commands::Explain { error_code } => {
             explain::explain_error(&error_code);
+            Ok(())
+        }
+        Commands::Completions { shell } => {
+            use clap::CommandFactory;
+            use clap_complete::generate;
+            let mut cmd = Cli::command();
+            let name = cmd.get_name().to_string();
+            generate(shell, &mut cmd, name, &mut std::io::stdout());
             Ok(())
         }
     }
@@ -685,6 +730,7 @@ mod tests {
                 maintenance_mode: false,
                 network_policy: None,
                 dr_config: None,
+                pod_anti_affinity: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 read_replica_config: None,

@@ -1,0 +1,45 @@
+# Stellar-K8s Operator Configuration
+# This file is mounted as a ConfigMap at /etc/stellar-operator/config.yaml
+
+# Default resource requirements per node type
+defaultResources:
+  validator:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  horizon:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  sorobanRpc:
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+
+# Reconciler configuration
+reconciler:
+  # Base requeue interval for healthy reconciliation loops (seconds)
+  # Default: 60
+  requeueInterval: 60
+
+  # Base backoff duration for error retries (seconds)
+  # Default: 15
+  errorBackoffBase: 15
+
+  # Maximum backoff duration (seconds)
+  # Default: 300 (5 minutes)
+  maxBackoff: 300
+
+  # Enable jitter for backoff calculations
+  # Adds randomness (0.5x to 1.5x) to prevent thundering herd
+  # Default: true
+  enableJitter: true

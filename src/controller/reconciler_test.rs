@@ -93,6 +93,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 maintenance_mode: false,
                 network_policy: None,
                 dr_config: None,
+                pod_anti_affinity: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -181,6 +182,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 maintenance_mode: false,
                 network_policy: None,
                 dr_config: None,
+                pod_anti_affinity: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -267,6 +269,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 maintenance_mode: false,
                 network_policy: None,
                 dr_config: None,
+                pod_anti_affinity: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -304,11 +307,15 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             client,
             enable_mtls: false,
             operator_namespace: "stellar-operator".to_string(),
+            watch_namespace: None,
             mtls_config: None,
             dry_run: true,
             is_leader: Arc::new(AtomicBool::new(true)),
-            reconcile_id_counter: AtomicU64::new(0),
-            last_reconcile_success: Arc::new(AtomicU64::new(0)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
+            operator_config: Arc::new(Default::default()),
         });
 
         // Test with a retriable error (network-related)
@@ -334,11 +341,15 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             client,
             enable_mtls: false,
             operator_namespace: "stellar-operator".to_string(),
+            watch_namespace: None,
             mtls_config: None,
             dry_run: true,
             is_leader: Arc::new(AtomicBool::new(true)),
-            reconcile_id_counter: AtomicU64::new(0),
-            last_reconcile_success: Arc::new(AtomicU64::new(0)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
+            operator_config: Arc::new(Default::default()),
         });
 
         // Test with validation error (non-retriable)
@@ -363,11 +374,15 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             client,
             enable_mtls: false,
             operator_namespace: "stellar-operator".to_string(),
+            watch_namespace: None,
             mtls_config: None,
             dry_run: true,
             is_leader: Arc::new(AtomicBool::new(true)),
-            reconcile_id_counter: AtomicU64::new(0),
-            last_reconcile_success: Arc::new(AtomicU64::new(0)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
+            operator_config: Arc::new(Default::default()),
         });
 
         let errors = vec![
@@ -584,11 +599,15 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             client: client.clone(),
             enable_mtls: true,
             operator_namespace: "test-namespace".to_string(),
+            watch_namespace: None,
             mtls_config: None,
             dry_run: false,
             is_leader: Arc::new(AtomicBool::new(true)),
-            reconcile_id_counter: AtomicU64::new(0),
-            last_reconcile_success: Arc::new(AtomicU64::new(0)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
+            operator_config: Arc::new(Default::default()),
         };
 
         assert_eq!(state.operator_namespace, "test-namespace");
@@ -609,11 +628,15 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             client,
             enable_mtls: false,
             operator_namespace: "default".to_string(),
+            watch_namespace: None,
             mtls_config: None,
             dry_run: true,
             is_leader: Arc::new(AtomicBool::new(true)),
-            reconcile_id_counter: AtomicU64::new(0),
-            last_reconcile_success: Arc::new(AtomicU64::new(0)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
+            operator_config: Arc::new(Default::default()),
         };
 
         assert!(

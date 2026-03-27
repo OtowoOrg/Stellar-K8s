@@ -5,9 +5,10 @@
 //! 2. Emit event for manual intervention (Clear DB -> Fresh Sync)
 
 use chrono::{DateTime, Utc};
-use k8s_openapi::api::core::v1::{Event, ObjectReference, Pod};
+use k8s_openapi::api::core::v1::Pod;
 use kube::{
-    api::{Api, DeleteParams, ListParams, Patch, PatchParams, PostParams},
+    api::{Api, DeleteParams, ListParams, Patch, PatchParams},
+    runtime::events::{Event as K8sRecorderEvent, EventType, Recorder, Reporter},
     Client, Resource, ResourceExt,
 };
 use tracing::{debug, info};
@@ -209,47 +210,26 @@ pub async fn restart_pod(client: &Client, node: &StellarNode) -> Result<()> {
 /// Emit a Kubernetes Event for remediation action
 pub async fn emit_remediation_event(
     client: &Client,
+    reporter: &Reporter,
     node: &StellarNode,
     action: RemediationLevel,
     reason: &str,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let events: Api<Event> = Api::namespaced(client.clone(), &namespace);
-
-    let time = Utc::now();
-
-    // Build object reference
-    let obj_ref = ObjectReference {
-        api_version: Some(StellarNode::api_version(&()).to_string()),
-        kind: Some(StellarNode::kind(&()).to_string()),
-        name: Some(node.name_any()),
-        namespace: Some(namespace.clone()),
-        uid: node.metadata.uid.clone(),
-        ..Default::default()
-    };
-
-    let event = Event {
-        metadata: kube::api::ObjectMeta {
-            generate_name: Some(format!("{}-remediation-", node.name_any())),
-            namespace: Some(namespace.clone()),
-            ..Default::default()
-        },
-        type_: Some("Warning".to_string()),
-        reason: Some(format!("AutoRemediation{}", action.as_str())),
-        message: Some(format!(
-            "Auto-remediation triggered: {} - {}",
-            action.as_str(),
-            reason
-        )),
-        involved_object: obj_ref,
-        first_timestamp: Some(k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(time)),
-        last_timestamp: Some(k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(time)),
-        count: Some(1),
-        ..Default::default()
-    };
-
-    events
-        .create(&PostParams::default(), &event)
+    let recorder = Recorder::new(client.clone(), reporter.clone(), node.object_ref(&()));
+    let note = format!(
+        "Auto-remediation triggered: {} - {}",
+        action.as_str(),
+        reason
+    );
+    recorder
+        .publish(K8sRecorderEvent {
+            type_: EventType::Warning,
+            reason: format!("AutoRemediation{}", action.as_str()),
+            action: "Remediation".to_string(),
+            note: Some(note),
+            secondary: None,
+        })
         .await
         .map_err(Error::KubeError)?;
 

@@ -1,10 +1,18 @@
 ---
-# ClusterRole for the Stellar Operator
+# RBAC for the Stellar Operator
 # Grants permissions to watch/manage StellarNode CRDs and related resources
+{{- if .Values.watchNamespace }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}
+  namespace: {{ .Values.watchNamespace }}
+{{- else }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: {{ include "stellar-operator.fullname" . }}
+{{- end }}
   labels:
     {{- include "stellar-operator.labels" . | nindent 4 }}
 rules:
@@ -58,17 +66,28 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
 ---
-# ClusterRoleBinding to bind the ClusterRole to the ServiceAccount
+# Bind the Role to the ServiceAccount
 apiVersion: rbac.authorization.k8s.io/v1
+{{- if .Values.watchNamespace }}
+kind: RoleBinding
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}
+  namespace: {{ .Values.watchNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "stellar-operator.fullname" . }}
+{{- else }}
 kind: ClusterRoleBinding
 metadata:
   name: {{ include "stellar-operator.fullname" . }}
-  labels:
-    {{- include "stellar-operator.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ include "stellar-operator.fullname" . }}
+{{- end }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
 subjects:
   - kind: ServiceAccount
     name: {{ include "stellar-operator.serviceAccountName" . }}

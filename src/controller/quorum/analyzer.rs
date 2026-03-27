@@ -8,20 +8,23 @@ use super::graph::QuorumGraph;
 use super::latency::ConsensusLatencyTracker;
 use super::scp_client::ScpClient;
 use super::types::QuorumSetInfo;
+use super::uptime::PeerUptimeTracker;
 use crate::crd::types::Condition;
 use crate::crd::StellarNode;
 use chrono::{DateTime, Utc};
 use kube::api::{Patch, PatchParams};
 use kube::{Api, Client};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
 /// Main quorum analyzer
 pub struct QuorumAnalyzer {
     scp_client: ScpClient,
     latency_tracker: ConsensusLatencyTracker,
+    uptime_tracker: PeerUptimeTracker,
     cache: QuorumAnalysisCache,
 }
 
@@ -33,6 +36,15 @@ pub struct QuorumAnalysisResult {
     pub latency_variance: f64,
     pub fragility_score: f64,
     pub timestamp: DateTime<Utc>,
+    pub recommendation: Option<QuorumSetRecommendation>,
+}
+
+/// Safety-checked quorum-set recommendation based on peer health.
+#[derive(Clone, Debug)]
+pub struct QuorumSetRecommendation {
+    pub recommended_validators: Vec<String>,
+    pub recommended_threshold: u32,
+    pub message: String,
 }
 
 /// Cache for quorum analysis results
@@ -49,6 +61,7 @@ impl QuorumAnalyzer {
         Self {
             scp_client: ScpClient::new(timeout),
             latency_tracker: ConsensusLatencyTracker::new(window_size),
+            uptime_tracker: PeerUptimeTracker::new(window_size),
             cache: QuorumAnalysisCache {
                 last_analysis: None,
                 last_topology_hash: None,
@@ -61,12 +74,18 @@ impl QuorumAnalyzer {
     pub async fn analyze_quorum(&mut self, pod_ips: Vec<String>) -> Result<QuorumAnalysisResult> {
         info!("Starting quorum analysis for {} validators", pod_ips.len());
 
-        // Query quorum sets from all validators
+        // Query quorum sets from all validators and record measured latency.
         let mut quorum_sets = Vec::new();
 
         for pod_ip in &pod_ips {
+            let start = Instant::now();
             match self.scp_client.query_scp_state(pod_ip).await {
                 Ok(scp_state) => {
+                    let elapsed_ms = start.elapsed().as_millis() as u64;
+                    let ledger_seq = scp_state.ballot_state.ballot_counter as u64;
+                    self.latency_tracker
+                        .record_latency(&scp_state.node_id, ledger_seq, elapsed_ms);
+
                     quorum_sets.push((scp_state.node_id.clone(), scp_state.quorum_set));
                 }
                 Err(e) => {
@@ -84,35 +103,97 @@ impl QuorumAnalyzer {
 
         // Check cache
         let topology_hash = self.compute_topology_hash(&quorum_sets);
-        if self.should_use_cache(topology_hash) {
-            debug!("Using cached quorum analysis result");
-            return Ok(self.cache.last_analysis.clone().unwrap());
+        let cached_analysis = if self.should_use_cache(topology_hash) {
+            debug!("Using cached quorum topology analysis (health still re-sampled)");
+            self.cache.last_analysis.clone()
+        } else {
+            None
+        };
+
+        // Determine the peer universe for uptime sampling.
+        let all_quorum_peers: HashSet<String> = quorum_sets
+            .iter()
+            .flat_map(|(_, qset)| {
+                let mut ids = Vec::new();
+                ids.extend(qset.validators.iter().cloned());
+                for inner in &qset.inner_sets {
+                    ids.extend(inner.validators.iter().cloned());
+                }
+                ids
+            })
+            .collect();
+
+        // Sample uptime: for each peer in the quorum set, count how many observed
+        // validators currently report it as connected/authenticated.
+        let is_connected = |state: &str| {
+            let s = state.to_ascii_lowercase();
+            s.contains("connected") || s.contains("authenticated") || s.contains("established")
+        };
+
+        let mut connected_count: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        let total_pods = pod_ips.len().max(1);
+
+        for pod_ip in &pod_ips {
+            match self.scp_client.query_peers(pod_ip).await {
+                Ok(peers) => {
+                    for peer in peers {
+                        if all_quorum_peers.contains(&peer.id) && is_connected(&peer.state) {
+                            *connected_count.entry(peer.id).or_insert(0) += 1;
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug!("Failed to query peers from {}: {}", pod_ip, e);
+                }
+            }
         }
 
-        // Build quorum graph
-        let graph = QuorumGraph::from_quorum_sets(quorum_sets);
+        for peer_id in &all_quorum_peers {
+            let count = connected_count.get(peer_id).copied().unwrap_or(0);
+            let uptime_ratio = count as f64 / total_pods as f64;
+            self.uptime_tracker
+                .record_uptime_ratio(peer_id, uptime_ratio);
+        }
 
-        // Perform analysis
-        let critical_analysis = graph.find_critical_nodes();
-        let overlap_analysis = graph.calculate_overlaps();
+        // Determine baseline topology-derived metrics (possibly from cache).
+        let (critical_nodes, baseline_min_overlap) = if let Some(cached) = cached_analysis {
+            (cached.critical_nodes, cached.min_overlap)
+        } else {
+            // Build quorum graph (expensive slice enumeration).
+            let graph = QuorumGraph::from_quorum_sets(quorum_sets.clone());
+            let critical_analysis = graph.find_critical_nodes();
+            let overlap_analysis = graph.calculate_overlaps();
+            (
+                critical_analysis.critical_nodes,
+                overlap_analysis.min_overlap,
+            )
+        };
 
         // Get latency variance
         let latency_variance = self.latency_tracker.get_variance_across_validators();
 
+        let total_validators = quorum_sets.len();
+
         // Calculate fragility score
         let fragility_score = self.calculate_fragility_score(
-            critical_analysis.critical_nodes.len(),
-            overlap_analysis.min_overlap,
+            critical_nodes.len(),
+            baseline_min_overlap,
             latency_variance,
-            graph.node_count(),
+            total_validators,
         );
 
+        // Recommend a safer quorum set by replacing unhealthy peers.
+        let recommendation =
+            self.recommend_quorum_set(&all_quorum_peers, &quorum_sets, baseline_min_overlap);
+
         let result = QuorumAnalysisResult {
-            critical_nodes: critical_analysis.critical_nodes,
-            min_overlap: overlap_analysis.min_overlap,
+            critical_nodes,
+            min_overlap: baseline_min_overlap,
             latency_variance,
             fragility_score,
             timestamp: Utc::now(),
+            recommendation,
         };
 
         // Update cache
@@ -176,6 +257,154 @@ impl QuorumAnalyzer {
 
         // Clamp to [0.0, 1.0]
         score.clamp(0.0, 1.0)
+    }
+
+    /// Recommend a quorum set update based on rolling peer uptime/latency.
+    ///
+    /// This is a conservative heuristic:
+    /// - Only triggers when baseline quorum peers have low uptime and/or high latency.
+    /// - Picks replacement validators from the union of observed peers.
+    /// - Refuses to recommend if the resulting topology loses quorum intersection or
+    ///   reduces overlap vs the baseline topology (best-effort safety guard).
+    fn recommend_quorum_set(
+        &self,
+        all_quorum_peers: &HashSet<String>,
+        quorum_sets: &[(String, QuorumSetInfo)],
+        baseline_min_overlap: usize,
+    ) -> Option<QuorumSetRecommendation> {
+        const MIN_UPTIME_RATIO: f64 = 0.80;
+        const MAX_LATENCY_MS: f64 = 500.0;
+        const LATENCY_SCORE_SCALE_MS: f64 = 200.0;
+
+        let baseline_qset = quorum_sets.iter().map(|(_, q)| q).max_by_key(|q| {
+            let inner = q
+                .inner_sets
+                .iter()
+                .map(|i| i.validators.len())
+                .sum::<usize>();
+            q.validators.len() + inner
+        })?;
+
+        // Flatten direct validators + inner-set validators into a single peer list.
+        let mut baseline_validators: Vec<String> = baseline_qset.validators.clone();
+        for inner in &baseline_qset.inner_sets {
+            baseline_validators.extend(inner.validators.clone());
+        }
+        baseline_validators.sort_unstable();
+        baseline_validators.dedup();
+
+        if baseline_validators.is_empty() {
+            return None;
+        }
+
+        // Identify baseline unhealthy peers.
+        let mut unhealthy_peers = Vec::new();
+        for peer_id in &baseline_validators {
+            let uptime_mean = self.uptime_tracker.get_mean_uptime(peer_id).unwrap_or(0.0);
+
+            let latency_mean = self
+                .latency_tracker
+                .get_stats(peer_id)
+                .map(|s| s.mean_ms)
+                .unwrap_or(MAX_LATENCY_MS * 2.0);
+
+            if uptime_mean < MIN_UPTIME_RATIO || latency_mean > MAX_LATENCY_MS {
+                unhealthy_peers.push(peer_id.clone());
+            }
+        }
+
+        if unhealthy_peers.is_empty() {
+            return None;
+        }
+
+        // Score candidate peers by health.
+        let mut scored: Vec<(String, f64)> = all_quorum_peers
+            .iter()
+            .map(|peer_id| {
+                let uptime_mean = self.uptime_tracker.get_mean_uptime(peer_id).unwrap_or(0.0);
+
+                let latency_mean = self
+                    .latency_tracker
+                    .get_stats(peer_id)
+                    .map(|s| s.mean_ms)
+                    .unwrap_or(MAX_LATENCY_MS * 2.0);
+
+                // Convert latency into a [0,1] score (higher is better).
+                let latency_score = 1.0 / (1.0 + (latency_mean / LATENCY_SCORE_SCALE_MS).max(0.0));
+
+                // Weighted health: favor uptime, but still account for latency.
+                let health_score = 0.6 * uptime_mean + 0.4 * latency_score;
+                (peer_id.clone(), health_score)
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Replace unhealthy peers while keeping the quorum peer count stable.
+        let new_validators_count = baseline_validators.len();
+        let new_validators: Vec<String> = scored
+            .into_iter()
+            .take(new_validators_count)
+            .map(|(id, _)| id)
+            .collect();
+
+        if new_validators.len() < 2 {
+            return None;
+        }
+
+        // Preserve relative threshold ratio (best-effort) when changing validator count.
+        let threshold_ratio = baseline_qset.threshold as f64 / baseline_validators.len() as f64;
+        let mut recommended_threshold =
+            (threshold_ratio * new_validators.len() as f64).ceil() as u32;
+        recommended_threshold = recommended_threshold
+            .max(1)
+            .min(new_validators.len() as u32);
+
+        // Build a recommended quorum set candidate and validate it retains quorum intersection.
+        let recommended_qset = QuorumSetInfo {
+            threshold: recommended_threshold,
+            validators: new_validators.clone(),
+            inner_sets: vec![],
+        };
+
+        let graph = QuorumGraph::from_quorum_sets(
+            new_validators
+                .iter()
+                .cloned()
+                .map(|v| (v, recommended_qset.clone()))
+                .collect(),
+        );
+
+        let critical_analysis = graph.find_critical_nodes();
+        if !critical_analysis.quorum_intersection_valid {
+            return None;
+        }
+
+        let overlap_analysis = graph.calculate_overlaps();
+        if overlap_analysis.min_overlap < baseline_min_overlap {
+            return None;
+        }
+
+        let unhealthy_sample = unhealthy_peers
+            .iter()
+            .take(3)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let message = format!(
+            "Quorum optimization: replace {} low-health peer(s) (e.g. {}) with healthier peers; recommended threshold={} validators={}",
+            unhealthy_peers.len(),
+            unhealthy_sample,
+            recommended_threshold,
+            new_validators.len()
+        );
+
+        Some(QuorumSetRecommendation {
+            recommended_validators: new_validators,
+            recommended_threshold,
+            message,
+        })
     }
 
     /// Check if cached result should be used
@@ -261,6 +490,32 @@ impl QuorumAnalyzer {
             status
                 .conditions
                 .retain(|c| c.type_ != "Degraded" || c.reason != "QuorumFragile");
+        }
+
+        // Add quorum optimization recommendation condition (health-based; safe-checked).
+        if let Some(rec) = &result.recommendation {
+            let recommendation_condition = Condition {
+                type_: "QuorumOptimizationRecommended".to_string(),
+                status: "True".to_string(),
+                last_transition_time: Utc::now().to_rfc3339(),
+                reason: "PeerHealthRebalance".to_string(),
+                message: rec.message.clone(),
+                observed_generation: None,
+            };
+
+            if let Some(pos) = status
+                .conditions
+                .iter()
+                .position(|c| c.type_ == "QuorumOptimizationRecommended")
+            {
+                status.conditions[pos] = recommendation_condition;
+            } else {
+                status.conditions.push(recommendation_condition);
+            }
+        } else {
+            status
+                .conditions
+                .retain(|c| c.type_ != "QuorumOptimizationRecommended");
         }
 
         // Patch the status

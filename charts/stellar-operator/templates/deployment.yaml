@@ -47,8 +47,8 @@ spec:
             - --rest-api-port={{ .Values.operator.restApiPort }}
             {{- end }}
             - --metrics-port={{ .Values.operator.metricsPort }}
-            {{- range .Values.operator.watchNamespaces }}
-            - --watch-namespace={{ . }}
+            {{- if .Values.operator.watchNamespace }}
+            - --watch-namespace={{ .Values.operator.watchNamespace }}
             {{- end }}
           ports:
             - name: http

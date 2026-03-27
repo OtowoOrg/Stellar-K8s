@@ -91,8 +91,8 @@ operator:
   restApiPort: 9090
   # Metrics port
   metricsPort: 9090
-  # Namespaces to watch (empty = all namespaces)
-  watchNamespaces: []
+  # Namespace to watch (empty = all namespaces)
+  watchNamespace: ""
 
 # Service for REST API and metrics
 service:
@@ -125,3 +125,20 @@ defaultResources:
     limits:
       cpu: "4"
       memory: "8Gi"
+
+# Runtime feature flags written into the stellar-operator-config ConfigMap.
+# The operator watches this ConfigMap and reloads flags without restart.
+# See docs/quickstart.md for full documentation of each flag.
+featureFlags:
+  # Enable automatic CVE patch reconciliation
+  enableCveScanning: "true"
+  # Enable read-replica pool management
+  enableReadPool: "false"
+  # Enable disaster-recovery drill scheduling
+  enableDr: "false"
+  # Enable automatic peer discovery
+  enablePeerDiscovery: "true"
+  # Enable history archive health checks
+  enableArchiveHealth: "true"
+  # Enable Soroban-specific Prometheus metrics collection
+  enableSorobanMetrics: "true"

@@ -1,0 +1,49 @@
+# dr-setup.yaml
+# Advanced example of a Disaster Recovery (DR) enabled Validator.
+# This setup coordinate with a standby cluster for high availability across regions.
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-dr
+  namespace: stellar
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+
+  storage:
+    storageClass: "ssd-premium"
+    size: "500Gi"
+
+  validatorConfig:
+    seedSecretRef: "validator-seed-mainnet"
+
+  # Disaster Recovery configuration.
+  drConfig:
+    # Enable DR features (cross-cluster sync and health monitoring).
+    enabled: true
+    # This node is the 'Primary' source of truth.
+    role: Primary
+    # Identifier for the peer cluster performing standby duties.
+    peerClusterId: "secondary-region-1"
+    # 'Consensus' strategy uses SCP to keep the standby in sync.
+    syncStrategy: Consensus
+    
+    # Automated health checks for the peer cluster connectivity.
+    healthCheckInterval: 30
+    
+    # Automated DR drill scheduling (ensures failover works without data loss).
+    drillSchedule:
+      # Cron expression: every Sunday at 02:00 AM.
+      schedule: "0 2 * * 0"
+      # Timeout for the automated failover process.
+      timeoutSeconds: 300
+      # Automatically roll back to Primary after a successful drill.
+      autoRollback: true
+      rollbackDelaySeconds: 60
+
+    # DNS configuration for automated failover (Global Load Balancing).
+    failoverDns:
+      hostname: "validator-api.example.com"
+      ttl: 60

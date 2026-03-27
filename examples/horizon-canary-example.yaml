@@ -14,11 +14,10 @@ spec:
   
   # The new Rolling Strategy defining a canary
   strategy:
+    type: canary
     canary:
-      # Traffic weight routed to the new canary version
-      weight: 10
-      # Amount of time in seconds to wait before checking the health and promoting
-      checkIntervalSeconds: 300
+      weight: 20
+      checkIntervalSeconds: 60
       
   horizonConfig:
     stellarCoreUrl: "http://core-mainnet.default.svc.cluster.local:11626"

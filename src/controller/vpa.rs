@@ -294,6 +294,7 @@ mod tests {
                 forensic_snapshot: None,
                 resource_meta: None,
                 read_pool_endpoint: None,
+            custom_network_passphrase: None,
             },
             status: None,
         }

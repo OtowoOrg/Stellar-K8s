@@ -86,7 +86,7 @@ pub async fn dashboard_overview(
                     StellarNetwork::Mainnet => mainnet += 1,
                     StellarNetwork::Testnet => testnet += 1,
                     StellarNetwork::Futurenet => futurenet += 1,
-                    StellarNetwork::Custom(_) => custom += 1,
+                    StellarNetwork::Custom => custom += 1,
                 }
             }
 

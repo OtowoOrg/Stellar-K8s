@@ -69,7 +69,7 @@ pub(crate) fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
     );
     labels.insert(
         "stellar-network".to_string(),
-        node.spec.network.scheduling_label_value(),
+        node.spec.network.scheduling_label_value(&node.spec.custom_network_passphrase),
     );
     labels
 }
@@ -285,7 +285,8 @@ fn build_config_map(
 
     data.insert(
         "NETWORK_PASSPHRASE".to_string(),
-        node.spec.network.passphrase().to_string(),
+                node.spec.network_passphrase()
+.to_string(),
     );
 
     if enable_mtls {
@@ -1011,7 +1012,7 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode, dry_run: bool) 
 
     info!("Ingress ensured for {}/{}", namespace, name);
 
-    if let RolloutStrategy::Canary(ref cfg) = node.spec.strategy {
+    if let Some(cfg) = node.spec.strategy.canary() {
         if node
             .status
             .as_ref()
@@ -1423,7 +1424,7 @@ fn network_spread_label_selector(spec: &StellarNodeSpec) -> LabelSelector {
             ),
             (
                 "stellar-network".to_string(),
-                spec.network.scheduling_label_value(),
+                spec.network.scheduling_label_value(&spec.custom_network_passphrase),
             ),
             (
                 "app.kubernetes.io/component".to_string(),
@@ -1551,7 +1552,7 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
 
     let mut env_vars = vec![EnvVar {
         name: "NETWORK_PASSPHRASE".to_string(),
-        value: Some(node.spec.network.passphrase().to_string()),
+        value: Some(node.spec.network_passphrase().to_string()),
         ..Default::default()
     }];
 

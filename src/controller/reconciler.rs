@@ -923,7 +923,7 @@ pub(crate) async fn apply_stellar_node(
                 }
                 NodeType::Horizon | NodeType::SorobanRpc => {
                     // Handle Canary Deployment
-                    if let RolloutStrategy::Canary(cfg) = &node.spec.strategy {
+                    if let Some(cfg) = node.spec.strategy.canary() {
                         // Determine if we are in a canary state
                         let current_version = get_current_deployment_version(client, node).await?;
 
@@ -1414,7 +1414,7 @@ pub(crate) async fn apply_stellar_node(
                 &namespace,
                 &name,
                 &node.spec.node_type.to_string(),
-                node.spec.network.passphrase(),
+                node.spec.network_passphrase(),
                 seq,
             );
 
@@ -1427,7 +1427,7 @@ pub(crate) async fn apply_stellar_node(
                     &namespace,
                     &name,
                     &node.spec.node_type.to_string(),
-                    node.spec.network.passphrase(),
+                    node.spec.network_passphrase(),
                     lag.max(0),
                 );
             }
@@ -2175,7 +2175,7 @@ async fn run_archive_integrity_check(
         &namespace,
         &name,
         &node.spec.node_type.to_string(),
-        node.spec.network.passphrase(),
+        node.spec.network_passphrase(),
         max_lag as i64,
     );
 
@@ -2470,7 +2470,7 @@ async fn get_latest_network_ledger(network: &crate::crd::StellarNetwork) -> Resu
         crate::crd::StellarNetwork::Mainnet => "https://horizon.stellar.org",
         crate::crd::StellarNetwork::Testnet => "https://horizon-testnet.stellar.org",
         crate::crd::StellarNetwork::Futurenet => "https://horizon-futurenet.stellar.org",
-        crate::crd::StellarNetwork::Custom(_) => {
+        crate::crd::StellarNetwork::Custom => {
             return Err(Error::ConfigError(
                 "Custom network not supported for lag calculation yet".to_string(),
             ))
@@ -2599,7 +2599,7 @@ async fn perform_quorum_analysis(client: &Client, node: &StellarNode) -> Result<
             crate::crd::StellarNetwork::Mainnet => "mainnet",
             crate::crd::StellarNetwork::Testnet => "testnet",
             crate::crd::StellarNetwork::Futurenet => "futurenet",
-            crate::crd::StellarNetwork::Custom(_) => "custom",
+            crate::crd::StellarNetwork::Custom => "custom",
         };
 
         metrics::set_quorum_critical_nodes(

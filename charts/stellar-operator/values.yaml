@@ -1,4 +1,4 @@
- Default values for stellar-operator
+# Default values for stellar-operator
 # This is a YAML-formatted file.
 
 replicaCount: 1

@@ -109,6 +109,14 @@ enum Commands {
         /// The Stellar error code to explain (e.g., tx_bad_auth, op_no_destination)
         error_code: String,
     },
+    /// Search the documentation for keywords
+    Search {
+        /// The search query
+        query: String,
+        /// Show full content of the match
+        #[arg(short, long)]
+        full: bool,
+    },
     /// Generate shell completion scripts
     Completions {
         /// Shell to generate completions for
@@ -236,6 +244,9 @@ async fn run(cli: Cli) -> Result<()> {
             explain::explain_error(&error_code);
             Ok(())
         }
+        Commands::Search { query, full } => {
+            search_docs(&query, full)
+        }
         Commands::Completions { shell } => {
             use clap::CommandFactory;
             use clap_complete::generate;
@@ -245,6 +256,31 @@ async fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn search_docs(query: &str, full: bool) -> Result<()> {
+    use stellar_k8s::search;
+    let results = search::search(query);
+
+    if results.is_empty() {
+        println!("No results found for '{}'", query);
+        return Ok(());
+    }
+
+    println!("Found {} results for '{}':\n", results.len(), query);
+
+    for (doc, snippets) in results {
+        println!("\x1b[1;34m{}\x1b[0m ({})", doc.title, doc.path);
+        if full {
+            println!("{}\n", doc.content);
+        } else {
+            for snippet in snippets {
+                println!("  {}\n", snippet);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn build_events_field_selector(node_name: Option<&str>) -> String {

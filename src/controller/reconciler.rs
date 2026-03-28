@@ -40,12 +40,14 @@ use kube::{
     Resource, ResourceExt,
 };
 use tracing::{debug, error, info, info_span, instrument, warn};
+use tracing_subscriber::{reload::Handle, EnvFilter, Registry};
 
 use crate::crd::{
     DisasterRecoveryStatus, NodeType, RolloutStrategy, SpecValidationError, StellarNode,
     StellarNodeStatus,
 };
 use crate::error::{Error, Result};
+use crate::infra;
 
 use super::archive_health::{
     calculate_backoff, check_archive_integrity, check_history_archive_health, ArchiveHealthResult,
@@ -97,6 +99,10 @@ pub struct ControllerState {
     pub reconcile_id_counter: std::sync::atomic::AtomicU64,
     /// Timestamp of the last successful reconcile
     pub last_reconcile_success: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// Handle to reload the tracing filter
+    pub log_reload_handle: Handle<EnvFilter, Registry>,
+    /// Optional expiration time for a temporary log level change
+    pub log_level_expires_at: std::sync::Arc<tokio::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>>,
 }
 
 impl ControllerState {
@@ -1447,11 +1453,13 @@ pub(crate) async fn apply_stellar_node(
     if let Some(ref status) = node.status {
         #[cfg(feature = "metrics")]
         if let Some(seq) = status.ledger_sequence {
+            let hardware_generation = hardware_generation_for_metrics(client, node).await;
             metrics::set_ledger_sequence(
                 &namespace,
                 &name,
                 &node.spec.node_type.to_string(),
                 node.spec.network.passphrase(),
+                &hardware_generation,
                 seq,
             );
 
@@ -1465,6 +1473,7 @@ pub(crate) async fn apply_stellar_node(
                     &name,
                     &node.spec.node_type.to_string(),
                     node.spec.network.passphrase(),
+                    &hardware_generation,
                     lag.max(0),
                 );
             }
@@ -2208,11 +2217,14 @@ async fn run_archive_integrity_check(
 
     // Update Prometheus metric with the maximum observed lag.
     #[cfg(feature = "metrics")]
+    let hardware_generation = hardware_generation_for_metrics(client, node).await;
+    #[cfg(feature = "metrics")]
     metrics::set_archive_ledger_lag(
         &namespace,
         &name,
         &node.spec.node_type.to_string(),
         node.spec.network.passphrase(),
+        &hardware_generation,
         max_lag as i64,
     );
 
@@ -2653,6 +2665,7 @@ async fn perform_quorum_analysis(client: &Client, node: &StellarNode) -> Result<
     #[cfg(feature = "metrics")]
     {
         let node_type = node.spec.node_type.to_string();
+        let hardware_generation = hardware_generation_for_metrics(client, node).await;
         let network = match &node.spec.network {
             crate::crd::StellarNetwork::Mainnet => "mainnet",
             crate::crd::StellarNetwork::Testnet => "testnet",
@@ -2665,6 +2678,7 @@ async fn perform_quorum_analysis(client: &Client, node: &StellarNode) -> Result<
             &name,
             &node_type,
             network,
+            &hardware_generation,
             result.critical_nodes.len() as i64,
         );
         metrics::set_quorum_min_overlap(
@@ -2672,6 +2686,7 @@ async fn perform_quorum_analysis(client: &Client, node: &StellarNode) -> Result<
             &name,
             &node_type,
             network,
+            &hardware_generation,
             result.min_overlap as i64,
         );
         metrics::set_quorum_fragility_score(
@@ -2679,6 +2694,7 @@ async fn perform_quorum_analysis(client: &Client, node: &StellarNode) -> Result<
             &name,
             &node_type,
             network,
+            &hardware_generation,
             result.fragility_score,
         );
     }
@@ -2699,4 +2715,20 @@ async fn perform_quorum_analysis(client: &Client, node: &StellarNode) -> Result<
     );
 
     Ok(())
+}
+
+#[cfg(feature = "metrics")]
+async fn hardware_generation_for_metrics(client: &Client, node: &StellarNode) -> String {
+    match infra::resolve_stellar_node_infra(client, node).await {
+        Ok(summary) => summary.hardware_generation_label(),
+        Err(err) => {
+            warn!(
+                "Failed to resolve hardware generation for metrics on {}/{}: {:?}",
+                node.namespace().unwrap_or_else(|| "default".to_string()),
+                node.name_any(),
+                err
+            );
+            "unknown".to_string()
+        }
+    }
 }

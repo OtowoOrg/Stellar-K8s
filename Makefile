@@ -39,7 +39,7 @@ audit: ## Security audit
 
 test: ## Run tests
 	@echo "→ Running tests..."
-	@$(CARGO) test --workspace --all-features --verbose
+	@$(CARGO) test --workspace --all-features --tests --lib --bins --verbose
 	@echo "→ Running doc tests..."
 	@$(CARGO) test --doc --workspace
 
@@ -47,9 +47,17 @@ build: ## Build release
 	@echo "→ Building release..."
 	@$(CARGO) build --release --locked
 
-docker-build: ## Build Docker image
-	@echo "→ Building Docker image..."
-	$(DOCKER) build -t $(IMAGE_NAME):$(IMAGE_TAG) .
+docker-build: ## Fast local Docker build using host release binaries
+	@echo "→ Building Docker image (fast local mode)..."
+	@if [ ! -f target/release/stellar-operator ] || [ ! -f target/release/kubectl-stellar ]; then \
+		echo "→ Release binaries not found, building once..."; \
+		$(MAKE) build; \
+	fi
+	DOCKER_BUILDKIT=1 $(DOCKER) build --target runtime-local -t $(IMAGE_NAME):$(IMAGE_TAG) .
+
+docker-build-ci: ## Reproducible CI Docker build (builds binaries in container)
+	@echo "→ Building Docker image (CI mode)..."
+	DOCKER_BUILDKIT=1 $(DOCKER) build --target runtime -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
 docker-multiarch: ## Build multi-arch Docker image
 	$(DOCKER) buildx build --platform linux/amd64,linux/arm64 -t $(IMAGE_NAME):$(IMAGE_TAG) .
@@ -164,7 +172,8 @@ quickstart: ## End-to-end local quickstart: kind cluster + CRD + operator + samp
 	@echo "→ Creating kind cluster 'stellar-dev'..."
 	@kind create cluster --name stellar-dev --wait 120s || echo "  (cluster may already exist, continuing)"
 	@echo "→ Building operator image..."
-	@$(DOCKER) build -t stellar-operator:dev .
+	@$(MAKE) build
+	@DOCKER_BUILDKIT=1 $(DOCKER) build --target runtime-local -t stellar-operator:dev .
 	@echo "→ Loading image into kind cluster..."
 	@kind load docker-image stellar-operator:dev --name stellar-dev
 	@echo "→ Installing CRD..."

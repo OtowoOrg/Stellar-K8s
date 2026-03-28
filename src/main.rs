@@ -9,6 +9,7 @@ use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomRe
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::MicroTime;
 use kube::api::{Api, ObjectMeta, Patch, PatchParams, PostParams};
 use kube::ResourceExt;
+use stellar_k8s::infra;
 use stellar_k8s::{controller, crd::StellarNode, preflight, Error};
 use tracing::{debug, info, info_span, warn, Instrument, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -664,6 +665,43 @@ async fn run_info(args: InfoArgs) -> Result<(), Error> {
             }
         }
 
+        match infra::resolve_stellar_node_infra(&client, node).await {
+            Ok(summary) if !summary.is_empty() => {
+                println!("  Infra Details:");
+                println!(
+                    "    Hardware Generation: {}",
+                    summary.hardware_generation_label()
+                );
+
+                for assignment in &summary.assignments {
+                    let kube_node = assignment.kubernetes_node.as_deref().unwrap_or("pending");
+                    println!(
+                        "    - Pod {} on {} ({})",
+                        assignment.pod_name, kube_node, assignment.hardware_generation
+                    );
+
+                    if assignment.feature_labels.is_empty() {
+                        println!("      feature.node.kubernetes.io/* labels: none found");
+                    } else {
+                        println!("      feature.node.kubernetes.io/* labels:");
+                        for (key, value) in &assignment.feature_labels {
+                            println!("        - {key}={value}");
+                        }
+                    }
+                }
+            }
+            Ok(_) => {
+                println!("  Infra Details:");
+                println!("    Hardware Generation: unknown");
+                println!("    Pods are not scheduled yet, so node feature labels are unavailable.");
+            }
+            Err(err) => {
+                println!("  Infra Details:");
+                println!("    Hardware Generation: unknown");
+                println!("    Failed to inspect Kubernetes node labels: {err}");
+            }
+        }
+
         println!();
     }
 
@@ -763,6 +801,8 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
     let env_filter = EnvFilter::builder()
         .with_default_directive(Level::INFO.into())
         .from_env_lossy();
+
+    let (env_filter, reload_handle) = tracing_subscriber::reload::Layer::new(env_filter);
 
     let fmt_layer = fmt::layer().json().with_target(true);
 
@@ -924,6 +964,8 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         operator_config: Arc::new(operator_config),
         reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
         last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        log_reload_handle: reload_handle,
+        log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
     });
 
     // Start the peer discovery manager

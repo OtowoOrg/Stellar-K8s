@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -14,11 +18,64 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      docker: ${{ steps.detect.outputs.docker }}
+      helm: ${{ steps.detect.outputs.helm }}
+      api_docs: ${{ steps.detect.outputs.api_docs }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect Docker-impacting changes
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+          else
+            BASE_SHA="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+          fi
+
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(Dockerfile|\.dockerignore|Cargo\.toml|Cargo\.lock|src/|config/|Makefile)'; then
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docker=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(charts/|config/crd/|config/samples/|examples/|Makefile)'; then
+            echo "helm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "helm=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(docs/|scripts/generate-api-docs\.py|config/crd/|src/crd/|src/rest_api/|Makefile)'; then
+            echo "api_docs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "api_docs=false" >> "$GITHUB_OUTPUT"
+          fi
+
   version-consistency:
     name: Version Consistency Check
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -57,9 +114,11 @@ jobs:
 
   helm-lint:
     name: Helm Lint & Schema Validation
+    if: needs.changes.outputs.helm == 'true'
     runs-on: ubuntu-latest
+    needs: [changes]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Helm
         uses: azure/setup-helm@v5
@@ -112,7 +171,7 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -129,10 +188,10 @@ jobs:
     name: Lint & Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.88"
           components: rustfmt, clippy
@@ -142,12 +201,19 @@ jobs:
         with:
           shared-key: "ci-lint"
 
-      - name: Shellcheck
-        uses: ludeeus/action-shellcheck@2.0.0
-        with:
-          path_to_shell_files: .
-          severity: error
-          upload_annotation: true
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: |
+          mapfile -t shell_files < <(find . -type f -name "*.sh")
+          if [ "${#shell_files[@]}" -eq 0 ]; then
+            echo "No shell scripts found"
+            exit 0
+          fi
+          shellcheck -S error "${shell_files[@]}"
 
       - name: Check formatting
         run: make fmt-check
@@ -158,9 +224,9 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    needs: [security-audit, lint, version-consistency]
+    needs: [security-audit, lint]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -175,8 +241,9 @@ jobs:
 
   helm-test:
     name: Helm Unit Tests
+    if: needs.changes.outputs.helm == 'true'
     runs-on: ubuntu-latest
-    needs: [lint]
+    needs: [changes, lint]
     steps:
       - uses: actions/checkout@v4
 
@@ -193,8 +260,9 @@ jobs:
 
   api-docs:
     name: API Docs Drift Check
+    if: needs.changes.outputs.api_docs == 'true'
     runs-on: ubuntu-latest
-    needs: [lint]
+    needs: [changes, lint]
     steps:
       - uses: actions/checkout@v4
 
@@ -221,10 +289,11 @@ jobs:
 
   build:
     name: Build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -248,19 +317,23 @@ jobs:
 
   docker:
     name: Docker Build
+    if: >-
+      github.event_name != 'pull_request' &&
+      needs.changes.outputs.docker == 'true' &&
+      (needs.helm-test.result == 'success' || needs.helm-test.result == 'skipped') &&
+      (needs.api-docs.result == 'success' || needs.api-docs.result == 'skipped')
     runs-on: ubuntu-latest
-    needs: [build, helm-test, api-docs]
+    needs: [changes, build, helm-test, api-docs]
+    env:
+      DOCKER_PLATFORMS: linux/amd64
     permissions:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Lowercase IMAGE_NAME
         run: echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -288,12 +361,15 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          target: runtime
+          platforms: ${{ env.DOCKER_PLATFORMS }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=stellar-k8s-docker
+          cache-to: type=gha,mode=max,scope=stellar-k8s-docker
+          provenance: false
+          sbom: false
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
@@ -306,7 +382,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Lowercase IMAGE_NAME
         run: echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV

@@ -308,10 +308,60 @@ mod tests {
 
     use crate::controller::resources::{
         build_config_map_for_test, build_deployment_for_test, build_pvc_for_test,
-        build_service_for_test, build_statefulset_for_test, owner_reference, standard_labels,
+        build_service_for_test, build_statefulset_for_test, merge_workload_affinity,
+        owner_reference, standard_labels,
     };
+    use crate::crd::types::ValidatorConfig;
     use crate::crd::StellarNode;
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+
+    #[test]
+    fn test_scp_aware_anti_affinity_injection() {
+        let mut node = make_node(NodeType::Validator);
+        node.spec.placement.scp_aware_anti_affinity = true;
+        node.spec.validator_config = Some(ValidatorConfig {
+            quorum_set: Some(
+                r#"
+[VALIDATORS]
+peer-1 = "G..."
+peer-2 = "G..."
+"#
+                .to_string(),
+            ),
+            ..Default::default()
+        });
+
+        let affinity = merge_workload_affinity(&node).expect("affinity should be generated");
+        let pa = affinity
+            .pod_anti_affinity
+            .expect("podAntiAffinity should be generated");
+        let preferred = pa
+            .preferred_during_scheduling_ignored_during_execution
+            .expect("preferred terms should be generated");
+
+        assert_eq!(preferred.len(), 2);
+
+        let instances: Vec<String> = preferred
+            .iter()
+            .filter_map(|t| {
+                t.pod_affinity_term
+                    .label_selector
+                    .as_ref()?
+                    .match_labels
+                    .as_ref()?
+                    .get("app.kubernetes.io/instance")
+                    .cloned()
+            })
+            .collect();
+
+        assert!(instances.contains(&"peer-1".to_string()));
+        assert!(instances.contains(&"peer-2".to_string()));
+
+        for t in preferred {
+            assert_eq!(t.pod_affinity_term.topology_key, "kubernetes.io/hostname");
+            assert_eq!(t.weight, 100);
+        }
+    }
 
     fn make_node(node_type: NodeType) -> StellarNode {
         use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;

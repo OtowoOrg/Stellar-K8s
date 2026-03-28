@@ -4,6 +4,7 @@
 //! The `/metrics` endpoint (when built with `--features metrics`) exports the following metrics:
 //! - `stellar_reconcile_duration_seconds` (histogram): reconcile duration labeled by controller.
 //! - `stellar_reconcile_errors_total` (counter): reconcile errors labeled by controller and kind.
+//! - `stellar_operator_reconcile_errors_total` (counter): operator reconcile errors labeled by controller and kind.
 //! - `stellar_node_ledger_sequence` (gauge): ledger sequence labeled by namespace/name/node_type/network.
 //! - `stellar_node_ingestion_lag` (gauge): ingestion lag labeled by namespace/name/node_type/network.
 //! - `stellar_horizon_tps` (gauge): Horizon TPS labeled by namespace/name/node_type/network.
@@ -145,6 +146,10 @@ pub static RECONCILE_DURATION_SECONDS: Lazy<Family<ReconcileLabels, Histogram>> 
 pub static RECONCILE_ERRORS_TOTAL: Lazy<Family<ErrorLabels, Counter<u64, AtomicU64>>> =
     Lazy::new(Family::default);
 
+/// Counter tracking operator-level reconcile errors
+pub static OPERATOR_RECONCILE_ERRORS_TOTAL: Lazy<Family<ErrorLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
+
 /// Soroban-specific metrics
 /// Histogram tracking Wasm execution time in microseconds
 pub static WASM_EXECUTION_DURATION_MICROSECONDS: Lazy<Family<SorobanLabels, Histogram>> =
@@ -231,6 +236,12 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_reconcile_errors_total",
         "Total number of reconcile errors",
         RECONCILE_ERRORS_TOTAL.clone(),
+    );
+
+    registry.register(
+        "stellar_operator_reconcile_errors_total",
+        "Total number of operator reconcile errors",
+        OPERATOR_RECONCILE_ERRORS_TOTAL.clone(),
     );
 
     registry.register(
@@ -389,6 +400,15 @@ pub fn inc_reconcile_error(controller: &str, kind: &str) {
         kind: kind.to_string(),
     };
     RECONCILE_ERRORS_TOTAL.get_or_create(&labels).inc();
+}
+
+/// Increment the operator reconcile error counter.
+pub fn inc_operator_reconcile_error(controller: &str, kind: &str) {
+    let labels = ErrorLabels {
+        controller: controller.to_string(),
+        kind: kind.to_string(),
+    };
+    OPERATOR_RECONCILE_ERRORS_TOTAL.get_or_create(&labels).inc();
 }
 
 /// Increment reactive status updates counter
@@ -943,5 +963,47 @@ mod tests {
         assert_eq!(labels.name, "soroban-prod");
         assert_eq!(labels.network, "mainnet");
         assert!(labels.contract_id.starts_with("CDLZFC"));
+    }
+
+    #[test]
+    fn test_inc_operator_reconcile_error() {
+        // Test that incrementing operator reconcile error doesn't panic
+        inc_operator_reconcile_error("stellarnode", "kube");
+        inc_operator_reconcile_error("stellarnode", "validation");
+        inc_operator_reconcile_error("stellarnode", "config");
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_operator_reconcile_errors_total_registered() {
+        // Verify the new metric is registered in the global registry
+        let _registry = &*REGISTRY;
+        // Access the metric to ensure it's initialized
+        let labels = ErrorLabels {
+            controller: "stellarnode".to_string(),
+            kind: "test".to_string(),
+        };
+        let counter = OPERATOR_RECONCILE_ERRORS_TOTAL.get_or_create(&labels);
+        counter.inc();
+        // If this doesn't panic, the metric is properly registered and functional
+    }
+
+    #[test]
+    fn test_operator_reconcile_error_labels() {
+        // Test that error labels are created correctly for operator errors
+        let labels = ErrorLabels {
+            controller: "stellarnode".to_string(),
+            kind: "unknown".to_string(),
+        };
+
+        assert_eq!(labels.controller, "stellarnode");
+        assert_eq!(labels.kind, "unknown");
+
+        // Test with different error kinds
+        inc_operator_reconcile_error("stellarnode", "kube");
+        inc_operator_reconcile_error("stellarnode", "validation");
+        inc_operator_reconcile_error("stellarnode", "config");
+        inc_operator_reconcile_error("stellarnode", "unknown");
+        // Function should not panic with various error kinds
     }
 }

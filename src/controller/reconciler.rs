@@ -128,7 +128,7 @@ impl ControllerState {
 ///
 /// ```rust,no_run
 /// use std::sync::Arc;
-/// use std::sync::atomic::AtomicBool;
+/// use std::sync::atomic::{AtomicBool, AtomicU64};
 /// use stellar_k8s::controller::{ControllerState, run_controller};
 /// use kube::Client;
 ///
@@ -148,6 +148,8 @@ impl ControllerState {
 ///             instance: None,
 ///         },
 ///         operator_config: Arc::new(Default::default()),
+///         reconcile_id_counter: AtomicU64::new(0),
+///         last_reconcile_success: Arc::new(AtomicU64::new(0)),
 ///     });
 ///     run_controller(state).await?;
 ///     Ok(())
@@ -418,14 +420,20 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
 
     let node_name_for_span = node_name.clone();
     let namespace_for_span = namespace.clone();
+    let resource_version = obj
+        .metadata
+        .resource_version
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
 
     // Attach per-reconcile structured fields so every log event during reconciliation
-    // can be correlated in JSON logs (node_name/namespace/reconcile_id).
+    // can be correlated in JSON logs (node_name/namespace/reconcile_id/resource_version).
     let _reconcile_span = info_span!(
         "reconcile_attempt",
         node_name = %node_name_for_span,
         namespace = %namespace_for_span,
-        reconcile_id = %reconcile_id
+        reconcile_id = %reconcile_id,
+        resource_version = %resource_version
     );
     let _reconcile_enter = _reconcile_span.enter();
 
@@ -470,6 +478,7 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
                 _ => "unknown",
             };
             metrics::inc_reconcile_error("stellarnode", kind);
+            metrics::inc_operator_reconcile_error("stellarnode", kind);
         } else {
             // Record successful reconciliation timestamp
             let now = std::time::SystemTime::now()
@@ -2556,12 +2565,18 @@ pub(crate) fn error_policy(
 
     let node_name_for_span = node_name.clone();
     let namespace_for_span = namespace.clone();
+    let resource_version = node
+        .metadata
+        .resource_version
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
 
     let _error_span = info_span!(
         "reconcile_error",
         node_name = %node_name_for_span,
         namespace = %namespace_for_span,
-        reconcile_id = %reconcile_id
+        reconcile_id = %reconcile_id,
+        resource_version = %resource_version
     );
     let _enter = _error_span.enter();
 

@@ -138,25 +138,36 @@ async fn main() {
 async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Version => {
-            // Fetch operator version from cluster if available
-            let operator_version = {
-                match Client::try_default().await {
-                    Ok(client) => {
-                        // Try to get operator deployment version
-                        let deployments: kube::Api<k8s_openapi::api::apps::v1::Deployment> =
-                            kube::Api::namespaced(client, "stellar-system");
-                        match deployments.get("stellar-operator").await {
-                            Ok(deploy) => deploy
-                                .spec
-                                .and_then(|s| s.template.spec)
-                                .and_then(|p| p.containers.first().cloned())
-                                .and_then(|c| c.image)
-                                .unwrap_or_else(|| "unknown".to_string()),
-                            Err(_) => "not deployed".to_string(),
+            let operator_version = match Client::try_default().await {
+                Ok(client) => {
+                    let deployments: kube::Api<k8s_openapi::api::apps::v1::Deployment> =
+                        kube::Api::namespaced(client, "stellar-system");
+                    match deployments.get("stellar-operator").await {
+                        Ok(deploy) => {
+                            // Prefer the well-known label set by Helm
+                            deploy
+                                .metadata
+                                .labels
+                                .as_ref()
+                                .and_then(|l| l.get("app.kubernetes.io/version"))
+                                .cloned()
+                                // Fall back to parsing the image tag
+                                .or_else(|| {
+                                    deploy
+                                        .spec
+                                        .and_then(|s| s.template.spec)
+                                        .and_then(|p| p.containers.into_iter().next())
+                                        .and_then(|c| c.image)
+                                        .and_then(|img| {
+                                            img.rsplit_once(':').map(|(_, tag)| tag.to_string())
+                                        })
+                                })
+                                .unwrap_or_else(|| "unknown".to_string())
                         }
+                        Err(e) => format!("not deployed ({e})"),
                     }
-                    Err(_) => "cluster not accessible".to_string(),
                 }
+                Err(_) => "cluster not accessible".to_string(),
             };
 
             println!("kubectl-stellar v{}", env!("CARGO_PKG_VERSION"));
@@ -933,6 +944,17 @@ mod tests {
                 "Failed for all_namespaces={all_namespaces:?}, node_name={node_name:?}, namespace={namespace:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_image_tag_fallback_parsing() {
+        // Simulates the fallback: extract tag from image string
+        let image = "ghcr.io/stellar/stellar-k8s:v1.2.3";
+        let tag = image.rsplit_once(':').map(|(_, t)| t.to_string());
+        assert_eq!(tag, Some("v1.2.3".to_string()));
+
+        let no_tag = "ghcr.io/stellar/stellar-k8s";
+        assert!(no_tag.rsplit_once(':').is_none());
     }
 
     #[test]

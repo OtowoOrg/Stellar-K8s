@@ -1,0 +1,57 @@
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-with-sidecars
+  namespace: default
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  storage:
+    storageClass: standard
+    size: 50Gi
+  validatorConfig:
+    seedSecretSource:
+      localRef:
+        name: validator-seed
+  # Sidecar containers run alongside the main stellar-node container.
+  # They share the pod network and can mount the same volumes (e.g. "data", "config").
+  sidecars:
+    # Example 1: Fluent Bit log forwarder reading stellar-core logs from the data volume
+    - name: log-forwarder
+      image: fluent/fluent-bit:3.0
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "100m"
+          memory: "128Mi"
+      volumeMounts:
+        - name: data
+          mountPath: /stellar-data
+          readOnly: true
+      env:
+        - name: LOG_LEVEL
+          value: "info"
+
+    # Example 2: Prometheus metrics exporter proxy
+    - name: metrics-proxy
+      image: prom/node-exporter:latest
+      ports:
+        - containerPort: 9100
+          name: metrics
+      resources:
+        requests:
+          cpu: "25m"
+          memory: "32Mi"
+        limits:
+          cpu: "50m"
+          memory: "64Mi"

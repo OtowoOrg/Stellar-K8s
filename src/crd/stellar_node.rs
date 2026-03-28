@@ -189,6 +189,26 @@ pub struct StellarNodeSpec {
 
     #[schemars(skip)]
     pub resource_meta: Option<ObjectMeta>,
+
+    /// Optional sidecar containers to run alongside the main Stellar container.
+    ///
+    /// These containers share the pod's network namespace and can mount the same
+    /// volumes (e.g. `data`, `config`) as the main container. Useful for log
+    /// forwarders, monitoring agents, proxies, etc.
+    ///
+    /// # Example
+    /// ```yaml
+    /// sidecars:
+    ///   - name: log-forwarder
+    ///     image: fluent/fluent-bit:latest
+    ///     volumeMounts:
+    ///       - name: data
+    ///         mountPath: /stellar-data
+    ///         readOnly: true
+    /// ```
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Vec<serde_json::Value>>")]
+    pub sidecars: Option<Vec<k8s_openapi::api::core::v1::Container>>,
 }
 
 fn default_replicas() -> i32 {
@@ -253,6 +273,7 @@ impl StellarNodeSpec {
     /// # vpa_config: None,
     /// # resource_meta: None,
     /// # read_pool_endpoint: None,
+    /// # sidecars: None,
     /// };
     /// match spec.validate() {
     ///     Ok(_) => println!("Valid spec"),
@@ -1208,6 +1229,7 @@ mod tests {
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            sidecars: None,
         };
 
         assert!(spec.validate().is_err());
@@ -1264,6 +1286,7 @@ mod tests {
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            sidecars: None,
         };
 
         assert!(spec.validate().is_ok());

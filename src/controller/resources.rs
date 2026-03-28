@@ -1366,6 +1366,13 @@ fn build_pod_template(
     }
 
     // ==========================================================================
+    // Merge user-defined sidecar containers into the pod spec
+    // ==========================================================================
+    if let Some(sidecars) = &node.spec.sidecars {
+        pod_spec.containers.extend(sidecars.iter().cloned());
+    }
+
+    // ==========================================================================
     // NEW: Inject KMS/ESO/CSI seed env vars, volumes, and volume mounts
     // ==========================================================================
     if let Some(inj) = seed_injection {

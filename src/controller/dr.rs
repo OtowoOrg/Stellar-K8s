@@ -39,7 +39,7 @@ pub async fn reconcile_dr(
     // 1. Check peer health
     // In a real implementation, this would call the peer cluster's API
     // For this task, we'll simulate the peer health check
-    let peer_healthy = simulate_peer_health_check(&dr_config.peer_cluster_id).await;
+    let peer_healthy = simulate_peer_health_check(client, &dr_config.peer_cluster_id).await;
 
     status.peer_health = Some(if peer_healthy {
         "Healthy".to_string()
@@ -105,10 +105,27 @@ pub async fn reconcile_dr(
 }
 
 /// Simulate checking health of a peer cluster
-async fn simulate_peer_health_check(_peer_id: &str) -> bool {
+async fn simulate_peer_health_check(client: &Client, peer_id: &str) -> bool {
     // In production, this would be a real network check
     // For verification, we assume it's healthy unless a failure is simulated
-    true
+    let api: kube::Api<k8s_openapi::api::apps::v1::Deployment> =
+        kube::Api::namespaced(client.clone(), peer_id);
+    match api.list(&kube::api::ListParams::default()).await {
+        Ok(list) => {
+            if list.items.is_empty() {
+                false
+            } else {
+                list.items.into_iter().any(|d| {
+                    d.status
+                        .as_ref()
+                        .and_then(|s| s.ready_replicas)
+                        .unwrap_or(0)
+                        > 0
+                })
+            }
+        }
+        Err(_) => false,
+    }
 }
 
 /// Simulation of fetching the latest ledger sequence from the peer

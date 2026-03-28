@@ -750,8 +750,133 @@ mod stellar_node_spec_validation {
     #[test]
     fn test_validator_custom_network_passes() {
         let mut spec = valid_validator_spec();
-        spec.network = StellarNetwork::Custom("My Private Network".to_string());
+        spec.network = StellarNetwork::Custom("my-private-network".to_string());
         assert!(spec.validate().is_ok());
+    }
+
+    // =========================================================================
+    // Custom Network Name Validation Tests (#366)
+    // =========================================================================
+
+    #[test]
+    fn test_custom_network_valid_alphanumeric_passes() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("my-private-net".to_string());
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_custom_network_single_char_passes() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("a".to_string());
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_custom_network_63_chars_passes() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("a".repeat(63));
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_custom_network_empty_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("".to_string());
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "spec.network.customName" && e.message.contains("empty")));
+    }
+
+    #[test]
+    fn test_custom_network_exceeds_63_chars_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("a".repeat(64));
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "spec.network.customName" && e.message.contains("63")));
+    }
+
+    #[test]
+    fn test_custom_network_special_chars_fails() {
+        for bad in &["; drop table", "my@network", "net$name!", "net name"] {
+            let mut spec = valid_validator_spec();
+            spec.network = StellarNetwork::Custom(bad.to_string());
+            let result = spec.validate();
+            assert!(
+                result.is_err(),
+                "Expected validation failure for customName: '{bad}'"
+            );
+            let errors = result.unwrap_err();
+            assert!(
+                errors.iter().any(|e| e.field == "spec.network.customName"),
+                "Expected spec.network.customName error for '{bad}'"
+            );
+        }
+    }
+
+    #[test]
+    fn test_custom_network_leading_hyphen_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("-bad-name".to_string());
+        let result = spec.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.field == "spec.network.customName"));
+    }
+
+    #[test]
+    fn test_custom_network_trailing_hyphen_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("bad-name-".to_string());
+        let result = spec.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.field == "spec.network.customName"));
+    }
+
+    #[test]
+    fn test_non_custom_networks_skip_name_validation() {
+        for network in [
+            StellarNetwork::Mainnet,
+            StellarNetwork::Testnet,
+            StellarNetwork::Futurenet,
+        ] {
+            let mut spec = valid_validator_spec();
+            spec.network = network;
+            assert!(spec.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn test_custom_network_uppercase_fails() {
+        // DNS-1123 requires lowercase; uppercase must be rejected
+        for bad in &["MyNetwork", "My-Net", "MYNET"] {
+            let mut spec = valid_validator_spec();
+            spec.network = StellarNetwork::Custom(bad.to_string());
+            let result = spec.validate();
+            assert!(
+                result.is_err(),
+                "Expected validation failure for uppercase customName: '{bad}'"
+            );
+            assert!(
+                result
+                    .unwrap_err()
+                    .iter()
+                    .any(|e| e.field == "spec.network.customName"),
+                "Expected spec.network.customName error for '{bad}'"
+            );
+        }
     }
 
     // =========================================================================

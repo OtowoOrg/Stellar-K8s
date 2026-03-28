@@ -1,0 +1,18 @@
+# Failure case: special characters in customName
+# Expected: ValidationError from kubectl — spec.network fails pattern validation
+# kubectl apply -f this file should be rejected by the API server.
+#
+# Demonstrates that shell-injection-style strings like "; drop table" are rejected.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: invalid-special-chars-network
+  namespace: default
+spec:
+  nodeType: Horizon
+  network: "Custom:my@network$name!"
+  version: "v21.0.0"
+  horizonConfig:
+    databaseSecretRef: "horizon-db"
+    enableIngest: true
+    stellarCoreUrl: "http://stellar-core:11626"

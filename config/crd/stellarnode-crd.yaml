@@ -38,7 +38,14 @@ spec:
                   description: Type of Stellar node to deploy
                 network:
                   type: string
-                  description: Target Stellar network
+                  description: >
+                    Target Stellar network. Use "Mainnet", "Testnet", or "Futurenet" for
+                    well-known networks. For a custom network, prefix with "Custom:" followed
+                    by a DNS-1123 compliant name that is 1–63 characters, lowercase alphanumeric
+                    and hyphens only, no leading or trailing hyphens (e.g. "Custom:my-private-net").
+                  minLength: 1
+                  maxLength: 70
+                  pattern: '^(Mainnet|Testnet|Futurenet|Custom:[a-z0-9]([-a-z0-9]*[a-z0-9])?|Custom:[a-z0-9])$'
                 version:
                   type: string
                   description: Container image version

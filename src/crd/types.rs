@@ -84,6 +84,39 @@ impl StellarNetwork {
         }
     }
 
+    /// Validate the custom network name against DNS-1123 label rules.
+    ///
+    /// Rules (applied only to `Custom` variants):
+    /// - Must not be empty (minLength: 1)
+    /// - Must not exceed 63 characters (maxLength: 63)
+    /// - Must match `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` (lowercase alphanumeric and hyphens,
+    ///   no leading/trailing hyphens)
+    pub fn validate_custom_name(&self) -> Result<(), String> {
+        let name = match self {
+            StellarNetwork::Custom(n) => n,
+            _ => return Ok(()),
+        };
+        if name.is_empty() {
+            return Err("customName must not be empty (minLength: 1)".to_string());
+        }
+        if name.len() > 63 {
+            return Err(format!(
+                "customName '{name}' exceeds 63 characters (maxLength: 63)"
+            ));
+        }
+        let valid = name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            && name.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && name.ends_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit());
+        if !valid {
+            return Err(format!(
+                "customName '{name}' is invalid: must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ (lowercase alphanumeric and hyphens only, no leading/trailing hyphens)"
+            ));
+        }
+        Ok(())
+    }
+
     /// Stable, DNS-1123-friendly label value for topology spread and anti-affinity.
     pub fn scheduling_label_value(&self) -> String {
         match self {

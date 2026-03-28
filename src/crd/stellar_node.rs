@@ -266,6 +266,15 @@ impl StellarNodeSpec {
     pub fn validate(&self) -> Result<(), Vec<SpecValidationError>> {
         let mut errors: Vec<SpecValidationError> = Vec::new();
 
+        // 0. Custom network name validation
+        if let Err(msg) = self.network.validate_custom_name() {
+            errors.push(SpecValidationError::new(
+                "spec.network.customName",
+                msg,
+                "Use only lowercase alphanumeric characters and hyphens, 1–63 characters, no leading/trailing hyphens (DNS-1123). Example: \"my-private-net\".",
+            ));
+        }
+
         // 1. Database Mutual Exclusion
         if self.database.is_some() && self.managed_database.is_some() {
             errors.push(SpecValidationError::new(

@@ -1480,6 +1480,20 @@ pub(crate) async fn apply_stellar_node(
         }
     }
 
+    // 10b. Update node sync status metric
+    #[cfg(feature = "metrics")]
+    {
+        let hardware_generation = hardware_generation_for_metrics(client, node).await;
+        metrics::set_node_sync_status(
+            &namespace,
+            &name,
+            &node.spec.node_type.to_string(),
+            node.spec.network.passphrase(),
+            &hardware_generation,
+            phase,
+        );
+    }
+
     // 11. OCI snapshot push/pull Jobs
     if let Some(oci_cfg) = &node.spec.oci_snapshot {
         if oci_cfg.enabled {

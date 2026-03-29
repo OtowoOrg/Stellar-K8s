@@ -1,0 +1,69 @@
+{{- if and (.Values.monitoring | default dict ) (.Values.monitoring.prometheusAlerts | default dict ) (.Values.monitoring.prometheusAlerts.enabled | default false ) -}}
+{{- $labels := .Values.monitoring.prometheusAlerts.labels | default dict -}}
+{{- $annotations := .Values.monitoring.prometheusAlerts.annotations | default dict -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-alerts
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    {{- with $labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+  - name: stellar.rules
+    rules:
+    - alert: StellarNodeSyncLag
+      expr: |
+        stellar_core_ledger_age_seconds{job=~"stellar-operator.*"} > {{ .Values.monitoring.prometheusAlerts.rules.syncLagThreshold | default 100 }}
+        or
+        stellar_node_ingestion_lag_seconds{job=~"stellar-operator.*"} > {{ .Values.monitoring.prometheusAlerts.rules.syncLagThreshold | default 100 }}
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: 'StellarNode sync lag high on {{ $labels.instance }}'
+        description: '{{ $labels.instance }} lagging {{ `{{ $value }}` }} ledgers behind network for >5m'
+        {{- with $annotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    - alert: StellarNodeMemoryPressure
+      expr: |
+        sum(container_memory_working_set_bytes{job=~"stellar-operator/stellar-node",container!~"POD|bridge|host"}) by (instance)
+        /
+        sum(container_spec_memory_limit_bytes{job=~"stellar-operator/stellar-node",container!~"POD|bridge|host"}) by (instance)
+        > bool {{ .Values.monitoring.prometheusAlerts.rules.memoryPressurePercent | default 90 }} / 100
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: 'StellarNode memory pressure on {{ $labels.instance }}'
+        description: 'Node {{ $labels.instance }} memory usage > {{ `{{ $value }}` }} of limit for >10m'
+        {{- with $annotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    - alert: StellarOperatorReconcileErrors
+      expr: increase(stellar_reconcile_errors_total[5m]) > 0.1
+      for: {{ .Values.monitoring.prometheusAlerts.rules.reconcileFor | default "5m" }}
+      labels:
+        severity: critical
+      annotations:
+        summary: 'Operator reconcile errors high ({{ `{{ $value }}` }}/min)'
+        description: 'Stellar operator failing reconciles. Rate: {{ `{{ $value }}` }}/min'
+        {{- with $annotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    - alert: StellarHistoryArchiveUnresponsive
+      expr: |
+        stellar_node_ingestion_lag_seconds{job=~"stellar-operator/stellar-node",node_type=\"Horizon\"} > {{ .Values.monitoring.prometheusAlerts.rules.historyThreshold | default 300 }}
+      for: 10m
+      labels:
+        severity: critical
+      annotations:
+        summary: 'History archive ingestion lagging on {{ $labels.instance }}'
+        description: 'Horizon ingestion lag >{{ `{{ $value }}` }}s, likely history archive issues'
+        {{- with $annotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end -}}

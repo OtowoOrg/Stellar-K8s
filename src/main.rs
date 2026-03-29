@@ -10,7 +10,7 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::MicroTime;
 use kube::api::{Api, ObjectMeta, Patch, PatchParams, PostParams};
 use kube::ResourceExt;
 use stellar_k8s::infra;
-use stellar_k8s::{controller, crd::StellarNode, preflight, Error};
+use stellar_k8s::{controller, crd::StellarNode, incident, preflight, Error};
 use tracing::{debug, info, info_span, warn, Instrument, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -58,6 +58,8 @@ enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    /// Generate an incident report for a specific time window
+    IncidentReport(incident::IncidentReportArgs),
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -321,6 +323,9 @@ async fn main() -> Result<(), Error> {
             let name = cmd.get_name().to_string();
             generate(shell, &mut cmd, name, &mut std::io::stdout());
             return Ok(());
+        }
+        Commands::IncidentReport(args) => {
+            return incident::run_incident_report(args).await;
         }
     }
 }

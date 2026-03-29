@@ -50,6 +50,9 @@ time = { version = "0.3.47", optional = true }
 # Pinned to fix RUSTSEC-2026-0007; used transitively by many HTTP/async crates.
 bytes = { version = "1.11.1", optional = true }
 
+# Zip compression for incident reports
+zip = "2"
+
 # Hostname for leader election
 hostname = "0.4"
 

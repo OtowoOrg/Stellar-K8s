@@ -956,6 +956,39 @@ pub struct DisasterRecoveryConfig {
     pub health_check_interval: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drill_schedule: Option<DRDrillScheduleConfig>,
+
+    /// Configuration for history archive integrity checks
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archive_integrity_config: Option<ArchiveIntegrityConfig>,
+}
+
+/// Configuration for periodic history archive integrity checks
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveIntegrityConfig {
+    /// Enable periodic integrity checks
+    pub enabled: bool,
+    /// Interval between integrity checks (e.g. "1h", "6h", "24h")
+    #[serde(default = "default_archive_check_interval")]
+    pub interval: String,
+    /// Percentage of checkpoints to verify in each run (1-100)
+    #[serde(default = "default_archive_check_percentage")]
+    pub check_percentage: u32,
+    /// Maximum number of historical checkpoints to verify in each run
+    #[serde(default = "default_archive_check_max_checkpoints")]
+    pub max_checkpoints: u32,
+}
+
+fn default_archive_check_interval() -> String {
+    "6h".to_string()
+}
+
+fn default_archive_check_percentage() -> u32 {
+    5
+}
+
+fn default_archive_check_max_checkpoints() -> u32 {
+    10
 }
 
 fn default_dr_check_interval() -> u32 {

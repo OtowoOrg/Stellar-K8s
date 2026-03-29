@@ -123,6 +123,8 @@ enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    /// Generate an incident report for a specific time window
+    IncidentReport(stellar_k8s::incident::IncidentReportArgs),
 }
 
 #[tokio::main]
@@ -254,6 +256,9 @@ async fn run(cli: Cli) -> Result<()> {
             let name = cmd.get_name().to_string();
             generate(shell, &mut cmd, name, &mut std::io::stdout());
             Ok(())
+        }
+        Commands::IncidentReport(args) => {
+            stellar_k8s::incident::run_incident_report(args).await
         }
     }
 }

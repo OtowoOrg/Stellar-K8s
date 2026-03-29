@@ -9,6 +9,7 @@ pub mod controller;
 pub mod crd;
 pub mod error;
 pub mod infra;
+pub mod log_scrub;
 pub mod preflight;
 pub mod scheduler;
 pub mod search;

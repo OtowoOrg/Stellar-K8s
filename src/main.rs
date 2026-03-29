@@ -12,6 +12,7 @@ use kube::ResourceExt;
 use stellar_k8s::controller::archive_prune::{prune_archive, PruneArchiveArgs};
 use stellar_k8s::controller::diff::{diff, DiffArgs};
 use stellar_k8s::infra;
+use stellar_k8s::log_scrub::ScrubLayer;
 use stellar_k8s::{controller, crd::StellarNode, preflight, Error};
 use tracing::{debug, info, info_span, warn, Instrument, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -735,6 +736,7 @@ async fn run_webhook(args: WebhookArgs) -> Result<(), Error> {
 
     tracing_subscriber::registry()
         .with(env_filter)
+        .with(ScrubLayer::new())
         .with(fmt_layer)
         .init();
 
@@ -821,6 +823,7 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
     // Register the subscriber with both stdout logging and OpenTelemetry tracing
     let registry = tracing_subscriber::registry()
         .with(env_filter)
+        .with(ScrubLayer::new())
         .with(fmt_layer);
 
     // Only enable OTEL if an endpoint is provided or via a flag

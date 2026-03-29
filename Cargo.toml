@@ -53,6 +53,9 @@ bytes = { version = "1.11.1", optional = true }
 # Hostname for leader election
 hostname = "0.4"
 
+# Regex for log scrubbing patterns
+regex = "1"
+
 # Logging and tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "registry"] }

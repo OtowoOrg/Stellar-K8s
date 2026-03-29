@@ -1,4 +1,4 @@
-{{- if .Values.monitoring.prometheusAlerts.enabled -}}
+{{- if and (.Values.monitoring | default dict ) (.Values.monitoring.prometheusAlerts | default dict ) (.Values.monitoring.prometheusAlerts.enabled | default false ) -}}
 {{- $labels := .Values.monitoring.prometheusAlerts.labels | default dict -}}
 {{- $annotations := .Values.monitoring.prometheusAlerts.annotations | default dict -}}
 apiVersion: monitoring.coreos.com/v1

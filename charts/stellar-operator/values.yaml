@@ -141,4 +141,4 @@ featureFlags:
   # Enable history archive health checks
   enableArchiveHealth: "true"
   # Enable Soroban-specific Prometheus metrics collection
-  enableSorobanMetrics: "true"
+enableSorobanMetrics: "true"

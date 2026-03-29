@@ -1,0 +1,188 @@
+suite: deployment
+templates:
+  - templates/deployment.yaml
+
+tests:
+  - it: renders with default values
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-stellar-operator
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/stellar/stellar-k8s:0.1.0
+
+  - it: uses custom replica count
+    set:
+      replicaCount: 3
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  - it: uses fullnameOverride when set
+    set:
+      fullnameOverride: my-operator
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-operator
+
+  - it: uses custom image tag
+    set:
+      image.tag: v1.2.3
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/stellar/stellar-k8s:v1.2.3
+
+  - it: sets imagePullPolicy
+    set:
+      image.pullPolicy: Always
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+
+  - it: includes prometheus pod annotations by default
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/scrape"]
+          value: "true"
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/port"]
+          value: "9090"
+
+  - it: renders rest-api args when enabled
+    set:
+      operator.restApiEnabled: true
+      operator.restApiPort: 9090
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --enable-rest-api
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --rest-api-port=9090
+
+  - it: omits rest-api args when disabled
+    set:
+      operator.restApiEnabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --enable-rest-api
+
+  - it: exposes http and metrics ports
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: http
+            containerPort: 9090
+            protocol: TCP
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: metrics
+            containerPort: 9090
+            protocol: TCP
+
+  - it: has liveness probe on /livez
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /livez
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: http
+
+  - it: has readiness probe on /readyz
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /readyz
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: http
+
+  - it: has startup probe on /healthz
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.port
+          value: http
+
+  - it: applies pod security context
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 65532
+
+  - it: applies container security context
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: sets resource limits and requests
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 500m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 128Mi
+
+  - it: sets log level arg
+    set:
+      operator.logLevel: debug
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --log-level=debug
+
+  - it: adds watch-namespace args when configured
+    set:
+      operator.watchNamespaces:
+        - stellar-system
+        - default
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --watch-namespace=stellar-system
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --watch-namespace=default
+
+  - it: has correct selector labels
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: stellar-operator
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+
+  - it: uses imagePullSecrets when set
+    set:
+      imagePullSecrets:
+        - name: my-registry-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.imagePullSecrets
+          content:
+            name: my-registry-secret

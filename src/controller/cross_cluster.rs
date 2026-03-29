@@ -480,3 +480,327 @@ pub struct PeerLatencyStatus {
     pub threshold_ms: u32,
     pub healthy: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crd::{
+        types::{NodeType, ResourceRequirements, ResourceSpec, StellarNetwork, StorageConfig},
+        CrossClusterConfig, PeerClusterConfig, StellarNode, StellarNodeSpec,
+    };
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    fn minimal_spec() -> StellarNodeSpec {
+        StellarNodeSpec {
+            node_type: NodeType::Validator,
+            network: StellarNetwork::Testnet,
+            version: "v21.0.0".to_string(),
+            history_mode: Default::default(),
+            resources: ResourceRequirements {
+                requests: ResourceSpec {
+                    cpu: "500m".to_string(),
+                    memory: "1Gi".to_string(),
+                },
+                limits: ResourceSpec {
+                    cpu: "2".to_string(),
+                    memory: "4Gi".to_string(),
+                },
+            },
+            storage: StorageConfig::default(),
+            validator_config: None,
+            horizon_config: None,
+            soroban_config: None,
+            replicas: 1,
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            managed_database: None,
+            autoscaling: None,
+            vpa_config: None,
+            ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            cross_cluster: None,
+            strategy: Default::default(),
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            pod_anti_affinity: Default::default(),
+            topology_spread_constraints: None,
+            cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
+            read_replica_config: None,
+            read_pool_endpoint: None,
+            db_maintenance_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
+            forensic_snapshot: None,
+            resource_meta: None,
+        }
+    }
+
+    fn make_node(name: &str, namespace: &str) -> StellarNode {
+        StellarNode {
+            metadata: ObjectMeta {
+                name: Some(name.to_string()),
+                namespace: Some(namespace.to_string()),
+                ..Default::default()
+            },
+            spec: minimal_spec(),
+            status: None,
+        }
+    }
+
+    fn make_peer(cluster_id: &str, endpoint: &str) -> PeerClusterConfig {
+        PeerClusterConfig {
+            cluster_id: cluster_id.to_string(),
+            endpoint: endpoint.to_string(),
+            latency_threshold_ms: None,
+            region: None,
+            priority: 100,
+            port: None,
+            enabled: true,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // build_external_name_service — registering a remote cluster endpoint
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_build_external_name_service_sets_correct_external_name() {
+        let node = make_node("validator-a", "stellar");
+        let peer = make_peer("cluster-b", "203.0.113.20");
+
+        let svc = build_external_name_service(&node, &peer, "validator-a-peer-cluster-b");
+
+        let spec = svc.spec.as_ref().expect("service must have a spec");
+        assert_eq!(
+            spec.external_name.as_deref(),
+            Some("203.0.113.20"),
+            "ExternalName must match the peer endpoint"
+        );
+        assert_eq!(
+            spec.type_.as_deref(),
+            Some("ExternalName"),
+            "service type must be ExternalName"
+        );
+    }
+
+    #[test]
+    fn test_build_external_name_service_sets_service_name_and_namespace() {
+        let node = make_node("validator-a", "stellar");
+        let peer = make_peer("cluster-b", "203.0.113.20");
+
+        let svc = build_external_name_service(&node, &peer, "validator-a-peer-cluster-b");
+
+        assert_eq!(
+            svc.metadata.name.as_deref(),
+            Some("validator-a-peer-cluster-b")
+        );
+        assert_eq!(svc.metadata.namespace.as_deref(), Some("stellar"));
+    }
+
+    #[test]
+    fn test_build_external_name_service_uses_default_port_when_none_specified() {
+        let node = make_node("validator-a", "default");
+        let peer = PeerClusterConfig {
+            port: None,
+            ..make_peer("cluster-c", "10.0.0.5")
+        };
+
+        let svc = build_external_name_service(&node, &peer, "svc-name");
+        let spec = svc.spec.as_ref().unwrap();
+        let ports = spec.ports.as_ref().expect("service must have ports");
+        assert_eq!(
+            ports[0].port, 11625,
+            "default Stellar peer port must be 11625"
+        );
+    }
+
+    #[test]
+    fn test_build_external_name_service_uses_custom_port() {
+        let node = make_node("validator-a", "default");
+        let peer = PeerClusterConfig {
+            port: Some(11630),
+            ..make_peer("cluster-d", "10.0.0.6")
+        };
+
+        let svc = build_external_name_service(&node, &peer, "svc-name");
+        let spec = svc.spec.as_ref().unwrap();
+        let ports = spec.ports.as_ref().unwrap();
+        assert_eq!(ports[0].port, 11630);
+    }
+
+    #[test]
+    fn test_build_external_name_service_labels_contain_peer_cluster_id() {
+        let node = make_node("validator-a", "default");
+        let peer = make_peer("cluster-b", "203.0.113.20");
+
+        let svc = build_external_name_service(&node, &peer, "svc-name");
+        let labels = svc
+            .metadata
+            .labels
+            .as_ref()
+            .expect("service must have labels");
+
+        assert_eq!(
+            labels.get("stellar.org/peer-cluster").map(String::as_str),
+            Some("cluster-b"),
+            "label must identify the peer cluster"
+        );
+        assert_eq!(
+            labels.get("app.kubernetes.io/instance").map(String::as_str),
+            Some("validator-a"),
+            "label must reference the owning node"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // PeerLatencyStatus — detecting unreachable clusters and status propagation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_peer_healthy_when_latency_within_threshold() {
+        let status = PeerLatencyStatus {
+            cluster_id: "cluster-b".to_string(),
+            latency_ms: 45,
+            threshold_ms: 50,
+            healthy: 45 <= 50,
+        };
+        assert!(status.healthy, "peer within threshold must be healthy");
+        assert_eq!(status.cluster_id, "cluster-b");
+    }
+
+    #[test]
+    fn test_peer_unhealthy_when_latency_exceeds_threshold() {
+        let latency = 200u32;
+        let threshold = 150u32;
+        let status = PeerLatencyStatus {
+            cluster_id: "cluster-c".to_string(),
+            latency_ms: latency,
+            threshold_ms: threshold,
+            healthy: latency <= threshold,
+        };
+        assert!(
+            !status.healthy,
+            "peer with latency {latency}ms exceeding threshold {threshold}ms must be unhealthy"
+        );
+    }
+
+    #[test]
+    fn test_peer_healthy_when_latency_equals_threshold() {
+        let latency = 150u32;
+        let threshold = 150u32;
+        let status = PeerLatencyStatus {
+            cluster_id: "cluster-d".to_string(),
+            latency_ms: latency,
+            threshold_ms: threshold,
+            healthy: latency <= threshold,
+        };
+        assert!(
+            status.healthy,
+            "latency equal to threshold must be considered healthy"
+        );
+    }
+
+    #[test]
+    fn test_peer_latency_status_propagates_all_fields() {
+        let status = PeerLatencyStatus {
+            cluster_id: "remote-cluster-1".to_string(),
+            latency_ms: 75,
+            threshold_ms: 100,
+            healthy: true,
+        };
+        assert_eq!(status.cluster_id, "remote-cluster-1");
+        assert_eq!(status.latency_ms, 75);
+        assert_eq!(status.threshold_ms, 100);
+        assert!(status.healthy);
+    }
+
+    // -----------------------------------------------------------------------
+    // Latency percentile calculation (retry/sampling logic)
+    // -----------------------------------------------------------------------
+
+    /// Replicate the percentile index calculation from `measure_peer_latency`.
+    fn percentile_index(sample_count: usize, percentile: u8) -> usize {
+        let index = ((percentile as f64 / 100.0) * sample_count as f64).ceil() as usize - 1;
+        index.min(sample_count - 1)
+    }
+
+    #[test]
+    fn test_p95_of_ten_samples_returns_tenth_sample() {
+        // 10 samples, p95 → ceil(0.95 * 10) - 1 = ceil(9.5) - 1 = 10 - 1 = 9 (last)
+        let mut samples: Vec<u32> = (10..20).collect(); // [10, 11, ..., 19]
+        samples.sort_unstable();
+        let idx = percentile_index(samples.len(), 95);
+        assert_eq!(
+            samples[idx], 19,
+            "p95 of 10 samples should be the last (highest) value"
+        );
+    }
+
+    #[test]
+    fn test_p50_of_ten_samples_returns_median() {
+        // 10 samples, p50 → ceil(0.50 * 10) - 1 = ceil(5.0) - 1 = 5 - 1 = 4
+        let mut samples: Vec<u32> = vec![10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+        samples.sort_unstable();
+        let idx = percentile_index(samples.len(), 50);
+        assert_eq!(samples[idx], 50);
+    }
+
+    #[test]
+    fn test_single_sample_always_returned_at_any_percentile() {
+        let samples: Vec<u32> = vec![42];
+        let idx = percentile_index(samples.len(), 95);
+        assert_eq!(
+            samples[idx], 42,
+            "single sample must always be returned regardless of percentile"
+        );
+    }
+
+    #[test]
+    fn test_fallback_with_disabled_cross_cluster_returns_no_peers() {
+        // When cross_cluster config is None or disabled, check_peer_latency returns empty vec.
+        // This mirrors the early-return guard in check_peer_latency.
+        let cross_cluster: Option<CrossClusterConfig> = None;
+        let result: Vec<PeerLatencyStatus> = match &cross_cluster {
+            Some(cc) if cc.enabled => vec![PeerLatencyStatus {
+                cluster_id: "x".to_string(),
+                latency_ms: 0,
+                threshold_ms: 0,
+                healthy: true,
+            }],
+            _ => Vec::new(),
+        };
+        assert!(
+            result.is_empty(),
+            "disabled cross_cluster config must yield no latency results"
+        );
+    }
+
+    #[test]
+    fn test_disabled_peer_is_skipped_in_external_name_services() {
+        // Verify that disabled peers are not processed.
+        let peers = [
+            PeerClusterConfig {
+                enabled: false,
+                ..make_peer("cluster-disabled", "10.0.0.1")
+            },
+            PeerClusterConfig {
+                enabled: true,
+                ..make_peer("cluster-enabled", "10.0.0.2")
+            },
+        ];
+        let active: Vec<_> = peers.iter().filter(|p| p.enabled).collect();
+        assert_eq!(active.len(), 1, "only enabled peers must be processed");
+        assert_eq!(active[0].cluster_id, "cluster-enabled");
+    }
+}

@@ -463,6 +463,94 @@ groups:
 
 For more details on Soroban metrics, see the [Stellar Soroban RPC documentation](https://developers.stellar.org/docs/data/apis/rpc/admin-guide/monitoring).
 
+### High Availability & Pod Disruption Budgets
+
+Stellar-K8s includes built-in PodDisruptionBudget (PDB) support to protect the operator and validator nodes during Kubernetes maintenance operations like node drains and cluster upgrades.
+
+**Default Configuration:**
+
+```yaml
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+```
+
+**For Validator Nodes (Recommended):**
+
+```yaml
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1 # Allows one pod down during maintenance
+```
+
+For comprehensive guidance on PDB configuration, emergency maintenance procedures, and troubleshooting, see **[docs/pod-disruption-budget.md](docs/pod-disruption-budget.md)**.
+
+### History Archive Management
+
+Stellar-K8s includes a `prune-archive` utility for safely managing history archive storage costs:
+
+```bash
+# Dry-run mode (default - no deletions)
+stellar-operator prune-archive \
+  --archive-url s3://my-bucket/stellar-history \
+  --retention-days 30
+
+# Execute pruning with safety guarantees
+stellar-operator prune-archive \
+  --archive-url s3://my-bucket/stellar-history \
+  --retention-days 30 \
+  --force
+```
+
+**Safety Features:**
+
+- ✅ Dry-run enabled by default
+- ✅ Minimum checkpoint retention (50 checkpoints)
+- ✅ Maximum age protection (7 days)
+- ✅ Checkpoint validation before deletion
+- ✅ Concurrent deletion with error handling
+
+For comprehensive documentation, see **[docs/archive-pruning.md](docs/archive-pruning.md)**.
+
+### Live State Diff
+
+Debug operator reconciliation issues with the `diff` subcommand that shows differences between desired and actual cluster state:
+
+```bash
+# Show what differs from desired state
+stellar-operator diff --name my-validator --namespace stellar
+
+# JSON output for scripting
+stellar-operator diff --name my-validator --namespace stellar --format json
+
+# Show ConfigMap contents (stellar-core.cfg, etc.)
+stellar-operator diff --name my-validator --namespace stellar --show-config
+```
+
+**Features:**
+
+- ✅ Colored terminal output with change indicators
+- ✅ Multiple output formats (terminal, JSON, unified)
+- ✅ Compares all operator-managed resources
+- ✅ ConfigMap content inspection
+- ✅ Change detection for labels, annotations, specs
+
+For comprehensive documentation, see **[docs/diff-utility.md](docs/diff-utility.md)**.
+
+---
+
+## 📖 API Reference
+
+The full `StellarNode` CRD field reference — including all fields, types, defaults, validation constraints, and example manifests — is available at:
+
+**[docs/api-reference.md](docs/api-reference.md)**
+
+The reference is auto-generated from the CRD OpenAPI schema. To regenerate after modifying the CRD types:
+
+```bash
+make generate-api-docs
+```
+
 ---
 
 ## Development

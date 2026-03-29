@@ -27,6 +27,10 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
 /// Kubernetes RBAC authentication middleware
 ///
 /// Validates ServiceAccount tokens using TokenReview API
+#[tracing::instrument(
+    skip(state, headers, request, next),
+    fields(node_name = "-", namespace = "-", reconcile_id = "-")
+)]
 pub async fn k8s_rbac_auth(
     State(state): State<Arc<ControllerState>>,
     headers: HeaderMap,

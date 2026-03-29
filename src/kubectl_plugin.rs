@@ -74,6 +74,17 @@ enum Commands {
         #[arg(short = 'A', long)]
         all_namespaces: bool,
     },
+    /// Stream Kubernetes events related to StellarNode resources
+    Events {
+        /// Name of a specific StellarNode (optional)
+        node_name: Option<String>,
+        /// Show all namespaces
+        #[arg(short = 'A', long)]
+        all_namespaces: bool,
+        /// Follow event updates in real time
+        #[arg(short, long)]
+        watch: bool,
+    },
     /// Alias for status command
     #[command(name = "sync-status")]
     SyncStatus {
@@ -97,6 +108,14 @@ enum Commands {
     Explain {
         /// The Stellar error code to explain (e.g., tx_bad_auth, op_no_destination)
         error_code: String,
+    },
+    /// Search the documentation for keywords
+    Search {
+        /// The search query
+        query: String,
+        /// Show full content of the match
+        #[arg(short, long)]
+        full: bool,
     },
     /// Generate shell completion scripts
     Completions {
@@ -188,6 +207,16 @@ async fn run(cli: Cli) -> Result<()> {
             )
             .await
         }
+        Commands::Events {
+            node_name,
+            all_namespaces,
+            watch,
+        } => events(
+            node_name.as_deref(),
+            all_namespaces,
+            cli.namespace.as_deref(),
+            watch,
+        ),
         Commands::SyncStatus {
             node_name,
             all_namespaces,
@@ -215,6 +244,9 @@ async fn run(cli: Cli) -> Result<()> {
             explain::explain_error(&error_code);
             Ok(())
         }
+        Commands::Search { query, full } => {
+            search_docs(&query, full)
+        }
         Commands::Completions { shell } => {
             use clap::CommandFactory;
             use clap_complete::generate;
@@ -224,6 +256,76 @@ async fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn search_docs(query: &str, full: bool) -> Result<()> {
+    use stellar_k8s::search;
+    let results = search::search(query);
+
+    if results.is_empty() {
+        println!("No results found for '{}'", query);
+        return Ok(());
+    }
+
+    println!("Found {} results for '{}':\n", results.len(), query);
+
+    for (doc, snippets) in results {
+        println!("\x1b[1;34m{}\x1b[0m ({})", doc.title, doc.path);
+        if full {
+            println!("{}\n", doc.content);
+        } else {
+            for snippet in snippets {
+                println!("  {}\n", snippet);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn build_events_field_selector(node_name: Option<&str>) -> String {
+    let mut selectors = vec!["involvedObject.kind=StellarNode".to_string()];
+    if let Some(name) = node_name {
+        selectors.push(format!("involvedObject.name={name}"));
+    }
+    selectors.join(",")
+}
+
+fn events(
+    node_name: Option<&str>,
+    all_namespaces: bool,
+    namespace: Option<&str>,
+    watch: bool,
+) -> Result<()> {
+    let field_selector = build_events_field_selector(node_name);
+    let mut cmd = std::process::Command::new("kubectl");
+    cmd.arg("get").arg("events");
+
+    if all_namespaces {
+        cmd.arg("-A");
+    } else {
+        cmd.arg("-n").arg(namespace.unwrap_or("default"));
+    }
+
+    cmd.arg("--field-selector").arg(field_selector);
+    cmd.arg("-o").arg("wide");
+
+    if watch {
+        cmd.arg("--watch");
+    }
+
+    let status = cmd
+        .status()
+        .map_err(|e| Error::ConfigError(format!("Failed to execute kubectl get events: {e}")))?;
+
+    if !status.success() {
+        return Err(Error::ConfigError(format!(
+            "kubectl get events failed with exit code: {:?}",
+            status.code()
+        )));
+    }
+
+    Ok(())
 }
 
 /// Helper function to format nodes as JSON
@@ -831,5 +933,20 @@ mod tests {
                 "Failed for all_namespaces={all_namespaces:?}, node_name={node_name:?}, namespace={namespace:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_build_events_field_selector_all_nodes() {
+        let selector = build_events_field_selector(None);
+        assert_eq!(selector, "involvedObject.kind=StellarNode");
+    }
+
+    #[test]
+    fn test_build_events_field_selector_specific_node() {
+        let selector = build_events_field_selector(Some("validator-a"));
+        assert_eq!(
+            selector,
+            "involvedObject.kind=StellarNode,involvedObject.name=validator-a"
+        );
     }
 }

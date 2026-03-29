@@ -1047,6 +1047,18 @@ pub struct DRDrillResult {
     pub completed_at: Option<String>,
 }
 
+/// Placement configuration for intelligent pod scheduling.
+/// Enables SCP-aware anti-affinity to ensure validator resilience.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlacementConfig {
+    /// Enable SCP-aware anti-affinity.
+    /// When true, the operator will inject podAntiAffinity rules to discourage
+    /// placing nodes from the same quorum slice on the same physical host.
+    #[serde(default)]
+    pub scp_aware_anti_affinity: bool,
+}
+
 /// Status of a DR drill execution
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]

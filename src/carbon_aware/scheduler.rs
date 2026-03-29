@@ -7,7 +7,7 @@ use k8s_openapi::api::core::v1::{Node, Pod};
 use kube::{Client, ResourceExt};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, warn, Instrument};
 
 /// Carbon-aware scheduler that enhances node scoring with carbon intensity
 pub struct CarbonAwareScheduler {
@@ -43,26 +43,30 @@ impl CarbonAwareScheduler {
         let _config = self.config.clone();
         let carbon_data = self.carbon_data.clone();
 
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(
-                tokio::time::Duration::from_secs(60), // Refresh every minute
-            );
+        let current_span = tracing::Span::current();
+        tokio::spawn(
+            async move {
+                let mut interval = tokio::time::interval(
+                    tokio::time::Duration::from_secs(60), // Refresh every minute
+                );
 
-            loop {
-                interval.tick().await;
+                loop {
+                    interval.tick().await;
 
-                match api.fetch_all_regions().await {
-                    Ok(data) => {
-                        let mut guard = carbon_data.write().await;
-                        *guard = data;
-                        debug!("Refreshed carbon intensity data");
-                    }
-                    Err(e) => {
-                        warn!("Failed to refresh carbon intensity data: {}", e);
+                    match api.fetch_all_regions().await {
+                        Ok(data) => {
+                            let mut guard = carbon_data.write().await;
+                            *guard = data;
+                            debug!("Refreshed carbon intensity data");
+                        }
+                        Err(e) => {
+                            warn!("Failed to refresh carbon intensity data: {}", e);
+                        }
                     }
                 }
             }
-        });
+            .instrument(current_span),
+        );
 
         info!("Started carbon data refresh loop");
         Ok(())

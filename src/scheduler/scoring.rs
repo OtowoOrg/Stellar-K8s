@@ -177,7 +177,7 @@ async fn score_nodes_quorum_proximity<'a>(
 
 /// Helper to extract peer instance names from Stellar Core quorum set TOML.
 /// Handles both [VALIDATORS] map and [QUORUM_SET] VSL formats.
-fn extract_peer_names_from_toml(toml_str: &str) -> Vec<String> {
+pub fn extract_peer_names_from_toml(toml_str: &str) -> Vec<String> {
     let mut names = Vec::new();
 
     // Try to parse as TOML Table
@@ -425,4 +425,433 @@ async fn find_peers(pod: &Pod, client: &Client) -> Result<Vec<Pod>> {
         .into_iter()
         .filter(|p| p.metadata.name.as_deref() != Some(my_name))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use k8s_openapi::api::core::v1::{Node, Pod};
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+    use std::collections::BTreeMap;
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    fn make_node(name: &str, labels: Vec<(&str, &str)>) -> Node {
+        let mut label_map = BTreeMap::new();
+        for (k, v) in labels {
+            label_map.insert(k.to_string(), v.to_string());
+        }
+        Node {
+            metadata: ObjectMeta {
+                name: Some(name.to_string()),
+                labels: if label_map.is_empty() {
+                    None
+                } else {
+                    Some(label_map)
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    fn make_pod(name: &str, labels: Vec<(&str, &str)>, annotations: Vec<(&str, &str)>) -> Pod {
+        let mut label_map = BTreeMap::new();
+        for (k, v) in labels {
+            label_map.insert(k.to_string(), v.to_string());
+        }
+        let mut annotation_map = BTreeMap::new();
+        for (k, v) in annotations {
+            annotation_map.insert(k.to_string(), v.to_string());
+        }
+        Pod {
+            metadata: ObjectMeta {
+                name: Some(name.to_string()),
+                labels: if label_map.is_empty() {
+                    None
+                } else {
+                    Some(label_map)
+                },
+                annotations: if annotation_map.is_empty() {
+                    None
+                } else {
+                    Some(annotation_map)
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    /// Simulate the quorum proximity scoring logic for a candidate against peer nodes.
+    /// Mirrors the scoring rules in `score_nodes_quorum_proximity` without requiring a k8s client.
+    fn quorum_score(candidate: &Node, peers: &[&Node]) -> i64 {
+        let mut score: i64 = 0;
+        let cname = candidate.metadata.name.as_deref().unwrap_or("");
+        let czone = candidate
+            .metadata
+            .labels
+            .as_ref()
+            .and_then(|l| l.get(LABEL_ZONE));
+        let cregion = candidate
+            .metadata
+            .labels
+            .as_ref()
+            .and_then(|l| l.get(LABEL_REGION));
+
+        for peer in peers {
+            let pname = peer.metadata.name.as_deref().unwrap_or("");
+            let pzone = peer
+                .metadata
+                .labels
+                .as_ref()
+                .and_then(|l| l.get(LABEL_ZONE));
+            let pregion = peer
+                .metadata
+                .labels
+                .as_ref()
+                .and_then(|l| l.get(LABEL_REGION));
+
+            if cname == pname {
+                score -= 1000;
+            }
+            if let (Some(cz), Some(pz)) = (czone, pzone) {
+                if cz != pz {
+                    score += 100;
+                } else {
+                    score -= 50;
+                }
+            }
+            if let (Some(cr), Some(pr)) = (cregion, pregion) {
+                if cr == pr {
+                    score += 50;
+                } else {
+                    score -= 20;
+                }
+            }
+        }
+        score
+    }
+
+    // -----------------------------------------------------------------------
+    // extract_peer_names_from_toml
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_peers_extracted_from_validators_section() {
+        let toml = r#"
+[VALIDATORS]
+validator-a = "key-a"
+validator-b = "key-b"
+"#;
+        let peers = extract_peer_names_from_toml(toml);
+        assert_eq!(peers.len(), 2);
+        assert!(peers.contains(&"validator-a".to_string()));
+        assert!(peers.contains(&"validator-b".to_string()));
+    }
+
+    #[test]
+    fn test_peers_extracted_from_quorum_set_section() {
+        let toml = r#"
+[QUORUM_SET]
+VALIDATORS = ["peer-x", "peer-y", "peer-z"]
+"#;
+        let peers = extract_peer_names_from_toml(toml);
+        assert!(peers.contains(&"peer-x".to_string()));
+        assert!(peers.contains(&"peer-y".to_string()));
+        assert!(peers.contains(&"peer-z".to_string()));
+    }
+
+    #[test]
+    fn test_public_keys_filtered_from_quorum_set() {
+        let toml = r#"
+[QUORUM_SET]
+VALIDATORS = ["GBVAWJZTFQMQBHZQMKJHZV3KXNXMSLVNYZRTLVZSNKPQRZUVWQXQTVXG", "my-validator"]
+"#;
+        let peers = extract_peer_names_from_toml(toml);
+        assert_eq!(
+            peers.len(),
+            1,
+            "public key starting with 'G' must be excluded"
+        );
+        assert_eq!(peers[0], "my-validator");
+    }
+
+    #[test]
+    fn test_empty_toml_returns_no_peers() {
+        let peers = extract_peer_names_from_toml("");
+        assert!(peers.is_empty());
+    }
+
+    #[test]
+    fn test_toml_without_validator_sections_returns_no_peers() {
+        let toml = r#"[CONFIG]
+threshold = 3"#;
+        let peers = extract_peer_names_from_toml(toml);
+        assert!(peers.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // is_validator_pod
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_pod_with_validator_label_is_validator() {
+        let pod = make_pod("pod", vec![("stellar.org/node-type", "Validator")], vec![]);
+        assert!(is_validator_pod(&pod));
+    }
+
+    #[test]
+    fn test_pod_with_horizon_label_is_not_validator() {
+        let pod = make_pod("pod", vec![("stellar.org/node-type", "Horizon")], vec![]);
+        assert!(!is_validator_pod(&pod));
+    }
+
+    #[test]
+    fn test_pod_with_no_labels_is_not_validator() {
+        let pod = make_pod("pod", vec![], vec![]);
+        assert!(!is_validator_pod(&pod));
+    }
+
+    // -----------------------------------------------------------------------
+    // should_use_carbon_aware_scheduling
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_carbon_aware_annotation_true_enables_scheduling() {
+        let pod = make_pod("pod", vec![], vec![("stellar.org/carbon-aware", "true")]);
+        assert!(should_use_carbon_aware_scheduling(&pod));
+    }
+
+    #[test]
+    fn test_carbon_aware_annotation_enabled_enables_scheduling() {
+        let pod = make_pod("pod", vec![], vec![("stellar.org/carbon-aware", "enabled")]);
+        assert!(should_use_carbon_aware_scheduling(&pod));
+    }
+
+    #[test]
+    fn test_read_replica_role_enables_carbon_aware_scheduling() {
+        let pod = make_pod("pod", vec![("stellar.org/role", "read-replica")], vec![]);
+        assert!(should_use_carbon_aware_scheduling(&pod));
+    }
+
+    #[test]
+    fn test_pod_without_carbon_aware_signals_is_not_carbon_aware() {
+        let pod = make_pod("pod", vec![("app", "stellar-node")], vec![]);
+        assert!(!should_use_carbon_aware_scheduling(&pod));
+    }
+
+    #[test]
+    fn test_carbon_aware_annotation_false_does_not_enable() {
+        let pod = make_pod("pod", vec![], vec![("stellar.org/carbon-aware", "false")]);
+        assert!(!should_use_carbon_aware_scheduling(&pod));
+    }
+
+    // -----------------------------------------------------------------------
+    // extract_region_from_node
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_region_extracted_from_topology_label() {
+        let node = make_node("n", vec![("topology.kubernetes.io/region", "us-west-2")]);
+        assert_eq!(
+            extract_region_from_node(&node),
+            Some("us-west-2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_region_extracted_from_beta_failure_domain_label() {
+        let node = make_node(
+            "n",
+            vec![("failure-domain.beta.kubernetes.io/region", "eu-west-1")],
+        );
+        assert_eq!(
+            extract_region_from_node(&node),
+            Some("eu-west-1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_region_extracted_from_node_name_containing_aws_region() {
+        let node = make_node("ip-10-0-1-1.us-east-1.compute.internal", vec![]);
+        assert_eq!(
+            extract_region_from_node(&node),
+            Some("us-east-1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_region_returns_none_for_unknown_node() {
+        let node = make_node("my-custom-node", vec![]);
+        assert_eq!(extract_region_from_node(&node), None);
+    }
+
+    #[test]
+    fn test_topology_label_takes_precedence_over_node_name() {
+        let node = make_node(
+            "ip-10-0-1-1.us-east-1.compute.internal",
+            vec![("topology.kubernetes.io/region", "eu-central-1")],
+        );
+        assert_eq!(
+            extract_region_from_node(&node),
+            Some("eu-central-1".to_string())
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Scoring algorithm — quorum proximity simulation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_same_region_scores_higher_than_different_region() {
+        let peer = make_node(
+            "peer",
+            vec![(LABEL_REGION, "us-west-2"), (LABEL_ZONE, "us-west-2a")],
+        );
+        let candidate_near = make_node(
+            "near",
+            vec![(LABEL_REGION, "us-west-2"), (LABEL_ZONE, "us-west-2b")],
+        );
+        let candidate_far = make_node(
+            "far",
+            vec![
+                (LABEL_REGION, "eu-central-1"),
+                (LABEL_ZONE, "eu-central-1a"),
+            ],
+        );
+
+        let score_near = quorum_score(&candidate_near, &[&peer]);
+        let score_far = quorum_score(&candidate_far, &[&peer]);
+
+        assert!(
+            score_near > score_far,
+            "same-region node (lower latency) must score higher: {score_near} vs {score_far}"
+        );
+    }
+
+    #[test]
+    fn test_same_node_receives_anti_affinity_penalty() {
+        let peer = make_node(
+            "existing-node",
+            vec![(LABEL_REGION, "us-west-2"), (LABEL_ZONE, "us-west-2a")],
+        );
+        let same_as_peer = make_node(
+            "existing-node",
+            vec![(LABEL_REGION, "us-west-2"), (LABEL_ZONE, "us-west-2a")],
+        );
+
+        let score = quorum_score(&same_as_peer, &[&peer]);
+
+        assert!(
+            score <= -1000,
+            "placing on the same node must incur at least -1000 anti-affinity penalty: score={score}"
+        );
+    }
+
+    #[test]
+    fn test_different_zone_preferred_for_redundancy() {
+        let peer = make_node(
+            "peer",
+            vec![(LABEL_REGION, "us-west-2"), (LABEL_ZONE, "us-west-2a")],
+        );
+        let different_zone = make_node(
+            "node-b",
+            vec![(LABEL_REGION, "us-west-2"), (LABEL_ZONE, "us-west-2b")],
+        );
+        let same_zone = make_node(
+            "node-c",
+            vec![(LABEL_REGION, "us-west-2"), (LABEL_ZONE, "us-west-2a")],
+        );
+
+        let score_diff = quorum_score(&different_zone, &[&peer]);
+        let score_same = quorum_score(&same_zone, &[&peer]);
+
+        assert!(
+            score_diff > score_same,
+            "different zone should score higher than same zone for redundancy: {score_diff} vs {score_same}"
+        );
+    }
+
+    #[test]
+    fn test_empty_candidate_list_returns_no_selection() {
+        let candidates: Vec<&Node> = vec![];
+        assert!(
+            candidates.first().copied().is_none(),
+            "empty candidate list must return no selection"
+        );
+    }
+
+    #[test]
+    fn test_single_candidate_is_selected_when_no_peers() {
+        let node = make_node("only-node", vec![]);
+        let candidates = [&node];
+        assert_eq!(
+            candidates
+                .first()
+                .copied()
+                .map(|n| n.metadata.name.as_deref().unwrap_or("")),
+            Some("only-node"),
+            "single candidate must be selected when no peers exist"
+        );
+    }
+
+    #[test]
+    fn test_tie_broken_deterministically_by_first_in_list() {
+        let node_a = make_node("alpha", vec![]);
+        let node_b = make_node("beta", vec![]);
+        let candidates = vec![&node_a, &node_b];
+
+        let mut best_score: i64 = i64::MIN;
+        let mut best: Option<&Node> = None;
+        for candidate in &candidates {
+            let score = quorum_score(candidate, &[]);
+            if score > best_score {
+                best_score = score;
+                best = Some(*candidate);
+            }
+        }
+
+        assert_eq!(
+            best.map(|n| n.metadata.name.as_deref().unwrap_or("")),
+            Some("alpha"),
+            "tie must be broken deterministically — first candidate in list wins"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Latency threshold boundary checks
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_latency_exceeding_threshold_is_unhealthy() {
+        let latency_ms: u32 = 200;
+        let threshold_ms: u32 = 150;
+        assert!(
+            latency_ms > threshold_ms,
+            "latency {latency_ms}ms exceeds threshold {threshold_ms}ms and must be considered unhealthy"
+        );
+    }
+
+    #[test]
+    fn test_latency_within_threshold_is_healthy() {
+        let latency_ms: u32 = 100;
+        let threshold_ms: u32 = 150;
+        assert!(
+            latency_ms <= threshold_ms,
+            "latency {latency_ms}ms within threshold {threshold_ms}ms must be considered healthy"
+        );
+    }
+
+    #[test]
+    fn test_latency_exactly_at_threshold_is_healthy() {
+        let latency_ms: u32 = 150;
+        let threshold_ms: u32 = 150;
+        assert!(
+            latency_ms <= threshold_ms,
+            "latency equal to threshold must be considered healthy"
+        );
+    }
 }

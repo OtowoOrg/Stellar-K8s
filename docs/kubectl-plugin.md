@@ -104,6 +104,30 @@ kubectl stellar status -o json
 kubectl stellar status -o yaml
 ```
 
+### Explain Stellar Error Codes
+
+Explain a Stellar error code (e.g., `tx_bad_auth`, `op_no_destination`):
+
+```bash
+kubectl stellar explain tx_bad_auth
+```
+
+### Search Documentation
+
+Search the built-in documentation for keywords:
+
+```bash
+kubectl stellar search "mTLS rotation"
+```
+
+Show the full content of matching documents:
+
+```bash
+kubectl stellar search "S3 backup config" --full
+```
+
+The search tool works completely offline by using a built-in index of all documentation files, Architecture Decision Records (ADRs), and guides.
+
 ## Examples
 
 ```bash

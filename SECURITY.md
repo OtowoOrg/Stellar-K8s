@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-The following versions of Stellar-K8s currently receive security updates:
+The following versions of Stellar-K8s currently receive security updates:-
 
 | Version | Supported          | End of Support |
 | ------- | ------------------ | -------------- |

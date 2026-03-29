@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::sync::RwLock;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, instrument, warn, Instrument};
 use wasmtime::*;
 use wasmtime_wasi::preview1::{self, WasiP1Ctx};
 use wasmtime_wasi::WasiCtxBuilder;
@@ -86,7 +86,7 @@ impl WasmRuntime {
     }
 
     /// Load a plugin from binary data
-    #[instrument(skip(self, wasm_bytes), fields(plugin_name = %metadata.name))]
+    #[instrument(skip(self, wasm_bytes), fields(node_name = "-", namespace = "-", reconcile_id = "-", plugin_name = %metadata.name))]
     pub async fn load_plugin(&self, wasm_bytes: &[u8], metadata: PluginMetadata) -> Result<()> {
         // Verify integrity if SHA256 is provided
         if let Some(expected_hash) = &metadata.sha256 {
@@ -123,6 +123,10 @@ impl WasmRuntime {
     }
 
     /// Unload a plugin
+    #[instrument(
+        skip(self),
+        fields(node_name = "-", namespace = "-", reconcile_id = "-")
+    )]
     pub async fn unload_plugin(&self, name: &str) -> Result<()> {
         let mut cache = self.module_cache.write().await;
         if cache.remove(name).is_some() {
@@ -140,7 +144,7 @@ impl WasmRuntime {
     }
 
     /// Execute a plugin with the given input
-    #[instrument(skip(self, input), fields(plugin_name = %plugin_name))]
+    #[instrument(skip(self, input), fields(node_name = "-", namespace = "-", reconcile_id = "-", plugin_name = %plugin_name))]
     pub async fn execute(
         &self,
         plugin_name: &str,
@@ -198,12 +202,17 @@ impl WasmRuntime {
     }
 
     /// Execute multiple plugins in parallel
+    #[instrument(
+        skip(self, plugins, input),
+        fields(node_name = "-", namespace = "-", reconcile_id = "-")
+    )]
     pub async fn execute_all(
         &self,
         plugins: &[PluginConfig],
         input: &ValidationInput,
     ) -> Vec<Result<PluginExecutionResult>> {
         let mut handles = Vec::new();
+        let current_span = tracing::Span::current();
 
         for plugin in plugins {
             if !plugin.enabled {
@@ -220,7 +229,8 @@ impl WasmRuntime {
             let input = input.clone();
             let runtime = self.clone_for_execution();
 
-            let handle = tokio::spawn(async move { runtime.execute(&name, &input, limits).await });
+            let handle = tokio::spawn(async move { runtime.execute(&name, &input, limits).await })
+                .instrument(current_span.clone());
 
             handles.push((plugin.clone(), handle));
         }
@@ -276,7 +286,7 @@ impl WasmRuntime {
     }
 
     /// Execute a db trigger plugin
-    #[instrument(skip(self, input), fields(plugin_name = %plugin_name))]
+    #[instrument(skip(self, input), fields(node_name = "-", namespace = "-", reconcile_id = "-", plugin_name = %plugin_name))]
     pub async fn execute_db_trigger(
         &self,
         plugin_name: &str,

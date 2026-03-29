@@ -271,7 +271,122 @@
             color: #94a3b8;
             font-size: 0.9em;
         }
+
+        /* Search UI Styles */
+        .search-container {
+            margin-bottom: 30px;
+            position: relative;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 15px 20px;
+            border-radius: 12px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #fff;
+            font-size: 1.1em;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .search-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #1e293b;
+            border-radius: 0 0 12px 12px;
+            border: 1px solid #334155;
+            border-top: none;
+            z-index: 1001;
+            max-height: 400px;
+            overflow-y: auto;
+            display: none;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .search-result-item {
+            padding: 15px 20px;
+            border-bottom: 1px solid #334155;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .search-result-item:last-child {
+            border-bottom: none;
+        }
+
+        .search-result-item:hover {
+            background: #334155;
+        }
+
+        .result-title {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .result-snippet {
+            font-size: 0.9em;
+            color: #94a3b8;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .highlight {
+            background: rgba(245, 158, 11, 0.3);
+            color: #fbbf24;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        /* Documentation Modal Styles */
+        .doc-content {
+            padding: 20px;
+            color: #e2e8f0;
+            font-size: 1.1em;
+            line-height: 1.7;
+        }
+
+        .doc-content h1, .doc-content h2, .doc-content h3 {
+            margin: 25px 0 15px 0;
+            color: #fff;
+        }
+
+        .doc-content code {
+            background: #0f172a;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #ec4899;
+        }
+
+        .doc-content pre {
+            background: #0f172a;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+
+        .doc-content pre code {
+            background: none;
+            padding: 0;
+            color: #e2e8f0;
+        }
     </style>
+    <!-- Include Lunr.js and Marked for documentation portal -->
+    <script src="https://cdn.jsdelivr.net/npm/lunr@2.3.9/lunr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -279,6 +394,11 @@
             <h1>⭐ Stellar-K8s Operator Dashboard</h1>
             <div class="subtitle">Real-time monitoring and management of Stellar nodes</div>
         </header>
+
+        <div class="search-container">
+            <input type="text" id="searchInput" class="search-input" placeholder="Search documentation (e.g., 'mTLS rotation', 'S3 backup config')..." autocomplete="off">
+            <div id="searchResults" class="search-results"></div>
+        </div>
 
         <div class="stats-grid" id="statsGrid">
             <div class="stat-card">
@@ -332,8 +452,114 @@
         </div>
     </div>
 
+    <!-- Documentation Modal -->
+    <div id="docModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="docTitle">Documentation</h2>
+                <button class="close-btn" onclick="closeModal('docModal')">&times;</button>
+            </div>
+            <div id="docContent" class="doc-content"></div>
+        </div>
+    </div>
+
     <script>
         const API_BASE = window.location.origin;
+        let searchIndex = null;
+        let docData = [];
+
+        // Initialize documentation search
+        async function initSearch() {
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/docs/search-index`);
+                docData = await response.json();
+                
+                searchIndex = lunr(function () {
+                    this.ref('path');
+                    this.field('title', { boost: 10 });
+                    this.field('content');
+
+                    docData.forEach(function (doc) {
+                        this.add(doc);
+                    }, this);
+                });
+
+                console.log('Search index initialized with', docData.length, 'documents');
+            } catch (error) {
+                console.error('Failed to initialize search:', error);
+            }
+        }
+
+        const searchInput = document.getElementById('searchInput');
+        const searchResults = document.getElementById('searchResults');
+
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value;
+            if (query.length < 2) {
+                searchResults.style.display = 'none';
+                return;
+            }
+
+            if (!searchIndex) return;
+
+            const results = searchIndex.search(query);
+            renderSearchResults(results, query);
+        });
+
+        function renderSearchResults(results, query) {
+            if (results.length === 0) {
+                searchResults.innerHTML = '<div class="search-result-item">No results found</div>';
+                searchResults.style.display = 'block';
+                return;
+            }
+
+            const html = results.slice(0, 10).map(result => {
+                const doc = docData.find(d => d.path === result.ref);
+                const snippet = getSnippet(doc.content, query);
+                return `
+                    <div class="search-result-item" onclick="showDoc('${doc.path}')">
+                        <div class="result-title">${highlight(doc.title, query)}</div>
+                        <div class="result-snippet">${highlight(snippet, query)}</div>
+                    </div>
+                `;
+            }).join('');
+
+            searchResults.innerHTML = html;
+            searchResults.style.display = 'block';
+        }
+
+        function getSnippet(content, query) {
+            const index = content.toLowerCase().indexOf(query.toLowerCase());
+            if (index === -1) return content.substring(0, 100) + '...';
+            
+            const start = Math.max(0, index - 40);
+            const end = Math.min(content.length, index + query.length + 60);
+            return (start > 0 ? '...' : '') + content.substring(start, end) + (end < content.length ? '...' : '');
+        }
+
+        function highlight(text, query) {
+            const regex = new RegExp(`(${query})`, 'gi');
+            return text.replace(regex, '<span class="highlight">$1</span>');
+        }
+
+        function showDoc(path) {
+            const doc = docData.find(d => d.path === path);
+            if (!doc) return;
+
+            searchResults.style.display = 'none';
+            searchInput.value = '';
+
+            document.getElementById('docModal').style.display = 'block';
+            document.getElementById('docTitle').textContent = doc.title;
+            document.getElementById('docContent').innerHTML = marked.parse(doc.content);
+        }
+
+        // Close search results when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.search-container')) {
+                searchResults.style.display = 'none';
+            }
+        });
 
         async function loadDashboard() {
             try {
@@ -481,6 +707,7 @@
 
         // Load dashboard on page load
         loadDashboard();
+        initSearch();
 
         // Auto-refresh every 30 seconds
         setInterval(loadDashboard, 30000);

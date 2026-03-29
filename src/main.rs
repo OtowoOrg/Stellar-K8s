@@ -5,11 +5,15 @@ use std::sync::Arc;
 use chrono::Utc;
 use clap::{Parser, Subcommand};
 use k8s_openapi::api::coordination::v1::Lease;
+use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::MicroTime;
 use kube::api::{Api, ObjectMeta, Patch, PatchParams, PostParams};
 use kube::ResourceExt;
+use stellar_k8s::controller::archive_prune::{prune_archive, PruneArchiveArgs};
+use stellar_k8s::controller::diff::{diff, DiffArgs};
+use stellar_k8s::infra;
 use stellar_k8s::{controller, crd::StellarNode, preflight, Error};
-use tracing::{debug, info, warn, Level};
+use tracing::{debug, info, info_span, warn, Instrument, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser, Debug)]
@@ -28,6 +32,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
         stellar-operator run --dump-config\n  \
         stellar-operator webhook --bind 0.0.0.0:8443 --cert-path /tls/tls.crt --key-path /tls/tls.key\n  \
         stellar-operator info --namespace stellar-system\n  \
+        stellar-operator check-crd\n  \
         stellar-operator version"
 )]
 struct Args {
@@ -45,6 +50,12 @@ enum Commands {
     Version,
     /// Show cluster information (node count) for a namespace
     Info(InfoArgs),
+    /// Verify StellarNode CRD installation and expected version
+    CheckCrd,
+    /// Prune old history archive checkpoints
+    PruneArchive(PruneArchiveArgs),
+    /// Show difference between desired and live cluster state
+    Diff(DiffArgs),
     /// Local simulator (kind/k3s + operator + demo validators)
     Simulator(SimulatorCli),
     /// Generate shell completion scripts
@@ -53,6 +64,12 @@ enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+enum LogFormat {
+    Json,
+    Pretty,
 }
 
 #[derive(Parser, Debug)]
@@ -266,6 +283,10 @@ struct WebhookArgs {
     /// Example: --log-level debug
     #[arg(long, env = "LOG_LEVEL", default_value = "info")]
     log_level: String,
+
+    /// Log output format (json or pretty)
+    #[arg(long, env = "LOG_FORMAT", value_enum, default_value = "json")]
+    log_format: LogFormat,
 }
 
 #[tokio::main]
@@ -282,6 +303,9 @@ async fn main() -> Result<(), Error> {
         }
         Commands::Info(info_args) => {
             return run_info(info_args).await;
+        }
+        Commands::CheckCrd => {
+            return run_check_crd().await;
         }
         Commands::Run(run_args) => {
             if let Err(e) = run_args.validate() {
@@ -304,6 +328,12 @@ async fn main() -> Result<(), Error> {
             generate(shell, &mut cmd, name, &mut std::io::stdout());
             return Ok(());
         }
+        Commands::PruneArchive(prune_args) => {
+            return prune_archive(prune_args).await;
+        }
+        Commands::Diff(diff_args) => {
+            return diff(diff_args).await;
+        }
     }
 }
 
@@ -311,6 +341,56 @@ async fn run_simulator(cli: SimulatorCli) -> Result<(), Error> {
     match cli.command {
         SimulatorCmd::Up(args) => simulator_up(args).await,
     }
+}
+
+async fn run_check_crd() -> Result<(), Error> {
+    const EXPECTED_VERSION: &str = "v1alpha1";
+    const CRD_NAME: &str = "stellarnodes.stellar.org";
+
+    let client = kube::Client::try_default()
+        .await
+        .map_err(Error::KubeError)?;
+    let crds: Api<CustomResourceDefinition> = Api::all(client);
+
+    let crd = match crds.get(CRD_NAME).await {
+        Ok(crd) => crd,
+        Err(kube::Error::Api(e)) if e.code == 404 => {
+            return Err(Error::ConfigError(format!(
+                "StellarNode CRD '{CRD_NAME}' is not installed. Install with: kubectl apply -f config/crd/stellarnode-crd.yaml"
+            )));
+        }
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
+    let versions = crd.spec.versions;
+    let installed_versions = versions
+        .iter()
+        .filter(|v| v.served)
+        .map(|v| v.name.clone())
+        .collect::<Vec<_>>();
+
+    let expected_present = versions
+        .iter()
+        .any(|v| v.name == EXPECTED_VERSION && v.served);
+
+    if !expected_present {
+        return Err(Error::ConfigError(format!(
+            "CRD '{}' is installed but expected served version '{}' is missing. Served versions: {}",
+            CRD_NAME,
+            EXPECTED_VERSION,
+            if installed_versions.is_empty() {
+                "<none>".to_string()
+            } else {
+                installed_versions.join(", ")
+            }
+        )));
+    }
+
+    println!("CRD check passed");
+    println!("CRD: {CRD_NAME}");
+    println!("Expected version: {EXPECTED_VERSION}");
+    println!("Served versions: {}", installed_versions.join(", "));
+    Ok(())
 }
 
 async fn simulator_up(args: SimulatorUpArgs) -> Result<(), Error> {
@@ -597,6 +677,43 @@ async fn run_info(args: InfoArgs) -> Result<(), Error> {
             }
         }
 
+        match infra::resolve_stellar_node_infra(&client, node).await {
+            Ok(summary) if !summary.is_empty() => {
+                println!("  Infra Details:");
+                println!(
+                    "    Hardware Generation: {}",
+                    summary.hardware_generation_label()
+                );
+
+                for assignment in &summary.assignments {
+                    let kube_node = assignment.kubernetes_node.as_deref().unwrap_or("pending");
+                    println!(
+                        "    - Pod {} on {} ({})",
+                        assignment.pod_name, kube_node, assignment.hardware_generation
+                    );
+
+                    if assignment.feature_labels.is_empty() {
+                        println!("      feature.node.kubernetes.io/* labels: none found");
+                    } else {
+                        println!("      feature.node.kubernetes.io/* labels:");
+                        for (key, value) in &assignment.feature_labels {
+                            println!("        - {key}={value}");
+                        }
+                    }
+                }
+            }
+            Ok(_) => {
+                println!("  Infra Details:");
+                println!("    Hardware Generation: unknown");
+                println!("    Pods are not scheduled yet, so node feature labels are unavailable.");
+            }
+            Err(err) => {
+                println!("  Infra Details:");
+                println!("    Hardware Generation: unknown");
+                println!("    Failed to inspect Kubernetes node labels: {err}");
+            }
+        }
+
         println!();
     }
 
@@ -612,10 +729,18 @@ async fn run_webhook(args: WebhookArgs) -> Result<(), Error> {
         .with_default_directive(args.log_level.parse().unwrap_or(Level::INFO.into()))
         .from_env_lossy();
 
+    let fmt_layer = fmt::layer().json().with_target(true);
+
+    let namespace = std::env::var("OPERATOR_NAMESPACE").unwrap_or_else(|_| "default".to_string());
+
     tracing_subscriber::registry()
         .with(env_filter)
-        .with(fmt::layer().with_target(true))
+        .with(fmt_layer)
         .init();
+
+    let root_span =
+        info_span!("operator", node_name = "-", namespace = %namespace, reconcile_id = "-");
+    let _root_enter = root_span.enter();
 
     info!(
         "Starting Webhook Server v{} on {}",
@@ -689,7 +814,9 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         .with_default_directive(Level::INFO.into())
         .from_env_lossy();
 
-    let fmt_layer = fmt::layer().with_target(true);
+    let (env_filter, reload_handle) = tracing_subscriber::reload::Layer::new(env_filter);
+
+    let fmt_layer = fmt::layer().json().with_target(true);
 
     // Register the subscriber with both stdout logging and OpenTelemetry tracing
     let registry = tracing_subscriber::registry()
@@ -702,9 +829,21 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
     if otel_enabled {
         let otel_layer = stellar_k8s::telemetry::init_telemetry(&registry);
         registry.with(otel_layer).init();
-        info!("OpenTelemetry tracing initialized");
     } else {
         registry.init();
+    }
+
+    let root_span = info_span!(
+        "operator",
+        node_name = "-",
+        namespace = %args.namespace,
+        reconcile_id = "-"
+    );
+    let _root_enter = root_span.enter();
+
+    if otel_enabled {
+        info!("OpenTelemetry tracing initialized");
+    } else {
         info!("OpenTelemetry tracing disabled (OTEL_EXPORTER_OTLP_ENDPOINT not set)");
     }
 
@@ -773,31 +912,7 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
             .get(controller::mtls::SERVER_CERT_SECRET_NAME)
             .await
             .map_err(Error::KubeError)?;
-        let data = secret
-            .data
-            .ok_or_else(|| Error::ConfigError("Secret has no data".to_string()))?;
-
-        let cert_pem = data
-            .get("tls.crt")
-            .ok_or_else(|| Error::ConfigError("Missing tls.crt".to_string()))?
-            .0
-            .clone();
-        let key_pem = data
-            .get("tls.key")
-            .ok_or_else(|| Error::ConfigError("Missing tls.key".to_string()))?
-            .0
-            .clone();
-        let ca_pem = data
-            .get("ca.crt")
-            .ok_or_else(|| Error::ConfigError("Missing ca.crt".to_string()))?
-            .0
-            .clone();
-
-        Some(stellar_k8s::MtlsConfig {
-            cert_pem,
-            key_pem,
-            ca_pem,
-        })
+        Some(controller::mtls::load_mtls_config_from_secret(&secret)?)
     } else {
         None
     };
@@ -821,9 +936,12 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         let identity = holder_identity.clone();
         let is_leader_bg = Arc::clone(&is_leader);
 
-        tokio::spawn(async move {
-            run_leader_election(lease_client, &lease_ns, &identity, is_leader_bg).await;
-        });
+        tokio::spawn(
+            async move {
+                run_leader_election(lease_client, &lease_ns, &identity, is_leader_bg).await;
+            }
+            .instrument(root_span.clone()),
+        );
     }
 
     // Update leader-status and uptime metrics every 10 s (Issue #301)
@@ -856,18 +974,25 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
             instance: None,
         },
         operator_config: Arc::new(operator_config),
+        reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
+        last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        log_reload_handle: reload_handle,
+        log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
     });
 
     // Start the peer discovery manager
     let peer_discovery_client = client.clone();
     let peer_discovery_config = controller::PeerDiscoveryConfig::default();
-    tokio::spawn(async move {
-        let manager =
-            controller::PeerDiscoveryManager::new(peer_discovery_client, peer_discovery_config);
-        if let Err(e) = manager.run().await {
-            tracing::error!("Peer discovery manager error: {:?}", e);
+    tokio::spawn(
+        async move {
+            let manager =
+                controller::PeerDiscoveryManager::new(peer_discovery_client, peer_discovery_config);
+            if let Err(e) = manager.run().await {
+                tracing::error!("Peer discovery manager error: {:?}", e);
+            }
         }
-    });
+        .instrument(root_span.clone()),
+    );
 
     // Start the feature-flag watcher (watches stellar-operator-config ConfigMap)
     let feature_flags = controller::feature_flags::new_shared();
@@ -897,11 +1022,14 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
             .map(axum_server::tls_rustls::RustlsConfig::from_config);
         let server_tls = rustls_config.clone();
 
-        tokio::spawn(async move {
-            if let Err(e) = stellar_k8s::rest_api::run_server(api_state, server_tls).await {
-                tracing::error!("REST API server error: {:?}", e);
+        tokio::spawn(
+            async move {
+                if let Err(e) = stellar_k8s::rest_api::run_server(api_state, server_tls).await {
+                    tracing::error!("REST API server error: {:?}", e);
+                }
             }
-        });
+            .instrument(root_span.clone()),
+        );
 
         // Certificate rotation: when mTLS is enabled, periodically check and rotate
         // server cert if within threshold, then graceful reload of TLS config
@@ -918,60 +1046,66 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
                 .unwrap_or(controller::mtls::DEFAULT_CERT_ROTATION_THRESHOLD_DAYS);
             let is_leader_rot = Arc::clone(&is_leader);
 
-            tokio::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600)); // check hourly
-                interval.tick().await; // first tick completes immediately
-                loop {
-                    interval.tick().await;
-                    if !is_leader_rot.load(Ordering::Relaxed) {
-                        continue;
-                    }
-                    match controller::mtls::maybe_rotate_server_cert(
-                        &rotation_client,
-                        &rotation_namespace,
-                        rotation_dns.clone(),
-                        rotation_threshold_days,
-                    )
-                    .await
-                    {
-                        Ok(true) => {
-                            // Rotation performed: fetch new secret and reload TLS
-                            let secrets: kube::Api<k8s_openapi::api::core::v1::Secret> =
-                                kube::Api::namespaced(rotation_client.clone(), &rotation_namespace);
-                            if let Ok(secret) =
-                                secrets.get(controller::mtls::SERVER_CERT_SECRET_NAME).await
-                            {
-                                if let (Some(cert), Some(key), Some(ca)) = (
-                                    secret.data.as_ref().and_then(|d| d.get("tls.crt")),
-                                    secret.data.as_ref().and_then(|d| d.get("tls.key")),
-                                    secret.data.as_ref().and_then(|d| d.get("ca.crt")),
-                                ) {
-                                    match stellar_k8s::rest_api::build_tls_server_config(
-                                        &cert.0, &key.0, &ca.0,
+            tokio::spawn(
+                async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600)); // check hourly
+                    interval.tick().await; // first tick completes immediately
+                    loop {
+                        interval.tick().await;
+                        if !is_leader_rot.load(Ordering::Relaxed) {
+                            continue;
+                        }
+                        match controller::mtls::maybe_rotate_server_cert(
+                            &rotation_client,
+                            &rotation_namespace,
+                            rotation_dns.clone(),
+                            rotation_threshold_days,
+                        )
+                        .await
+                        {
+                            Ok(true) => {
+                                // Rotation performed: fetch new secret and reload TLS
+                                let secrets: kube::Api<k8s_openapi::api::core::v1::Secret> =
+                                    kube::Api::namespaced(
+                                        rotation_client.clone(),
+                                        &rotation_namespace,
+                                    );
+                                if let Ok(secret) =
+                                    secrets.get(controller::mtls::SERVER_CERT_SECRET_NAME).await
+                                {
+                                    if let (Some(cert), Some(key), Some(ca)) = (
+                                        secret.data.as_ref().and_then(|d| d.get("tls.crt")),
+                                        secret.data.as_ref().and_then(|d| d.get("tls.key")),
+                                        secret.data.as_ref().and_then(|d| d.get("ca.crt")),
                                     ) {
-                                        Ok(new_config) => {
-                                            rustls_config.reload_from_config(new_config);
-                                            info!(
+                                        match stellar_k8s::rest_api::build_tls_server_config(
+                                            &cert.0, &key.0, &ca.0,
+                                        ) {
+                                            Ok(new_config) => {
+                                                rustls_config.reload_from_config(new_config);
+                                                info!(
                                                 "TLS server config reloaded with new certificate"
                                             );
-                                        }
-                                        Err(e) => {
-                                            tracing::error!(
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
                                                 "Failed to build TLS config after rotation: {:?}",
                                                 e
                                             );
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                        Ok(false) => {}
-                        Err(e) => {
-                            tracing::error!("Certificate rotation check failed: {:?}", e);
+                            Ok(false) => {}
+                            Err(e) => {
+                                tracing::error!("Certificate rotation check failed: {:?}", e);
+                            }
                         }
                     }
                 }
-            });
+                .instrument(root_span.clone()),
+            );
         }
     }
 
@@ -1350,6 +1484,13 @@ mod cli_tests {
     fn unknown_flag_is_rejected() {
         let result = parse_run(&["--nonexistent-flag"]);
         assert!(result.is_err(), "unknown flags should be rejected by clap");
+    }
+
+    #[test]
+    fn check_crd_subcommand_parses() {
+        let parsed = Args::try_parse_from(["stellar-operator", "check-crd"])
+            .expect("check-crd subcommand should parse");
+        assert!(matches!(parsed.command, Commands::CheckCrd));
     }
 
     // ── simulator args ────────────────────────────────────────────────────────

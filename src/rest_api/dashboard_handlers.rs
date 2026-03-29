@@ -122,7 +122,7 @@ pub async fn dashboard_overview(
 }
 
 /// Get node conditions formatted for UI
-#[instrument(skip(state), fields(name = %name, namespace = %namespace))]
+#[instrument(skip(state), fields(node_name = %name, namespace = %namespace, reconcile_id = "-"))]
 pub async fn get_node_conditions(
     State(state): State<Arc<ControllerState>>,
     Path((namespace, name)): Path<(String, String)>,
@@ -161,7 +161,7 @@ pub async fn get_node_conditions(
 }
 
 /// Get node logs
-#[instrument(skip(state), fields(name = %name, namespace = %namespace))]
+#[instrument(skip(state), fields(node_name = %name, namespace = %namespace, reconcile_id = "-"))]
 pub async fn get_node_logs(
     State(state): State<Arc<ControllerState>>,
     Path((namespace, name)): Path<(String, String)>,
@@ -224,7 +224,7 @@ pub async fn get_node_logs(
 }
 
 /// Execute node action (restart, snapshot, suspend, resume)
-#[instrument(skip(state), fields(name = %name, namespace = %namespace))]
+#[instrument(skip(state), fields(node_name = %name, namespace = %namespace, reconcile_id = "-"))]
 pub async fn execute_node_action(
     State(state): State<Arc<ControllerState>>,
     Path((namespace, name)): Path<(String, String)>,
@@ -373,7 +373,7 @@ async fn resume_node(api: &Api<StellarNode>, node: &StellarNode) -> Result<Strin
 }
 
 /// Get metrics summary for a node
-#[instrument(skip(state), fields(name = %name, namespace = %namespace))]
+#[instrument(skip(state), fields(node_name = %name, namespace = %namespace, reconcile_id = "-"))]
 pub async fn get_node_metrics(
     State(state): State<Arc<ControllerState>>,
     Path((namespace, name)): Path<(String, String)>,

@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -14,14 +18,110 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  helm-lint:
-    name: Helm Lint & Schema Validation
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      docker: ${{ steps.detect.outputs.docker }}
+      helm: ${{ steps.detect.outputs.helm }}
+      api_docs: ${{ steps.detect.outputs.api_docs }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect Docker-impacting changes
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+          else
+            BASE_SHA="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+          fi
+
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(Dockerfile|\.dockerignore|Cargo\.toml|Cargo\.lock|src/|config/|Makefile)'; then
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docker=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(charts/|config/crd/|config/samples/|examples/|Makefile)'; then
+            echo "helm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "helm=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(docs/|scripts/generate-api-docs\.py|config/crd/|src/crd/|src/rest_api/|Makefile)'; then
+            echo "api_docs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "api_docs=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  version-consistency:
+    name: Version Consistency Check
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify Cargo.toml and stellar-operator version output
+        run: |
+          set -euo pipefail
+
+          CARGO_VERSION=$(grep '^version = ' Cargo.toml | head -1 | cut -d'"' -f2)
+
+          EXPECTED_VERSION="${EXPECTED_RELEASE_VERSION:-}"
+          if [[ -z "$EXPECTED_VERSION" && "${GITHUB_REF:-}" =~ ^refs/tags/v ]]; then
+            EXPECTED_VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          if [[ -z "$EXPECTED_VERSION" ]]; then
+            EXPECTED_VERSION="$CARGO_VERSION"
+          fi
+
+          cargo build --locked --bin stellar-operator
+
+          BIN_VERSION=$(./target/debug/stellar-operator version | sed -n 's/^Stellar-K8s Operator v//p' | head -1)
+
+          echo "Expected version: $EXPECTED_VERSION"
+          echo "Cargo.toml version: $CARGO_VERSION"
+          echo "stellar-operator version output: $BIN_VERSION"
+
+          [[ "$CARGO_VERSION" == "$EXPECTED_VERSION" ]] || {
+            echo "::error::Cargo.toml version ($CARGO_VERSION) does not match expected release version ($EXPECTED_VERSION)"
+            exit 1
+          }
+
+          [[ "$BIN_VERSION" == "$EXPECTED_VERSION" ]] || {
+            echo "::error::stellar-operator version output ($BIN_VERSION) does not match expected release version ($EXPECTED_VERSION)"
+            exit 1
+          }
+
+  helm-lint:
+    name: Helm Lint & Schema Validation
+    if: needs.changes.outputs.helm == 'true'
+    runs-on: ubuntu-latest
+    needs: [changes]
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: "3.14.0"
 
@@ -91,7 +191,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.88"
           components: rustfmt, clippy
@@ -101,12 +201,19 @@ jobs:
         with:
           shared-key: "ci-lint"
 
-      - name: Shellcheck
-        uses: ludeeus/action-shellcheck@2.0.0
-        with:
-          path_to_shell_files: .
-          severity: error
-          upload_annotation: true
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: |
+          mapfile -t shell_files < <(find . -type f -name "*.sh")
+          if [ "${#shell_files[@]}" -eq 0 ]; then
+            echo "No shell scripts found"
+            exit 0
+          fi
+          shellcheck -S error "${shell_files[@]}"
 
       - name: Check formatting
         run: make fmt-check
@@ -132,8 +239,57 @@ jobs:
       - name: Run tests (Unit and Doc)
         run: make test
 
+  helm-test:
+    name: Helm Unit Tests
+    if: needs.changes.outputs.helm == 'true'
+    runs-on: ubuntu-latest
+    needs: [changes, lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --version v0.5.1
+
+      - name: Run Helm unit tests
+        run: helm unittest charts/stellar-operator --strict --color
+
+  api-docs:
+    name: API Docs Drift Check
+    if: needs.changes.outputs.api_docs == 'true'
+    runs-on: ubuntu-latest
+    needs: [changes, lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Regenerate API docs
+        run: python3 scripts/generate-api-docs.py
+
+      - name: Fail if docs are out of date
+        run: |
+          if ! git diff --exit-code docs/api-reference.md; then
+            echo ""
+            echo "ERROR: docs/api-reference.md is out of date."
+            echo "Run 'make generate-api-docs' and commit the result."
+            exit 1
+          fi
+          echo "OK: docs/api-reference.md is up to date."
+
   build:
     name: Build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     needs: test
     steps:
@@ -151,7 +307,7 @@ jobs:
         run: make build
 
       - name: Upload binary artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stellar-k8s-binaries
           path: |
@@ -161,8 +317,15 @@ jobs:
 
   docker:
     name: Docker Build
+    if: >-
+      github.event_name != 'pull_request' &&
+      needs.changes.outputs.docker == 'true' &&
+      (needs.helm-test.result == 'success' || needs.helm-test.result == 'skipped') &&
+      (needs.api-docs.result == 'success' || needs.api-docs.result == 'skipped')
     runs-on: ubuntu-latest
-    needs: build
+    needs: [changes, build, helm-test, api-docs]
+    env:
+      DOCKER_PLATFORMS: linux/amd64
     permissions:
       contents: read
       packages: write
@@ -172,15 +335,12 @@ jobs:
       - name: Lowercase IMAGE_NAME
         run: echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -188,7 +348,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -198,15 +358,18 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          target: runtime
+          platforms: ${{ env.DOCKER_PLATFORMS }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=stellar-k8s-docker
+          cache-to: type=gha,mode=max,scope=stellar-k8s-docker
+          provenance: false
+          sbom: false
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
@@ -225,7 +388,7 @@ jobs:
         run: echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Run Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
           format: sarif
@@ -233,7 +396,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-results.sarif

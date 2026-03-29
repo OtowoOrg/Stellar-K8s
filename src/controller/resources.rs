@@ -36,6 +36,7 @@ use kube::api::{Api, DeleteParams, Patch, PatchParams, PostParams};
 use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
+use crate::scheduler::scoring::extract_peer_names_from_toml;
 use crate::crd::types::PodAntiAffinityStrength;
 use crate::crd::{
     BackupConfiguration, BarmanObjectStore, BootstrapConfiguration, Cluster, ClusterSpec,
@@ -135,28 +136,36 @@ pub async fn ensure_pvc(client: &Client, node: &StellarNode, dry_run: bool) -> R
     let api: Api<PersistentVolumeClaim> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "data");
 
-    // Dynamic resolution of storage class for local mode
-    let mut resolved_storage_class = node.spec.storage.storage_class.clone();
+    // Dynamic resolution of storage class for local mode.
+    let mut has_local_path = false;
+    let mut has_local_storage = false;
+    if node.spec.storage.mode == crate::crd::types::StorageMode::Local
+        && node.spec.storage.storage_class.is_empty()
+    {
+        let sc_api: Api<k8s_openapi::api::storage::v1::StorageClass> = Api::all(client.clone());
+        has_local_path = sc_api.get("local-path").await.is_ok();
+        has_local_storage = sc_api.get("local-storage").await.is_ok();
+    }
+    let resolved_storage_class = resolve_pvc_storage_class(node, has_local_path, has_local_storage);
     if node.spec.storage.mode == crate::crd::types::StorageMode::Local
         && resolved_storage_class.is_empty()
     {
-        // Fallback or auto-detect `local-path`
-        let sc_api: Api<k8s_openapi::api::storage::v1::StorageClass> = Api::all(client.clone());
-        if sc_api.get("local-path").await.is_ok() {
-            resolved_storage_class = "local-path".to_string();
-        } else if sc_api.get("local-storage").await.is_ok() {
-            resolved_storage_class = "local-storage".to_string();
-        } else {
-            // Let it fall through, the standard validation might complain if it's strictly empty and local
-            warn!("Local StorageMode requested but no storageClass provided and local-path/local-storage auto-detection failed.");
-        }
+        warn!(
+            "Local StorageMode requested but no storageClass provided and local-path/local-storage auto-detection failed."
+        );
     }
 
     let pvc = build_pvc(node, resolved_storage_class);
 
     match api.get(&name).await {
-        Ok(_existing) => {
-            info!("PVC {} already exists", name);
+        Ok(existing) => {
+            if pvc_needs_update(&existing, &pvc) {
+                info!("Updating PVC {}", name);
+                api.patch(&name, &patch_params(dry_run), &Patch::Apply(&pvc))
+                    .await?;
+            } else {
+                info!("PVC {} already exists and is up-to-date", name);
+            }
         }
         Err(kube::Error::Api(e)) if e.code == 404 => {
             info!("Creating PVC {}", name);
@@ -166,6 +175,33 @@ pub async fn ensure_pvc(client: &Client, node: &StellarNode, dry_run: bool) -> R
     }
 
     Ok(())
+}
+
+fn resolve_pvc_storage_class(
+    node: &StellarNode,
+    has_local_path: bool,
+    has_local_storage: bool,
+) -> String {
+    let resolved_storage_class = node.spec.storage.storage_class.clone();
+    if node.spec.storage.mode != crate::crd::types::StorageMode::Local
+        || !resolved_storage_class.is_empty()
+    {
+        return resolved_storage_class;
+    }
+
+    if has_local_path {
+        "local-path".to_string()
+    } else if has_local_storage {
+        "local-storage".to_string()
+    } else {
+        String::new()
+    }
+}
+
+fn pvc_needs_update(existing: &PersistentVolumeClaim, desired: &PersistentVolumeClaim) -> bool {
+    existing.spec != desired.spec
+        || existing.metadata.labels != desired.metadata.labels
+        || existing.metadata.annotations != desired.metadata.annotations
 }
 
 fn build_pvc(node: &StellarNode, storage_class_name: String) -> PersistentVolumeClaim {
@@ -1439,14 +1475,94 @@ pub(crate) fn merge_workload_affinity(node: &StellarNode) -> Option<Affinity> {
     if let Some(na) = node.spec.storage.node_affinity.clone() {
         aff.node_affinity = Some(na);
     }
+
+    let mut req_terms = Vec::new();
+    let mut pref_terms = Vec::new();
+
+    // 1. Default network-level separation
     if let Some(pa) = build_network_pod_anti_affinity(node) {
-        aff.pod_anti_affinity = Some(pa);
+        if let Some(mut req) = pa.required_during_scheduling_ignored_during_execution {
+            req_terms.append(&mut req);
+        }
+        if let Some(mut pref) = pa.preferred_during_scheduling_ignored_during_execution {
+            pref_terms.append(&mut pref);
+        }
     }
+
+    // 2. SCP-aware separation (Validators only)
+    if let Some(pa) = build_scp_aware_pod_anti_affinity(node) {
+        if let Some(mut req) = pa.required_during_scheduling_ignored_during_execution {
+            req_terms.append(&mut req);
+        }
+        if let Some(mut pref) = pa.preferred_during_scheduling_ignored_during_execution {
+            pref_terms.append(&mut pref);
+        }
+    }
+
+    if !req_terms.is_empty() || !pref_terms.is_empty() {
+        aff.pod_anti_affinity = Some(PodAntiAffinity {
+            required_during_scheduling_ignored_during_execution: if req_terms.is_empty() {
+                None
+            } else {
+                Some(req_terms)
+            },
+            preferred_during_scheduling_ignored_during_execution: if pref_terms.is_empty() {
+                None
+            } else {
+                Some(pref_terms)
+            },
+        });
+    }
+
     if aff.node_affinity.is_none() && aff.pod_anti_affinity.is_none() {
         None
     } else {
         Some(aff)
     }
+}
+
+fn build_scp_aware_pod_anti_affinity(node: &StellarNode) -> Option<PodAntiAffinity> {
+    // Only applies to Validators when SCP-aware placement is enabled
+    if node.spec.node_type != NodeType::Validator || !node.spec.placement.scp_aware_anti_affinity {
+        return None;
+    }
+
+    let qset = node
+        .spec
+        .validator_config
+        .as_ref()
+        .and_then(|c| c.quorum_set.as_ref())?;
+
+    let peer_names = extract_peer_names_from_toml(qset);
+    if peer_names.is_empty() {
+        return None;
+    }
+
+    let mut terms = Vec::new();
+
+    for peer_name in peer_names {
+        // We discourage placing this validator on the same node as its quorum set members.
+        // Each peer is identified by its instance name label.
+        let mut match_labels = BTreeMap::new();
+        match_labels.insert("app.kubernetes.io/instance".to_string(), peer_name);
+
+        terms.push(WeightedPodAffinityTerm {
+            weight: 100,
+            pod_affinity_term: PodAffinityTerm {
+                label_selector: Some(LabelSelector {
+                    match_labels: Some(match_labels),
+                    ..Default::default()
+                }),
+                topology_key: "kubernetes.io/hostname".to_string(),
+                ..Default::default()
+            },
+        });
+    }
+
+    Some(PodAntiAffinity {
+        preferred_during_scheduling_ignored_during_execution: Some(terms),
+        ..Default::default()
+    })
 }
 
 fn build_network_pod_anti_affinity(node: &StellarNode) -> Option<PodAntiAffinity> {
@@ -2431,4 +2547,146 @@ pub(crate) fn build_statefulset_for_test(
 #[cfg(test)]
 pub(crate) fn build_service_for_test(node: &StellarNode) -> k8s_openapi::api::core::v1::Service {
     build_service(node, false)
+}
+
+#[cfg(test)]
+mod ensure_pvc_tests {
+    use super::{build_pvc, pvc_needs_update, resolve_pvc_storage_class};
+    use crate::crd::{
+        types::{ResourceRequirements, ResourceSpec, StorageConfig, StorageMode},
+        NodeType, StellarNetwork, StellarNode, StellarNodeSpec,
+    };
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+
+    fn test_node() -> StellarNode {
+        StellarNode {
+            metadata: ObjectMeta {
+                name: Some("test-node".to_string()),
+                namespace: Some("stellar-system".to_string()),
+                uid: Some("abc-123".to_string()),
+                ..Default::default()
+            },
+            spec: StellarNodeSpec {
+                node_type: NodeType::Validator,
+                network: StellarNetwork::Testnet,
+                version: "v21.0.0".to_string(),
+                history_mode: Default::default(),
+                resources: ResourceRequirements {
+                    requests: ResourceSpec {
+                        cpu: "500m".to_string(),
+                        memory: "1Gi".to_string(),
+                    },
+                    limits: ResourceSpec {
+                        cpu: "2".to_string(),
+                        memory: "4Gi".to_string(),
+                    },
+                },
+                storage: StorageConfig::default(),
+                validator_config: None,
+                horizon_config: None,
+                soroban_config: None,
+                replicas: 1,
+                min_available: None,
+                max_unavailable: None,
+                suspended: false,
+                alerting: false,
+                database: None,
+                managed_database: None,
+                autoscaling: None,
+                vpa_config: None,
+                ingress: None,
+                load_balancer: None,
+                global_discovery: None,
+                cross_cluster: None,
+                strategy: Default::default(),
+                maintenance_mode: false,
+                network_policy: None,
+                dr_config: None,
+                pod_anti_affinity: Default::default(),
+                topology_spread_constraints: None,
+                cve_handling: None,
+                snapshot_schedule: None,
+                restore_from_snapshot: None,
+                read_replica_config: None,
+                read_pool_endpoint: None,
+                db_maintenance_config: None,
+                oci_snapshot: None,
+                service_mesh: None,
+                forensic_snapshot: None,
+                resource_meta: None,
+            },
+            status: None,
+        }
+    }
+
+    #[test]
+    fn resolves_storage_class_with_explicit_value() {
+        let mut node = test_node();
+        node.spec.storage.mode = StorageMode::Local;
+        node.spec.storage.storage_class = "fast-ssd".to_string();
+
+        let resolved = resolve_pvc_storage_class(&node, true, true);
+        assert_eq!(resolved, "fast-ssd");
+    }
+
+    #[test]
+    fn resolves_storage_class_to_local_path_for_local_mode() {
+        let mut node = test_node();
+        node.spec.storage.mode = StorageMode::Local;
+        node.spec.storage.storage_class.clear();
+
+        let resolved = resolve_pvc_storage_class(&node, true, false);
+        assert_eq!(resolved, "local-path");
+    }
+
+    #[test]
+    fn resolves_storage_class_to_local_storage_when_path_missing() {
+        let mut node = test_node();
+        node.spec.storage.mode = StorageMode::Local;
+        node.spec.storage.storage_class.clear();
+
+        let resolved = resolve_pvc_storage_class(&node, false, true);
+        assert_eq!(resolved, "local-storage");
+    }
+
+    #[test]
+    fn resolves_storage_class_to_empty_when_no_local_class_found() {
+        let mut node = test_node();
+        node.spec.storage.mode = StorageMode::Local;
+        node.spec.storage.storage_class.clear();
+
+        let resolved = resolve_pvc_storage_class(&node, false, false);
+        assert!(resolved.is_empty());
+    }
+
+    #[test]
+    fn build_pvc_uses_resolved_storage_class() {
+        let node = test_node();
+        let pvc = build_pvc(&node, "gp3".to_string());
+
+        assert_eq!(
+            pvc.spec
+                .as_ref()
+                .and_then(|s| s.storage_class_name.as_deref()),
+            Some("gp3")
+        );
+    }
+
+    #[test]
+    fn pvc_update_detects_storage_class_change() {
+        let node = test_node();
+        let existing = build_pvc(&node, "standard".to_string());
+        let desired = build_pvc(&node, "gp3".to_string());
+
+        assert!(pvc_needs_update(&existing, &desired));
+    }
+
+    #[test]
+    fn pvc_update_skips_when_specs_match() {
+        let node = test_node();
+        let existing = build_pvc(&node, "standard".to_string());
+        let desired = build_pvc(&node, "standard".to_string());
+
+        assert!(!pvc_needs_update(&existing, &desired));
+    }
 }

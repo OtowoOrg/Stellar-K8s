@@ -94,6 +94,21 @@ operator:
   # Namespace to watch (empty = all namespaces)
   watchNamespace: ""
 
+# Diagnostic sidecar configuration
+sidecar:
+  enabled: true
+  image:
+    repository: ghcr.io/stellar/stellar-k8s
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 50m
+      memory: 32Mi
+
 # Service for REST API and metrics
 service:
   type: ClusterIP
@@ -141,4 +156,26 @@ featureFlags:
   # Enable history archive health checks
   enableArchiveHealth: "true"
   # Enable Soroban-specific Prometheus metrics collection
-enableSorobanMetrics: "true"
+  enableSorobanMetrics: "true"
+
+# PodDisruptionBudget configuration for high availability during node drains
+# and cluster upgrades. Protects the operator from voluntary disruptions.
+#
+# PDBs prevent too many pods from being evicted simultaneously during:
+# - Node drains (kubectl drain)
+# - Cluster upgrades
+# - Node pool resizing
+# - Manual pod evictions
+#
+# For validator nodes, use maxUnavailable: 1 to allow maintenance one node at a time
+# while maintaining network quorum. See docs/pod-disruption-budget.md for details.
+podDisruptionBudget:
+  # Enable PDB creation
+  enabled: true
+  # Use minAvailable OR maxUnavailable, not both
+  # minAvailable: Number of pods that must be available (can be integer or percentage)
+  # Recommended for operator: minAvailable: 1
+  minAvailable: 1
+  # maxUnavailable: Maximum number of pods that can be unavailable (commented out by default)
+  # Recommended for validators: maxUnavailable: 1
+  # maxUnavailable: 1

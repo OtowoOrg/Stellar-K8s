@@ -8,7 +8,9 @@ pub mod resource_meta;
 
 mod archive_health;
 pub mod audit;
+pub mod archive_prune;
 pub mod captive_core;
+pub mod diff;
 pub mod conditions;
 pub mod cost;
 pub mod cross_cluster;

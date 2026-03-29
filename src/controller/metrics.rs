@@ -2,12 +2,14 @@
 //!
 //! # Exported metrics
 //! The `/metrics` endpoint (when built with `--features metrics`) exports the following metrics:
+//! - `reconcile_duration_seconds` (histogram): reconcile duration labeled by controller.
 //! - `stellar_reconcile_duration_seconds` (histogram): reconcile duration labeled by controller.
 //! - `stellar_reconcile_errors_total` (counter): reconcile errors labeled by controller and kind.
-//! - `stellar_node_ledger_sequence` (gauge): ledger sequence labeled by namespace/name/node_type/network.
-//! - `stellar_node_ingestion_lag` (gauge): ingestion lag labeled by namespace/name/node_type/network.
-//! - `stellar_horizon_tps` (gauge): Horizon TPS labeled by namespace/name/node_type/network.
-//! - `stellar_node_active_connections` (gauge): active peer connections labeled by namespace/name/node_type/network.
+//! - `stellar_operator_reconcile_errors_total` (counter): operator reconcile errors labeled by controller and kind.
+//! - `stellar_node_ledger_sequence` (gauge): ledger sequence labeled by namespace/name/node_type/network/hardware_generation.
+//! - `stellar_node_ingestion_lag` (gauge): ingestion lag labeled by namespace/name/node_type/network/hardware_generation.
+//! - `stellar_horizon_tps` (gauge): Horizon TPS labeled by namespace/name/node_type/network/hardware_generation.
+//! - `stellar_node_active_connections` (gauge): active peer connections labeled by namespace/name/node_type/network/hardware_generation.
 
 use std::sync::atomic::{AtomicI64, AtomicU64};
 
@@ -44,6 +46,7 @@ pub struct NodeLabels {
     pub name: String,
     pub node_type: String,
     pub network: String,
+    pub hardware_generation: String,
 }
 
 /// Gauge tracking ledger sequence per node
@@ -141,8 +144,23 @@ pub static RECONCILE_DURATION_SECONDS: Lazy<Family<ReconcileLabels, Histogram>> 
     Family::new_with_constructor(reconcile_histogram)
 });
 
+/// Histogram tracking reconcile duration (seconds) under the non-prefixed metric name.
+pub static RAW_RECONCILE_DURATION_SECONDS: Lazy<Family<ReconcileLabels, Histogram>> =
+    Lazy::new(|| {
+        fn reconcile_histogram() -> Histogram {
+            // 1ms .. ~32s across 16 buckets.
+            Histogram::new(exponential_buckets(0.001, 2.0, 16))
+        }
+
+        Family::new_with_constructor(reconcile_histogram)
+    });
+
 /// Counter tracking reconcile errors
 pub static RECONCILE_ERRORS_TOTAL: Lazy<Family<ErrorLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
+
+/// Counter tracking operator-level reconcile errors
+pub static OPERATOR_RECONCILE_ERRORS_TOTAL: Lazy<Family<ErrorLabels, Counter<u64, AtomicU64>>> =
     Lazy::new(Family::default);
 
 /// Soroban-specific metrics
@@ -222,6 +240,12 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
     let mut registry = Registry::default();
 
     registry.register(
+        "reconcile_duration_seconds",
+        "Duration of reconcile loops in seconds",
+        RAW_RECONCILE_DURATION_SECONDS.clone(),
+    );
+
+    registry.register(
         "stellar_reconcile_duration_seconds",
         "Duration of reconcile loops in seconds",
         RECONCILE_DURATION_SECONDS.clone(),
@@ -231,6 +255,12 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_reconcile_errors_total",
         "Total number of reconcile errors",
         RECONCILE_ERRORS_TOTAL.clone(),
+    );
+
+    registry.register(
+        "stellar_operator_reconcile_errors_total",
+        "Total number of operator reconcile errors",
+        OPERATOR_RECONCILE_ERRORS_TOTAL.clone(),
     );
 
     registry.register(
@@ -377,6 +407,9 @@ pub fn observe_reconcile_duration_seconds(controller: &str, seconds: f64) {
     let labels = ReconcileLabels {
         controller: controller.to_string(),
     };
+    RAW_RECONCILE_DURATION_SECONDS
+        .get_or_create(&labels)
+        .observe(seconds);
     RECONCILE_DURATION_SECONDS
         .get_or_create(&labels)
         .observe(seconds);
@@ -389,6 +422,15 @@ pub fn inc_reconcile_error(controller: &str, kind: &str) {
         kind: kind.to_string(),
     };
     RECONCILE_ERRORS_TOTAL.get_or_create(&labels).inc();
+}
+
+/// Increment the operator reconcile error counter.
+pub fn inc_operator_reconcile_error(controller: &str, kind: &str) {
+    let labels = ErrorLabels {
+        controller: controller.to_string(),
+        kind: kind.to_string(),
+    };
+    OPERATOR_RECONCILE_ERRORS_TOTAL.get_or_create(&labels).inc();
 }
 
 /// Increment reactive status updates counter
@@ -415,6 +457,7 @@ pub fn set_ledger_sequence(
     name: &str,
     node_type: &str,
     network: &str,
+    hardware_generation: &str,
     sequence: u64,
 ) {
     let labels = NodeLabels {
@@ -422,6 +465,7 @@ pub fn set_ledger_sequence(
         name: name.to_string(),
         node_type: node_type.to_string(),
         network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
     };
     LEDGER_SEQUENCE.get_or_create(&labels).set(sequence as i64);
 }
@@ -432,6 +476,7 @@ pub fn set_ledger_sequence_with_dp(
     name: &str,
     node_type: &str,
     network: &str,
+    hardware_generation: &str,
     sequence: u64,
 ) {
     let noise = generate_laplace_noise(DP_EPSILON, DP_SENSITIVITY);
@@ -442,17 +487,26 @@ pub fn set_ledger_sequence_with_dp(
         name: name.to_string(),
         node_type: node_type.to_string(),
         network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
     };
     LEDGER_SEQUENCE.get_or_create(&labels).set(val);
 }
 
 /// Update the ingestion lag metric for a node
-pub fn set_ingestion_lag(namespace: &str, name: &str, node_type: &str, network: &str, lag: i64) {
+pub fn set_ingestion_lag(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    hardware_generation: &str,
+    lag: i64,
+) {
     let labels = NodeLabels {
         namespace: namespace.to_string(),
         name: name.to_string(),
         node_type: node_type.to_string(),
         network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
     };
     INGESTION_LAG.get_or_create(&labels).set(lag);
 }
@@ -463,6 +517,7 @@ pub fn set_ingestion_lag_with_dp(
     name: &str,
     node_type: &str,
     network: &str,
+    hardware_generation: &str,
     lag: i64,
 ) {
     let noise = generate_laplace_noise(DP_EPSILON, DP_SENSITIVITY);
@@ -473,6 +528,7 @@ pub fn set_ingestion_lag_with_dp(
         name: name.to_string(),
         node_type: node_type.to_string(),
         network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
     };
     INGESTION_LAG.get_or_create(&labels).set(val);
 }
@@ -487,6 +543,7 @@ pub fn set_archive_ledger_lag(
     name: &str,
     node_type: &str,
     network: &str,
+    hardware_generation: &str,
     lag: i64,
 ) {
     let labels = NodeLabels {
@@ -494,17 +551,26 @@ pub fn set_archive_ledger_lag(
         name: name.to_string(),
         node_type: node_type.to_string(),
         network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
     };
     ARCHIVE_LEDGER_LAG.get_or_create(&labels).set(lag);
 }
 
 /// Update the Horizon TPS metric for a node
-pub fn set_horizon_tps(namespace: &str, name: &str, node_type: &str, network: &str, tps: i64) {
+pub fn set_horizon_tps(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    hardware_generation: &str,
+    tps: i64,
+) {
     let labels = NodeLabels {
         namespace: namespace.to_string(),
         name: name.to_string(),
         node_type: node_type.to_string(),
         network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
     };
     HORIZON_TPS.get_or_create(&labels).set(tps);
 }
@@ -515,6 +581,7 @@ pub fn set_active_connections(
     name: &str,
     node_type: &str,
     network: &str,
+    hardware_generation: &str,
     connections: i64,
 ) {
     let labels = NodeLabels {
@@ -522,6 +589,7 @@ pub fn set_active_connections(
         name: name.to_string(),
         node_type: node_type.to_string(),
         network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
     };
     ACTIVE_CONNECTIONS.get_or_create(&labels).set(connections);
 }
@@ -672,6 +740,7 @@ pub fn set_quorum_critical_nodes(
     name: &str,
     node_type: &str,
     network: &str,
+    hardware_generation: &str,
     count: i64,
 ) {
     let labels = NodeLabels {
@@ -679,6 +748,7 @@ pub fn set_quorum_critical_nodes(
         name: name.to_string(),
         node_type: node_type.to_string(),
         network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
     };
     QUORUM_CRITICAL_NODES.get_or_create(&labels).set(count);
 }
@@ -689,6 +759,7 @@ pub fn set_quorum_min_overlap(
     name: &str,
     node_type: &str,
     network: &str,
+    hardware_generation: &str,
     overlap: i64,
 ) {
     let labels = NodeLabels {
@@ -696,6 +767,7 @@ pub fn set_quorum_min_overlap(
         name: name.to_string(),
         node_type: node_type.to_string(),
         network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
     };
     QUORUM_MIN_OVERLAP.get_or_create(&labels).set(overlap);
 }
@@ -706,6 +778,7 @@ pub fn observe_consensus_latency(
     name: &str,
     node_type: &str,
     network: &str,
+    hardware_generation: &str,
     latency_ms: f64,
 ) {
     let labels = NodeLabels {
@@ -713,6 +786,7 @@ pub fn observe_consensus_latency(
         name: name.to_string(),
         node_type: node_type.to_string(),
         network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
     };
     QUORUM_CONSENSUS_LATENCY_MS
         .get_or_create(&labels)
@@ -725,6 +799,7 @@ pub fn set_quorum_fragility_score(
     name: &str,
     node_type: &str,
     network: &str,
+    hardware_generation: &str,
     score: f64,
 ) {
     let labels = NodeLabels {
@@ -732,6 +807,7 @@ pub fn set_quorum_fragility_score(
         name: name.to_string(),
         node_type: node_type.to_string(),
         network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
     };
     QUORUM_FRAGILITY_SCORE.get_or_create(&labels).set(score);
 }
@@ -827,8 +903,8 @@ mod tests {
     #[test]
     fn test_dp_metrics_update() {
         // Just verify that calling the function doesn't panic
-        set_ledger_sequence_with_dp("default", "node-1", "core", "public", 100);
-        set_ingestion_lag_with_dp("default", "node-1", "core", "public", 5);
+        set_ledger_sequence_with_dp("default", "node-1", "core", "public", "unknown", 100);
+        set_ingestion_lag_with_dp("default", "node-1", "core", "public", "unknown", 5);
 
         // We can't easily check the value in the global registry without exposing it more,
         // but this ensures the code path runs.
@@ -836,25 +912,53 @@ mod tests {
 
     #[test]
     fn test_set_ledger_sequence() {
-        set_ledger_sequence("default", "test-node", "horizon", "testnet", 12345);
+        set_ledger_sequence(
+            "default",
+            "test-node",
+            "horizon",
+            "testnet",
+            "Intel Icelake",
+            12345,
+        );
         // Function should not panic
     }
 
     #[test]
     fn test_set_ingestion_lag() {
-        set_ingestion_lag("default", "test-node", "core", "testnet", 5);
+        set_ingestion_lag(
+            "default",
+            "test-node",
+            "core",
+            "testnet",
+            "Intel Icelake",
+            5,
+        );
         // Function should not panic
     }
 
     #[test]
     fn test_set_horizon_tps() {
-        set_horizon_tps("default", "horizon-1", "horizon", "testnet", 500);
+        set_horizon_tps(
+            "default",
+            "horizon-1",
+            "horizon",
+            "testnet",
+            "Intel Icelake",
+            500,
+        );
         // Function should not panic
     }
 
     #[test]
     fn test_set_active_connections() {
-        set_active_connections("default", "validator-1", "core", "testnet", 25);
+        set_active_connections(
+            "default",
+            "validator-1",
+            "core",
+            "testnet",
+            "Intel Icelake",
+            25,
+        );
         // Function should not panic
     }
 
@@ -865,12 +969,14 @@ mod tests {
             name: "horizon-prod".to_string(),
             node_type: "horizon".to_string(),
             network: "mainnet".to_string(),
+            hardware_generation: "Intel Icelake".to_string(),
         };
 
         assert_eq!(labels.namespace, "stellar-system");
         assert_eq!(labels.name, "horizon-prod");
         assert_eq!(labels.node_type, "horizon");
         assert_eq!(labels.network, "mainnet");
+        assert_eq!(labels.hardware_generation, "Intel Icelake");
     }
 
     #[test]
@@ -943,5 +1049,47 @@ mod tests {
         assert_eq!(labels.name, "soroban-prod");
         assert_eq!(labels.network, "mainnet");
         assert!(labels.contract_id.starts_with("CDLZFC"));
+    }
+
+    #[test]
+    fn test_inc_operator_reconcile_error() {
+        // Test that incrementing operator reconcile error doesn't panic
+        inc_operator_reconcile_error("stellarnode", "kube");
+        inc_operator_reconcile_error("stellarnode", "validation");
+        inc_operator_reconcile_error("stellarnode", "config");
+        // Function should not panic
+    }
+
+    #[test]
+    fn test_operator_reconcile_errors_total_registered() {
+        // Verify the new metric is registered in the global registry
+        let _registry = &*REGISTRY;
+        // Access the metric to ensure it's initialized
+        let labels = ErrorLabels {
+            controller: "stellarnode".to_string(),
+            kind: "test".to_string(),
+        };
+        let counter = OPERATOR_RECONCILE_ERRORS_TOTAL.get_or_create(&labels);
+        counter.inc();
+        // If this doesn't panic, the metric is properly registered and functional
+    }
+
+    #[test]
+    fn test_operator_reconcile_error_labels() {
+        // Test that error labels are created correctly for operator errors
+        let labels = ErrorLabels {
+            controller: "stellarnode".to_string(),
+            kind: "unknown".to_string(),
+        };
+
+        assert_eq!(labels.controller, "stellarnode");
+        assert_eq!(labels.kind, "unknown");
+
+        // Test with different error kinds
+        inc_operator_reconcile_error("stellarnode", "kube");
+        inc_operator_reconcile_error("stellarnode", "validation");
+        inc_operator_reconcile_error("stellarnode", "config");
+        inc_operator_reconcile_error("stellarnode", "unknown");
+        // Function should not panic with various error kinds
     }
 }

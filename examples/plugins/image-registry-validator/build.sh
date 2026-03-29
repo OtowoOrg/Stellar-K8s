@@ -11,7 +11,7 @@ WASM_FILE="target/wasm32-unknown-unknown/release/image_registry_validator.wasm"
 if [ -f "$WASM_FILE" ]; then
     SIZE=$(wc -c < "$WASM_FILE")
     echo "✓ Built successfully: $WASM_FILE ($SIZE bytes)"
-    
+
     # Optimize if wasm-opt is available
     if command -v wasm-opt &> /dev/null; then
         echo "Optimizing with wasm-opt..."

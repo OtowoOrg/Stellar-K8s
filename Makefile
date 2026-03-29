@@ -70,6 +70,16 @@ quick: fmt-check ## Quick pre-commit check
 	@$(CARGO) check --workspace
 	@echo "✓ Quick checks passed"
 
+pre-commit: ## Run pre-commit hooks manually
+	@echo "→ Running pre-commit hooks..."
+	@command -v pre-commit >/dev/null 2>&1 || (echo "✗ pre-commit not installed. Run: make dev-setup" && exit 1)
+	@pre-commit run --all-files
+
+pre-commit-install: ## Install pre-commit hooks
+	@command -v pre-commit >/dev/null 2>&1 || pip install pre-commit
+	pre-commit install
+	pre-commit install --hook-type pre-push
+
 clean: ## Clean build artifacts
 	$(CARGO) clean
 
@@ -117,6 +127,9 @@ dev-setup: ## Setup dev environment
 	rustup default stable
 	rustup component add clippy rustfmt
 	cargo install cargo-audit cargo-watch
+	@command -v pre-commit >/dev/null 2>&1 || pip install pre-commit
+	pre-commit install
+	pre-commit install --hook-type pre-push
 
 watch: ## Watch and rebuild
 	cargo watch -x check -x test -x build

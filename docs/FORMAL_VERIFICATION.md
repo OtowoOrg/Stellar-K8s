@@ -31,7 +31,7 @@ The reconciler implements a hierarchical state machine across multiple phases:
 Creation Phase:
   NotFound → WaitingForSpec → SpecValidationInProgress → SpecValid
                                                        ↘ SpecInvalid
-  
+
 Deployment Phase:
   SpecValid → CreatingResources → HealthChecking → Running
                                          ↓
@@ -103,7 +103,7 @@ InvalidSpecNeverRunning ==
 ```tla
 RunningInvariant ==
     \A n \in NODES:
-        (GetNode(n).state = "Running") => 
+        (GetNode(n).state = "Running") =>
             /\ GetNode(n).spec_valid = "valid"
             /\ GetNode(n).health = "healthy"
             /\ GetNode(n).hasResources = TRUE
@@ -125,8 +125,8 @@ RunningInvariant ==
 ```tla
 NoResourceLeak ==
     \A n \in NODES:
-        (GetNode(n).hasResources = TRUE) => 
-            /\ GetNode(n).state \in {"HealthChecking", "Running", 
+        (GetNode(n).hasResources = TRUE) =>
+            /\ GetNode(n).state \in {"HealthChecking", "Running",
                                      "BeingDeleted", "CleanupInProgress"}
 ```
 
@@ -219,7 +219,7 @@ ValidSpecEventuallyRunning ==
 ```tla
 RunningEventuallyStable ==
     \A n \in NODES:
-        (GetNode(n).state = "Running") ~> 
+        (GetNode(n).state = "Running") ~>
             (GetNode(n).state = "Running" \/ GetNode(n).state = "BeingDeleted")
 ```
 
@@ -249,7 +249,7 @@ CleanupEventuallyCompletes ==
 FailedSpecCanRecover ==
     \A n \in NODES:
         (GetNode(n).state = "SpecInvalid") ~>
-            \/ GetNode(n).state = "SpecInvalid"  
+            \/ GetNode(n).state = "SpecInvalid"
             \/ (GetNode(n).spec_valid = "valid" /\ GetNode(n).state \in {"SpecValid", "Running"})
 ```
 
@@ -265,7 +265,7 @@ FailedSpecCanRecover ==
 HealthCheckRecovery ==
     \A n \in NODES:
         (GetNode(n).health = "unhealthy") ~>
-            \/ GetNode(n).health = "unhealthy"  
+            \/ GetNode(n).health = "unhealthy"
             \/ (GetNode(n).health = "healthy" /\ GetNode(n).state = "Running")
 ```
 
@@ -480,7 +480,7 @@ All critical edge cases identified in the reconciler design are covered by forma
 
 ---
 
-**Report Date**: February 26, 2026  
-**Verification Status**: ✅ All properties verified  
-**Model Checker**: TLC (TLA+ Checker)  
+**Report Date**: February 26, 2026
+**Verification Status**: ✅ All properties verified
+**Model Checker**: TLC (TLA+ Checker)
 **Scope**: StellarNode reconciler state machine and lifecycle

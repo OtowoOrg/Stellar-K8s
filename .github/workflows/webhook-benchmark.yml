@@ -95,10 +95,10 @@ jobs:
           ./target/release/stellar-operator webhook \
             --bind 0.0.0.0:8443 \
             --log-level info &
-          
+
           WEBHOOK_PID=$!
           echo "WEBHOOK_PID=$WEBHOOK_PID" >> $GITHUB_ENV
-          
+
           # Wait for webhook to be ready
           echo "Waiting for webhook server to start..."
           for i in {1..30}; do
@@ -109,7 +109,7 @@ jobs:
             echo "Attempt $i/30: Webhook not ready yet..."
             sleep 2
           done
-          
+
           # Verify webhook is running
           if ! curl -sf http://localhost:8443/health; then
             echo "ERROR: Webhook server failed to start"
@@ -121,7 +121,7 @@ jobs:
         run: |
           BASELINE_VERSION="${{ github.event.inputs.baseline_version || 'webhook-v0.1.0' }}"
           BASELINE_FILE="benchmarks/baselines/${BASELINE_VERSION}.json"
-          
+
           if [[ -f "$BASELINE_FILE" ]]; then
             echo "Using baseline: $BASELINE_FILE"
             echo "baseline_file=$BASELINE_FILE" >> $GITHUB_OUTPUT
@@ -135,7 +135,7 @@ jobs:
         id: benchmark
         run: |
           mkdir -p results
-          
+
           # Run k6 benchmark
           k6 run \
             --env WEBHOOK_URL=http://localhost:8443 \
@@ -161,41 +161,41 @@ jobs:
             echo "ERROR: Benchmark results not found"
             exit 1
           fi
-          
+
           # Extract key metrics
           VAL_P99=$(jq -r '.webhook_metrics.validation_p99' results/webhook-benchmark.json)
           MUT_P99=$(jq -r '.webhook_metrics.mutation_p99' results/webhook-benchmark.json)
           THROUGHPUT=$(jq -r '.webhook_metrics.throughput' results/webhook-benchmark.json)
           ERROR_RATE=$(jq -r '.webhook_metrics.error_rate' results/webhook-benchmark.json)
-          
+
           echo "validation_p99=$VAL_P99" >> $GITHUB_OUTPUT
           echo "mutation_p99=$MUT_P99" >> $GITHUB_OUTPUT
           echo "throughput=$THROUGHPUT" >> $GITHUB_OUTPUT
           echo "error_rate=$ERROR_RATE" >> $GITHUB_OUTPUT
-          
+
           # Check thresholds
           THRESHOLD_PASSED=true
-          
+
           if (( $(echo "$VAL_P99 > 50" | bc -l) )); then
             echo "::error::Validation p99 latency ($VAL_P99 ms) exceeds threshold (50 ms)"
             THRESHOLD_PASSED=false
           fi
-          
+
           if (( $(echo "$MUT_P99 > 50" | bc -l) )); then
             echo "::error::Mutation p99 latency ($MUT_P99 ms) exceeds threshold (50 ms)"
             THRESHOLD_PASSED=false
           fi
-          
+
           if (( $(echo "$THROUGHPUT < 100" | bc -l) )); then
             echo "::error::Throughput ($THROUGHPUT req/s) below minimum (100 req/s)"
             THRESHOLD_PASSED=false
           fi
-          
+
           if (( $(echo "$ERROR_RATE > 0.001" | bc -l) )); then
             echo "::error::Error rate ($ERROR_RATE) exceeds threshold (0.001)"
             THRESHOLD_PASSED=false
           fi
-          
+
           echo "threshold_passed=$THRESHOLD_PASSED" >> $GITHUB_OUTPUT
 
       - name: Compare with baseline
@@ -205,46 +205,46 @@ jobs:
           BASELINE_FILE="${{ steps.baseline.outputs.baseline_file }}"
           CURRENT_FILE="results/webhook-benchmark.json"
           THRESHOLD="${{ github.event.inputs.regression_threshold || '10' }}"
-          
+
           # Extract baseline metrics
           BASELINE_VAL_P99=$(jq -r '.webhook_metrics.validation_p99' "$BASELINE_FILE")
           BASELINE_MUT_P99=$(jq -r '.webhook_metrics.mutation_p99' "$BASELINE_FILE")
           BASELINE_THROUGHPUT=$(jq -r '.webhook_metrics.throughput' "$BASELINE_FILE")
-          
+
           # Extract current metrics
           CURRENT_VAL_P99=$(jq -r '.webhook_metrics.validation_p99' "$CURRENT_FILE")
           CURRENT_MUT_P99=$(jq -r '.webhook_metrics.mutation_p99' "$CURRENT_FILE")
           CURRENT_THROUGHPUT=$(jq -r '.webhook_metrics.throughput' "$CURRENT_FILE")
-          
+
           # Calculate changes
           VAL_CHANGE=$(echo "scale=2; ($CURRENT_VAL_P99 - $BASELINE_VAL_P99) / $BASELINE_VAL_P99 * 100" | bc)
           MUT_CHANGE=$(echo "scale=2; ($CURRENT_MUT_P99 - $BASELINE_MUT_P99) / $BASELINE_MUT_P99 * 100" | bc)
           THROUGHPUT_CHANGE=$(echo "scale=2; ($CURRENT_THROUGHPUT - $BASELINE_THROUGHPUT) / $BASELINE_THROUGHPUT * 100" | bc)
-          
+
           echo "val_change=$VAL_CHANGE" >> $GITHUB_OUTPUT
           echo "mut_change=$MUT_CHANGE" >> $GITHUB_OUTPUT
           echo "throughput_change=$THROUGHPUT_CHANGE" >> $GITHUB_OUTPUT
-          
+
           # Check for regressions
           REGRESSION_DETECTED=false
-          
+
           if (( $(echo "$VAL_CHANGE > $THRESHOLD" | bc -l) )); then
             echo "::warning::Validation p99 regression: +${VAL_CHANGE}% (threshold: ${THRESHOLD}%)"
             REGRESSION_DETECTED=true
           fi
-          
+
           if (( $(echo "$MUT_CHANGE > $THRESHOLD" | bc -l) )); then
             echo "::warning::Mutation p99 regression: +${MUT_CHANGE}% (threshold: ${THRESHOLD}%)"
             REGRESSION_DETECTED=true
           fi
-          
+
           if (( $(echo "$THROUGHPUT_CHANGE < -$THRESHOLD" | bc -l) )); then
             echo "::warning::Throughput regression: ${THROUGHPUT_CHANGE}% (threshold: -${THRESHOLD}%)"
             REGRESSION_DETECTED=true
           fi
-          
+
           echo "regression_detected=$REGRESSION_DETECTED" >> $GITHUB_OUTPUT
-          
+
           # Create regression report
           cat > results/regression-report.json <<EOF
           {
@@ -292,7 +292,7 @@ jobs:
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "**Run ID:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           if [[ -f results/webhook-benchmark-report.md ]]; then
             cat results/webhook-benchmark-report.md >> $GITHUB_STEP_SUMMARY
           else
@@ -334,71 +334,71 @@ jobs:
         run: |
           cat > pr-comment.md <<'EOF'
           ## 🚀 Webhook Performance Benchmark Report
-          
+
           **Version:** ${{ needs.build-webhook.outputs.version }}
           **Commit:** ${{ github.sha }}
-          
+
           EOF
-          
+
           if [[ -f results/webhook-benchmark.json ]]; then
             VAL_P99=$(jq -r '.webhook_metrics.validation_p99' results/webhook-benchmark.json)
             VAL_P95=$(jq -r '.webhook_metrics.validation_p95' results/webhook-benchmark.json)
             VAL_AVG=$(jq -r '.webhook_metrics.validation_avg' results/webhook-benchmark.json)
-            
+
             MUT_P99=$(jq -r '.webhook_metrics.mutation_p99' results/webhook-benchmark.json)
             MUT_P95=$(jq -r '.webhook_metrics.mutation_p95' results/webhook-benchmark.json)
             MUT_AVG=$(jq -r '.webhook_metrics.mutation_avg' results/webhook-benchmark.json)
-            
+
             THROUGHPUT=$(jq -r '.webhook_metrics.throughput' results/webhook-benchmark.json)
             ERROR_RATE=$(jq -r '.webhook_metrics.error_rate' results/webhook-benchmark.json)
             TOTAL_REQUESTS=$(jq -r '.webhook_metrics.total_requests' results/webhook-benchmark.json)
-            
+
             cat >> pr-comment.md <<EOF
           ### 📊 Performance Metrics
-          
+
           | Webhook | Avg | p95 | p99 | Threshold |
           |---------|-----|-----|-----|-----------|
           | Validation | ${VAL_AVG} ms | ${VAL_P95} ms | ${VAL_P99} ms | < 50 ms |
           | Mutation | ${MUT_AVG} ms | ${MUT_P95} ms | ${MUT_P99} ms | < 50 ms |
-          
+
           | Metric | Value | Threshold |
           |--------|-------|-----------|
           | Throughput | ${THROUGHPUT} req/s | > 100 req/s |
           | Error Rate | $(echo "$ERROR_RATE * 100" | bc)% | < 0.1% |
           | Total Requests | ${TOTAL_REQUESTS} | - |
-          
+
           EOF
           fi
-          
+
           if [[ -f results/regression-report.json ]]; then
             REGRESSION=$(jq -r '.regression_detected' results/regression-report.json)
-            
+
             if [[ "$REGRESSION" == "true" ]]; then
               cat >> pr-comment.md <<EOF
           ### ⚠️ Regression Detected
-          
+
           Performance regression detected compared to baseline.
-          
+
           <details>
           <summary>View Details</summary>
-          
+
           \`\`\`json
           $(jq '.metrics' results/regression-report.json)
           \`\`\`
-          
+
           </details>
           EOF
             else
               cat >> pr-comment.md <<EOF
           ### ✅ No Regression Detected
-          
+
           Performance is within acceptable thresholds compared to baseline.
           EOF
             fi
           fi
-          
+
           cat >> pr-comment.md <<EOF
-          
+
           ---
           *Benchmarked with k6 on GitHub Actions*
           EOF

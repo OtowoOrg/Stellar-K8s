@@ -65,6 +65,10 @@ pub static HORIZON_TPS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
 pub static ACTIVE_CONNECTIONS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
+/// Gauge tracking archive integrity status (1 = healthy, 0 = corrupted)
+pub static ARCHIVE_INTEGRITY_STATUS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
 /// Gauge tracking how many ledgers the history archive is behind the validator node.
 /// A sustained non-zero value above the configured threshold fires a Prometheus alert.
 pub static ARCHIVE_LEDGER_LAG: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
@@ -287,6 +291,12 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_archive_ledger_lag",
         "Ledgers the history archive is behind the validator node (0 = in-sync)",
         ARCHIVE_LEDGER_LAG.clone(),
+    );
+
+    registry.register(
+        "stellar_archive_integrity_status",
+        "Integrity status of the history archive (1 = healthy, 0 = corrupted)",
+        ARCHIVE_INTEGRITY_STATUS.clone(),
     );
 
     // Register reactive update metrics (from HEAD)
@@ -554,6 +564,29 @@ pub fn set_archive_ledger_lag(
         hardware_generation: hardware_generation.to_string(),
     };
     ARCHIVE_LEDGER_LAG.get_or_create(&labels).set(lag);
+}
+
+/// Set the archive integrity status metric for a node.
+///
+/// `status` is 1 for healthy (integrity verified) and 0 for corrupted.
+pub fn set_archive_integrity_status(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    hardware_generation: &str,
+    healthy: bool,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
+    };
+    ARCHIVE_INTEGRITY_STATUS
+        .get_or_create(&labels)
+        .set(if healthy { 1 } else { 0 });
 }
 
 /// Update the Horizon TPS metric for a node

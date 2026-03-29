@@ -50,7 +50,8 @@ use crate::error::{Error, Result};
 use crate::infra;
 
 use super::archive_health::{
-    calculate_backoff, check_archive_integrity, check_history_archive_health, ArchiveHealthResult,
+    calculate_backoff, check_archive_integrity, check_archive_integrity_random,
+    check_history_archive_health, ArchiveHealthResult, ArchiveIntegrityCheckResult,
     ARCHIVE_LAG_THRESHOLD,
 };
 use super::conditions;
@@ -809,6 +810,53 @@ pub(crate) async fn apply_stellar_node(
                             "Archive integrity check error for {}/{}: {}",
                             namespace, name, e
                         );
+                    }
+                }
+            }
+
+            // Automatic Checkpoint Integrity Check
+            if let Some(archive_config) = &validator_config.archive_integrity_config {
+                if archive_config.enabled && !validator_config.history_archive_urls.is_empty() {
+                    let interval = match parse_duration(&archive_config.interval) {
+                        Ok(d) => d,
+                        Err(_) => Duration::from_secs(21600), // Default 6h
+                    };
+
+                    let last_check_time = node
+                        .status
+                        .as_ref()
+                        .and_then(|s| {
+                            s.conditions
+                                .iter()
+                                .find(|c| c.type_ == "ArchiveIntegrityCheck")
+                                .map(|c| c.last_transition_time.clone())
+                        })
+                        .and_then(|t| chrono::DateTime::parse_from_rfc3339(&t).ok())
+                        .map(|dt| dt.with_timezone(&chrono::Utc));
+
+                    let should_run = match last_check_time {
+                        None => true,
+                        Some(last) => {
+                            let age = chrono::Utc::now() - last;
+                            age.to_std().unwrap_or(Duration::from_secs(0)) >= interval
+                        }
+                    };
+
+                    if should_run {
+                        if let Err(e) = run_archive_checkpoint_verification(
+                            client,
+                            &ctx.event_reporter,
+                            node,
+                            &validator_config.history_archive_urls,
+                            archive_config,
+                        )
+                        .await
+                        {
+                            warn!(
+                                "Archive checkpoint verification error for {}/{}: {}",
+                                namespace, name, e
+                            );
+                        }
                     }
                 }
             }
@@ -2511,6 +2559,148 @@ async fn update_status_with_canary(
     .map_err(Error::KubeError)?;
 
     Ok(())
+}
+
+/// Run the archive checkpoint verification check
+async fn run_archive_checkpoint_verification(
+    client: &Client,
+    reporter: &EventReporter,
+    node: &StellarNode,
+    urls: &[String],
+    config: &crate::crd::ArchiveIntegrityConfig,
+) -> Result<()> {
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let name = node.name_any();
+    let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+
+    info!(
+        "Running archive checkpoint integrity check for {}/{}",
+        namespace, name
+    );
+
+    let mut results = Vec::new();
+    for url in urls {
+        match check_archive_integrity_random(
+            url,
+            config.check_percentage,
+            config.max_checkpoints,
+            Duration::from_secs(30),
+        )
+        .await
+        {
+            Ok(res) => results.push(res),
+            Err(e) => {
+                warn!("Archive integrity check failed for {}: {}", url, e);
+                results.push(ArchiveIntegrityCheckResult {
+                    url: url.clone(),
+                    healthy: false,
+                    checkpoints_verified: 0,
+                    message: format!("Check failed: {e}"),
+                    error: Some(e.to_string()),
+                });
+            }
+        }
+    }
+
+    let all_healthy = results.iter().all(|r| r.healthy);
+    let summary = if all_healthy {
+        format!(
+            "Archive integrity verified: {} archives healthy",
+            results.len()
+        )
+    } else {
+        let failed = results.iter().filter(|r| !r.healthy).count();
+        format!("Archive integrity corruption detected: {}/{} archives corrupted", failed, results.len())
+    };
+
+    // Update metrics
+    let node_type = format!("{:?}", node.spec.node_type);
+    let network = format!("{:?}", node.spec.network);
+    let hardware = node.spec.hardware_generation.clone();
+    metrics::set_archive_integrity_status(&namespace, &name, &node_type, &network, &hardware, all_healthy);
+
+    // Update status conditions
+    let mut status = node.status.clone().unwrap_or_default();
+    if all_healthy {
+        conditions::set_condition(
+            &mut status.conditions,
+            "ArchiveIntegrityCheck",
+            conditions::CONDITION_STATUS_TRUE,
+            "IntegrityVerified",
+            &summary,
+        );
+        conditions::remove_condition(&mut status.conditions, "ArchiveIntegrityCorrupted");
+    } else {
+        conditions::set_condition(
+            &mut status.conditions,
+            "ArchiveIntegrityCheck",
+            conditions::CONDITION_STATUS_FALSE,
+            "IntegrityCheckFailed",
+            &summary,
+        );
+        conditions::set_condition(
+            &mut status.conditions,
+            "ArchiveIntegrityCorrupted",
+            conditions::CONDITION_STATUS_TRUE,
+            "CorruptionDetected",
+            &summary,
+        );
+
+        // Emit Fatal Event for corruption
+        publish_stellar_event(
+            client,
+            reporter,
+            node,
+            EventType::Warning,
+            "ArchiveIntegrityCorruption",
+            "ArchiveIntegrity",
+            &format!("FATAL: Corruption detected in history archives!\n\nDetails:\n{}", 
+                results.iter()
+                    .filter(|r| !r.healthy)
+                    .map(|r| format!("- {}: {}", r.url, r.message))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+        )
+        .await?;
+    }
+
+    // Set observed generation
+    if let Some(gen) = node.metadata.generation {
+        for condition in &mut status.conditions {
+            if condition.type_ == "ArchiveIntegrityCheck" || condition.type_ == "ArchiveIntegrityCorrupted" {
+                condition.observed_generation = Some(gen);
+            }
+        }
+    }
+
+    let patch = serde_json::json!({ "status": status });
+    api.patch_status(
+        &name,
+        &PatchParams::apply("stellar-operator"),
+        &Patch::Merge(&patch),
+    )
+    .await
+    .map_err(Error::KubeError)?;
+
+    Ok(())
+}
+
+/// Helper to parse duration string (e.g. "1h", "6h", "24h")
+fn parse_duration(s: &str) -> Result<Duration> {
+    let s = s.trim();
+    if s.ends_with('h') {
+        let hours = s[..s.len() - 1].parse::<u64>().map_err(|_| Error::ConfigError(format!("Invalid duration: {s}")))?;
+        Ok(Duration::from_secs(hours * 3600))
+    } else if s.ends_with('m') {
+        let mins = s[..s.len() - 1].parse::<u64>().map_err(|_| Error::ConfigError(format!("Invalid duration: {s}")))?;
+        Ok(Duration::from_secs(mins * 60))
+    } else if s.ends_with('s') {
+        let secs = s[..s.len() - 1].parse::<u64>().map_err(|_| Error::ConfigError(format!("Invalid duration: {s}")))?;
+        Ok(Duration::from_secs(secs))
+    } else {
+        Err(Error::ConfigError(format!("Unsupported duration format: {s}")))
+    }
 }
 
 /// Helper to get the latest ledger from the Stellar network

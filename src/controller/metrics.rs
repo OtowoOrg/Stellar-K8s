@@ -399,6 +399,12 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         OPERATOR_UPTIME_SECONDS.clone(),
     );
 
+    registry.register(
+        "stellar_operator_ready",
+        "1 if the operator is ready (K8s watch healthy and first reconcile complete), 0 otherwise",
+        OPERATOR_READY_STATUS.clone(),
+    );
+
     registry
 });
 
@@ -868,6 +874,9 @@ pub static OPERATOR_LEADER_STATUS: Lazy<Gauge<i64, AtomicI64>> = Lazy::new(Gauge
 /// Counter tracking operator uptime in seconds since process start.
 pub static OPERATOR_UPTIME_SECONDS: Lazy<Counter<u64, AtomicU64>> = Lazy::new(Counter::default);
 
+/// Gauge tracking whether the operator is ready (1 = ready, 0 = not ready).
+pub static OPERATOR_READY_STATUS: Lazy<Gauge<i64, AtomicI64>> = Lazy::new(Gauge::default);
+
 /// Initialise the `stellar_operator_info` gauge with build-time labels.
 /// Call once at startup after the registry is first accessed.
 pub fn init_operator_info() {
@@ -887,6 +896,11 @@ pub fn set_leader_status(is_leader: bool) {
 /// Increment the uptime counter by `delta_secs`. Call from a periodic task.
 pub fn inc_uptime_seconds(delta_secs: u64) {
     OPERATOR_UPTIME_SECONDS.inc_by(delta_secs);
+}
+
+/// Set the operator readiness status gauge.
+pub fn set_ready_status(ready: bool) {
+    OPERATOR_READY_STATUS.set(if ready { 1 } else { 0 });
 }
 
 #[cfg(test)]

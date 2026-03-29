@@ -978,6 +978,7 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         log_reload_handle: reload_handle,
         log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
+        last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     });
 
     // Start the peer discovery manager

@@ -103,6 +103,8 @@ pub struct ControllerState {
     pub log_reload_handle: Handle<EnvFilter, Registry>,
     /// Optional expiration time for a temporary log level change
     pub log_level_expires_at: std::sync::Arc<tokio::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>>,
+    /// Timestamp of the last event received from the K8s watch stream
+    pub last_event_received: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl ControllerState {
@@ -238,7 +240,19 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
             Config::default(),
         )
         .shutdown_on_signal()
-        .run(reconcile, error_policy, state)
+        .run(reconcile, error_policy, state.clone())
+        .inspect({
+            let state = state.clone();
+            move |_| {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                state
+                    .last_event_received
+                    .store(now, std::sync::atomic::Ordering::Relaxed);
+            }
+        })
         .for_each(|_res| async {})
         .await;
 

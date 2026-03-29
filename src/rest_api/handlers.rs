@@ -223,27 +223,74 @@ pub async fn healthz() -> Json<ProbeResponse> {
     })
 }
 
-/// /readyz - checks that the K8s API server is reachable and the StellarNode CRD is installed.
+/// /readyz - deep health check verifying K8s API connectivity, watch stream health,
+/// and that the first reconciliation cycle has completed.
 pub async fn readyz(
     State(state): State<Arc<ControllerState>>,
 ) -> (StatusCode, Json<ProbeResponse>) {
+    const STALE_WATCH_THRESHOLD_SECS: u64 = 300; // 5 minutes
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // 1. Basic K8s API connectivity & CRD presence
     let api: Api<StellarNode> = Api::all(state.client.clone());
-    match api.list(&Default::default()).await {
-        Ok(_) => (
-            StatusCode::OK,
-            Json(ProbeResponse {
-                status: "ok",
-                reason: None,
-            }),
-        ),
-        Err(e) => (
+    if let Err(e) = api.list(&Default::default()).await {
+        crate::controller::metrics::set_ready_status(false);
+        return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(ProbeResponse {
                 status: "not ready",
-                reason: Some(format!("CRD check failed: {e}")),
+                reason: Some(format!("K8s API/CRD check failed: {e}")),
             }),
-        ),
+        );
     }
+
+    // 2. Reconciliation progress: Ensure at least one success
+    let last_success = state
+        .last_reconcile_success
+        .load(std::sync::atomic::Ordering::Relaxed);
+    if last_success == 0 {
+        crate::controller::metrics::set_ready_status(false);
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ProbeResponse {
+                status: "not ready",
+                reason: Some("initial reconciliation not yet complete".to_string()),
+            }),
+        );
+    }
+
+    // 3. Watch stream health: Ensure events are still being processed
+    let last_event = state
+        .last_event_received
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let event_age = now.saturating_sub(last_event);
+
+    if last_event > 0 && event_age > STALE_WATCH_THRESHOLD_SECS {
+        crate::controller::metrics::set_ready_status(false);
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ProbeResponse {
+                status: "not ready",
+                reason: Some(format!(
+                    "K8s watch stream stalled: last event was {event_age}s ago"
+                )),
+            }),
+        );
+    }
+
+    // All checks passed
+    crate::controller::metrics::set_ready_status(true);
+    (
+        StatusCode::OK,
+        Json(ProbeResponse {
+            status: "ok",
+            reason: None,
+        }),
+    )
 }
 
 /// /livez - verifies the reconciler loop is not stuck.

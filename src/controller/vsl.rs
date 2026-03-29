@@ -399,12 +399,11 @@ pub async fn fetch_vsl(url: &str) -> Result<QuorumSet> {
         .get(url)
         .send()
         .await
-        .map_err(Error::HttpError)?;
+        .map_err(|e| Error::ConfigError(format!("Failed to fetch VSL from {url}: {e}")))?;
 
     if !response.status().is_success() {
         return Err(Error::ConfigError(format!(
-            "Failed to fetch VSL from {}: HTTP {}",
-            url,
+            "Failed to fetch VSL from {url}: HTTP {}",
             response.status()
         )));
     }

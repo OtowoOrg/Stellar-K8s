@@ -204,7 +204,7 @@ fn get_standard_labels(spec: &StellarNodeSpec, name: &str) -> BTreeMap<String, S
     );
     labels.insert(
         "stellar-network".to_string(),
-        spec.network.scheduling_label_value(),
+        spec.network.scheduling_label_value(&spec.custom_network_passphrase),
     );
     labels.insert(
         "stellar.org/node-type".to_string(),
@@ -317,6 +317,8 @@ mod tests {
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            label_propagation: None,
+            custom_network_passphrase: None,
         };
 
         let labels = get_standard_labels(&spec, "my-validator");
@@ -379,6 +381,8 @@ mod tests {
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            label_propagation: None,
+            custom_network_passphrase: None,
         };
 
         let annotations = get_standard_annotations(&spec);

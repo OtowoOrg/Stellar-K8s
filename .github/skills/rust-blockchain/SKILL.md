@@ -257,10 +257,10 @@ impl MerkleTree {
             .iter()
             .map(|d| blake3::hash(d).into())
             .collect();
-        
+
         let mut nodes = vec![leaves.clone()];
         let mut current_level = leaves;
-        
+
         while current_level.len() > 1 {
             let mut next_level = vec![];
             for chunk in current_level.chunks(2) {
@@ -274,19 +274,19 @@ impl MerkleTree {
             nodes.push(next_level.clone());
             current_level = next_level;
         }
-        
+
         Self { leaves, nodes }
     }
-    
+
     pub fn root(&self) -> [u8; 32] {
         self.nodes.last().unwrap()[0]
     }
-    
+
     pub fn proof(&self, index: usize) -> Vec<([u8; 32], bool)> {
         // Generate Merkle proof for efficient verification
         let mut proof = vec![];
         let mut idx = index;
-        
+
         for level in &self.nodes[..self.nodes.len() - 1] {
             let sibling_idx = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
             if sibling_idx < level.len() {
@@ -325,25 +325,25 @@ impl StateManager {
         if let Some(account) = self.cache.read().await.get(address) {
             return Ok(account.clone());
         }
-        
+
         // Load from database
         let key = format!("account:{}", hex::encode(address));
         let data = self.db.get(key.as_bytes())?
             .ok_or(BlockchainError::AccountNotFound)?;
         let account: Account = bincode::deserialize(&data)?;
-        
+
         // Update cache
         self.cache.write().await.insert(*address, account.clone());
         Ok(account)
     }
-    
+
     pub async fn apply_transaction(
         &self,
         tx: &Transaction,
     ) -> BlockchainResult<Receipt> {
         let mut from = self.get_account(&tx.from).await?;
         let mut to = self.get_account(&tx.to).await?;
-        
+
         // Validate nonce
         if from.nonce != tx.nonce {
             return Err(BlockchainError::NonceMismatch {
@@ -351,7 +351,7 @@ impl StateManager {
                 got: tx.nonce,
             });
         }
-        
+
         // Check balance
         if from.balance < tx.value + tx.gas_limit * tx.gas_price {
             return Err(BlockchainError::InsufficientBalance {
@@ -359,16 +359,16 @@ impl StateManager {
                 need: tx.value + tx.gas_limit * tx.gas_price,
             });
         }
-        
+
         // Update state
         from.balance -= tx.value;
         from.nonce += 1;
         to.balance += tx.value;
-        
+
         // Persist changes
         self.update_account(&tx.from, &from).await?;
         self.update_account(&tx.to, &to).await?;
-        
+
         Ok(Receipt {
             status: true,
             gas_used: 21000,
@@ -404,28 +404,28 @@ impl UtxoSet {
         tx: &Transaction,
     ) -> BlockchainResult<()> {
         let mut total_in = 0u64;
-        
+
         // Validate inputs and collect values
         for input in &tx.inputs {
             let utxo = self.get_utxo(&input.previous_output).await?
                 .ok_or(BlockchainError::UtxoNotFound)?;
-            
+
             // Verify signature against script
             self.verify_script(&input.script_sig, &utxo.script_pubkey, tx)?;
             total_in += utxo.value;
         }
-        
+
         // Validate outputs
         let total_out: u64 = tx.outputs.iter().map(|o| o.value).sum();
         if total_out > total_in {
             return Err(BlockchainError::InsufficientFunds);
         }
-        
+
         // Update UTXO set
         for input in &tx.inputs {
             self.remove_utxo(&input.previous_output).await?;
         }
-        
+
         let tx_hash = tx.hash();
         for (index, output) in tx.outputs.iter().enumerate() {
             let outpoint = OutPoint {
@@ -434,7 +434,7 @@ impl UtxoSet {
             };
             self.add_utxo(outpoint, output.clone()).await?;
         }
-        
+
         Ok(())
     }
 }
@@ -457,16 +457,16 @@ impl PoaConsensus {
         let proposer_index = (block_height as usize) % self.validators.len();
         &self.validators[proposer_index] == address
     }
-    
+
     pub fn validate_block(&self, block: &Block) -> BlockchainResult<()> {
         // Verify proposer is authorized
         if !self.can_propose(&block.proposer, block.height) {
             return Err(BlockchainError::UnauthorizedProposer);
         }
-        
+
         // Verify block signature
         verify_signature(&block.header_hash(), &block.signature, &block.proposer)?;
-        
+
         Ok(())
     }
 }
@@ -491,13 +491,13 @@ use libp2p::{
 
 pub async fn create_p2p_node(keypair: Keypair) -> Result<Swarm<ChainBehaviour>> {
     let peer_id = PeerId::from(keypair.public());
-    
+
     let transport = tcp::tokio::Transport::default()
         .upgrade(upgrade::Version::V1)
         .authenticate(noise::Config::new(&keypair)?)
         .multiplex(yamux::Config::default())
         .boxed();
-    
+
     let behaviour = ChainBehaviour {
         gossipsub: gossipsub::Behaviour::new(
             MessageAuthenticity::Signed(keypair.clone()),
@@ -508,7 +508,7 @@ pub async fn create_p2p_node(keypair: Keypair) -> Result<Swarm<ChainBehaviour>> 
             keypair.public(),
         )),
     };
-    
+
     let swarm = Swarm::new(transport, behaviour, peer_id, SwarmConfig::default());
     Ok(swarm)
 }
@@ -561,23 +561,23 @@ impl BlockchainDB {
         opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
         opts.set_max_open_files(10000);
         opts.increase_parallelism(num_cpus::get() as i32);
-        
+
         let db = DB::open(&opts, path)?;
         Ok(Self { db: Arc::new(db) })
     }
-    
+
     pub fn store_block(&self, block: &Block) -> BlockchainResult<()> {
         let key = format!("block:{}", block.height);
         let value = bincode::serialize(block)?;
         self.db.put(key.as_bytes(), value)?;
-        
+
         // Index by hash
         let hash_key = format!("hash:{}", hex::encode(block.hash()));
         self.db.put(hash_key.as_bytes(), block.height.to_le_bytes())?;
-        
+
         Ok(())
     }
-    
+
     pub fn get_block(&self, height: u64) -> BlockchainResult<Option<Block>> {
         let key = format!("block:{}", height);
         match self.db.get(key.as_bytes())? {
@@ -606,7 +606,7 @@ impl WasmRuntime {
         let store = Store::new(engine.clone());
         Self { store, engine }
     }
-    
+
     pub fn execute_contract(
         &mut self,
         code: &[u8],
@@ -616,23 +616,23 @@ impl WasmRuntime {
     ) -> BlockchainResult<Value> {
         let module = Module::new(&self.engine, code)?;
         let instance = Instance::new(&mut self.store, &module, &imports)?;
-        
+
         let func = instance
             .exports
             .get_function(function)?;
-        
+
         // Set gas metering
         let mut metering = instance.exports.get_global("gas_used")?;
         metering.set(&mut self.store, Value::I64(0))?;
-        
+
         let result = func.call(&mut self.store, &args)?;
-        
+
         // Check gas usage
         let gas_used = metering.get(&mut self.store).i64().unwrap() as u64;
         if gas_used > gas_limit {
             return Err(BlockchainError::OutOfGas);
         }
-        
+
         Ok(result[0])
     }
 }
@@ -652,9 +652,9 @@ pub async fn execute_block_parallel(
     // Analyze transaction dependencies
     let dependency_graph = build_dependency_graph(transactions);
     let execution_groups = topological_sort(&dependency_graph);
-    
+
     let mut receipts = vec![];
-    
+
     for group in execution_groups {
         // Execute independent transactions in parallel
         let group_receipts: Vec<_> = group
@@ -663,10 +663,10 @@ pub async fn execute_block_parallel(
                 state.apply_transaction(&transactions[tx_index])
             })
             .collect::<Result<Vec<_>, _>>()?;
-        
+
         receipts.extend(group_receipts);
     }
-    
+
     Ok(receipts)
 }
 ```
@@ -696,27 +696,27 @@ impl Mempool {
                 }
             }
         }
-        
+
         let key = (tx.gas_price, tx.nonce);
         self.transactions.insert(key, tx.clone());
         self.by_sender.entry(tx.from)
             .or_default()
             .insert(tx.nonce);
-        
+
         Ok(())
     }
-    
+
     pub fn select_transactions(&self, gas_limit: u64) -> Vec<Transaction> {
         let mut selected = vec![];
         let mut total_gas = 0u64;
-        
+
         for (_, tx) in self.transactions.iter().rev() {
             if total_gas + tx.gas_limit <= gas_limit {
                 selected.push(tx.clone());
                 total_gas += tx.gas_limit;
             }
         }
-        
+
         selected
     }
 }
@@ -733,22 +733,22 @@ impl Transaction {
         if self.to == Address::zero() && self.data.is_empty() {
             return Err(BlockchainError::InvalidRecipient);
         }
-        
+
         // Validate value doesn't overflow
         if self.value > u128::MAX / 2 {
             return Err(BlockchainError::ValueOverflow);
         }
-        
+
         // Check gas limits
         if self.gas_limit == 0 || self.gas_price == 0 {
             return Err(BlockchainError::InvalidGas);
         }
-        
+
         // Signature validation
         if !self.verify_signature()? {
             return Err(BlockchainError::InvalidSignature);
         }
-        
+
         Ok(())
     }
 }
@@ -764,7 +764,7 @@ pub struct ExecutionContext {
 
 impl ExecutionContext {
     const MAX_CALL_DEPTH: usize = 1024;
-    
+
     pub fn call_contract(
         &mut self,
         address: &Address,
@@ -774,17 +774,17 @@ impl ExecutionContext {
         if self.call_depth >= Self::MAX_CALL_DEPTH {
             return Err(BlockchainError::CallDepthExceeded);
         }
-        
+
         // Check for reentrancy
         if !self.locks.insert(*address) {
             return Err(BlockchainError::ReentrancyDetected);
         }
-        
+
         self.call_depth += 1;
         let result = self.execute_internal(address, data);
         self.call_depth -= 1;
         self.locks.remove(address);
-        
+
         result
     }
 }
@@ -801,7 +801,7 @@ impl Account {
             .ok_or(BlockchainError::BalanceOverflow)?;
         Ok(())
     }
-    
+
     pub fn sub_balance(&mut self, amount: u128) -> BlockchainResult<()> {
         self.balance = self.balance
             .checked_sub(amount)
@@ -822,7 +822,7 @@ impl Account {
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
-    
+
     proptest! {
         #[test]
         fn test_state_transition_always_valid(
@@ -833,7 +833,7 @@ mod tests {
                 balance: initial_balance,
                 nonce: 0,
             };
-            
+
             if transfer_amount <= initial_balance {
                 assert!(account.sub_balance(transfer_amount).is_ok());
                 assert_eq!(account.balance, initial_balance - transfer_amount);
@@ -842,7 +842,7 @@ mod tests {
                 assert_eq!(account.balance, initial_balance);
             }
         }
-        
+
         #[test]
         fn test_merkle_proof_always_valid(
             data in prop::collection::vec(
@@ -853,7 +853,7 @@ mod tests {
             let refs: Vec<&[u8]> = data.iter().map(|v| v.as_slice()).collect();
             let tree = MerkleTree::new(refs);
             let root = tree.root();
-            
+
             for (i, item) in data.iter().enumerate() {
                 let proof = tree.proof(i);
                 assert!(verify_merkle_proof(&root, item, &proof));
@@ -869,12 +869,12 @@ mod tests {
 #[tokio::test]
 async fn test_full_block_lifecycle() {
     let chain = Blockchain::new_test().await;
-    
+
     // Create accounts
     let alice = Account::new();
     let bob = Account::new();
     chain.fund_account(&alice.address, 1000).await;
-    
+
     // Create transaction
     let tx = Transaction {
         from: alice.address,
@@ -886,15 +886,15 @@ async fn test_full_block_lifecycle() {
         data: vec![],
     };
     let signed_tx = alice.sign_transaction(&tx);
-    
+
     // Submit to mempool
     chain.submit_transaction(signed_tx.clone()).await.unwrap();
-    
+
     // Mine block
     let block = chain.mine_next_block().await.unwrap();
     assert_eq!(block.transactions.len(), 1);
     assert_eq!(block.transactions[0], signed_tx);
-    
+
     // Verify state changes
     let alice_balance = chain.get_balance(&alice.address).await.unwrap();
     let bob_balance = chain.get_balance(&bob.address).await.unwrap();
@@ -912,7 +912,7 @@ fn benchmark_signature_verification(c: &mut Criterion) {
     let keypair = Keypair::generate(&mut OsRng);
     let message = b"test transaction";
     let signature = keypair.sign(message);
-    
+
     c.bench_function("ed25519_verify", |b| {
         b.iter(|| {
             keypair.public.verify(
@@ -928,7 +928,7 @@ fn benchmark_merkle_tree(c: &mut Criterion) {
         .map(|i| vec![i as u8; 32])
         .collect();
     let refs: Vec<&[u8]> = data.iter().map(|v| v.as_slice()).collect();
-    
+
     c.bench_function("merkle_tree_1000", |b| {
         b.iter(|| {
             MerkleTree::new(black_box(refs.clone()))
@@ -982,7 +982,7 @@ enum Commands {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let cli = Cli::parse();
-    
+
     match cli.command {
         Commands::Start { config, validator } => {
             let config = Config::load(&config)?;
@@ -996,7 +996,7 @@ async fn main() -> Result<()> {
             handle_account_command(action)?;
         }
     }
-    
+
     Ok(())
 }
 ```

@@ -52,9 +52,11 @@ mod tests {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            custom_network_passphrase: None,
         }
     }
 
@@ -116,9 +118,11 @@ mod tests {
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 resource_meta: None,
                 vpa_config: None,
                 read_pool_endpoint: None,
+            custom_network_passphrase: None,
             },
             status: None,
         }
@@ -173,9 +177,11 @@ mod tests {
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 resource_meta: None,
                 vpa_config: None,
                 read_pool_endpoint: None,
+            custom_network_passphrase: None,
             },
             status: None,
         }

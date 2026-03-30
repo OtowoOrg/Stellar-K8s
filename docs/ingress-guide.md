@@ -6,12 +6,12 @@ The Stellar-K8s operator automates the creation of Kubernetes Ingress resources 
 
 ## Features
 
-✅ **Automatic Ingress Generation** - Creates Kubernetes Ingress resources with minimal configuration  
-✅ **TLS Certificate Management** - Integrates with cert-manager for automatic HTTPS setup  
-✅ **Let's Encrypt Support** - Provision free SSL/TLS certificates automatically  
-✅ **Custom Path Routing** - Route different paths to your Horizon/Soroban service  
-✅ **Multiple Ingress Controllers** - Compatible with NGINX, Traefik, and other controllers  
-✅ **mTLS & Custom CAs** - Support for mutual TLS and self-signed certificates  
+✅ **Automatic Ingress Generation** - Creates Kubernetes Ingress resources with minimal configuration
+✅ **TLS Certificate Management** - Integrates with cert-manager for automatic HTTPS setup
+✅ **Let's Encrypt Support** - Provision free SSL/TLS certificates automatically
+✅ **Custom Path Routing** - Route different paths to your Horizon/Soroban service
+✅ **Multiple Ingress Controllers** - Compatible with NGINX, Traefik, and other controllers
+✅ **mTLS & Custom CAs** - Support for mutual TLS and self-signed certificates
 
 ## Prerequisites
 
@@ -123,12 +123,12 @@ spec:
   nodeType: Horizon
   network: Mainnet
   version: "v21.0.0"
-  
+
   horizonConfig:
     databaseSecretRef: "horizon-db"
     enableIngest: true
     stellarCoreUrl: "http://stellar-core:11626"
-  
+
   # Basic ingress configuration
   ingress:
     className: "nginx"
@@ -147,7 +147,7 @@ spec:
 ingress:
   # Ingress controller class
   className: "nginx"
-  
+
   # DNS hosts and path-based routing
   hosts:
     - host: "horizon.example.com"
@@ -156,22 +156,22 @@ ingress:
           pathType: "Prefix"
         - path: "/metrics"
           pathType: "Exact"
-    
+
     - host: "api.example.com"
       paths:
         - path: "/horizon"
           pathType: "Prefix"
         - path: "/soroban"
           pathType: "Prefix"
-  
+
   # TLS configuration
   tlsSecretName: "horizon-tls"
-  
+
   # cert-manager integration
   certManagerClusterIssuer: "letsencrypt-prod"  # Global issuer
   # OR
   certManagerIssuer: "custom-issuer"  # Namespaced issuer (takes precedence)
-  
+
   # Custom annotations
   annotations:
     cert-manager.io/issue-temporary-certificate: "true"
@@ -355,19 +355,19 @@ See [ingress-example.yaml](../examples/ingress-example.yaml) for complete workin
 pub struct IngressConfig {
     /// Ingress controller class name (e.g., "nginx", "traefik")
     pub class_name: Option<String>,
-    
+
     /// Host rules with paths
     pub hosts: Vec<IngressHost>,
-    
+
     /// TLS secret name for the certificate
     pub tls_secret_name: Option<String>,
-    
+
     /// cert-manager namespaced issuer
     pub cert_manager_issuer: Option<String>,
-    
+
     /// cert-manager cluster issuer
     pub cert_manager_cluster_issuer: Option<String>,
-    
+
     /// Additional annotations
     pub annotations: Option<BTreeMap<String, String>>,
 }
@@ -379,7 +379,7 @@ pub struct IngressConfig {
 pub struct IngressHost {
     /// DNS hostname
     pub host: String,
-    
+
     /// HTTP paths for this host
     pub paths: Vec<IngressPath>,
 }
@@ -391,7 +391,7 @@ pub struct IngressHost {
 pub struct IngressPath {
     /// URL path (e.g., "/", "/api")
     pub path: String,
-    
+
     /// Path type: "Prefix" or "Exact"
     pub path_type: Option<String>,
 }

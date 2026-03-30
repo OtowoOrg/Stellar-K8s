@@ -3772,16 +3772,19 @@ dependencies = [
 name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+checksum = "cc6bf79ff24e648f6da1f8d1f011e9cac26491b619e6b9280f2b47f1774e6ee2"
+dependencies = [
+ "fnv",
+ "quick-error",
+ "tempfile",
+ "wait-timeout",
+]
 
 [[package]]
-name = "same-file"
-version = "1.0.6"
+name = "ryu"
+version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
-dependencies = [
- "winapi-util",
-]
+checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "schannel"
@@ -4340,6 +4343,7 @@ dependencies = [
  "ed25519-dalek",
  "flate2",
  "futures",
+ "glob",
  "hex",
  "hostname",
  "k8s-openapi",
@@ -4378,7 +4382,6 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "walkdir",
  "wasmtime",
  "wasmtime-wasi",
  "wat",
@@ -5120,10 +5123,9 @@ dependencies = [
 name = "walkdir"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b"
+checksum = "09ac3b126d3914f9849036f826e054cbabdc8519970b8998ddaf3b5bd3c65f11"
 dependencies = [
- "same-file",
- "winapi-util",
+ "libc",
 ]
 
 [[package]]

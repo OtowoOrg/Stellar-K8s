@@ -66,34 +66,36 @@ impl std::fmt::Display for HistoryMode {
 
 /// Target Stellar network
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub enum StellarNetwork {
     Mainnet,
     #[default]
     Testnet,
     Futurenet,
-    Custom(String),
+    Custom,
 }
 
 impl StellarNetwork {
-    pub fn passphrase(&self) -> &str {
+    pub fn passphrase<'a>(&'a self, custom: &'a Option<String>) -> &'a str {
         match self {
             StellarNetwork::Mainnet => "Public Global Stellar Network ; September 2015",
             StellarNetwork::Testnet => "Test SDF Network ; September 2015",
             StellarNetwork::Futurenet => "Test SDF Future Network ; October 2022",
-            StellarNetwork::Custom(passphrase) => passphrase,
+            StellarNetwork::Custom => custom.as_deref().unwrap_or(""),
         }
     }
 
     /// Stable, DNS-1123-friendly label value for topology spread and anti-affinity.
-    pub fn scheduling_label_value(&self) -> String {
+    pub fn scheduling_label_value(&self, custom: &Option<String>) -> String {
         match self {
             StellarNetwork::Mainnet => "mainnet".to_string(),
             StellarNetwork::Testnet => "testnet".to_string(),
             StellarNetwork::Futurenet => "futurenet".to_string(),
-            StellarNetwork::Custom(passphrase) => {
+            StellarNetwork::Custom => {
                 use std::collections::hash_map::DefaultHasher;
                 use std::hash::{Hash, Hasher};
                 let mut h = DefaultHasher::new();
+                let passphrase = custom.as_deref().unwrap_or("");
                 passphrase.hash(&mut h);
                 format!("custom-{:x}", h.finish())
             }
@@ -176,7 +178,7 @@ pub struct StorageConfig {
     pub annotations: Option<BTreeMap<String, String>>,
     /// Node affinity for local storage mode (optional)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<serde_json::Value>")]
+    #[schemars(schema_with = "super::schema_utils::object_schema")]
     pub node_affinity: Option<k8s_openapi::api::core::v1::NodeAffinity>,
 }
 
@@ -669,13 +671,33 @@ impl Default for NetworkPolicyConfig {
     }
 }
 
+/// Rollout strategy type
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RolloutStrategyType {
+    #[default]
+    RollingUpdate,
+    Canary,
+}
+
 /// Rollout strategy for updates
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub enum RolloutStrategy {
-    #[default]
-    RollingUpdate,
-    Canary(CanaryConfig),
+pub struct RolloutStrategy {
+    #[serde(rename = "type")]
+    pub strategy_type: RolloutStrategyType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub canary: Option<CanaryConfig>,
+}
+
+impl RolloutStrategy {
+    pub fn canary(&self) -> Option<&CanaryConfig> {
+        if let RolloutStrategyType::Canary = self.strategy_type {
+            self.canary.as_ref()
+        } else {
+            None
+        }
+    }
 }
 
 /// Configuration for Canary rollout
@@ -1517,4 +1539,26 @@ pub struct OciSnapshotConfig {
     /// from `registry`, `image`, and `tag_strategy`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pull_image_ref: Option<String>,
+}
+
+// ============================================================================
+// Label Propagation Configuration
+// ============================================================================
+
+/// Filter policy controlling which StellarNode labels are propagated to child resources.
+///
+/// When both lists are empty, all user labels are propagated (subject to the implicit
+/// denylist for `kubernetes.io/` and `k8s.io/` prefixes).
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelPropagationConfig {
+    /// Glob patterns for label keys that are allowed to propagate.
+    /// When empty, all user labels are eligible (subject to denyList).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow_list: Vec<String>,
+
+    /// Glob patterns for label keys that are always blocked from propagation.
+    /// Takes precedence over allowList.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deny_list: Vec<String>,
 }

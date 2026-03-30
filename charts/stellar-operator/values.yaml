@@ -141,41 +141,18 @@ defaultResources:
       cpu: "4"
       memory: "8Gi"
 
-# Runtime feature flags written into the stellar-operator-config ConfigMap.
-# The operator watches this ConfigMap and reloads flags without restart.
-# See docs/quickstart.md for full documentation of each flag.
-featureFlags:
-  # Enable automatic CVE patch reconciliation
-  enableCveScanning: "true"
-  # Enable read-replica pool management
-  enableReadPool: "false"
-  # Enable disaster-recovery drill scheduling
-  enableDr: "false"
-  # Enable automatic peer discovery
-  enablePeerDiscovery: "true"
-  # Enable history archive health checks
-  enableArchiveHealth: "true"
-  # Enable Soroban-specific Prometheus metrics collection
-  enableSorobanMetrics: "true"
-
-# PodDisruptionBudget configuration for high availability during node drains
-# and cluster upgrades. Protects the operator from voluntary disruptions.
-#
-# PDBs prevent too many pods from being evicted simultaneously during:
-# - Node drains (kubectl drain)
-# - Cluster upgrades
-# - Node pool resizing
-# - Manual pod evictions
-#
-# For validator nodes, use maxUnavailable: 1 to allow maintenance one node at a time
-# while maintaining network quorum. See docs/pod-disruption-budget.md for details.
-podDisruptionBudget:
-  # Enable PDB creation
-  enabled: true
-  # Use minAvailable OR maxUnavailable, not both
-  # minAvailable: Number of pods that must be available (can be integer or percentage)
-  # Recommended for operator: minAvailable: 1
-  minAvailable: 1
-  # maxUnavailable: Maximum number of pods that can be unavailable (commented out by default)
-  # Recommended for validators: maxUnavailable: 1
-  # maxUnavailable: 1
+security:
+  audit:
+    enabled: true
+    logLevel: "Audit"
+  podSecurityStandard: "restricted"
+  falco:
+    enabled: true
+  networkPolicy:
+    enabled: true
+    ingress:
+      namespaceSelector: true
+  admissionWebhook:
+    failurePolicy: Fail
+  imagePolicy:
+    allowLatestTag: false

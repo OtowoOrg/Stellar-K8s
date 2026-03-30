@@ -8,6 +8,8 @@
 //! - `stellar_operator_reconcile_errors_total` (counter): operator reconcile errors labeled by controller and kind.
 //! - `stellar_node_ledger_sequence` (gauge): ledger sequence labeled by namespace/name/node_type/network/hardware_generation.
 //! - `stellar_node_ingestion_lag` (gauge): ingestion lag labeled by namespace/name/node_type/network/hardware_generation.
+//! - `stellar_node_sync_status` (gauge): node sync status (0=Pending, 1=Creating, 2=Running, 3=Syncing, 4=Ready, 5=Failed, 6=Degraded, 7=Suspended).
+//! - `stellar_node_up` (gauge): binary indicator if node is up based on pod readiness (1=up, 0=down).
 //! - `stellar_horizon_tps` (gauge): Horizon TPS labeled by namespace/name/node_type/network/hardware_generation.
 //! - `stellar_node_active_connections` (gauge): active peer connections labeled by namespace/name/node_type/network/hardware_generation.
 
@@ -68,6 +70,15 @@ pub static ACTIVE_CONNECTIONS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
 /// Gauge tracking how many ledgers the history archive is behind the validator node.
 /// A sustained non-zero value above the configured threshold fires a Prometheus alert.
 pub static ARCHIVE_LEDGER_LAG: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking the node sync status (0=Pending, 1=Creating, 2=Running, 3=Syncing, 4=Ready, etc.)
+/// Uses phase enum values: Pending=0, Creating=1, Running=2, Syncing=3, Ready=4, Failed=5, Degraded=6, Suspended=7
+pub static NODE_SYNC_STATUS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking node up status (0=down, 1=up) based on pod readiness
+pub static NODE_UP: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
 /// Gauge tracking number of critical nodes in the quorum
@@ -287,6 +298,16 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_archive_ledger_lag",
         "Ledgers the history archive is behind the validator node (0 = in-sync)",
         ARCHIVE_LEDGER_LAG.clone(),
+    );
+    registry.register(
+        "stellar_node_sync_status",
+        "Current sync status of the Stellar node (0=Pending, 1=Creating, 2=Running, 3=Syncing, 4=Ready, 5=Failed, 6=Degraded, 7=Suspended)",
+        NODE_SYNC_STATUS.clone(),
+    );
+    registry.register(
+        "stellar_node_up",
+        "Binary indicator if node is up based on pod readiness (1=up, 0=down)",
+        NODE_UP.clone(),
     );
 
     // Register reactive update metrics (from HEAD)
@@ -531,6 +552,112 @@ pub fn set_ingestion_lag_with_dp(
         hardware_generation: hardware_generation.to_string(),
     };
     INGESTION_LAG.get_or_create(&labels).set(val);
+}
+
+/// Node phase enumeration for metrics
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i64)]
+pub enum NodePhase {
+    Pending = 0,
+    Creating = 1,
+    Running = 2,
+    Syncing = 3,
+    Ready = 4,
+    Failed = 5,
+    Degraded = 6,
+    Suspended = 7,
+    Remediating = 8,
+    Terminating = 9,
+}
+
+impl NodePhase {
+    /// Parse a phase string into a NodePhase enum value
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "Pending" => NodePhase::Pending,
+            "Creating" => NodePhase::Creating,
+            "Running" => NodePhase::Running,
+            "Syncing" => NodePhase::Syncing,
+            "Ready" => NodePhase::Ready,
+            "Failed" => NodePhase::Failed,
+            "Degraded" => NodePhase::Degraded,
+            "Suspended" => NodePhase::Suspended,
+            "Remediating" => NodePhase::Remediating,
+            "Terminating" => NodePhase::Terminating,
+            _ => NodePhase::Pending, // Default for unknown phases
+        }
+    }
+}
+
+impl std::fmt::Display for NodePhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            NodePhase::Pending => "Pending",
+            NodePhase::Creating => "Creating",
+            NodePhase::Running => "Running",
+            NodePhase::Syncing => "Syncing",
+            NodePhase::Ready => "Ready",
+            NodePhase::Failed => "Failed",
+            NodePhase::Degraded => "Degraded",
+            NodePhase::Suspended => "Suspended",
+            NodePhase::Remediating => "Remediating",
+            NodePhase::Terminating => "Terminating",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+/// Update the node sync status metric for a node
+/// 
+/// The sync status value is encoded as an integer for Prometheus compatibility:
+/// - 0 = Pending
+/// - 1 = Creating
+/// - 2 = Running
+/// - 3 = Syncing (key metric for tracking sync status)
+/// - 4 = Ready
+/// - 5 = Failed
+/// - 6 = Degraded
+/// - 7 = Suspended
+/// - 8 = Remediating
+/// - 9 = Terminating
+pub fn set_node_sync_status(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    hardware_generation: &str,
+    phase: &str,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
+    };
+    let phase_value = NodePhase::from_str(phase) as i64;
+    NODE_SYNC_STATUS.get_or_create(&labels).set(phase_value);
+}
+
+/// Set the node up status based on pod readiness
+/// 
+/// `up` should be true if the node's pods are ready, false otherwise
+pub fn set_node_up(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    hardware_generation: &str,
+    up: bool,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
+    };
+    NODE_UP.get_or_create(&labels).set(if up { 1 } else { 0 });
 }
 
 /// Set the archive ledger lag metric for a node.

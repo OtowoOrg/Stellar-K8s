@@ -26,7 +26,7 @@ Before you begin, ensure you have the following tools installed:
    ```bash
    # Install via rustup (recommended)
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   
+
    # Verify installation
    rustc --version
    cargo --version
@@ -36,7 +36,7 @@ Before you begin, ensure you have the following tools installed:
    ```bash
    # Install Docker Engine
    # See: https://docs.docker.com/engine/install/
-   
+
    # Verify installation
    docker --version
    docker ps  # Should not error
@@ -48,7 +48,7 @@ Before you begin, ensure you have the following tools installed:
    curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
    chmod +x ./kind
    sudo mv ./kind /usr/local/bin/kind
-   
+
    # Verify installation
    kind version
    ```
@@ -59,7 +59,7 @@ Before you begin, ensure you have the following tools installed:
    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
    chmod +x kubectl
    sudo mv kubectl /usr/local/bin/
-   
+
    # Verify installation
    kubectl version --client
    ```
@@ -68,7 +68,7 @@ Before you begin, ensure you have the following tools installed:
    ```bash
    # Install Helm 3
    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-   
+
    # Verify installation
    helm version
    ```

@@ -283,6 +283,7 @@ mod tests {
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 read_pool_endpoint: None,
                 resource_meta: None,
             },
@@ -393,6 +394,7 @@ mod tests {
             forensic_snapshot: None,
             read_pool_endpoint: None,
             resource_meta: None,
+            label_propagation: None,
         }
     }
 }

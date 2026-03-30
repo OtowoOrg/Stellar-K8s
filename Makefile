@@ -1,4 +1,4 @@
-.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart
+.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart
 
 # Default target
 .DEFAULT_GOAL := help
@@ -70,6 +70,16 @@ quick: fmt-check ## Quick pre-commit check
 	@$(CARGO) check --workspace
 	@echo "✓ Quick checks passed"
 
+pre-commit: ## Run pre-commit hooks manually
+	@echo "→ Running pre-commit hooks..."
+	@command -v pre-commit >/dev/null 2>&1 || (echo "✗ pre-commit not installed. Run: make dev-setup" && exit 1)
+	@pre-commit run --all-files
+
+pre-commit-install: ## Install pre-commit hooks
+	@command -v pre-commit >/dev/null 2>&1 || pip install pre-commit
+	pre-commit install
+	pre-commit install --hook-type pre-push
+
 clean: ## Clean build artifacts
 	$(CARGO) clean
 
@@ -117,6 +127,9 @@ dev-setup: ## Setup dev environment
 	rustup default stable
 	rustup component add clippy rustfmt
 	cargo install cargo-audit cargo-watch
+	@command -v pre-commit >/dev/null 2>&1 || pip install pre-commit
+	pre-commit install
+	pre-commit install --hook-type pre-push
 
 watch: ## Watch and rebuild
 	cargo watch -x check -x test -x build
@@ -141,6 +154,11 @@ benchmark-webhook-save: ## Save current results as baseline
 	@./benchmarks/run-webhook-benchmark.sh save-baseline
 
 benchmark-all: benchmark benchmark-webhook ## Run all benchmarks
+
+benchmark-upgrade: ## Run upgrade load test with k6
+	@echo "→ Running upgrade load test..."
+	@command -v k6 >/dev/null 2>&1 || (echo "✗ k6 not installed. Install: https://k6.io/docs/get-started/installation/" && exit 1)
+	cd benchmarks && k6 run k6/upgrade-load-test.js
 
 run-local: build ## Run locally
 	RUST_LOG=info ./target/release/stellar-operator

@@ -514,6 +514,7 @@ mod tests {
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 read_pool_endpoint: None,
                 resource_meta: None,
             },

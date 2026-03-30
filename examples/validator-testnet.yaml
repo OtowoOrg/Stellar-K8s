@@ -1,0 +1,39 @@
+# validator-testnet.yaml
+# Lightweight example of a Stellar Core Validator node for the Testnet.
+# Useful for development, testing, and CI environments.
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-testnet
+  namespace: stellar
+spec:
+  # 'Validator' runs stellar-core synchronously with the network.
+  nodeType: Validator
+
+  # 'Testnet' uses the SDF Test Network passphrase and default archives.
+  network: Testnet
+
+  version: "v21.0.0"
+
+  # Balanced resources for a Testnet workload.
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+
+  storage:
+    storageClass: "standard"
+    # Testnet ledger is significantly smaller than Mainnet.
+    size: "100Gi"
+    # 'Delete' automatically cleans up the PVC when the resource is deleted.
+    retentionPolicy: Delete
+
+  validatorConfig:
+    # Seed secret for the Testnet validator.
+    seedSecretRef: "validator-seed-testnet"
+    # Enable history archiving for full sync capabilities.
+    enableHistoryArchive: true

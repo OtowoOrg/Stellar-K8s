@@ -61,9 +61,11 @@ mod stellar_node_spec_validation {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            custom_network_passphrase: None,
         }
     }
 
@@ -113,9 +115,11 @@ mod stellar_node_spec_validation {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            custom_network_passphrase: None,
         }
     }
 
@@ -165,9 +169,11 @@ mod stellar_node_spec_validation {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            custom_network_passphrase: None,
         }
     }
 
@@ -753,7 +759,8 @@ mod stellar_node_spec_validation {
     #[test]
     fn test_validator_custom_network_passes() {
         let mut spec = valid_validator_spec();
-        spec.network = StellarNetwork::Custom("My Private Network".to_string());
+        spec.network = StellarNetwork::Custom;
+        spec.custom_network_passphrase = Some("My Private Network".to_string());
         assert!(spec.validate().is_ok());
     }
 

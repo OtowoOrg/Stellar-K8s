@@ -2,272 +2,1840 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: stellarnodes.stellar.org
-  labels:
-    app.kubernetes.io/name: stellar-operator
-    app.kubernetes.io/instance: stellar-operator
-    app.kubernetes.io/version: "0.1.0"
-    app.kubernetes.io/managed-by: helm
 spec:
   group: stellar.org
   names:
+    categories: []
     kind: StellarNode
-    listKind: StellarNodeList
     plural: stellarnodes
-    singular: stellarnode
     shortNames:
-      - sn
+    - sn
+    singular: stellarnode
   scope: Namespaced
   versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              required:
-                - nodeType
-                - network
-                - version
-              properties:
-                nodeType:
-                  type: string
-                  enum: [Validator, Horizon, SorobanRpc]
-                  description: Type of Stellar node to deploy
-                network:
-                  type: string
-                  description: Target Stellar network
-                version:
-                  type: string
-                  description: Container image version
-                replicas:
-                  type: integer
-                  minimum: 0
-                  default: 1
-                  description: Number of replicas (RPC nodes only)
-                suspended:
-                  type: boolean
-                  default: false
-                  description: Suspend the node without deleting resources
-                podAntiAffinity:
-                  type: string
-                  enum: [Hard, Soft, Disabled]
-                  default: Hard
-                  description: >
-                    Controls default pod anti-affinity for pods sharing the same stellar-network label.
-                    Hard uses requiredDuringScheduling; Soft uses preferredDuringScheduling; Disabled skips pod anti-affinity.
-                resources:
-                  type: object
-                  properties:
-                    requests:
-                      type: object
-                      properties:
-                        cpu:
-                          type: string
-                        memory:
-                          type: string
-                    limits:
-                      type: object
-                      properties:
-                        cpu:
-                          type: string
-                        memory:
-                          type: string
-                storage:
-                  type: object
-                  properties:
-                    storageClass:
-                      type: string
-                    size:
-                      type: string
-                    retentionPolicy:
-                      type: string
-                      enum: [Delete, Retain]
-                      default: Delete
-                    annotations:
-                      type: object
-                      additionalProperties:
-                        type: string
-                      description: Optional annotations to apply to the PersistentVolumeClaim (useful for storage-class specific parameters like volumeBindingMode)
-                      nullable: true
-                validatorConfig:
-                  type: object
-                  properties:
-                    seedSecretRef:
-                      type: string
-                    quorumSet:
-                      type: string
-                    enableHistoryArchive:
-                      type: boolean
-                    historyArchiveUrls:
-                      type: array
-                      items:
-                        type: string
-                    catchupComplete:
-                      type: boolean
-                    seedSecretSource:
-                      type: object
-                      description: Typed seed source; exactly one of localRef, externalRef, csiRef, vaultRef.
-                      properties:
-                        localRef:
-                          type: object
-                          x-kubernetes-preserve-unknown-fields: true
-                        externalRef:
-                          type: object
-                          x-kubernetes-preserve-unknown-fields: true
-                        csiRef:
-                          type: object
-                          x-kubernetes-preserve-unknown-fields: true
-                        vaultRef:
-                          type: object
-                          properties:
-                            role:
-                              type: string
-                            secretPath:
-                              type: string
-                            secretKey:
-                              type: string
-                              nullable: true
-                            secretFileName:
-                              type: string
-                              nullable: true
-                            template:
-                              type: string
-                              nullable: true
-                            restartOnSecretRotation:
-                              type: boolean
-                            extraPodAnnotations:
-                              type: array
-                              items:
-                                type: object
-                                properties:
-                                  name:
-                                    type: string
-                                  value:
-                                    type: string
-                horizonConfig:
-                  type: object
-                  properties:
-                    databaseSecretRef:
-                      type: string
-                    enableIngest:
-                      type: boolean
-                    stellarCoreUrl:
-                      type: string
-                    ingestWorkers:
-                      type: integer
-                    enableExperimentalIngestion:
-                      type: boolean
-                sorobanConfig:
-                  type: object
-                  properties:
-                    stellarCoreUrl:
-                      type: string
-                    captiveCoreConfig:
-                      type: string
-                    enablePreflight:
-                      type: boolean
-                    maxEventsPerRequest:
-                      type: integer
-                serviceConfig:
-                  type: object
-                  properties:
-                    peerNodePort:
-                      type: integer
-                      minimum: 30000
-                      maximum: 32767
-                      description: NodePort for peer connections (validators only)
-                    httpNodePort:
-                      type: integer
-                      minimum: 30000
-                      maximum: 32767
-                      description: NodePort for HTTP API access
-                snapshotSchedule:
-                  type: object
-                  description: Schedule and options for CSI VolumeSnapshots of the node data PVC (Validator only).
-                  properties:
-                    schedule:
-                      type: string
-                      description: Cron expression for scheduled snapshots (e.g. "0 2 * * *" for daily at 2 AM). If unset, snapshots only on annotation stellar.org/request-snapshot=true.
-                    volumeSnapshotClassName:
-                      type: string
-                      description: VolumeSnapshotClass name. If unset, default class for the driver is used.
-                    flushBeforeSnapshot:
-                      type: boolean
-                      default: false
-                      description: If true, attempt to flush/lock the Stellar DB briefly before creating the snapshot.
-                    retentionCount:
-                      type: integer
-                      format: int32
-                      default: 0
-                      description: Max snapshots to retain per node. 0 means no limit.
-                restoreFromSnapshot:
-                  type: object
-                  description: Bootstrap this node from an existing VolumeSnapshot (Validator only). PVC is created from the snapshot.
-                  properties:
-                    volumeSnapshotName:
-                      type: string
-                      description: Name of the VolumeSnapshot to restore from (same namespace as StellarNode).
-                    namespace:
-                      type: string
-                      description: Optional namespace of the VolumeSnapshot (CrossNamespaceVolumeDataSource).
-            status:
-              type: object
-              properties:
-                phase:
-                  type: string
-                message:
-                  type: string
-                observedGeneration:
-                  type: integer
-                  format: int64
-                conditions:
-                  type: array
-                  items:
-                    type: object
+  - additionalPrinterColumns:
+    - jsonPath: .spec.nodeType
+      name: Type
+      type: string
+    - jsonPath: .spec.network
+      name: Network
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .spec.replicas
+      name: Replicas
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for StellarNodeSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              alerting:
+                default: false
+                type: boolean
+              autoscaling:
+                description: Horizontal Pod Autoscaling configuration
+                nullable: true
+                properties:
+                  behavior:
+                    description: Scaling behavior configuration for HPA
+                    nullable: true
                     properties:
-                      type:
+                      scaleDown:
+                        description: Scaling policy
+                        nullable: true
+                        properties:
+                          policies:
+                            items:
+                              description: Individual HPA policy
+                              properties:
+                                periodSeconds:
+                                  format: int32
+                                  type: integer
+                                policyType:
+                                  type: string
+                                value:
+                                  format: int32
+                                  type: integer
+                              required:
+                              - periodSeconds
+                              - policyType
+                              - value
+                              type: object
+                            type: array
+                          stabilizationWindowSeconds:
+                            format: int32
+                            nullable: true
+                            type: integer
+                        type: object
+                      scaleUp:
+                        description: Scaling policy
+                        nullable: true
+                        properties:
+                          policies:
+                            items:
+                              description: Individual HPA policy
+                              properties:
+                                periodSeconds:
+                                  format: int32
+                                  type: integer
+                                policyType:
+                                  type: string
+                                value:
+                                  format: int32
+                                  type: integer
+                              required:
+                              - periodSeconds
+                              - policyType
+                              - value
+                              type: object
+                            type: array
+                          stabilizationWindowSeconds:
+                            format: int32
+                            nullable: true
+                            type: integer
+                        type: object
+                    type: object
+                  customMetrics:
+                    items:
+                      type: string
+                    type: array
+                  maxReplicas:
+                    format: int32
+                    type: integer
+                  minReplicas:
+                    format: int32
+                    type: integer
+                  targetCpuUtilizationPercentage:
+                    format: int32
+                    nullable: true
+                    type: integer
+                required:
+                - maxReplicas
+                - minReplicas
+                type: object
+              crossCluster:
+                description: Cross-cluster configuration for multi-cluster federation
+                nullable: true
+                properties:
+                  autoDiscovery:
+                    default: false
+                    type: boolean
+                  enabled:
+                    default: false
+                    type: boolean
+                  externalName:
+                    description: ExternalName service configuration
+                    nullable: true
+                    properties:
+                      createExternalNameServices:
+                        default: true
+                        type: boolean
+                      dnsProvider:
+                        nullable: true
                         type: string
-                      status:
+                      externalDnsName:
                         type: string
-                      lastTransitionTime:
+                      ttl:
+                        default: 300
+                        format: uint32
+                        minimum: 0.0
+                        type: integer
+                    required:
+                    - externalDnsName
+                    type: object
+                  healthCheck:
+                    description: Health check configuration for cross-cluster peers
+                    nullable: true
+                    properties:
+                      enabled:
+                        default: true
+                        type: boolean
+                      failureThreshold:
+                        default: 3
+                        format: uint32
+                        minimum: 0.0
+                        type: integer
+                      intervalSeconds:
+                        default: 30
+                        format: uint32
+                        minimum: 0.0
+                        type: integer
+                      latencyMeasurement:
+                        description: Latency measurement configuration
+                        nullable: true
+                        properties:
+                          enabled:
+                            default: true
+                            type: boolean
+                          method:
+                            default: ping
+                            description: Method for measuring cross-cluster latency
+                            enum:
+                            - ping
+                            - tcp
+                            - http
+                            - grpc
+                            type: string
+                          percentile:
+                            default: 95
+                            format: uint8
+                            minimum: 0.0
+                            type: integer
+                          sampleCount:
+                            default: 10
+                            format: uint32
+                            minimum: 0.0
+                            type: integer
+                        type: object
+                      successThreshold:
+                        default: 1
+                        format: uint32
+                        minimum: 0.0
+                        type: integer
+                      timeoutSeconds:
+                        default: 5
+                        format: uint32
+                        minimum: 0.0
+                        type: integer
+                    type: object
+                  latencyThresholdMs:
+                    default: 200
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                  mode:
+                    default: serviceMesh
+                    description: Cross-cluster networking mode
+                    enum:
+                    - serviceMesh
+                    - externalName
+                    - directIP
+                    type: string
+                  peerClusters:
+                    items:
+                      description: Peer cluster configuration
+                      properties:
+                        clusterId:
+                          type: string
+                        enabled:
+                          default: true
+                          type: boolean
+                        endpoint:
+                          type: string
+                        latencyThresholdMs:
+                          format: uint32
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        port:
+                          format: uint16
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        priority:
+                          default: 100
+                          format: uint32
+                          minimum: 0.0
+                          type: integer
+                        region:
+                          nullable: true
+                          type: string
+                      required:
+                      - clusterId
+                      - endpoint
+                      type: object
+                    type: array
+                  serviceMesh:
+                    description: Service mesh configuration for cross-cluster networking
+                    nullable: true
+                    properties:
+                      clusterSetId:
+                        nullable: true
                         type: string
-                      reason:
+                      meshType:
+                        description: Supported service mesh types for cross-cluster networking
+                        enum:
+                        - submariner
+                        - istio
+                        - linkerd
+                        - cilium
+                        type: string
+                      mtlsEnabled:
+                        default: true
+                        type: boolean
+                      serviceExport:
+                        description: Service export configuration
+                        nullable: true
+                        properties:
+                          enabled:
+                            default: true
+                            type: boolean
+                          namespace:
+                            nullable: true
+                            type: string
+                          serviceName:
+                            nullable: true
+                            type: string
+                          targetClusters:
+                            items:
+                              type: string
+                            type: array
+                        type: object
+                      trafficPolicy:
+                        default: localPreferred
+                        description: Traffic policy for cross-cluster routing
+                        enum:
+                        - localPreferred
+                        - global
+                        - localOnly
+                        - latencyBased
+                        type: string
+                    required:
+                    - meshType
+                    type: object
+                type: object
+              customNetworkPassphrase:
+                nullable: true
+                type: string
+              cveHandling:
+                description: CVE handling configuration for automated patching Enables scanning for vulnerabilities and automatic rollout of patched versions
+                nullable: true
+                properties:
+                  canaryPassRateThreshold:
+                    default: 100.0
+                    format: double
+                    type: number
+                  canaryTestTimeoutSecs:
+                    default: 300
+                    format: uint64
+                    minimum: 0.0
+                    type: integer
+                  consensusHealthThreshold:
+                    default: 0.95
+                    format: double
+                    type: number
+                  criticalOnly:
+                    default: false
+                    type: boolean
+                  enableAutoRollback:
+                    default: true
+                    type: boolean
+                  enabled:
+                    default: true
+                    type: boolean
+                  scanIntervalSecs:
+                    default: 3600
+                    format: uint64
+                    minimum: 0.0
+                    type: integer
+                type: object
+              database:
+                description: External database configuration for managed Postgres databases
+                nullable: true
+                properties:
+                  secretKeyRef:
+                    description: Reference to a key within a Kubernetes Secret
+                    properties:
+                      key:
+                        type: string
+                      name:
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                required:
+                - secretKeyRef
+                type: object
+              dbMaintenanceConfig:
+                description: Database maintenance configuration for automated vacuum and reindexing Enables periodic maintenance windows for performance optimization
+                nullable: true
+                properties:
+                  autoReindex:
+                    default: true
+                    description: Automatically reindex bloated tables
+                    type: boolean
+                  bloatThresholdPercent:
+                    default: 30
+                    description: 'Bloat threshold percentage to trigger VACUUM FULL (default: 30)'
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                  enabled:
+                    default: true
+                    description: Enable automated database maintenance
+                    type: boolean
+                  readPoolCoordination:
+                    default: true
+                    description: Coordination with read-pool for zero-downtime
+                    type: boolean
+                  windowDuration:
+                    description: Maintenance window duration (e.g., "2h")
+                    type: string
+                  windowStart:
+                    description: Maintenance window start time (24h format, e.g., "02:00") Maintenance will only trigger during this window
+                    type: string
+                required:
+                - windowDuration
+                - windowStart
+                type: object
+              drConfig:
+                description: Configuration for multi-cluster disaster recovery
+                nullable: true
+                properties:
+                  drillSchedule:
+                    description: Configuration for automated DR drill scheduling
+                    nullable: true
+                    properties:
+                      autoRollback:
+                        default: true
+                        description: Whether to automatically rollback after drill completion
+                        type: boolean
+                      dryRun:
+                        default: false
+                        description: Whether to actually perform failover or just simulate it (dry-run)
+                        type: boolean
+                      rollbackDelaySeconds:
+                        default: 60
+                        description: Rollback delay after drill completion (seconds)
+                        format: uint32
+                        minimum: 0.0
+                        type: integer
+                      schedule:
+                        description: Cron expression for drill scheduling (e.g., "0 2 * * 0" for weekly Sunday 2 AM)
+                        type: string
+                      timeoutSeconds:
+                        default: 300
+                        description: Maximum time to wait for failover to complete (seconds)
+                        format: uint32
+                        minimum: 0.0
+                        type: integer
+                    required:
+                    - schedule
+                    type: object
+                  enabled:
+                    default: false
+                    type: boolean
+                  failoverDns:
+                    description: ExternalDNS configuration
+                    nullable: true
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        nullable: true
+                        type: object
+                      hostname:
+                        type: string
+                      provider:
+                        nullable: true
+                        type: string
+                      ttl:
+                        default: 300
+                        format: uint32
+                        minimum: 0.0
+                        type: integer
+                    required:
+                    - hostname
+                    type: object
+                  healthCheckInterval:
+                    default: 30
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                  peerClusterId:
+                    type: string
+                  role:
+                    description: Role of a node in a DR configuration
+                    enum:
+                    - primary
+                    - standby
+                    type: string
+                  syncStrategy:
+                    default: consensus
+                    description: Synchronization strategy for hot standby nodes
+                    enum:
+                    - consensus
+                    - peertracking
+                    - archivesync
+                    type: string
+                required:
+                - peerClusterId
+                - role
+                type: object
+              forensicSnapshot:
+                description: 'Forensic snapshot: set `metadata.annotations["stellar.org/request-forensic-snapshot"]="true"` to trigger a one-shot capture (PCAP, optional core dump) uploaded to S3.'
+                nullable: true
+                properties:
+                  credentialsSecretRef:
+                    description: Secret in the same namespace with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` when not using IRSA/instance roles.
+                    nullable: true
+                    type: string
+                  enableShareProcessNamespace:
+                    default: false
+                    description: 'Set `shareProcessNamespace: true` on validator pods so the capture container can see `stellar-core` for core dumps (recommended for forensic workflows).'
+                    type: boolean
+                  kmsKeyId:
+                    description: Optional KMS key id for SSE-KMS (`aws s3 cp --sse aws:kms`).
+                    nullable: true
+                    type: string
+                  s3Bucket:
+                    description: Target S3 bucket for the encrypted forensic tarball.
+                    type: string
+                  s3Prefix:
+                    nullable: true
+                    type: string
+                required:
+                - s3Bucket
+                type: object
+              globalDiscovery:
+                description: Global discovery configuration for cross-cluster discovery
+                nullable: true
+                properties:
+                  enabled:
+                    default: false
+                    type: boolean
+                  externalDns:
+                    description: ExternalDNS configuration
+                    nullable: true
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        nullable: true
+                        type: object
+                      hostname:
+                        type: string
+                      provider:
+                        nullable: true
+                        type: string
+                      ttl:
+                        default: 300
+                        format: uint32
+                        minimum: 0.0
+                        type: integer
+                    required:
+                    - hostname
+                    type: object
+                  priority:
+                    default: 100
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                  region:
+                    nullable: true
+                    type: string
+                  serviceMesh:
+                    description: Service mesh integration configuration
+                    nullable: true
+                    properties:
+                      meshType:
+                        description: Supported service mesh implementations
+                        enum:
+                        - istio
+                        - linkerd
+                        - consul
+                        type: string
+                      mtlsMode:
+                        default: PERMISSIVE
+                        description: mTLS enforcement mode
+                        enum:
+                        - DISABLE
+                        - PERMISSIVE
+                        - STRICT
+                        type: string
+                      sidecarInjection:
+                        default: true
+                        type: boolean
+                      virtualServiceHost:
+                        nullable: true
+                        type: string
+                    required:
+                    - meshType
+                    type: object
+                  topologyAwareHints:
+                    default: false
+                    type: boolean
+                  zone:
+                    nullable: true
+                    type: string
+                type: object
+              historyMode:
+                default: Recent
+                description: History mode for the node
+                enum:
+                - Full
+                - Recent
+                type: string
+              horizonConfig:
+                description: Horizon API server configuration
+                nullable: true
+                properties:
+                  autoMigration:
+                    default: true
+                    type: boolean
+                  databaseSecretRef:
+                    type: string
+                  enableExperimentalIngestion:
+                    default: false
+                    type: boolean
+                  enableIngest:
+                    default: true
+                    type: boolean
+                  ingestWorkers:
+                    default: 1
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                  stellarCoreUrl:
+                    type: string
+                required:
+                - databaseSecretRef
+                - stellarCoreUrl
+                type: object
+              ingress:
+                description: Ingress configuration
+                nullable: true
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    nullable: true
+                    type: object
+                  certManagerClusterIssuer:
+                    nullable: true
+                    type: string
+                  certManagerIssuer:
+                    nullable: true
+                    type: string
+                  className:
+                    nullable: true
+                    type: string
+                  hosts:
+                    items:
+                      description: Ingress host entry
+                      properties:
+                        host:
+                          type: string
+                        paths:
+                          default:
+                          - path: /
+                            pathType: Prefix
+                          items:
+                            description: Ingress path mapping
+                            properties:
+                              path:
+                                type: string
+                              pathType:
+                                default: Prefix
+                                nullable: true
+                                type: string
+                            required:
+                            - path
+                            type: object
+                          type: array
+                      required:
+                      - host
+                      type: object
+                    type: array
+                  tlsSecretName:
+                    nullable: true
+                    type: string
+                required:
+                - hosts
+                type: object
+              loadBalancer:
+                description: Load balancer configuration for external access (e.g. MetalLB)
+                nullable: true
+                properties:
+                  addressPool:
+                    nullable: true
+                    type: string
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    nullable: true
+                    type: object
+                  bgp:
+                    description: BGP configuration for MetalLB anycast routing
+                    nullable: true
+                    properties:
+                      advertisement:
+                        description: BGP advertisement configuration
+                        nullable: true
+                        properties:
+                          aggregationLength:
+                            default: 32
+                            format: uint8
+                            minimum: 0.0
+                            type: integer
+                          aggregationLengthV6:
+                            default: 128
+                            format: uint8
+                            minimum: 0.0
+                            type: integer
+                          localPref:
+                            format: uint32
+                            minimum: 0.0
+                            nullable: true
+                            type: integer
+                          nodeSelectors:
+                            additionalProperties:
+                              type: string
+                            nullable: true
+                            type: object
+                        type: object
+                      bfdEnabled:
+                        default: false
+                        type: boolean
+                      bfdProfile:
+                        nullable: true
+                        type: string
+                      communities:
+                        items:
+                          type: string
+                        type: array
+                      largeCommunities:
+                        items:
+                          type: string
+                        type: array
+                      localAsn:
+                        format: uint32
+                        minimum: 0.0
+                        type: integer
+                      nodeSelectors:
+                        additionalProperties:
+                          type: string
+                        nullable: true
+                        type: object
+                      peers:
+                        items:
+                          description: BGP peer router configuration
+                          properties:
+                            address:
+                              type: string
+                            asn:
+                              format: uint32
+                              minimum: 0.0
+                              type: integer
+                            ebgpMultiHop:
+                              default: false
+                              type: boolean
+                            gracefulRestart:
+                              default: true
+                              type: boolean
+                            holdTime:
+                              default: 90
+                              format: uint32
+                              minimum: 0.0
+                              type: integer
+                            keepaliveTime:
+                              default: 30
+                              format: uint32
+                              minimum: 0.0
+                              type: integer
+                            passwordSecretRef:
+                              description: Reference to a key within a Kubernetes Secret
+                              nullable: true
+                              properties:
+                                key:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              type: object
+                            port:
+                              default: 179
+                              format: uint16
+                              minimum: 0.0
+                              type: integer
+                            routerId:
+                              nullable: true
+                              type: string
+                            sourceAddress:
+                              nullable: true
+                              type: string
+                          required:
+                          - address
+                          - asn
+                          type: object
+                        type: array
+                    required:
+                    - localAsn
+                    type: object
+                  enabled:
+                    default: false
+                    type: boolean
+                  externalTrafficPolicy:
+                    default: Cluster
+                    description: External traffic policy for LoadBalancer services
+                    enum:
+                    - Cluster
+                    - Local
+                    type: string
+                  healthCheckEnabled:
+                    default: true
+                    type: boolean
+                  healthCheckPort:
+                    default: 9100
+                    format: int32
+                    type: integer
+                  loadBalancerIp:
+                    nullable: true
+                    type: string
+                  mode:
+                    default: L2
+                    description: Load balancer mode selection
+                    enum:
+                    - L2
+                    - BGP
+                    type: string
+                type: object
+              maintenanceMode:
+                default: false
+                type: boolean
+              managedDatabase:
+                description: Configuration for managed High-Availability Postgres clusters via CloudNativePG
+                nullable: true
+                properties:
+                  backup:
+                    description: Backup configuration for managed databases using Barman
+                    nullable: true
+                    properties:
+                      credentialsSecretRef:
+                        type: string
+                      destinationPath:
+                        type: string
+                      enabled:
+                        default: true
+                        type: boolean
+                      retentionPolicy:
+                        default: 30d
+                        type: string
+                    required:
+                    - credentialsSecretRef
+                    - destinationPath
+                    type: object
+                  instances:
+                    default: 3
+                    format: int32
+                    type: integer
+                  pooling:
+                    description: pgBouncer connection pooling configuration
+                    nullable: true
+                    properties:
+                      defaultPoolSize:
+                        default: 20
+                        format: int32
+                        type: integer
+                      enabled:
+                        default: true
+                        type: boolean
+                      maxClientConn:
+                        default: 1000
+                        format: int32
+                        type: integer
+                      poolMode:
+                        default: transaction
+                        description: pgBouncer pooling modes
+                        enum:
+                        - session
+                        - transaction
+                        - statement
+                        type: string
+                      replicas:
+                        default: 2
+                        format: int32
+                        type: integer
+                    type: object
+                  postgresVersion:
+                    default: '16'
+                    type: string
+                  storage:
+                    description: Storage configuration for persistent data
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        nullable: true
+                        type: object
+                      mode:
+                        default: PersistentVolume
+                        description: Storage mode for persistent data
+                        enum:
+                        - PersistentVolume
+                        - Local
+                        type: string
+                      nodeAffinity:
+                        description: Node affinity for local storage mode (optional)
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      retentionPolicy:
+                        default: Delete
+                        description: PVC retention policy on node deletion
+                        enum:
+                        - Delete
+                        - Retain
+                        type: string
+                      size:
+                        type: string
+                      storageClass:
+                        type: string
+                    required:
+                    - size
+                    - storageClass
+                    type: object
+                required:
+                - storage
+                type: object
+              maxUnavailable:
+                anyOf:
+                - type: integer
+                - type: string
+                description: IntOrString
+                x-kubernetes-int-or-string: true
+              minAvailable:
+                anyOf:
+                - type: integer
+                - type: string
+                description: IntOrString
+                x-kubernetes-int-or-string: true
+              network:
+                description: Target Stellar network
+                enum:
+                - mainnet
+                - testnet
+                - futurenet
+                - custom
+                type: string
+              networkPolicy:
+                description: Network Policy configuration
+                nullable: true
+                properties:
+                  allowCidrs:
+                    items:
+                      type: string
+                    type: array
+                  allowMetricsScrape:
+                    default: true
+                    type: boolean
+                  allowNamespaces:
+                    items:
+                      type: string
+                    type: array
+                  allowPodSelector:
+                    additionalProperties:
+                      type: string
+                    nullable: true
+                    type: object
+                  enabled:
+                    default: false
+                    type: boolean
+                  metricsNamespace:
+                    default: monitoring
+                    type: string
+                type: object
+              nodeType:
+                description: Supported Stellar node types
+                enum:
+                - Validator
+                - Horizon
+                - SorobanRpc
+                type: string
+              ociSnapshot:
+                description: OCI-based ledger snapshot sync for multi-region bootstrapping
+                nullable: true
+                properties:
+                  credentialSecretName:
+                    description: Name of a K8s Secret in the same namespace containing Docker registry credentials as `config.json` (standard `~/.docker/config.json` format).
+                    type: string
+                  enabled:
+                    default: false
+                    description: 'Whether the OCI snapshot feature is enabled (default: false)'
+                    type: boolean
+                  fixedTag:
+                    description: Fixed tag to use when `tag_strategy` is `Fixed` (e.g. `latest`)
+                    nullable: true
+                    type: string
+                  image:
+                    description: Image name within the registry, e.g. `myorg/stellar-snapshot`
+                    type: string
+                  pull:
+                    default: false
+                    description: 'Enable pulling a snapshot to bootstrap a new node''s PVC (default: false)'
+                    type: boolean
+                  pullImageRef:
+                    description: Image reference to pull from (full `registry/image:tag` string). Required when `pull = true`; if omitted the operator constructs the reference from `registry`, `image`, and `tag_strategy`.
+                    nullable: true
+                    type: string
+                  push:
+                    default: false
+                    description: 'Enable pushing snapshots to the registry (default: false)'
+                    type: boolean
+                  registry:
+                    description: OCI registry host, e.g. `ghcr.io` or `registry-1.docker.io`
+                    type: string
+                  tagStrategy:
+                    default: latestLedger
+                    description: Tag used when pushing/pulling the snapshot image. With `LatestLedger` the tag is `snapshot-<ledger_seq>`; with `Fixed` the literal `fixed_tag` value is used.
+                    enum:
+                    - latestLedger
+                    - fixed
+                    type: string
+                required:
+                - credentialSecretName
+                - image
+                - registry
+                type: object
+              podAntiAffinity:
+                default: Hard
+                description: When not `Disabled`, the operator adds default pod anti-affinity so pods with the same `stellar-network` label (and same component) are not co-located on one node.
+                enum:
+                - Hard
+                - Soft
+                - Disabled
+                type: string
+              readPoolEndpoint:
+                description: DNS endpoint for the read-replica pool Service.
+                nullable: true
+                type: string
+              readReplicaConfig:
+                description: Read replica pool configuration for horizontal scaling Enables creating read-only replicas with traffic routing strategies
+                nullable: true
+                properties:
+                  archiveSharding:
+                    default: false
+                    description: Enable history archive sharding When true, replicas serve different archives to balance bandwidth
+                    type: boolean
+                  replicas:
+                    default: 1
+                    description: Number of read-only replicas
+                    format: int32
+                    type: integer
+                  resources:
+                    default:
+                      limits:
+                        cpu: '2'
+                        memory: 4Gi
+                      requests:
+                        cpu: 500m
+                        memory: 1Gi
+                    description: Compute resource requirements for read replicas
+                    properties:
+                      limits:
+                        description: Resource specification for CPU and memory
+                        properties:
+                          cpu:
+                            type: string
+                          memory:
+                            type: string
+                        required:
+                        - cpu
+                        - memory
+                        type: object
+                      requests:
+                        description: Resource specification for CPU and memory
+                        properties:
+                          cpu:
+                            type: string
+                          memory:
+                            type: string
+                        required:
+                        - cpu
+                        - memory
+                        type: object
+                    required:
+                    - limits
+                    - requests
+                    type: object
+                  strategy:
+                    default: RoundRobin
+                    description: Load balancing strategy
+                    enum:
+                    - RoundRobin
+                    - FreshnessPreferred
+                    type: string
+                type: object
+              replicas:
+                default: 1
+                format: int32
+                type: integer
+              resources:
+                default:
+                  limits:
+                    cpu: '2'
+                    memory: 4Gi
+                  requests:
+                    cpu: 500m
+                    memory: 1Gi
+                description: Kubernetes-style resource requirements
+                properties:
+                  limits:
+                    description: Resource specification for CPU and memory
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - memory
+                    type: object
+                  requests:
+                    description: Resource specification for CPU and memory
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - memory
+                    type: object
+                required:
+                - limits
+                - requests
+                type: object
+              restoreFromSnapshot:
+                description: Bootstrap this node from an existing VolumeSnapshot instead of an empty volume (Validator only). The PVC will be created from the specified snapshot for near-instant startup.
+                nullable: true
+                properties:
+                  namespace:
+                    description: 'Optional: namespace of the VolumeSnapshot if different from the StellarNode. Requires CrossNamespaceVolumeDataSource where supported.'
+                    nullable: true
+                    type: string
+                  volumeSnapshotName:
+                    description: Name of the VolumeSnapshot to restore from (must exist in the same namespace as the StellarNode).
+                    type: string
+                required:
+                - volumeSnapshotName
+                type: object
+              serviceMesh:
+                description: Service mesh configuration (Istio/Linkerd) for mTLS and advanced traffic control
+                nullable: true
+                properties:
+                  istio:
+                    description: Istio-specific configuration
+                    nullable: true
+                    properties:
+                      circuitBreaker:
+                        description: Circuit breaker configuration for outlier detection
+                        nullable: true
+                        properties:
+                          consecutiveErrors:
+                            default: 5
+                            description: Number of consecutive errors before opening circuit
+                            format: uint32
+                            minimum: 0.0
+                            type: integer
+                          minRequestVolume:
+                            default: 10
+                            description: Minimum request volume before applying circuit breaking
+                            format: uint32
+                            minimum: 0.0
+                            type: integer
+                          timeWindowSecs:
+                            default: 30
+                            description: Time window in seconds for counting errors
+                            format: uint32
+                            minimum: 0.0
+                            type: integer
+                        type: object
+                      mtlsMode:
+                        default: STRICT
+                        description: mTLS mode (STRICT or PERMISSIVE)
+                        enum:
+                        - STRICT
+                        - PERMISSIVE
+                        type: string
+                      retries:
+                        description: Retry policy for failed requests
+                        nullable: true
+                        properties:
+                          backoffMs:
+                            default: 25
+                            description: Backoff duration in milliseconds
+                            format: uint32
+                            minimum: 0.0
+                            type: integer
+                          maxRetries:
+                            default: 3
+                            description: Maximum number of retries
+                            format: uint32
+                            minimum: 0.0
+                            type: integer
+                          retryableStatusCodes:
+                            default: []
+                            description: Retryable status codes (e.g., 503, 504)
+                            items:
+                              format: uint32
+                              minimum: 0.0
+                              type: integer
+                            type: array
+                        type: object
+                      timeoutSecs:
+                        default: 30
+                        description: VirtualService timeout in seconds
+                        format: uint32
+                        minimum: 0.0
+                        type: integer
+                    type: object
+                  linkerd:
+                    description: Linkerd-specific configuration
+                    nullable: true
+                    properties:
+                      autoMtls:
+                        default: true
+                        description: Enable automatic mTLS
+                        type: boolean
+                      policyMode:
+                        default: allow
+                        description: Policy mode (deny, audit, allow)
+                        type: string
+                    type: object
+                  sidecarInjection:
+                    default: true
+                    description: Enable sidecar injection for this node
+                    type: boolean
+                type: object
+              snapshotSchedule:
+                description: Schedule and options for taking CSI VolumeSnapshots of the node's data PVC (Validator only). Enables zero-downtime backups and creating new nodes from snapshots.
+                nullable: true
+                properties:
+                  flushBeforeSnapshot:
+                    default: false
+                    description: If true, the operator will attempt to flush/lock the Stellar database briefly before creating the snapshot (e.g. via stellar-core HTTP or exec). Requires the node to be healthy.
+                    type: boolean
+                  retentionCount:
+                    default: 0
+                    description: Maximum number of snapshots to retain per node. Oldest snapshots are deleted when exceeded. 0 means no limit.
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                  schedule:
+                    description: 'Cron expression for scheduled snapshots (e.g. "0 2 * * *" for daily at 2 AM). If unset, snapshots are only taken when triggered via annotation `stellar.org/request-snapshot: "true"`.'
+                    nullable: true
+                    type: string
+                  volumeSnapshotClassName:
+                    description: VolumeSnapshotClass name. If unset, the default class for the PVC's driver is used.
+                    nullable: true
+                    type: string
+                type: object
+              sorobanConfig:
+                description: Soroban RPC server configuration
+                nullable: true
+                properties:
+                  captiveCoreConfig:
+                    nullable: true
+                    type: string
+                  captiveCoreStructuredConfig:
+                    description: Captive Core configuration for Soroban RPC
+                    nullable: true
+                    properties:
+                      additionalConfig:
+                        nullable: true
+                        type: string
+                      historyArchiveUrls:
+                        default: []
+                        items:
+                          type: string
+                        type: array
+                      httpPort:
+                        format: uint16
+                        minimum: 0.0
+                        nullable: true
+                        type: integer
+                      logLevel:
+                        nullable: true
+                        type: string
+                      networkPassphrase:
+                        nullable: true
+                        type: string
+                      peerPort:
+                        format: uint16
+                        minimum: 0.0
+                        nullable: true
+                        type: integer
+                    type: object
+                  enablePreflight:
+                    default: true
+                    type: boolean
+                  maxEventsPerRequest:
+                    default: 10000
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                  stellarCoreUrl:
+                    type: string
+                required:
+                - stellarCoreUrl
+                type: object
+              storage:
+                default:
+                  mode: PersistentVolume
+                  retentionPolicy: Delete
+                  size: 100Gi
+                  storageClass: standard
+                description: Storage configuration for persistent data
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    nullable: true
+                    type: object
+                  mode:
+                    default: PersistentVolume
+                    description: Storage mode for persistent data
+                    enum:
+                    - PersistentVolume
+                    - Local
+                    type: string
+                  nodeAffinity:
+                    description: Node affinity for local storage mode (optional)
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  retentionPolicy:
+                    default: Delete
+                    description: PVC retention policy on node deletion
+                    enum:
+                    - Delete
+                    - Retain
+                    type: string
+                  size:
+                    type: string
+                  storageClass:
+                    type: string
+                required:
+                - size
+                - storageClass
+                type: object
+              strategy:
+                default:
+                  type: rollingUpdate
+                description: Rollout strategy for updates (RollingUpdate or Canary)
+                properties:
+                  canary:
+                    description: Configuration for Canary rollout
+                    nullable: true
+                    properties:
+                      checkIntervalSeconds:
+                        default: 300
+                        format: int32
+                        type: integer
+                      weight:
+                        default: 10
+                        format: int32
+                        type: integer
+                    type: object
+                  type:
+                    description: Rollout strategy type
+                    enum:
+                    - rollingUpdate
+                    - canary
+                    type: string
+                required:
+                - type
+                type: object
+              suspended:
+                default: false
+                type: boolean
+              topologySpreadConstraints:
+                items:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                type: array
+              validatorConfig:
+                description: Validator-specific configuration
+                nullable: true
+                properties:
+                  catchupComplete:
+                    default: false
+                    description: Node is in catchup mode (syncing historical data)
+                    type: boolean
+                  enableHistoryArchive:
+                    default: false
+                    description: Enable history archive for this validator
+                    type: boolean
+                  historyArchiveUrls:
+                    description: History archive URLs to fetch from
+                    items:
+                      type: string
+                    type: array
+                  hsmConfig:
+                    description: Cloud HSM configuration for secure key loading (optional)
+                    nullable: true
+                    properties:
+                      hsmCredentialsSecretRef:
+                        nullable: true
+                        type: string
+                      hsmIp:
+                        nullable: true
+                        type: string
+                      pkcs11LibPath:
+                        type: string
+                      provider:
+                        description: Supported HSM Providers
+                        enum:
+                        - AWS
+                        - Azure
+                        type: string
+                    required:
+                    - pkcs11LibPath
+                    - provider
+                    type: object
+                  keySource:
+                    default: secret
+                    description: Source of the validator seed (Secret or KMS)
+                    enum:
+                    - secret
+                    - kMS
+                    type: string
+                  kmsConfig:
+                    description: KMS configuration for fetching the validator seed
+                    nullable: true
+                    properties:
+                      fetcherImage:
+                        nullable: true
+                        type: string
+                      keyId:
+                        type: string
+                      provider:
+                        type: string
+                      region:
+                        nullable: true
+                        type: string
+                    required:
+                    - keyId
+                    - provider
+                    type: object
+                  quorumSet:
+                    description: Quorum set configuration as TOML string
+                    nullable: true
+                    type: string
+                  seedSecretRef:
+                    default: ''
+                    description: 'Secret name containing the validator seed (key: STELLAR_CORE_SEED) DEPRECATED: Use seed_secret_source for KMS/ESO/CSI-backed secrets in production'
+                    type: string
+                  seedSecretSource:
+                    description: 'Production seed source: ESO (AWS SM / GCP SM / Vault) or CSI Secret Store Driver. Takes precedence over seed_secret_ref when present.'
+                    nullable: true
+                    properties:
+                      csiRef:
+                        description: |-
+                          Secrets Store CSI Driver — **recommended for production**.
+
+                          Mounts the seed directly from a KMS/Vault into the pod filesystem via a CSI volume.  The seed is never written to etcd.  The controller injects `STELLAR_SEED_FILE` into the container pointing at the mount path; stellar-core reads the key from that file path.
+                        nullable: true
+                        properties:
+                          mountPath:
+                            default: /mnt/secrets/validator
+                            description: Directory inside the container where the CSI driver mounts secrets. Defaults to `/mnt/secrets/validator`.
+                            nullable: true
+                            type: string
+                          secretProviderClassName:
+                            description: Name of the `SecretProviderClass` CR (from secrets-store.csi.x-k8s.io) that defines which secrets to mount and from which provider.
+                            type: string
+                          seedFileName:
+                            default: seed
+                            description: File name within `mount_path` that contains the seed value. Defaults to `seed`.
+                            nullable: true
+                            type: string
+                        required:
+                        - secretProviderClassName
+                        type: object
+                      externalRef:
+                        description: |-
+                          External Secrets Operator — **recommended for production**.
+
+                          The operator creates an `ExternalSecret` CR which causes ESO to pull the seed from AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault, or any other supported backend and materialise it as a Kubernetes Secret in the same namespace.  The seed value is never stored in the CRD itself.
+                        nullable: true
+                        properties:
+                          name:
+                            description: Name of the `ExternalSecret` CR the operator will create/manage. Must be unique within the namespace.
+                            type: string
+                          refreshInterval:
+                            default: 1h
+                            description: How often ESO should re-sync the secret from the remote backend. Kubernetes duration string, e.g. `"1h"`, `"30m"`. Defaults to `"1h"` if not specified.
+                            nullable: true
+                            type: string
+                          remoteKey:
+                            description: |-
+                              Path / identifier of the secret in the remote backend.
+
+                              Examples: - AWS Secrets Manager: `"prod/stellar/validator-seed"` - GCP Secret Manager: `"projects/MY_PROJECT/secrets/stellar-validator-seed"` - HashiCorp Vault: `"secret/data/stellar/validator"`
+                            type: string
+                          remoteProperty:
+                            description: |-
+                              Property (field) inside the remote secret to extract.
+
+                              Required for secrets that store a JSON object (e.g., `{"seed": "S..."}`) and you only want the `seed` value.  Leave empty to use the whole secret value as the seed.
+                            nullable: true
+                            type: string
+                          secretStoreRef:
+                            description: Reference to the `SecretStore` or `ClusterSecretStore` that connects ESO to the remote backend (AWS SM, GCP SM, Vault, etc.).
+                            properties:
+                              kind:
+                                default: ClusterSecretStore
+                                description: |-
+                                  Kind of the store resource.
+
+                                  - `"SecretStore"` — namespaced store (only works within the same namespace) - `"ClusterSecretStore"` — cluster-wide store (recommended for production)
+                                type: string
+                              name:
+                                description: Name of the `SecretStore` / `ClusterSecretStore` resource.
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - name
+                        - remoteKey
+                        - secretStoreRef
+                        type: object
+                      localRef:
+                        description: |-
+                          Plain Kubernetes Secret — **development only**.
+
+                          Points to an existing `Secret` in the same namespace.  The secret must contain the key specified in `key` (defaults to `STELLAR_CORE_SEED`).
+                        nullable: true
+                        properties:
+                          key:
+                            default: STELLAR_CORE_SEED
+                            description: Key within the secret that holds the seed value. Defaults to `STELLAR_CORE_SEED` if not specified.
+                            nullable: true
+                            type: string
+                          name:
+                            description: Name of the `Secret` in the same namespace.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      vaultRef:
+                        description: |-
+                          HashiCorp Vault via the **Vault Agent Injector** (init + sidecar).
+
+                          Requires the Vault Agent Injector mutating webhook in the cluster. The operator sets standard `vault.hashicorp.com/*` pod annotations; the injector adds the Vault Agent containers and renders the secret file under `/vault/secrets/`.
+                        nullable: true
+                        properties:
+                          extraPodAnnotations:
+                            description: Additional `vault.hashicorp.com/*` or other pod annotations to merge.
+                            items:
+                              description: Key/value pair for extra Vault Agent pod annotations (CRD-friendly vs raw maps).
+                              properties:
+                                name:
+                                  type: string
+                                value:
+                                  type: string
+                              required:
+                              - name
+                              - value
+                              type: object
+                            type: array
+                          restartOnSecretRotation:
+                            default: false
+                            description: When true, the operator compares Vault secret-version annotations on pods and rolls the StatefulSet when the version changes after sync.
+                            type: boolean
+                          role:
+                            description: Vault Kubernetes auth role bound to this pod's ServiceAccount.
+                            type: string
+                          secretFileName:
+                            description: Base file name rendered under `/vault/secrets/` (default `stellar-seed`).
+                            nullable: true
+                            type: string
+                          secretKey:
+                            description: JSON field under `.Data.data` for KV v2 (default `seed`). Ignored if `template` is set.
+                            nullable: true
+                            type: string
+                          secretPath:
+                            description: Path passed to `vault.hashicorp.com/agent-inject-secret-<file>` (KV v1/v2 path as in Vault).
+                            type: string
+                          template:
+                            description: Custom Agent template; when set, overrides the default KV v2 template.
+                            nullable: true
+                            type: string
+                        required:
+                        - role
+                        - secretPath
+                        type: object
+                    type: object
+                  vlSource:
+                    description: Trusted source for Validator Selection List (VSL)
+                    nullable: true
+                    type: string
+                type: object
+              version:
+                type: string
+              vpaConfig:
+                description: VPA configuration
+                nullable: true
+                properties:
+                  containerPolicies:
+                    items:
+                      description: Per-container resource policy for the VPA
+                      properties:
+                        containerName:
+                          type: string
+                        maxAllowed:
+                          additionalProperties:
+                            type: string
+                          nullable: true
+                          type: object
+                        minAllowed:
+                          additionalProperties:
+                            type: string
+                          nullable: true
+                          type: object
+                      required:
+                      - containerName
+                      type: object
+                    type: array
+                  updateMode:
+                    default: Initial
+                    description: VPA update mode
+                    enum:
+                    - Initial
+                    - Auto
+                    type: string
+                type: object
+            required:
+            - maxUnavailable
+            - minAvailable
+            - network
+            - nodeType
+            - topologySpreadConstraints
+            - version
+            type: object
+          status:
+            description: |-
+              Status subresource for StellarNode
+
+              Reports the current state of the managed Stellar node using Kubernetes conventions. The operator continuously updates this status as the node progresses through its lifecycle.
+
+              # Node Phases
+
+              - `Pending` - Resource creation is queued but not started - `Creating` - Infrastructure (Pod, Service, etc.) is being created - `Running` - Pod is running but not yet synced - `Syncing` - Node is syncing blockchain data (validators) - `Ready` - Node is fully synced and operational - `Failed` - Node encountered an unrecoverable error - `Degraded` - Node is running but not fully healthy - `Remediating` - Operator is attempting to recover the node - `Terminating` - Node resources are being cleaned up
+            nullable: true
+            properties:
+              bgpStatus:
+                description: BGP advertisement status (when using BGP mode)
+                nullable: true
+                properties:
+                  activePeers:
+                    description: Number of active BGP peers
+                    format: int32
+                    type: integer
+                  advertisedPrefixes:
+                    description: Advertised IP prefixes
+                    items:
+                      type: string
+                    type: array
+                  lastUpdate:
+                    description: Last BGP update time
+                    nullable: true
+                    type: string
+                  sessionsEstablished:
+                    description: Whether BGP sessions are established
+                    type: boolean
+                required:
+                - activePeers
+                - sessionsEstablished
+                type: object
+              canaryReadyReplicas:
+                default: 0
+                description: Current number of ready canary replicas (for canary deployments)
+                format: int32
+                type: integer
+              canaryStartTime:
+                description: Timestamp when the canary was created (RFC3339)
+                nullable: true
+                type: string
+              canaryVersion:
+                description: Version deployed in the canary deployment (if active)
+                nullable: true
+                type: string
+              conditions:
+                description: |-
+                  Readiness conditions following Kubernetes conventions
+
+                  Standard conditions include: - Ready: True when all sub-resources are healthy and the node is operational - Progressing: True when the node is being created, updated, or syncing - Degraded: True when the node is operational but experiencing issues
+                items:
+                  description: Condition for status reporting
+                  properties:
+                    lastTransitionTime:
+                      type: string
+                    message:
+                      type: string
+                    observedGeneration:
+                      format: int64
+                      nullable: true
+                      type: integer
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              drStatus:
+                description: Status of the cross-region disaster recovery setup (if enabled)
+                nullable: true
+                properties:
+                  currentRole:
+                    description: Role of a node in a DR configuration
+                    enum:
+                    - primary
+                    - standby
+                    nullable: true
+                    type: string
+                  failoverActive:
+                    type: boolean
+                  lastDrillResult:
+                    description: Result of a DR drill execution
+                    nullable: true
+                    properties:
+                      applicationAvailability:
+                        description: Whether application remained available during drill
+                        type: boolean
+                      completedAt:
+                        description: Timestamp when drill completed
+                        nullable: true
                         type: string
                       message:
+                        description: Human-readable message about drill result
                         type: string
-                ledgerSequence:
-                  type: integer
-                  format: int64
-                endpoint:
-                  type: string
-                readyReplicas:
-                  type: integer
-                replicas:
-                  type: integer
-                vaultObservedSecretVersion:
-                  type: string
-                  description: Last Vault secret version observed for rotation-driven rollouts.
-                forensicSnapshotPhase:
-                  type: string
-                  description: Phase of forensic snapshot (Capturing, Complete, Failed).
-      subresources:
-        status: {}
-      additionalPrinterColumns:
-        - name: Type
-          type: string
-          jsonPath: .spec.nodeType
-        - name: Network
-          type: string
-          jsonPath: .spec.network
-        - name: Replicas
-          type: integer
-          jsonPath: .spec.replicas
-        - name: Phase
-          type: string
-          jsonPath: .status.phase
-        - name: Age
-          type: date
-          jsonPath: .metadata.creationTimestamp
+                      standbyTakeoverSuccess:
+                        description: Whether standby successfully took over
+                        type: boolean
+                      startedAt:
+                        description: Timestamp when drill started
+                        type: string
+                      status:
+                        description: Drill execution status
+                        enum:
+                        - pending
+                        - running
+                        - success
+                        - failed
+                        - rolledback
+                        type: string
+                      timeToRecoveryMs:
+                        description: Time to recovery in milliseconds
+                        format: uint64
+                        minimum: 0.0
+                        nullable: true
+                        type: integer
+                    required:
+                    - applicationAvailability
+                    - message
+                    - standbyTakeoverSuccess
+                    - startedAt
+                    - status
+                    type: object
+                  lastDrillTime:
+                    nullable: true
+                    type: string
+                  lastPeerContact:
+                    nullable: true
+                    type: string
+                  peerHealth:
+                    nullable: true
+                    type: string
+                  syncLag:
+                    format: uint64
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
+                required:
+                - failoverActive
+                type: object
+              endpoint:
+                description: Endpoint where the node is accessible (Service ClusterIP or external)
+                nullable: true
+                type: string
+              externalIp:
+                description: External load balancer IP assigned by MetalLB
+                nullable: true
+                type: string
+              forensicSnapshotPhase:
+                description: Phase of the last forensic snapshot request (`Pending`, `Capturing`, `Complete`, `Failed`).
+                nullable: true
+                type: string
+              lastMigratedVersion:
+                description: Version of the database schema after last successful migration
+                nullable: true
+                type: string
+              ledgerSequence:
+                description: 'For validators: current ledger sequence number'
+                format: uint64
+                minimum: 0.0
+                nullable: true
+                type: integer
+              ledgerUpdatedAt:
+                description: Timestamp of the last ledger update (RFC3339)
+                nullable: true
+                type: string
+              message:
+                description: Human-readable message about current state
+                nullable: true
+                type: string
+              observedGeneration:
+                description: Observed generation for status sync detection
+                format: int64
+                nullable: true
+                type: integer
+              phase:
+                description: |-
+                  Current phase of the node lifecycle (Pending, Creating, Running, Syncing, Ready, Failed, Degraded, Remediating, Terminating)
+
+                  DEPRECATED: Use the conditions array instead. This field is maintained for backward compatibility and will be removed in a future version. The phase is now derived from the conditions.
+                type: string
+              quorumAnalysisTimestamp:
+                description: Timestamp of last quorum analysis (RFC3339)
+                nullable: true
+                type: string
+              quorumFragility:
+                description: Quorum fragility score (0.0 = resilient, 1.0 = fragile) Only populated for validator nodes
+                format: double
+                nullable: true
+                type: number
+              readyReplicas:
+                default: 0
+                description: Current number of ready replicas
+                format: int32
+                type: integer
+              replicas:
+                default: 0
+                description: Total number of desired replicas
+                format: int32
+                type: integer
+              vaultObservedSecretVersion:
+                description: Last observed Vault secret version annotation (for rotation-driven rollouts).
+                nullable: true
+                type: string
+            required:
+            - phase
+            type: object
+        required:
+        - spec
+        title: StellarNode
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

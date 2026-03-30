@@ -20,7 +20,7 @@ impl BloatDetector {
         // Standard bloat estimation query for Postgres
         let query = r#"
             SELECT
-              current_database(), schemaname, relname, 
+              current_database(), schemaname, relname,
               ROUND(CASE WHEN otta=0 THEN 0 ELSE sml.relpages/otta::numeric END,1) AS tbloat
             FROM (
               SELECT

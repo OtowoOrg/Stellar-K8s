@@ -1,0 +1,16 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: ApprovedRegistries
+metadata:
+  name: stellarnode-approved-registries
+spec:
+  match:
+    kinds:
+      - apiGroups: ["stellar.org"]
+        kinds: ["StellarNode"]
+    excludedNamespaces:
+      - stellar
+  parameters:
+    allowed_registries:
+      - "docker.io/stellar"
+      - "ghcr.io/stellar"
+      - "registry.stellar.org"

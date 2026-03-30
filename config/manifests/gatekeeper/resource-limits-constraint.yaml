@@ -1,0 +1,16 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: ResourceLimits
+metadata:
+  name: stellarnode-resource-limits
+spec:
+  match:
+    kinds:
+      - apiGroups:
+          - "stellar.org"
+        kinds:
+          - StellarNode
+    excludedNamespaces:
+      - stellar
+  parameters:
+    max_cpu: "4"
+    max_memory: "8Gi"

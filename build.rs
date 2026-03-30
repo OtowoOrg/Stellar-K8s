@@ -48,7 +48,13 @@ fn index_docs() {
 
     // Files to index
     let dirs = ["docs"];
-    let root_files = ["README.md", "CONTRIBUTING.md", "DEVELOPMENT.md", "SECURITY.md", "CHANGELOG.md"];
+    let root_files = [
+        "README.md",
+        "CONTRIBUTING.md",
+        "DEVELOPMENT.md",
+        "SECURITY.md",
+        "CHANGELOG.md",
+    ];
 
     for dir in dirs {
         for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {

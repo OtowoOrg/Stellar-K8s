@@ -10,6 +10,9 @@ repository = "https://github.com/stellar/stellar-k8s"
 [dependencies]
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 toml = "0.8"
+# Glob pattern matching for label propagation filters
+glob = "0.3"
+
 # Kubernetes client and operator framework
 kube = { version = "0.94", features = [
     "runtime",
@@ -145,6 +148,7 @@ tokio-test = "0.4"
 tempfile = "3"
 wiremock = "0.6"
 wat = "1.245"
+proptest = "1"
 
 [[bin]]
 name = "stellar-operator"

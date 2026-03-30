@@ -90,6 +90,7 @@ mod tests {
                     linkerd: None,
                 }),
                 forensic_snapshot: None,
+                label_propagation: None,
                 read_pool_endpoint: None,
                 resource_meta: None,
             },

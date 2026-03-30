@@ -56,6 +56,8 @@ enum Commands {
     PruneArchive(PruneArchiveArgs),
     /// Show difference between desired and live cluster state
     Diff(DiffArgs),
+    /// Generate a troubleshooting runbook for a StellarNode
+    GenerateRunbook(GenerateRunbookArgs),
     /// Local simulator (kind/k3s + operator + demo validators)
     Simulator(SimulatorCli),
     /// Generate shell completion scripts
@@ -189,6 +191,40 @@ struct InfoArgs {
     /// Example: --namespace stellar-system
     #[arg(long, env = "OPERATOR_NAMESPACE", default_value = "default")]
     namespace: String,
+}
+
+#[derive(Parser, Debug)]
+#[command(
+    about = "Generate a troubleshooting runbook for a StellarNode",
+    long_about = "Generates a context-aware troubleshooting runbook tailored to the specific\n\
+        configuration of a deployed StellarNode. The runbook includes:\n\n\
+        - Exact kubectl commands to fetch logs from specific containers\n\
+        - KMS key status checks if KMS is configured\n\
+        - S3/GCS CLI commands to verify archive buckets if archiving is enabled\n\
+        - Network information and expected peer connections based on quorum set\n\
+        - Resource and storage troubleshooting steps\n\n\
+        EXAMPLES:\n  \
+        stellar-operator generate-runbook my-validator -n stellar\n  \
+        stellar-operator generate-runbook my-validator -n stellar -o runbook.md\n  \
+        stellar-operator generate-runbook my-validator -n stellar | less"
+)]
+struct GenerateRunbookArgs {
+    /// Name of the StellarNode resource
+    node_name: String,
+
+    /// Kubernetes namespace containing the StellarNode
+    ///
+    /// Env: OPERATOR_NAMESPACE
+    ///
+    /// Example: --namespace stellar-system
+    #[arg(short, long, env = "OPERATOR_NAMESPACE", default_value = "default")]
+    namespace: String,
+
+    /// Output file path (optional, defaults to stdout)
+    ///
+    /// Example: --output runbook.md
+    #[arg(short, long)]
+    output: Option<String>,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -333,6 +369,9 @@ async fn main() -> Result<(), Error> {
         }
         Commands::Diff(diff_args) => {
             return diff(diff_args).await;
+        }
+        Commands::GenerateRunbook(runbook_args) => {
+            return run_generate_runbook(runbook_args).await;
         }
     }
 }
@@ -715,6 +754,42 @@ async fn run_info(args: InfoArgs) -> Result<(), Error> {
         }
 
         println!();
+    }
+
+    Ok(())
+}
+
+async fn run_generate_runbook(args: GenerateRunbookArgs) -> Result<(), Error> {
+    use kube::Client;
+    use kube::api::Api;
+    use stellar_k8s::runbook::generate_runbook;
+
+    // Create Kubernetes client
+    let client = Client::try_default()
+        .await
+        .map_err(|e| Error::ConfigError(format!("Failed to create Kubernetes client: {e}")))?;
+
+    // Get the StellarNode resource
+    let api: Api<stellar_k8s::crd::StellarNode> = Api::namespaced(client, &args.namespace);
+    let node = api
+        .get(&args.node_name)
+        .await
+        .map_err(|e| Error::NotFound {
+            kind: "StellarNode".to_string(),
+            name: args.node_name.clone(),
+            namespace: args.namespace.clone(),
+        })?;
+
+    // Generate the runbook
+    let runbook = generate_runbook(&node)?;
+
+    // Output to file or stdout
+    if let Some(output_path) = args.output {
+        std::fs::write(&output_path, &runbook)
+            .map_err(|e| Error::IoError(e))?;
+        println!("Runbook generated successfully: {}", output_path);
+    } else {
+        println!("{}", runbook);
     }
 
     Ok(())

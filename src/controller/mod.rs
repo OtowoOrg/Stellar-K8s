@@ -1,7 +1,54 @@
 //! Controller module for StellarNode reconciliation
+//!
 //! This module contains the main controller loop, reconciliation logic,
 //! and resource management for Stellar nodes.
+//!
+//! # Overview
+//!
+//! The controller implements the Kubernetes Operator pattern, continuously
+//! watching StellarNode resources and reconciling their desired state with
+//! the actual cluster state. It handles:
+//!
+//! - **Reconciliation**: Applying desired state changes to Deployments, StatefulSets, Services, etc.
+//! - **Health Monitoring**: Checking node health and sync status
+//! - **Lifecycle Management**: Finalizers for clean resource cleanup
+//! - **Leader Election**: Ensuring only one operator instance reconciles at a time
+//! - **Remediation**: Automatic recovery from common failure modes
+//! - **Archive Management**: History archive integrity and pruning
+//! - **Disaster Recovery**: Backup and restore automation
+//! - **Service Mesh Integration**: Istio and Linkerd support
+//! - **CVE Patching**: Automatic security updates
+//! - **Blue/Green Deployments**: Zero-downtime RPC node updates
+//! - **Metrics**: Prometheus metrics for observability
+//!
+//! # Key Types
+//!
+//! - [`reconciler::ControllerState`] - Shared state for the reconciliation loop
+//! - [`reconciler::run_controller`] - Main entry point for the controller
+//! - [`health::HealthCheckResult`] - Node health status
+//! - [`archive_health::ArchiveHealthResult`] - Archive integrity status
+//! - [`remediation::RemediationLevel`] - Severity of remediation actions
+//! - [`blue_green::BlueGreenStatus`] - Blue/Green deployment status
+//!
+//! # Reconciliation Flow
+//!
+//! 1. Watch for StellarNode resource changes
+//! 2. Acquire leader lease (if leader election enabled)
+//! 3. Validate node specification
+//! 4. Create/update Kubernetes resources (Deployments, Services, PVCs, etc.)
+//! 5. Monitor health and sync status
+//! 6. Apply remediation if needed
+//! 7. Update node status with conditions
+//! 8. Requeue for periodic reconciliation
+//!
+//! # Finalizers
+//!
+//! The controller uses Kubernetes finalizers to ensure clean cleanup:
+//! - Removes PVCs if retention policy is `Delete`
+//! - Cleans up associated resources (Services, ConfigMaps, etc.)
+//! - Removes finalizer only after successful cleanup
 
+pub mod blue_green;
 pub mod feature_flags;
 pub mod maintenance;
 pub mod resource_meta;
@@ -58,6 +105,10 @@ mod vsl;
 pub use archive_health::{
     calculate_backoff, check_archive_integrity, check_history_archive_health, ArchiveHealthResult,
     ArchiveIntegrityResult, ARCHIVE_LAG_THRESHOLD,
+};
+pub use blue_green::{
+    cleanup_blue_deployment, create_green_deployment, rollback_to_blue, run_smoke_tests,
+    switch_traffic_to_green, wait_for_green_ready, BlueGreenConfig, BlueGreenStatus,
 };
 pub use cross_cluster::{check_peer_latency, ensure_cross_cluster_services, PeerLatencyStatus};
 pub use cve_reconciler::reconcile_cve_patches;

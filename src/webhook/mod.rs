@@ -10,7 +10,23 @@
 //! - **Plugin Management**: Load, unload, and manage validation plugins
 //! - **Security**: Resource limits, fuel metering, and integrity verification
 //!
-//! # Example
+//! # Architecture
+//!
+//! The webhook server:
+//! 1. Receives admission review requests from Kubernetes API server
+//! 2. Loads and executes WASM plugins in a sandboxed runtime
+//! 3. Collects validation results from all plugins
+//! 4. Returns admission response (allow/deny) to Kubernetes
+//!
+//! # Plugin Development
+//!
+//! Plugins are WASM modules that implement custom validation logic:
+//! - Validate quorum set configurations
+//! - Enforce organizational policies
+//! - Check resource constraints
+//! - Verify network connectivity
+//!
+//! # Example: Creating a Plugin
 //!
 //! ```rust,ignore
 //! use stellar_k8s::webhook::{WasmRuntime, WebhookServer, PluginConfig, PluginMetadata};

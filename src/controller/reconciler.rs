@@ -102,7 +102,8 @@ pub struct ControllerState {
     /// Handle to reload the tracing filter
     pub log_reload_handle: Handle<EnvFilter, Registry>,
     /// Optional expiration time for a temporary log level change
-    pub log_level_expires_at: std::sync::Arc<tokio::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>>,
+    pub log_level_expires_at:
+        std::sync::Arc<tokio::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>>,
 }
 
 impl ControllerState {
@@ -141,12 +142,14 @@ impl ControllerState {
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     let client = Client::try_default().await?;
+///     let env_filter = tracing_subscriber::EnvFilter::from_default_env();
+///     let (_layer, reload_handle) = tracing_subscriber::reload::Layer::new(env_filter);
 ///     let state = Arc::new(ControllerState {
 ///         client,
 ///         enable_mtls: false,
-///         mtls_config: None,
 ///         operator_namespace: "stellar-operator".to_string(),
 ///         watch_namespace: None,
+///         mtls_config: None,
 ///         dry_run: false,
 ///         is_leader: Arc::new(AtomicBool::new(true)),
 ///         event_reporter: kube::runtime::events::Reporter {
@@ -156,6 +159,8 @@ impl ControllerState {
 ///         operator_config: Arc::new(Default::default()),
 ///         reconcile_id_counter: AtomicU64::new(0),
 ///         last_reconcile_success: Arc::new(AtomicU64::new(0)),
+///         log_reload_handle: reload_handle,
+///         log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
 ///     });
 ///     run_controller(state).await?;
 ///     Ok(())
@@ -171,11 +176,8 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
 
     info!(
         "Starting StellarNode controller (mode: {})",
-        if state.watch_namespace.is_some() {
-            format!(
-                "namespace-scoped: {}",
-                state.watch_namespace.as_ref().unwrap()
-            )
+        if let Some(ns) = &state.watch_namespace {
+            format!("namespace-scoped: {}", ns)
         } else {
             "cluster-scoped".to_string()
         }

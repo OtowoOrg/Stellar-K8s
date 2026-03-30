@@ -48,11 +48,17 @@ fn index_docs() {
 
     // Files to index
     let dirs = ["docs"];
-    let root_files = ["README.md", "CONTRIBUTING.md", "DEVELOPMENT.md", "SECURITY.md", "CHANGELOG.md"];
+    let root_files = [
+        "README.md",
+        "CONTRIBUTING.md",
+        "DEVELOPMENT.md",
+        "SECURITY.md",
+        "CHANGELOG.md",
+    ];
 
     for dir in dirs {
         for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
-            if entry.path().extension().map_or(false, |ext| ext == "md") {
+            if entry.path().extension().is_some_and(|ext| ext == "md") {
                 if let Some(doc) = process_file(entry.path(), root) {
                     docs.push(doc);
                 }

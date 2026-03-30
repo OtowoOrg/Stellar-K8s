@@ -297,7 +297,7 @@ pub struct ForensicSnapshotConfig {
 }
 
 /// Validator-specific configuration
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidatorConfig {
     /// Secret name containing the validator seed (key: STELLAR_CORE_SEED)
@@ -370,7 +370,7 @@ impl ValidatorConfig {
 }
 
 /// Configuration for Hardware Security Module (HSM) integration
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct HsmConfig {
     pub provider: HsmProvider,
@@ -382,8 +382,9 @@ pub struct HsmConfig {
 }
 
 /// Supported HSM Providers
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum HsmProvider {
+    #[default]
     AWS,
     Azure,
 }
@@ -398,7 +399,7 @@ pub enum KeySource {
 }
 
 /// Configuration for cloud-native KMS or Vault
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct KmsConfig {
     pub key_id: String,
@@ -410,7 +411,7 @@ pub struct KmsConfig {
 }
 
 /// Horizon API server configuration
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct HorizonConfig {
     pub database_secret_ref: String,
@@ -434,7 +435,7 @@ fn default_ingest_workers() -> u32 {
 }
 
 /// Captive Core configuration for Soroban RPC
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptiveCoreConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -452,7 +453,7 @@ pub struct CaptiveCoreConfig {
 }
 
 /// Soroban RPC server configuration
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SorobanConfig {
     pub stellar_core_url: String,
@@ -1448,6 +1449,28 @@ pub enum PgBouncerPoolMode {
     #[default]
     Transaction,
     Statement,
+}
+
+// ============================================================================
+// NAT Traversal Configuration
+// ============================================================================
+
+/// Configuration for NAT traversal (STUN/TURN/ICE) for P2P networking.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NatTraversalConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stun_server: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_server: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_credentials_secret_ref: Option<String>,
+    #[serde(default = "default_true")]
+    pub enable_ice: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sidecar_image: Option<String>,
 }
 
 // ============================================================================

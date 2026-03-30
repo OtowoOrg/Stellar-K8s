@@ -36,7 +36,6 @@ use kube::api::{Api, DeleteParams, Patch, PatchParams, PostParams};
 use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
-use crate::scheduler::scoring::extract_peer_names_from_toml;
 use crate::crd::types::PodAntiAffinityStrength;
 use crate::crd::{
     BackupConfiguration, BarmanObjectStore, BootstrapConfiguration, Cluster, ClusterSpec,
@@ -47,6 +46,7 @@ use crate::crd::{
     WalBackupConfiguration,
 };
 use crate::error::{Error, Result};
+use crate::scheduler::scoring::extract_peer_names_from_toml;
 
 /// Get the standard labels for a StellarNode's resources
 pub(crate) fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
@@ -309,7 +309,7 @@ pub async fn ensure_config_map(
     Ok(())
 }
 
-fn build_config_map(
+pub(crate) fn build_config_map(
     node: &StellarNode,
     quorum_override: Option<crate::controller::vsl::QuorumSet>,
     enable_mtls: bool,
@@ -1398,6 +1398,73 @@ fn build_pod_template(
                     });
                 }
             }
+        }
+    }
+
+    // Add NAT traversal sidecar
+    if let Some(nat_cfg) = &node.spec.nat_traversal {
+        if nat_cfg.enabled {
+            let mut env = vec![EnvVar {
+                name: "ENABLE_ICE".to_string(),
+                value: Some(nat_cfg.enable_ice.to_string()),
+                ..Default::default()
+            }];
+
+            if let Some(stun) = &nat_cfg.stun_server {
+                env.push(EnvVar {
+                    name: "STUN_SERVER".to_string(),
+                    value: Some(stun.clone()),
+                    ..Default::default()
+                });
+            }
+
+            if let Some(turn) = &nat_cfg.turn_server {
+                env.push(EnvVar {
+                    name: "TURN_SERVER".to_string(),
+                    value: Some(turn.clone()),
+                    ..Default::default()
+                });
+            }
+
+            if let Some(secret_ref) = &nat_cfg.turn_credentials_secret_ref {
+                env.push(EnvVar {
+                    name: "TURN_USERNAME".to_string(),
+                    value: None,
+                    value_from: Some(EnvVarSource {
+                        secret_key_ref: Some(SecretKeySelector {
+                            name: Some(secret_ref.clone()),
+                            key: "username".to_string(),
+                            optional: Some(false),
+                        }),
+                        ..Default::default()
+                    }),
+                });
+                env.push(EnvVar {
+                    name: "TURN_PASSWORD".to_string(),
+                    value: None,
+                    value_from: Some(EnvVarSource {
+                        secret_key_ref: Some(SecretKeySelector {
+                            name: Some(secret_ref.clone()),
+                            key: "password".to_string(),
+                            optional: Some(false),
+                        }),
+                        ..Default::default()
+                    }),
+                });
+            }
+
+            let sidecar_image = nat_cfg
+                .sidecar_image
+                .clone()
+                .unwrap_or_else(|| "stellar/nat-traversal:latest".to_string());
+
+            let containers = &mut pod_spec.containers;
+            containers.push(Container {
+                name: "nat-traversal".to_string(),
+                image: Some(sidecar_image),
+                env: Some(env),
+                ..Default::default()
+            });
         }
     }
 
@@ -2553,7 +2620,7 @@ pub(crate) fn build_service_for_test(node: &StellarNode) -> k8s_openapi::api::co
 mod ensure_pvc_tests {
     use super::{build_pvc, pvc_needs_update, resolve_pvc_storage_class};
     use crate::crd::{
-        types::{ResourceRequirements, ResourceSpec, StorageConfig, StorageMode},
+        types::{ResourceRequirements, ResourceSpec, StorageMode},
         NodeType, StellarNetwork, StellarNode, StellarNodeSpec,
     };
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
@@ -2570,7 +2637,6 @@ mod ensure_pvc_tests {
                 node_type: NodeType::Validator,
                 network: StellarNetwork::Testnet,
                 version: "v21.0.0".to_string(),
-                history_mode: Default::default(),
                 resources: ResourceRequirements {
                     requests: ResourceSpec {
                         cpu: "500m".to_string(),
@@ -2581,39 +2647,8 @@ mod ensure_pvc_tests {
                         memory: "4Gi".to_string(),
                     },
                 },
-                storage: StorageConfig::default(),
-                validator_config: None,
-                horizon_config: None,
-                soroban_config: None,
                 replicas: 1,
-                min_available: None,
-                max_unavailable: None,
-                suspended: false,
-                alerting: false,
-                database: None,
-                managed_database: None,
-                autoscaling: None,
-                vpa_config: None,
-                ingress: None,
-                load_balancer: None,
-                global_discovery: None,
-                cross_cluster: None,
-                strategy: Default::default(),
-                maintenance_mode: false,
-                network_policy: None,
-                dr_config: None,
-                pod_anti_affinity: Default::default(),
-                topology_spread_constraints: None,
-                cve_handling: None,
-                snapshot_schedule: None,
-                restore_from_snapshot: None,
-                read_replica_config: None,
-                read_pool_endpoint: None,
-                db_maintenance_config: None,
-                oci_snapshot: None,
-                service_mesh: None,
-                forensic_snapshot: None,
-                resource_meta: None,
+                ..Default::default()
             },
             status: None,
         }

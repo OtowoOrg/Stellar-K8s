@@ -5,10 +5,9 @@ use std::sync::Arc;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
     Json,
 };
-use chrono::{DateTime, Utc, Duration};
+use chrono::{Duration, Utc};
 use kube::{api::Api, ResourceExt};
 use tracing::{error, instrument};
 
@@ -29,6 +28,10 @@ pub async fn get_search_index() -> axum::response::Response {
         .body(axum::body::Body::from(SEARCH_INDEX_JSON))
         .unwrap()
 }
+
+/// Health endpoint
+#[instrument]
+pub async fn health() -> impl axum::response::IntoResponse {
     Json(HealthResponse {
         status: "healthy".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -191,7 +194,7 @@ pub async fn set_log_level(
     }
 
     Ok(Json(LogLevelResponse {
-        current_level: req.level,
+        current_level: req.level.clone(),
         expires_at,
         message: format!("Log level set to {}", req.level),
     }))
@@ -199,21 +202,20 @@ pub async fn set_log_level(
 
 /// Get the current log level and expiration
 #[instrument(skip(state), fields(node_name = "-", namespace = %state.operator_namespace, reconcile_id = "-"))]
-pub async fn get_log_level(
-    State(state): State<Arc<ControllerState>>,
-) -> Json<LogLevelResponse> {
+pub async fn get_log_level(State(state): State<Arc<ControllerState>>) -> Json<LogLevelResponse> {
     let expires_at = *state.log_level_expires_at.lock().await;
-    
+
     // We can't easily get the current level string from the handle without a bit of work,
-    // so we'll just return what we have in the response if possible, 
+    // so we'll just return what we have in the response if possible,
     // or just return "unknown" for the level if we don't track it explicitly.
     // For now, let's just return the expiration info.
-    
+
     Json(LogLevelResponse {
         current_level: "unknown".to_string(), // tracing-subscriber Handle doesn't expose current filter easily
         expires_at,
         message: "Current log level status".to_string(),
     })
+}
 
 /// /healthz - basic liveness signal; always 200 if the process is up.
 pub async fn healthz() -> Json<ProbeResponse> {

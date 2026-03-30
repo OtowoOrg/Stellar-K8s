@@ -439,8 +439,8 @@ pub async fn is_snapshot_job_done(
 mod tests {
     use super::*;
     use crate::crd::{
-        HistoryMode, NodeType, OciSnapshotConfig, ResourceRequirements, RolloutStrategy,
-        StellarNetwork, StellarNode, StellarNodeSpec, StorageConfig, TagStrategy, ValidatorConfig,
+        HistoryMode, NodeType, OciSnapshotConfig, ResourceRequirements, StellarNetwork,
+        StellarNode, StellarNodeSpec, StorageConfig, TagStrategy, ValidatorConfig,
     };
 
     fn test_cfg(tag_strategy: TagStrategy, fixed_tag: Option<&str>) -> OciSnapshotConfig {
@@ -484,37 +484,8 @@ mod tests {
                     vl_source: None,
                     hsm_config: None,
                 }),
-                horizon_config: None,
-                soroban_config: None,
                 replicas: 1,
-                min_available: None,
-                max_unavailable: None,
-                suspended: false,
-                alerting: false,
-                database: None,
-                managed_database: None,
-                autoscaling: None,
-                vpa_config: None,
-                ingress: None,
-                load_balancer: None,
-                global_discovery: None,
-                cross_cluster: None,
-                strategy: RolloutStrategy::default(),
-                maintenance_mode: false,
-                network_policy: None,
-                dr_config: None,
-                pod_anti_affinity: Default::default(),
-                topology_spread_constraints: None,
-                cve_handling: None,
-                snapshot_schedule: None,
-                restore_from_snapshot: None,
-                read_replica_config: None,
-                db_maintenance_config: None,
-                oci_snapshot: None,
-                service_mesh: None,
-                forensic_snapshot: None,
-                read_pool_endpoint: None,
-                resource_meta: None,
+                ..Default::default()
             },
             status: None,
         }

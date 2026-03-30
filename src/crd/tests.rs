@@ -7,8 +7,7 @@
 mod stellar_node_spec_validation {
     use crate::crd::{
         AutoscalingConfig, HorizonConfig, IngressConfig, IngressHost, IngressPath, NodeType,
-        ResourceRequirements, ResourceSpec, SorobanConfig, SpecValidationError, StellarNetwork,
-        StellarNodeSpec, StorageConfig, ValidatorConfig,
+        SorobanConfig, SpecValidationError, StellarNetwork, StellarNodeSpec, ValidatorConfig,
     };
 
     /// Helper to create a minimal valid StellarNodeSpec for a Validator
@@ -17,52 +16,11 @@ mod stellar_node_spec_validation {
             node_type: NodeType::Validator,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
-            history_mode: Default::default(),
-            resources: default_resources(),
-            storage: default_storage(),
             validator_config: Some(ValidatorConfig {
                 seed_secret_ref: "validator-seed".to_string(),
-                seed_secret_source: Default::default(),
-                quorum_set: None,
-                enable_history_archive: false,
-                history_archive_urls: vec![],
-                catchup_complete: false,
-                key_source: Default::default(),
-                kms_config: None,
-                vl_source: None,
-                hsm_config: None,
+                ..Default::default()
             }),
-            horizon_config: None,
-            soroban_config: None,
-            replicas: 1,
-            min_available: None,
-            max_unavailable: None,
-            suspended: false,
-            alerting: false,
-            database: None,
-            managed_database: None,
-            autoscaling: None,
-            ingress: None,
-            load_balancer: None,
-            global_discovery: None,
-            cross_cluster: None,
-            strategy: Default::default(),
-            maintenance_mode: false,
-            network_policy: None,
-            dr_config: None,
-            pod_anti_affinity: Default::default(),
-            topology_spread_constraints: None,
-            cve_handling: None,
-            snapshot_schedule: None,
-            restore_from_snapshot: None,
-            read_replica_config: None,
-            db_maintenance_config: None,
-            oci_snapshot: None,
-            service_mesh: None,
-            forensic_snapshot: None,
-            resource_meta: None,
-            vpa_config: None,
-            read_pool_endpoint: None,
+            ..Default::default()
         }
     }
 
@@ -72,48 +30,14 @@ mod stellar_node_spec_validation {
             node_type: NodeType::Horizon,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
-            history_mode: Default::default(),
-            resources: default_resources(),
-            storage: default_storage(),
-            validator_config: None,
             horizon_config: Some(HorizonConfig {
                 database_secret_ref: "horizon-db".to_string(),
                 enable_ingest: true,
                 stellar_core_url: "http://stellar-core:11626".to_string(),
-                ingest_workers: 1,
-                enable_experimental_ingestion: false,
-                auto_migration: false,
+                ..Default::default()
             }),
-            soroban_config: None,
             replicas: 2,
-            min_available: None,
-            max_unavailable: None,
-            suspended: false,
-            alerting: false,
-            database: None,
-            managed_database: None,
-            autoscaling: None,
-            ingress: None,
-            load_balancer: None,
-            global_discovery: None,
-            cross_cluster: None,
-            strategy: Default::default(),
-            maintenance_mode: false,
-            network_policy: None,
-            dr_config: None,
-            pod_anti_affinity: Default::default(),
-            topology_spread_constraints: None,
-            cve_handling: None,
-            snapshot_schedule: None,
-            restore_from_snapshot: None,
-            read_replica_config: None,
-            db_maintenance_config: None,
-            oci_snapshot: None,
-            service_mesh: None,
-            forensic_snapshot: None,
-            resource_meta: None,
-            vpa_config: None,
-            read_pool_endpoint: None,
+            ..Default::default()
         }
     }
 
@@ -123,70 +47,11 @@ mod stellar_node_spec_validation {
             node_type: NodeType::SorobanRpc,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
-            history_mode: Default::default(),
-            resources: default_resources(),
-            storage: default_storage(),
-            validator_config: None,
-            horizon_config: None,
             soroban_config: Some(SorobanConfig {
                 stellar_core_url: "http://stellar-core:11626".to_string(),
-                #[allow(deprecated)]
-                captive_core_config: None,
-                captive_core_structured_config: None,
-                enable_preflight: true,
-                max_events_per_request: 10000,
+                ..Default::default()
             }),
             replicas: 2,
-            min_available: None,
-            max_unavailable: None,
-            suspended: false,
-            alerting: false,
-            database: None,
-            managed_database: None,
-            autoscaling: None,
-            ingress: None,
-            load_balancer: None,
-            global_discovery: None,
-            cross_cluster: None,
-            strategy: Default::default(),
-            maintenance_mode: false,
-            network_policy: None,
-            dr_config: None,
-            pod_anti_affinity: Default::default(),
-            topology_spread_constraints: None,
-            cve_handling: None,
-            snapshot_schedule: None,
-            restore_from_snapshot: None,
-            read_replica_config: None,
-            db_maintenance_config: None,
-            oci_snapshot: None,
-            service_mesh: None,
-            forensic_snapshot: None,
-            resource_meta: None,
-            vpa_config: None,
-            read_pool_endpoint: None,
-        }
-    }
-
-    fn default_resources() -> ResourceRequirements {
-        ResourceRequirements {
-            requests: ResourceSpec {
-                cpu: "500m".to_string(),
-                memory: "1Gi".to_string(),
-            },
-            limits: ResourceSpec {
-                cpu: "2".to_string(),
-                memory: "4Gi".to_string(),
-            },
-        }
-    }
-
-    fn default_storage() -> StorageConfig {
-        StorageConfig {
-            storage_class: "standard".to_string(),
-            size: "100Gi".to_string(),
-            retention_policy: Default::default(),
-            annotations: None,
             ..Default::default()
         }
     }

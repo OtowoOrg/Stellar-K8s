@@ -161,3 +161,6 @@ path = "src/kubectl_plugin.rs"
 [[bin]]
 name = "stellar-completions"
 path = "src/bin/completions.rs"
+
+[workspace]
+

@@ -244,9 +244,7 @@ async fn run(cli: Cli) -> Result<()> {
             explain::explain_error(&error_code);
             Ok(())
         }
-        Commands::Search { query, full } => {
-            search_docs(&query, full)
-        }
+        Commands::Search { query, full } => search_docs(&query, full),
         Commands::Completions { shell } => {
             use clap::CommandFactory;
             use clap_complete::generate;
@@ -807,41 +805,8 @@ mod tests {
                 node_type,
                 network: StellarNetwork::Testnet,
                 version: "v21.0.0".to_string(),
-                history_mode: Default::default(),
                 replicas: 1,
-                resources: Default::default(),
-                storage: Default::default(),
-                validator_config: None,
-                horizon_config: None,
-                soroban_config: None,
-                min_available: None,
-                max_unavailable: None,
-                suspended: false,
-                alerting: false,
-                database: None,
-                managed_database: None,
-                autoscaling: None,
-                vpa_config: None,
-                ingress: None,
-                load_balancer: None,
-                global_discovery: None,
-                cross_cluster: None,
-                snapshot_schedule: None,
-                restore_from_snapshot: None,
-                strategy: Default::default(),
-                maintenance_mode: false,
-                network_policy: None,
-                dr_config: None,
-                pod_anti_affinity: Default::default(),
-                topology_spread_constraints: None,
-                cve_handling: None,
-                read_replica_config: None,
-                db_maintenance_config: None,
-                oci_snapshot: None,
-                service_mesh: None,
-                forensic_snapshot: None,
-                resource_meta: None,
-                read_pool_endpoint: None,
+                ..Default::default()
             },
             status: Some(StellarNodeStatus {
                 #[allow(deprecated)]

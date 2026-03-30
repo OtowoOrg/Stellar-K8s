@@ -83,6 +83,10 @@ pub enum Error {
     /// SQLx error
     #[error("[SK8S-018] SQL error: {0}")]
     SqlxError(#[from] sqlx::Error),
+
+    /// Kubeconfig error
+    #[error("[SK8S-019] Kubeconfig error: {0}")]
+    KubeconfigError(#[from] kube::config::KubeconfigError),
 }
 
 /// Result type alias for operator operations
@@ -126,6 +130,7 @@ impl Error {
             Error::IoError(e) => format!("[SK8S-016] I/O error: {e}"),
             Error::MaintenanceError(msg) => format!("[SK8S-017] Database maintenance error: {msg}"),
             Error::SqlxError(e) => format!("[SK8S-018] SQL error: {e}"),
+            Error::KubeconfigError(e) => format!("[SK8S-019] Kubeconfig error: {e}"),
         }
     }
 }
@@ -146,22 +151,22 @@ mod tests {
         // Test that kube errors are correctly mapped to our internal Error type.
         // We use wiremock to create realistic kube::Error instances and verify
         // they are properly converted via the #[from] attribute.
-        
+
         // Note: kube::Error variants (Api, SerdeError, BuildRequest, etc.) are
         // converted to Error::KubeError automatically via #[from].
         // This test verifies the conversion preserves error information.
-        
+
         // Test with a SerdeError variant (easiest to construct for testing)
         let kube_serde_err = kube::Error::SerdeError(
-            serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err()
+            serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err(),
         );
-        
+
         // Convert to our error type
         let our_err = Error::from(kube_serde_err);
-        
+
         // Verify it's mapped to Error::KubeError
         assert!(matches!(our_err, Error::KubeError(_)));
-        
+
         // Verify error code is present in message
         let msg = our_err.to_string();
         assert!(msg.contains("[SK8S-001]"));
@@ -172,7 +177,7 @@ mod tests {
     fn test_kube_error_is_retriable() {
         // Test that KubeError is correctly identified as retriable
         let kube_serde_err = kube::Error::SerdeError(
-            serde_json::from_str::<serde_json::Value>("invalid").unwrap_err()
+            serde_json::from_str::<serde_json::Value>("invalid").unwrap_err(),
         );
         let our_err = Error::KubeError(kube_serde_err);
         assert!(our_err.is_retriable());
@@ -181,9 +186,8 @@ mod tests {
     #[test]
     fn test_kube_error_status_message() {
         // Test that KubeError status_message includes error code and description
-        let kube_serde_err = kube::Error::SerdeError(
-            serde_json::from_str::<serde_json::Value>("bad").unwrap_err()
-        );
+        let kube_serde_err =
+            kube::Error::SerdeError(serde_json::from_str::<serde_json::Value>("bad").unwrap_err());
         let our_err = Error::KubeError(kube_serde_err);
         let status = our_err.status_message();
         assert!(status.contains("[SK8S-001]"));
@@ -193,11 +197,10 @@ mod tests {
     #[test]
     fn test_kube_error_display_trait() {
         // Verify Display trait implementation for KubeError
-        let kube_serde_err = kube::Error::SerdeError(
-            serde_json::from_str::<serde_json::Value>("x").unwrap_err()
-        );
+        let kube_serde_err =
+            kube::Error::SerdeError(serde_json::from_str::<serde_json::Value>("x").unwrap_err());
         let our_err = Error::KubeError(kube_serde_err);
-        
+
         // The Display implementation should include the error code prefix
         let display = format!("{}", our_err);
         assert!(display.contains("[SK8S-001]"));
@@ -207,11 +210,10 @@ mod tests {
     #[test]
     fn test_kube_api_error_pattern_matching() {
         // Test that we can pattern match on KubeError to extract inner error
-        let kube_err = kube::Error::SerdeError(
-            serde_json::from_str::<serde_json::Value>("y").unwrap_err()
-        );
-        let our_err = Error::KubeError(kube_err.clone());
-        
+        let kube_err =
+            kube::Error::SerdeError(serde_json::from_str::<serde_json::Value>("y").unwrap_err());
+        let our_err = Error::KubeError(kube_err);
+
         // Verify we can match and extract the inner kube error
         match our_err {
             Error::KubeError(e) => {

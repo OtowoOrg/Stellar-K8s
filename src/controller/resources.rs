@@ -496,20 +496,13 @@ pub async fn ensure_canary_deployment(
     deployment.metadata.name = Some(name.clone());
 
     if let Some(spec) = &mut deployment.spec {
-        let mut labels = spec
-            .template
-            .metadata
-            .as_ref()
-            .and_then(|m| m.labels.clone())
-            .unwrap_or_default();
+        let mut labels = standard_labels(&canary_node);
         labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
         spec.template.metadata.as_mut().unwrap().labels = Some(labels.clone());
         spec.selector.match_labels = Some(labels.clone());
 
         let meta = &mut deployment.metadata;
-        let mut meta_labels = meta.labels.clone().unwrap_or_default();
-        meta_labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
-        meta.labels = Some(meta_labels);
+        meta.labels = Some(labels);
     }
 
     let patch = Patch::Apply(&deployment);
@@ -707,13 +700,11 @@ pub async fn ensure_canary_service(
     service.metadata.name = Some(name.clone());
 
     if let Some(spec) = &mut service.spec {
-        let mut selector = spec.selector.clone().unwrap_or_default();
-        selector.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
-        spec.selector = Some(selector);
+        let mut labels = standard_labels(node);
+        labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
+        spec.selector = Some(labels.clone());
 
         let meta = &mut service.metadata;
-        let mut labels = meta.labels.clone().unwrap_or_default();
-        labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
         meta.labels = Some(labels);
     }
 

@@ -244,9 +244,7 @@ async fn run(cli: Cli) -> Result<()> {
             explain::explain_error(&error_code);
             Ok(())
         }
-        Commands::Search { query, full } => {
-            search_docs(&query, full)
-        }
+        Commands::Search { query, full } => search_docs(&query, full),
         Commands::Completions { shell } => {
             use clap::CommandFactory;
             use clap_complete::generate;

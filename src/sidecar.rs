@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::Utc;
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::{Event, ObjectReference, Pod};
 use kube::{
@@ -25,20 +26,23 @@ async fn main() -> Result<()> {
 
     let namespace = env::var("NAMESPACE").context("NAMESPACE env var not set")?;
     let pod_name = env::var("POD_NAME").context("POD_NAME env var not set")?;
-    let container_name = env::var("CONTAINER_NAME").unwrap_or_else(|_| "stellar-operator".to_string());
+    let container_name =
+        env::var("CONTAINER_NAME").unwrap_or_else(|_| "stellar-operator".to_string());
 
     let client = Client::try_default().await?;
     let pods: Api<Pod> = Api::namespaced(client.clone(), &namespace);
     let events: Api<Event> = Api::namespaced(client.clone(), &namespace);
 
     // Initial check for previous logs if the pod is already crashing
-    if let Err(e) = analyze_previous_logs(&pods, &events, &pod_name, &namespace, &container_name).await {
+    if let Err(e) =
+        analyze_previous_logs(&pods, &events, &pod_name, &namespace, &container_name).await
+    {
         warn!("Failed to analyze previous logs: {}", e);
     }
 
     loop {
         info!("Watching logs for container: {}", container_name);
-        
+
         let log_params = LogParams {
             container: Some(container_name.clone()),
             follow: true,
@@ -53,8 +57,20 @@ async fn main() -> Result<()> {
                         Ok(bytes) => {
                             let log_line = String::from_utf8_lossy(&bytes);
                             if let Some(recommendation) = analyze_log(&log_line) {
-                                info!("Found issue: {}. Recommendation: {}", log_line.trim(), recommendation);
-                                if let Err(e) = report_recommendation(&pods, &events, &pod_name, &namespace, recommendation).await {
+                                info!(
+                                    "Found issue: {}. Recommendation: {}",
+                                    log_line.trim(),
+                                    recommendation
+                                );
+                                if let Err(e) = report_recommendation(
+                                    &pods,
+                                    &events,
+                                    &pod_name,
+                                    &namespace,
+                                    recommendation,
+                                )
+                                .await
+                                {
                                     error!("Failed to report recommendation: {}", e);
                                 }
                             }
@@ -72,7 +88,9 @@ async fn main() -> Result<()> {
         }
 
         // If the stream broke, check if we crashed and if there are logs from the previous run
-        if let Err(e) = analyze_previous_logs(&pods, &events, &pod_name, &namespace, &container_name).await {
+        if let Err(e) =
+            analyze_previous_logs(&pods, &events, &pod_name, &namespace, &container_name).await
+        {
             debug!("No previous logs to analyze or failed: {}", e);
         }
 
@@ -98,8 +116,13 @@ async fn analyze_previous_logs(
         Ok(logs) => {
             for line in logs.lines() {
                 if let Some(recommendation) = analyze_log(line) {
-                    info!("Found issue in previous logs: {}. Recommendation: {}", line.trim(), recommendation);
-                    report_recommendation(pods, events, pod_name, namespace, recommendation).await?;
+                    info!(
+                        "Found issue in previous logs: {}. Recommendation: {}",
+                        line.trim(),
+                        recommendation
+                    );
+                    report_recommendation(pods, events, pod_name, namespace, recommendation)
+                        .await?;
                     break; // Just report the first one found in previous logs
                 }
             }
@@ -115,11 +138,20 @@ fn analyze_log(line: &str) -> Option<&'static str> {
     let line_lower = line.to_lowercase();
     if line_lower.contains("connection refused") {
         Some("Check your NetworkPolicies or service reachability.")
-    } else if line_lower.contains("forbidden") || line_lower.contains("rbac") || line_lower.contains("permission denied") {
+    } else if line_lower.contains("forbidden")
+        || line_lower.contains("rbac")
+        || line_lower.contains("permission denied")
+    {
         Some("Check your RBAC permissions (ClusterRole/RoleBinding).")
-    } else if line_lower.contains("timeout") || line_lower.contains("timed out") || line_lower.contains("deadline exceeded") {
+    } else if line_lower.contains("timeout")
+        || line_lower.contains("timed out")
+        || line_lower.contains("deadline exceeded")
+    {
         Some("Check API server latency or network connectivity.")
-    } else if line_lower.contains("database") || line_lower.contains("postgresql") || line_lower.contains("sqlx") {
+    } else if line_lower.contains("database")
+        || line_lower.contains("postgresql")
+        || line_lower.contains("sqlx")
+    {
         Some("Check database connectivity and credentials.")
     } else if line_lower.contains("configmap") && line_lower.contains("not found") {
         Some("Ensure the required ConfigMap exists.")
@@ -145,7 +177,8 @@ async fn report_recommendation(
             }
         }
     });
-    pods.patch(pod_name, &PatchParams::default(), &Patch::Merge(&patch)).await?;
+    pods.patch(pod_name, &PatchParams::default(), &Patch::Merge(&patch))
+        .await?;
 
     // 2. Create event
     let now = chrono::Utc::now();

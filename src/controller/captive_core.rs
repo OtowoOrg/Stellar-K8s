@@ -76,7 +76,7 @@ impl CaptiveCoreConfigBuilder {
         let network_passphrase = config
             .network_passphrase
             .clone()
-            .unwrap_or_else(|| node.spec.network.passphrase().to_string());
+            .unwrap_or_else(|| node.spec.network_passphrase().to_string());
 
         // Validate history archive URLs
         if config.history_archive_urls.is_empty() {
@@ -237,7 +237,6 @@ mod tests {
                 suspended: false,
                 alerting: false,
                 database: None,
-                // Added this field to resolve the E0063 error
                 managed_database: None,
                 autoscaling: None,
                 ingress: None,
@@ -261,6 +260,7 @@ mod tests {
                 resource_meta: None,
                 vpa_config: None,
                 read_pool_endpoint: None,
+                custom_network_passphrase: None,
             },
             status: None,
         }
@@ -560,7 +560,8 @@ mod tests {
         };
 
         let mut node = create_test_node(config);
-        node.spec.network = StellarNetwork::Custom(custom_passphrase.to_string());
+        node.spec.network = StellarNetwork::Custom;
+        node.spec.custom_network_passphrase = Some(custom_passphrase.to_string());
 
         let builder = CaptiveCoreConfigBuilder::from_node_config(&node).unwrap();
         let toml = builder.build_toml().unwrap();

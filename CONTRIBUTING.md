@@ -1,6 +1,6 @@
 # Contributing to Stellar-K8s
 
-First off, thank you for considering contributing to Stellar-K8s! This project aims to provide a robust, cloud-native Kubernetes operator for managing Stellar infrastructure. 
+First off, thank you for considering contributing to Stellar-K8s! This project aims to provide a robust, cloud-native Kubernetes operator for managing Stellar infrastructure.
 
 This document provides a clear guide on how to contribute to the project, covering everything from our developer workflow to commit structures.
 
@@ -23,10 +23,22 @@ We use a standard fork and pull request workflow for contributions:
 6. **Push to your fork** on GitHub.
 7. **Open a Pull Request** against the `main` branch of the upstream repository.
 
+   This will:
+   - Install Rust toolchain and components
+   - Install cargo-audit and cargo-watch
+   - Install pre-commit hooks for automatic code quality checks
+
+3. Run local checks before committing:
 ## 2. Branch Naming
 
 Please use descriptive branch names based on the nature of your contribution. We recommend the following prefixes:
 
+   # Run pre-commit hooks manually
+   make pre-commit
+
+   # Or comprehensive pre-push check
+   make ci-local
+   ```
 - `feat/` for new features (e.g., `feat/auto-mtls`)
 - `fix/` for bug fixes (e.g., `fix/panic-on-startup`)
 - `docs/` for documentation updates (e.g., `docs/update-architecture`)
@@ -35,7 +47,7 @@ Please use descriptive branch names based on the nature of your contribution. We
 
 ## 3. Commit Conventions
 
-We strictly follow [Conventional Commits](https://www.conventionalcommits.org/). This allows us to automate our changelog generation and semantic versioning. 
+We strictly follow [Conventional Commits](https://www.conventionalcommits.org/). This allows us to automate our changelog generation and semantic versioning.
 
 Your commit messages should be formatted as follows:
 ```

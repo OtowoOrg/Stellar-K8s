@@ -59,6 +59,8 @@ impl SpecValidationError {
 pub struct StellarNodeSpec {
     pub node_type: NodeType,
     pub network: StellarNetwork,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_network_passphrase: Option<String>,
     pub version: String,
 
     #[serde(default)]
@@ -87,11 +89,11 @@ pub struct StellarNodeSpec {
     pub replicas: i32,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<serde_json::Value>")]
+    #[schemars(schema_with = "super::schema_utils::int_or_string_schema")]
     pub min_available: Option<IntOrString>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<serde_json::Value>")]
+    #[schemars(schema_with = "super::schema_utils::int_or_string_schema")]
     pub max_unavailable: Option<IntOrString>,
 
     #[serde(default)]
@@ -150,7 +152,7 @@ pub struct StellarNodeSpec {
     pub placement: PlacementConfig,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<Vec<serde_json::Value>>")]
+    #[schemars(schema_with = "super::schema_utils::array_of_objects_schema")]
     pub topology_spread_constraints:
         Option<Vec<k8s_openapi::api::core::v1::TopologySpreadConstraint>>,
 
@@ -200,6 +202,11 @@ fn default_replicas() -> i32 {
 }
 
 impl StellarNodeSpec {
+    /// Get the network passphrase based on network type and custom string
+    pub fn network_passphrase(&self) -> &str {
+        self.network.passphrase(&self.custom_network_passphrase)
+    }
+
     /// Validate the spec based on node type
     ///
     /// Performs comprehensive validation of the StellarNodeSpec including:
@@ -352,7 +359,7 @@ impl StellarNodeSpec {
                     ));
                 }
                 // Canary strategy not supported
-                if matches!(self.strategy, RolloutStrategy::Canary(_)) {
+                if self.strategy.canary().is_some() {
                     errors.push(SpecValidationError::new(
                         "spec.strategy",
                         "canary rollout strategy is not supported for Validator nodes",
@@ -1191,10 +1198,14 @@ mod tests {
             ingress: None,
             load_balancer: None,
             global_discovery: None,
-            strategy: RolloutStrategy::Canary(CanaryConfig {
-                weight: 10,
-                check_interval_seconds: 300,
-            }),
+            strategy: RolloutStrategy {
+                strategy_type: RolloutStrategyType::Canary,
+                canary: Some(CanaryConfig {
+                    weight: 10,
+                    check_interval_seconds: 300,
+                }),
+            },
+            custom_network_passphrase: None,
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
@@ -1247,10 +1258,14 @@ mod tests {
             ingress: None,
             load_balancer: None,
             global_discovery: None,
-            strategy: RolloutStrategy::Canary(CanaryConfig {
-                weight: 20,
-                check_interval_seconds: 300,
-            }),
+            strategy: RolloutStrategy {
+                strategy_type: RolloutStrategyType::Canary,
+                canary: Some(CanaryConfig {
+                    weight: 20,
+                    check_interval_seconds: 300,
+                }),
+            },
+            custom_network_passphrase: None,
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,

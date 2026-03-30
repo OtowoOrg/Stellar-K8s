@@ -115,6 +115,20 @@ kubectl apply -f validator.yaml
 kubectl get stellarnodes -n stellar
 ```
 
+---
+
+## 📚 Examples
+
+Ready-to-use manifests for all supported node types are available in the [examples/](examples/) directory:
+
+- [Validator (Mainnet)](examples/validator-mainnet.yaml) - High-performance validator with SCP quorum and history archives.
+- [Validator (Testnet)](examples/validator-testnet.yaml) - Standard validator for network testing.
+- [Horizon API](examples/horizon.yaml) - Scalable REST API server with Ingress and ingestion.
+- [Soroban RPC](examples/soroban-rpc.yaml) - Smart contract execution node with autoscaling.
+- [Disaster Recovery Setup](examples/dr-setup.yaml) - Multi-cluster HA configuration with automated drills.
+
+---
+
 ### 3. Use the kubectl-stellar Plugin
 
 The project includes a kubectl plugin for convenient interaction with StellarNode resources:
@@ -269,7 +283,17 @@ featureFlags:
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on our development process, coding standards, and how to submit pull requests.
+We welcome contributions! This project uses pre-commit hooks to ensure code quality. Please see our [Contributing Guide](CONTRIBUTING.md) for details on our development process, coding standards, and how to submit pull requests.
+
+### Quick Start for Contributors
+
+```bash
+# Setup development environment (includes pre-commit hooks)
+make dev-setup
+
+# Run pre-commit hooks manually
+make pre-commit
+```
 
 ---
 
@@ -588,7 +612,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines.
 
 ## 👨‍💻 Maintainer
 
-**Otowo Samuel**  
+**Otowo Samuel**
 _DevOps Engineer & Protocol Developer_
 
 Bringing nearly 5 years of DevOps experience and a deep background in blockchain infrastructure tools (core contributor of `starknetnode-kit`). Passionate about building robust, type-safe tooling for the decentralized web.

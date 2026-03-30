@@ -149,19 +149,12 @@ struct RunArgs {
     scheduler_name: String,
 
     /// Print the resolved runtime configuration and exit without starting the operator.
-    ///
-    /// Loads the operator config from the path in STELLAR_OPERATOR_CONFIG (or the default
-    /// /etc/stellar-operator/config.yaml), merges it with all CLI flags and environment
-    /// variables, prints the result as YAML, and exits with code 0.
-    ///
-    /// Example: --dump-config
     #[arg(long)]
-    dump_config: bool,
+    pub dump_config: bool,
 
-    /// Run preflight checks and exit without starting the operator.
-    /// Env: PREFLIGHT_ONLY
+    /// Run preflight checks and exit without starting the operator
     #[arg(long, env = "PREFLIGHT_ONLY")]
-    preflight_only: bool,
+    pub preflight_only: bool,
 }
 
 impl RunArgs {

@@ -19,9 +19,9 @@ spec:
   nodeType: Validator
   network: Mainnet
   version: "v21.0.0"
-  
 
-  
+
+
   resources:
     requests:
       cpu: "4"
@@ -29,36 +29,36 @@ spec:
     limits:
       cpu: "8"
       memory: "32Gi"
-  
+
   storage:
     storageClass: "fast-ssd"
     size: "1Ti"
     retentionPolicy: Retain
-  
+
   validatorConfig:
     seedSecretRef: "validator-seed-primary"
     enableHistoryArchive: true
     historyArchiveUrls:
       - "https://history.stellar.org/prd/core-live/core_live_001"
-  
+
   # Cross-cluster with Istio
   crossCluster:
     enabled: true
     mode: ServiceMesh
-    
+
     serviceMesh:
       meshType: istio
       clusterSetId: "stellar-mesh"
       mtlsEnabled: true
-      
+
       serviceExport:
         enabled: true
         serviceName: "validator-primary-service"
         namespace: "stellar-nodes"
-      
+
       # Latency-based routing for optimal performance
       trafficPolicy: LatencyBased
-    
+
     peerClusters:
       - clusterId: "remote-1"
         # Istio multi-cluster DNS format
@@ -67,23 +67,23 @@ spec:
         region: "us-west"
         priority: 100
         enabled: true
-      
+
       - clusterId: "remote-2"
         endpoint: "validator-remote-2-service.stellar-nodes.svc.cluster.local"
         latencyThresholdMs: 150
         region: "eu-central"
         priority: 90
         enabled: true
-    
+
     latencyThresholdMs: 200
-    
+
     healthCheck:
       enabled: true
       intervalSeconds: 30
       timeoutSeconds: 5
       failureThreshold: 3
       successThreshold: 1
-      
+
       latencyMeasurement:
         enabled: true
         method: grpc

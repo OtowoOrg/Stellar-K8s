@@ -137,7 +137,7 @@ jobs:
           operator:
             logLevel: verbose
           EOF
-          if helm lint charts/stellar-operator -f /tmp/bad-loglevel.yaml 2>&1 | grep -q "meet the specifications"; then
+          if helm lint charts/stellar-operator -f /tmp/bad-loglevel.yaml 2>&1 | grep -q "must be one of"; then
             echo "Schema correctly rejected invalid logLevel"
           else
             echo "ERROR: Schema did not reject invalid logLevel" && exit 1
@@ -149,7 +149,7 @@ jobs:
           service:
             type: ExternalName
           EOF
-          if helm lint charts/stellar-operator -f /tmp/bad-service.yaml 2>&1 | grep -q "meet the specifications"; then
+          if helm lint charts/stellar-operator -f /tmp/bad-service.yaml 2>&1 | grep -q "must be one of"; then
             echo "Schema correctly rejected invalid service type"
           else
             echo "ERROR: Schema did not reject invalid service type" && exit 1
@@ -161,11 +161,42 @@ jobs:
           image:
             pullPolicy: Whenever
           EOF
-          if helm lint charts/stellar-operator -f /tmp/bad-pullpolicy.yaml 2>&1 | grep -q "meet the specifications"; then
+          if helm lint charts/stellar-operator -f /tmp/bad-pullpolicy.yaml 2>&1 | grep -q "must be one of"; then
             echo "Schema correctly rejected invalid pullPolicy"
           else
             echo "ERROR: Schema did not reject invalid pullPolicy" && exit 1
           fi
+
+  examples-smoke-test:
+    name: Examples Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.13.0
+        with:
+          cluster_name: examples-test
+
+      - name: Apply StellarNode CRD
+        run: kubectl apply -f config/crd/stellarnode-crd.yaml
+
+      - name: Run smoke test on examples
+        run: |
+          echo "Creating required namespaces..."
+          kubectl create namespace stellar --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace stellar-nodes --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace stellar-system --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace metallb-system --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "Validating example manifests against the API server..."
+          # We skip broken.yaml and ensure other resource types are ignored if their CRDs are missing
+          # Actually, it's better to just test the principal examples
+          kubectl apply --dry-run=server -f examples/validator-mainnet.yaml
+          kubectl apply --dry-run=server -f examples/validator-testnet.yaml
+          kubectl apply --dry-run=server -f examples/horizon.yaml
+          kubectl apply --dry-run=server -f examples/soroban-rpc.yaml
+          kubectl apply --dry-run=server -f examples/dr-setup.yaml
 
   security-audit:
     name: Security Audit

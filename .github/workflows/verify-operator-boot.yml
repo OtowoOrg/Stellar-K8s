@@ -1,0 +1,131 @@
+name: Verify Operator Boot (Issue #146)
+
+# Verifies that the operator binary builds and connects to a live kind cluster.
+# Acceptance criteria:
+#   1. cargo build --release succeeds with zero errors
+#   2. ./target/release/stellar-operator run starts against a kind cluster
+#   3. Log line "Connected to Kubernetes cluster" appears
+
+on:
+  push:
+    branches: [main, "fix/issue-146-*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CLUSTER_NAME: stellar-verify
+  OPERATOR_NAMESPACE: stellar-system
+
+jobs:
+  verify-operator-boot:
+    name: Verify Operator Boot & Cluster Connection
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      # ── 2. Rust toolchain + cache ────────────────────────────────────────────
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "verify-boot"
+
+      # ── 3. Build release binary (AC #1) ─────────────────────────────────────
+      - name: Build release binary
+        run: cargo build --release --locked --bin stellar-operator
+
+      - name: Confirm binary exists
+        run: |
+          ls -lh target/release/stellar-operator
+          echo "✅ cargo build --release succeeded"
+
+      # ── 4. Create kind cluster (AC #2) ──────────────────────────────────────
+      - name: Install kind
+        uses: helm/kind-action@v1.13.0
+        with:
+          install_only: true
+
+      - name: Create kind cluster
+        run: |
+          kind create cluster --name ${{ env.CLUSTER_NAME }} --wait 60s
+          kubectl cluster-info --context kind-${{ env.CLUSTER_NAME }}
+          echo "✅ kind cluster '${{ env.CLUSTER_NAME }}' is ready"
+
+      # ── 5. Install CRD ───────────────────────────────────────────────────────
+      - name: Install StellarNode CRD
+        run: |
+          kubectl apply -f config/crd/stellarnode-crd.yaml
+          kubectl wait --for condition=established --timeout=30s \
+            crd/stellarnodes.stellar.org || true
+
+      # ── 6. Run operator and verify log line (AC #2 + AC #3) ─────────────────
+      - name: Run operator and verify cluster connection
+        run: |
+          # Run the operator in the background, capture output
+          ./target/release/stellar-operator run \
+            --namespace ${{ env.OPERATOR_NAMESPACE }} \
+            > /tmp/operator.log 2>&1 &
+          OPERATOR_PID=$!
+
+          echo "Operator PID: $OPERATOR_PID"
+
+          # Wait up to 30 seconds for the expected log line
+          TIMEOUT=30
+          ELAPSED=0
+          FOUND=false
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            if grep -q "Connected to Kubernetes cluster" /tmp/operator.log 2>/dev/null; then
+              FOUND=true
+              break
+            fi
+            sleep 1
+            ELAPSED=$((ELAPSED + 1))
+          done
+
+          # Print full log for visibility
+          echo "--- Operator log ---"
+          cat /tmp/operator.log || true
+          echo "--------------------"
+
+          # Terminate the operator
+          kill $OPERATOR_PID 2>/dev/null || true
+
+          if [ "$FOUND" = "true" ]; then
+            echo "✅ Log line 'Connected to Kubernetes cluster' confirmed"
+          else
+            echo "❌ Log line 'Connected to Kubernetes cluster' NOT found within ${TIMEOUT}s"
+            exit 1
+          fi
+
+      # ── 7. Report any runtime errors ────────────────────────────────────────
+      - name: Report runtime errors
+        if: always()
+        run: |
+          echo "--- Runtime error check ---"
+          if grep -iE "error|panic|missing env" /tmp/operator.log 2>/dev/null; then
+            echo "⚠️  Errors found in operator log (see above)"
+          else
+            echo "✅ No runtime errors detected"
+          fi
+
+      # ── 8. Upload log as artifact ────────────────────────────────────────────
+      - name: Upload operator log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operator-boot-log
+          path: /tmp/operator.log
+          retention-days: 7
+
+      # ── 9. Cleanup ───────────────────────────────────────────────────────────
+      - name: Delete kind cluster
+        if: always()
+        run: kind delete cluster --name ${{ env.CLUSTER_NAME }} || true

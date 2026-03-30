@@ -154,13 +154,13 @@ The runtime provides these functions for plugin I/O:
 extern "C" {
     // Get the length of the input data
     fn get_input_len() -> i32;
-    
+
     // Read input data into Wasm memory
     fn read_input(ptr: *mut u8, len: i32) -> i32;
-    
+
     // Write output data from Wasm memory
     fn write_output(ptr: *const u8, len: i32) -> i32;
-    
+
     // Log a debug message
     fn log_message(ptr: *const u8, len: i32);
 }
@@ -213,7 +213,7 @@ plugins:
       - UPDATE
     enabled: true
     failOpen: false
-    
+
   - metadata:
       name: resource-limits-validator
       version: "1.0.0"
@@ -320,11 +320,11 @@ Enforce minimum/maximum resource limits:
 fn validate(input: &ValidationInput) -> ValidationOutput {
     let memory = input.object.spec.resources.limits.memory;
     let memory_bytes = parse_memory(memory);
-    
+
     if memory_bytes < 512 * 1024 * 1024 {
         return ValidationOutput::denied("Memory must be at least 512Mi");
     }
-    
+
     ValidationOutput::allowed()
 }
 ```
@@ -353,7 +353,7 @@ Enforce organizational compliance requirements:
 ```rust
 fn validate(input: &ValidationInput) -> ValidationOutput {
     let mut errors = Vec::new();
-    
+
     // Check labels
     if !input.object.metadata.labels.contains_key("cost-center") {
         errors.push(ValidationError::new(
@@ -361,7 +361,7 @@ fn validate(input: &ValidationInput) -> ValidationOutput {
             "Cost center label is required"
         ));
     }
-    
+
     // Check annotations
     if !input.object.metadata.annotations.contains_key("owner") {
         errors.push(ValidationError::new(
@@ -369,7 +369,7 @@ fn validate(input: &ValidationInput) -> ValidationOutput {
             "Owner annotation is required"
         ));
     }
-    
+
     if errors.is_empty() {
         ValidationOutput::allowed()
     } else {
@@ -433,7 +433,7 @@ Test plugins locally before deploying:
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_approved_registry() {
         let input = ValidationInput {
@@ -445,11 +445,11 @@ mod tests {
             })),
             // ... other fields
         };
-        
+
         let output = validate_stellar_node(&input);
         assert!(output.allowed);
     }
-    
+
     #[test]
     fn test_unapproved_registry() {
         let input = ValidationInput {
@@ -461,7 +461,7 @@ mod tests {
             })),
             // ... other fields
         };
-        
+
         let output = validate_stellar_node(&input);
         assert!(!output.allowed);
     }

@@ -158,10 +158,51 @@
     "affinity": {
       "type": "object"
     },
-    "operator": {
+    "podDisruptionBudget": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["logLevel", "restApiEnabled", "restApiPort", "metricsPort"],
+      "description": "PodDisruptionBudget configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "minAvailable": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "string" }
+          ]
+        },
+        "maxUnavailable": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "string" }
+          ]
+        }
+      }
+    },
+    "sidecar": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": { "type": "string" },
+            "tag": { "type": "string" },
+            "pullPolicy": {
+              "type": "string",
+              "enum": ["Always", "IfNotPresent", "Never"]
+            }
+          }
+        },
+        "resources": {
+          "$ref": "#/definitions/resourceRequirements"
+        }
+      }
+    },
+    "operator": {
       "properties": {
         "logLevel": {
           "type": "string",

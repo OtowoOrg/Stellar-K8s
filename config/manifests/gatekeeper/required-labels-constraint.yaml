@@ -1,0 +1,18 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: RequiredLabels
+metadata:
+  name: stellarnode-required-labels
+spec:
+  match:
+    kinds:
+      - apiGroups:
+          - "stellar.org"
+        kinds:
+          - StellarNode
+    excludedNamespaces:
+      - stellar
+  parameters:
+    required_labels:
+      - "app.kubernetes.io/part-of"
+      - "stellar.org/team"
+      - "stellar.org/environment"

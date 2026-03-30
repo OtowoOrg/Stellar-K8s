@@ -1540,3 +1540,25 @@ pub struct OciSnapshotConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pull_image_ref: Option<String>,
 }
+
+// ============================================================================
+// Label Propagation Configuration
+// ============================================================================
+
+/// Filter policy controlling which StellarNode labels are propagated to child resources.
+///
+/// When both lists are empty, all user labels are propagated (subject to the implicit
+/// denylist for `kubernetes.io/` and `k8s.io/` prefixes).
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelPropagationConfig {
+    /// Glob patterns for label keys that are allowed to propagate.
+    /// When empty, all user labels are eligible (subject to denyList).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow_list: Vec<String>,
+
+    /// Glob patterns for label keys that are always blocked from propagation.
+    /// Takes precedence over allowList.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deny_list: Vec<String>,
+}

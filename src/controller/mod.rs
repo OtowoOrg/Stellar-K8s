@@ -50,6 +50,7 @@
 
 pub mod blue_green;
 pub mod feature_flags;
+pub mod label_propagation;
 pub mod maintenance;
 pub mod resource_meta;
 

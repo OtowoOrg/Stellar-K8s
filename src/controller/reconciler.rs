@@ -60,6 +60,7 @@ use super::dr_drill;
 use super::finalizers::STELLAR_NODE_FINALIZER;
 use super::health;
 use super::kms_secret;
+use super::label_propagation::LabelPropagator;
 #[cfg(feature = "metrics")]
 use super::metrics;
 use super::mtls;
@@ -102,7 +103,8 @@ pub struct ControllerState {
     /// Handle to reload the tracing filter
     pub log_reload_handle: Handle<EnvFilter, Registry>,
     /// Optional expiration time for a temporary log level change
-    pub log_level_expires_at: std::sync::Arc<tokio::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>>,
+    pub log_level_expires_at:
+        std::sync::Arc<tokio::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>>,
 }
 
 impl ControllerState {
@@ -552,9 +554,11 @@ pub(crate) async fn apply_stellar_node(
         return Err(Error::ValidationError(message));
     }
 
+    let propagated_labels = LabelPropagator::new(node).compute();
+
     // 1. Core infrastructure (PVC and ConfigMap) always managed by operator
     apply_or_emit(ctx, node, ActionType::Update, "PVC and ConfigMap", async {
-        resources::ensure_pvc(client, node, ctx.dry_run).await?;
+        resources::ensure_pvc(client, node, &propagated_labels, ctx.dry_run).await?;
         resources::ensure_config_map(client, node, None, ctx.enable_mtls, ctx.dry_run).await?;
         Ok(())
     })
@@ -576,7 +580,7 @@ pub(crate) async fn apply_stellar_node(
             ActionType::Update,
             "Suspended state resources",
             async {
-                resources::ensure_pvc(client, node, ctx.dry_run).await?;
+                resources::ensure_pvc(client, node, &propagated_labels, ctx.dry_run).await?;
                 resources::ensure_config_map(client, node, None, ctx.enable_mtls, ctx.dry_run)
                     .await?;
 
@@ -588,17 +592,31 @@ pub(crate) async fn apply_stellar_node(
                             node,
                             ctx.enable_mtls,
                             None,
+                            &propagated_labels,
                             ctx.dry_run,
                         )
                         .await?;
                     }
                     NodeType::Horizon | NodeType::SorobanRpc => {
-                        resources::ensure_deployment(client, node, ctx.enable_mtls, ctx.dry_run)
-                            .await?;
+                        resources::ensure_deployment(
+                            client,
+                            node,
+                            ctx.enable_mtls,
+                            &propagated_labels,
+                            ctx.dry_run,
+                        )
+                        .await?;
                     }
                 }
 
-                resources::ensure_service(client, node, ctx.enable_mtls, ctx.dry_run).await?;
+                resources::ensure_service(
+                    client,
+                    node,
+                    ctx.enable_mtls,
+                    &propagated_labels,
+                    ctx.dry_run,
+                )
+                .await?;
                 Ok(())
             },
         )
@@ -832,7 +850,7 @@ pub(crate) async fn apply_stellar_node(
 
     // 1. Create/update the PersistentVolumeClaim
     apply_or_emit(ctx, node, ActionType::Create, "PVC", async {
-        resources::ensure_pvc(client, node, ctx.dry_run).await?;
+        resources::ensure_pvc(client, node, &propagated_labels, ctx.dry_run).await?;
         Ok(())
     })
     .await?;
@@ -917,7 +935,7 @@ pub(crate) async fn apply_stellar_node(
         .unwrap_or(false);
 
     // 5. Create/update the Deployment/StatefulSet based on node type
-    apply_or_emit(
+    let workload_result = apply_or_emit(
         ctx,
         node,
         ActionType::Update,
@@ -953,6 +971,7 @@ pub(crate) async fn apply_stellar_node(
                         node,
                         ctx.enable_mtls,
                         seed_injection.as_ref(),
+                        &propagated_labels,
                         ctx.dry_run,
                     )
                     .await?;
@@ -1020,7 +1039,7 @@ pub(crate) async fn apply_stellar_node(
                             if let Some(cv) = &current_version {
                                 stable_node.spec.version = cv.clone();
                             }
-                            resources::ensure_deployment(client, &stable_node, ctx.enable_mtls, ctx.dry_run).await?;
+                            resources::ensure_deployment(client, &stable_node, ctx.enable_mtls, &propagated_labels, ctx.dry_run).await?;
 
                             // Check if the canary interval has elapsed
                             if let Some(status) = &node.status {
@@ -1042,7 +1061,7 @@ pub(crate) async fn apply_stellar_node(
                                             if canary_health.healthy {
                                                 // 4a. Promote Canary
                                                 info!("Canary {}/{} is healthy. Promoting to stable.", namespace, name);
-                                                resources::ensure_deployment(client, node, ctx.enable_mtls, ctx.dry_run).await?;
+                                                resources::ensure_deployment(client, node, ctx.enable_mtls, &propagated_labels, ctx.dry_run).await?;
                                                 resources::delete_canary_resources(client, node, ctx.dry_run).await?;
 
                                                 let patch = serde_json::json!({
@@ -1098,12 +1117,12 @@ pub(crate) async fn apply_stellar_node(
                             }
                         } else {
                             // No canary active, regular deployment ensure
-                            resources::ensure_deployment(client, node, ctx.enable_mtls, ctx.dry_run).await?;
+                            resources::ensure_deployment(client, node, ctx.enable_mtls, &propagated_labels, ctx.dry_run).await?;
                             resources::delete_canary_resources(client, node, ctx.dry_run).await?;
                         }
                     } else {
                         // RPC nodes use Deployment
-                        resources::ensure_deployment(client, node, ctx.enable_mtls, ctx.dry_run).await?;
+                        resources::ensure_deployment(client, node, ctx.enable_mtls, &propagated_labels, ctx.dry_run).await?;
                         info!("Deployment ensured for RPC node {}/{}", namespace, name);
 
                         // Clean up canary resources if they exist
@@ -1114,7 +1133,48 @@ pub(crate) async fn apply_stellar_node(
             Ok(())
         },
     )
-    .await?;
+    .await;
+
+    // 5.3: Handle workload failure — emit LabelPropagationFailed warning event and patch status
+    match workload_result {
+        Ok(()) => {}
+        Err(workload_err) => {
+            if let Err(e) = publish_stellar_event(
+                client,
+                &ctx.event_reporter,
+                node,
+                EventType::Warning,
+                "LabelPropagationFailed",
+                "LabelPropagation",
+                &format!("Label propagation failed for workload: {workload_err}"),
+            )
+            .await
+            {
+                warn!("Failed to publish LabelPropagationFailed event: {}", e);
+            }
+            {
+                let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+                let patch = serde_json::json!({
+                    "status": {
+                        "labelPropagationStatus": "Failed"
+                    }
+                });
+                if let Err(e) = api
+                    .patch_status(
+                        &name,
+                        &PatchParams::apply("stellar-operator"),
+                        &Patch::Merge(&patch),
+                    )
+                    .await
+                {
+                    warn!("Failed to patch labelPropagationStatus to Failed: {}", e);
+                }
+            }
+            return Err(workload_err);
+        }
+    }
+
+    // Workload block succeeded — continue with observability
 
     if !ctx.dry_run {
         let workload_exists_after = workload_resource_exists(client, node).await.unwrap_or(true);
@@ -1131,6 +1191,65 @@ pub(crate) async fn apply_stellar_node(
             {
                 warn!("Failed to publish SuccessfulReconciliation event: {e}");
             }
+        }
+    }
+
+    // 5.2 / 5.4: Emit LabelsPropagated event and patch labelPropagationStatus to Synced
+    if let Err(e) = publish_stellar_event(
+        client,
+        &ctx.event_reporter,
+        node,
+        EventType::Normal,
+        "LabelsPropagated",
+        "LabelPropagation",
+        "Labels propagated to child resources",
+    )
+    .await
+    {
+        warn!("Failed to publish LabelsPropagated event: {}", e);
+    }
+
+    // 5.2: Emit LabelRemoved event when a generation change indicates labels may have been removed
+    {
+        let current_gen = node.metadata.generation.unwrap_or(0);
+        let observed_gen = node
+            .status
+            .as_ref()
+            .and_then(|s| s.observed_generation)
+            .unwrap_or(0);
+        if current_gen > observed_gen {
+            if let Err(e) = publish_stellar_event(
+                client,
+                &ctx.event_reporter,
+                node,
+                EventType::Normal,
+                "LabelRemoved",
+                "LabelPropagation",
+                "Stale labels removed from child resources",
+            )
+            .await
+            {
+                warn!("Failed to publish LabelRemoved event: {}", e);
+            }
+        }
+    }
+
+    {
+        let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+        let patch = serde_json::json!({
+            "status": {
+                "labelPropagationStatus": "Synced"
+            }
+        });
+        if let Err(e) = api
+            .patch_status(
+                &name,
+                &PatchParams::apply("stellar-operator"),
+                &Patch::Merge(&patch),
+            )
+            .await
+        {
+            warn!("Failed to patch labelPropagationStatus: {}", e);
         }
     }
 

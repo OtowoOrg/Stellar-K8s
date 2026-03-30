@@ -316,6 +316,7 @@ mod tests {
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            label_propagation: None,
             custom_network_passphrase: None,
         };
 
@@ -378,6 +379,7 @@ mod tests {
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            label_propagation: None,
             custom_network_passphrase: None,
         };
 

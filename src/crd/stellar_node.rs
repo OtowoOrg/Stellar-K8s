@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 use super::types::{
     AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
     DisasterRecoveryStatus, ExternalDatabaseConfig, ForensicSnapshotConfig, GlobalDiscoveryConfig,
-    HistoryMode, HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig,
-    NetworkPolicyConfig, NodeType, OciSnapshotConfig, PlacementConfig, PodAntiAffinityStrength,
-    ResourceRequirements, RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy,
-    SnapshotScheduleConfig, SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig,
-    VpaConfig,
+    HistoryMode, HorizonConfig, IngressConfig, LabelPropagationConfig, LoadBalancerConfig,
+    ManagedDatabaseConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig, PlacementConfig,
+    PodAntiAffinityStrength, ResourceRequirements, RestoreFromSnapshotConfig, RetentionPolicy,
+    RolloutStrategy, SnapshotScheduleConfig, SorobanConfig, StellarNetwork, StorageConfig,
+    ValidatorConfig, VpaConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`
@@ -193,6 +193,10 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forensic_snapshot: Option<ForensicSnapshotConfig>,
 
+    /// Label propagation filter policy for child resources.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_propagation: Option<LabelPropagationConfig>,
+
     #[schemars(skip)]
     pub resource_meta: Option<ObjectMeta>,
 }
@@ -261,6 +265,7 @@ impl StellarNodeSpec {
     /// # oci_snapshot: None,
     /// # service_mesh: None,
     /// # forensic_snapshot: None,
+    /// # label_propagation: None,
     /// # vpa_config: None,
     /// # resource_meta: None,
     /// # read_pool_endpoint: None,
@@ -998,6 +1003,11 @@ pub struct StellarNodeStatus {
     /// Phase of the last forensic snapshot request (`Pending`, `Capturing`, `Complete`, `Failed`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forensic_snapshot_phase: Option<String>,
+
+    /// Result of the last label propagation pass.
+    /// One of: "Synced", "Partial", "Failed"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_propagation_status: Option<String>,
 }
 
 /// BGP advertisement status information
@@ -1220,6 +1230,7 @@ mod tests {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
@@ -1280,6 +1291,7 @@ mod tests {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
@@ -1328,6 +1340,7 @@ mod tests {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             read_pool_endpoint: None,
         };

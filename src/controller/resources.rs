@@ -7,6 +7,7 @@ use crate::controller::resource_meta::merge_resource_meta;
 
 // *** NEW: import kms_secret so we can accept SeedInjectionSpec ***
 use super::kms_secret;
+use super::label_propagation::LabelPropagator;
 
 use std::collections::BTreeMap;
 
@@ -36,7 +37,6 @@ use kube::api::{Api, DeleteParams, Patch, PatchParams, PostParams};
 use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
-use crate::scheduler::scoring::extract_peer_names_from_toml;
 use crate::crd::types::PodAntiAffinityStrength;
 use crate::crd::{
     BackupConfiguration, BarmanObjectStore, BootstrapConfiguration, Cluster, ClusterSpec,
@@ -47,6 +47,7 @@ use crate::crd::{
     WalBackupConfiguration,
 };
 use crate::error::{Error, Result};
+use crate::scheduler::scoring::extract_peer_names_from_toml;
 
 /// Get the standard labels for a StellarNode's resources
 pub(crate) fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
@@ -130,8 +131,13 @@ fn delete_params(dry_run: bool) -> DeleteParams {
 // ============================================================================
 
 /// Ensure a PersistentVolumeClaim exists for the node
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_pvc(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
+#[instrument(skip(client, node, propagated_labels), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_pvc(
+    client: &Client,
+    node: &StellarNode,
+    propagated_labels: &BTreeMap<String, String>,
+    dry_run: bool,
+) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<PersistentVolumeClaim> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "data");
@@ -155,7 +161,21 @@ pub async fn ensure_pvc(client: &Client, node: &StellarNode, dry_run: bool) -> R
         );
     }
 
-    let pvc = build_pvc(node, resolved_storage_class);
+    // Fetch existing resource labels for stale-label removal
+    let existing_labels = match api.get(&name).await {
+        Ok(existing) => existing.metadata.labels.clone().unwrap_or_default(),
+        Err(kube::Error::Api(e)) if e.code == 404 => BTreeMap::new(),
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
+    let mut pvc = build_pvc(node, resolved_storage_class);
+
+    // Apply label propagation: merge propagated labels, then remove stale ones
+    let base_labels = pvc.metadata.labels.clone().unwrap_or_default();
+    let merged = LabelPropagator::merge_onto(&base_labels, propagated_labels);
+    let final_labels =
+        LabelPropagator::remove_stale_labels(&merged, propagated_labels, &existing_labels);
+    pvc.metadata.labels = Some(final_labels);
 
     match api.get(&name).await {
         Ok(existing) => {
@@ -451,18 +471,33 @@ pub async fn delete_config_map(client: &Client, node: &StellarNode, dry_run: boo
 // ============================================================================
 
 /// Ensure a Deployment exists for RPC nodes
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[instrument(skip(client, node, propagated_labels), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_deployment(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
+    propagated_labels: &BTreeMap<String, String>,
     dry_run: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
-    let deployment = build_deployment(node, enable_mtls);
+    // Fetch existing resource labels for stale-label removal
+    let existing_labels = match api.get(&name).await {
+        Ok(existing) => existing.metadata.labels.clone().unwrap_or_default(),
+        Err(kube::Error::Api(e)) if e.code == 404 => BTreeMap::new(),
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
+    let mut deployment = build_deployment(node, enable_mtls);
+
+    // Apply label propagation: merge propagated labels, then remove stale ones
+    let base_labels = deployment.metadata.labels.clone().unwrap_or_default();
+    let merged = LabelPropagator::merge_onto(&base_labels, propagated_labels);
+    let final_labels =
+        LabelPropagator::remove_stale_labels(&merged, propagated_labels, &existing_labels);
+    deployment.metadata.labels = Some(final_labels);
 
     let patch = Patch::Apply(&deployment);
     api.patch(&name, &patch_params(dry_run), &patch).await?;
@@ -563,20 +598,35 @@ fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deployment {
 /// `seed_injection` describes how the validator seed should be mounted into
 /// the pod — either as an env var from a Secret/ExternalSecret, or as a CSI
 /// volume mount. Pass `None` when called for non-validator nodes.
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[instrument(skip(client, node, propagated_labels), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_statefulset(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
     seed_injection: Option<&kms_secret::SeedInjectionSpec>,
+    propagated_labels: &BTreeMap<String, String>,
     dry_run: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<StatefulSet> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
+    // Fetch existing resource labels for stale-label removal
+    let existing_labels = match api.get(&name).await {
+        Ok(existing) => existing.metadata.labels.clone().unwrap_or_default(),
+        Err(kube::Error::Api(e)) if e.code == 404 => BTreeMap::new(),
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
     // *** Pass seed_injection down to the builder ***
-    let statefulset = build_statefulset(node, enable_mtls, seed_injection);
+    let mut statefulset = build_statefulset(node, enable_mtls, seed_injection);
+
+    // Apply label propagation: merge propagated labels, then remove stale ones
+    let base_labels = statefulset.metadata.labels.clone().unwrap_or_default();
+    let merged = LabelPropagator::merge_onto(&base_labels, propagated_labels);
+    let final_labels =
+        LabelPropagator::remove_stale_labels(&merged, propagated_labels, &existing_labels);
+    statefulset.metadata.labels = Some(final_labels);
 
     let patch = Patch::Apply(&statefulset);
     api.patch(&name, &patch_params(dry_run), &patch).await?;
@@ -665,18 +715,33 @@ pub async fn delete_workload(client: &Client, node: &StellarNode, dry_run: bool)
 // ============================================================================
 
 /// Ensure a Service exists for the node
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[instrument(skip(client, node, propagated_labels), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_service(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
+    propagated_labels: &BTreeMap<String, String>,
     dry_run: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
-    let service = build_service(node, enable_mtls);
+    // Fetch existing resource labels for stale-label removal
+    let existing_labels = match api.get(&name).await {
+        Ok(existing) => existing.metadata.labels.clone().unwrap_or_default(),
+        Err(kube::Error::Api(e)) if e.code == 404 => BTreeMap::new(),
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
+    let mut service = build_service(node, enable_mtls);
+
+    // Apply label propagation: merge propagated labels, then remove stale ones
+    let base_labels = service.metadata.labels.clone().unwrap_or_default();
+    let merged = LabelPropagator::merge_onto(&base_labels, propagated_labels);
+    let final_labels =
+        LabelPropagator::remove_stale_labels(&merged, propagated_labels, &existing_labels);
+    service.metadata.labels = Some(final_labels);
 
     let patch = Patch::Apply(&service);
     api.patch(&name, &patch_params(dry_run), &patch).await?;
@@ -2614,6 +2679,7 @@ mod ensure_pvc_tests {
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 resource_meta: None,
             },
             status: None,

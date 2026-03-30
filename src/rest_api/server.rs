@@ -7,7 +7,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::{routing::get, Router, middleware};
+use axum::{middleware, routing::get, Router};
 use axum_server::tls_rustls::RustlsConfig;
 use rustls::server::WebPkiClientVerifier;
 use rustls::RootCertStore;

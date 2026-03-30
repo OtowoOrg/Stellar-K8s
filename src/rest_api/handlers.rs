@@ -8,7 +8,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use kube::{api::Api, ResourceExt};
 use tracing::{error, instrument};
 
@@ -31,7 +31,6 @@ pub async fn get_search_index() -> axum::response::Response {
 }
 
 /// Health check endpoint
-#[instrument]
 pub async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "healthy".to_string(),
@@ -203,16 +202,14 @@ pub async fn set_log_level(
 
 /// Get the current log level and expiration
 #[instrument(skip(state), fields(node_name = "-", namespace = %state.operator_namespace, reconcile_id = "-"))]
-pub async fn get_log_level(
-    State(state): State<Arc<ControllerState>>,
-) -> Json<LogLevelResponse> {
+pub async fn get_log_level(State(state): State<Arc<ControllerState>>) -> Json<LogLevelResponse> {
     let expires_at = *state.log_level_expires_at.lock().await;
-    
+
     // We can't easily get the current level string from the handle without a bit of work,
-    // so we'll just return what we have in the response if possible, 
+    // so we'll just return what we have in the response if possible,
     // or just return "unknown" for the level if we don't track it explicitly.
     // For now, let's just return the expiration info.
-    
+
     Json(LogLevelResponse {
         current_level: "unknown".to_string(), // tracing-subscriber Handle doesn't expose current filter easily
         expires_at,

@@ -7,10 +7,9 @@ pub mod maintenance;
 pub mod resource_meta;
 
 mod archive_health;
-pub mod audit;
 pub mod archive_prune;
+pub mod audit;
 pub mod captive_core;
-pub mod diff;
 pub mod conditions;
 pub mod cost;
 pub mod cross_cluster;
@@ -18,6 +17,7 @@ pub mod cve;
 mod cve_reconciler;
 #[cfg(test)]
 mod cve_test;
+pub mod diff;
 pub mod dr;
 pub mod dr_drill;
 #[cfg(test)]

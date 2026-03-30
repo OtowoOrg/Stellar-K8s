@@ -43,7 +43,7 @@ use tracing::{debug, error, info, info_span, instrument, warn};
 use tracing_subscriber::{reload::Handle, EnvFilter, Registry};
 
 use crate::crd::{
-    DisasterRecoveryStatus, NodeType, RolloutStrategy, SpecValidationError, StellarNode,
+    Condition, DisasterRecoveryStatus, NodeType, RolloutStrategy, SpecValidationError, StellarNode,
     StellarNodeStatus,
 };
 use crate::error::{Error, Result};
@@ -102,7 +102,8 @@ pub struct ControllerState {
     /// Handle to reload the tracing filter
     pub log_reload_handle: Handle<EnvFilter, Registry>,
     /// Optional expiration time for a temporary log level change
-    pub log_level_expires_at: std::sync::Arc<tokio::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>>,
+    pub log_level_expires_at:
+        std::sync::Arc<tokio::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>>,
 }
 
 impl ControllerState {
@@ -1935,6 +1936,177 @@ async fn update_suspended_status(client: &Client, node: &StellarNode) -> Result<
 }
 
 /// Update the status subresource of a StellarNode using Kubernetes conditions pattern
+pub(crate) fn apply_phase_conditions(
+    conditions: &mut Vec<Condition>,
+    phase: &str,
+    message: Option<&str>,
+) {
+    match phase {
+        "Ready" => {
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_READY,
+                conditions::CONDITION_STATUS_TRUE,
+                "AllSubresourcesHealthy",
+                message.unwrap_or("All sub-resources are healthy and operational"),
+            );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_PROGRESSING,
+                conditions::CONDITION_STATUS_FALSE,
+                "ReconcileComplete",
+                "Reconciliation completed successfully",
+            );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_DEGRADED,
+                conditions::CONDITION_STATUS_FALSE,
+                "NoIssues",
+                "No degradation detected",
+            );
+        }
+        "Creating" | "Pending" => {
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_READY,
+                conditions::CONDITION_STATUS_FALSE,
+                "Creating",
+                message.unwrap_or("Resources are being created"),
+            );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_PROGRESSING,
+                conditions::CONDITION_STATUS_TRUE,
+                "Creating",
+                message.unwrap_or("Creating resources"),
+            );
+            conditions::remove_condition(conditions, conditions::CONDITION_TYPE_DEGRADED);
+        }
+        "Syncing" => {
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_READY,
+                conditions::CONDITION_STATUS_FALSE,
+                "Syncing",
+                message.unwrap_or("Node is syncing with the network"),
+            );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_PROGRESSING,
+                conditions::CONDITION_STATUS_TRUE,
+                "Syncing",
+                message.unwrap_or("Syncing data"),
+            );
+            conditions::remove_condition(conditions, conditions::CONDITION_TYPE_DEGRADED);
+        }
+        "Running" => {
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_READY,
+                conditions::CONDITION_STATUS_TRUE,
+                "ResourcesCreated",
+                message.unwrap_or("Resources created successfully"),
+            );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_PROGRESSING,
+                conditions::CONDITION_STATUS_FALSE,
+                "Complete",
+                "Resource creation complete",
+            );
+            conditions::remove_condition(conditions, conditions::CONDITION_TYPE_DEGRADED);
+        }
+        "Degraded" => {
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_READY,
+                conditions::CONDITION_STATUS_FALSE,
+                "Degraded",
+                message.unwrap_or("Node is experiencing issues"),
+            );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_DEGRADED,
+                conditions::CONDITION_STATUS_TRUE,
+                "IssuesDetected",
+                message.unwrap_or("Node is degraded"),
+            );
+            conditions::remove_condition(conditions, conditions::CONDITION_TYPE_PROGRESSING);
+        }
+        "Failed" => {
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_READY,
+                conditions::CONDITION_STATUS_FALSE,
+                "Failed",
+                message.unwrap_or("Node operation failed"),
+            );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_DEGRADED,
+                conditions::CONDITION_STATUS_TRUE,
+                "Failed",
+                message.unwrap_or("Operation failed"),
+            );
+            conditions::remove_condition(conditions, conditions::CONDITION_TYPE_PROGRESSING);
+        }
+        "Remediating" => {
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_READY,
+                conditions::CONDITION_STATUS_FALSE,
+                "Remediating",
+                message.unwrap_or("Auto-remediation in progress"),
+            );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_PROGRESSING,
+                conditions::CONDITION_STATUS_TRUE,
+                "Remediating",
+                message.unwrap_or("Remediation in progress"),
+            );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_DEGRADED,
+                conditions::CONDITION_STATUS_TRUE,
+                "Remediating",
+                "Node required remediation",
+            );
+        }
+        "Suspended" => {
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_READY,
+                conditions::CONDITION_STATUS_FALSE,
+                "Suspended",
+                message.unwrap_or("Node is suspended"),
+            );
+            conditions::remove_condition(conditions, conditions::CONDITION_TYPE_PROGRESSING);
+            conditions::remove_condition(conditions, conditions::CONDITION_TYPE_DEGRADED);
+        }
+        "Maintenance" => {
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_READY,
+                conditions::CONDITION_STATUS_FALSE,
+                "Maintenance",
+                message.unwrap_or("Node is in maintenance mode"),
+            );
+            conditions::remove_condition(conditions, conditions::CONDITION_TYPE_PROGRESSING);
+            conditions::remove_condition(conditions, conditions::CONDITION_TYPE_DEGRADED);
+        }
+        _ => {
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_READY,
+                conditions::CONDITION_STATUS_UNKNOWN,
+                "Unknown",
+                message.unwrap_or("Status unknown"),
+            );
+        }
+    }
+}
+
 #[allow(deprecated)]
 #[instrument(skip(client, node, message), fields(name = %node.name_any(), namespace = node.namespace(), phase))]
 async fn update_status(
@@ -1963,171 +2135,7 @@ async fn update_status(
         .map(|s| s.conditions.clone())
         .unwrap_or_default();
 
-    // Map phase to conditions
-    match phase {
-        "Ready" => {
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_READY,
-                conditions::CONDITION_STATUS_TRUE,
-                "AllSubresourcesHealthy",
-                message.unwrap_or("All sub-resources are healthy and operational"),
-            );
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_PROGRESSING,
-                conditions::CONDITION_STATUS_FALSE,
-                "ReconcileComplete",
-                "Reconciliation completed successfully",
-            );
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_DEGRADED,
-                conditions::CONDITION_STATUS_FALSE,
-                "NoIssues",
-                "No degradation detected",
-            );
-        }
-        "Creating" | "Pending" => {
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_READY,
-                conditions::CONDITION_STATUS_FALSE,
-                "Creating",
-                message.unwrap_or("Resources are being created"),
-            );
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_PROGRESSING,
-                conditions::CONDITION_STATUS_TRUE,
-                "Creating",
-                message.unwrap_or("Creating resources"),
-            );
-            conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_DEGRADED);
-        }
-        "Syncing" => {
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_READY,
-                conditions::CONDITION_STATUS_FALSE,
-                "Syncing",
-                message.unwrap_or("Node is syncing with the network"),
-            );
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_PROGRESSING,
-                conditions::CONDITION_STATUS_TRUE,
-                "Syncing",
-                message.unwrap_or("Syncing data"),
-            );
-            conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_DEGRADED);
-        }
-        "Running" => {
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_READY,
-                conditions::CONDITION_STATUS_TRUE,
-                "ResourcesCreated",
-                message.unwrap_or("Resources created successfully"),
-            );
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_PROGRESSING,
-                conditions::CONDITION_STATUS_FALSE,
-                "Complete",
-                "Resource creation complete",
-            );
-            conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_DEGRADED);
-        }
-        "Degraded" => {
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_READY,
-                conditions::CONDITION_STATUS_FALSE,
-                "Degraded",
-                message.unwrap_or("Node is experiencing issues"),
-            );
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_DEGRADED,
-                conditions::CONDITION_STATUS_TRUE,
-                "IssuesDetected",
-                message.unwrap_or("Node is degraded"),
-            );
-            conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_PROGRESSING);
-        }
-        "Failed" => {
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_READY,
-                conditions::CONDITION_STATUS_FALSE,
-                "Failed",
-                message.unwrap_or("Node operation failed"),
-            );
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_DEGRADED,
-                conditions::CONDITION_STATUS_TRUE,
-                "Failed",
-                message.unwrap_or("Operation failed"),
-            );
-            conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_PROGRESSING);
-        }
-        "Remediating" => {
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_READY,
-                conditions::CONDITION_STATUS_FALSE,
-                "Remediating",
-                message.unwrap_or("Auto-remediation in progress"),
-            );
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_PROGRESSING,
-                conditions::CONDITION_STATUS_TRUE,
-                "Remediating",
-                message.unwrap_or("Remediation in progress"),
-            );
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_DEGRADED,
-                conditions::CONDITION_STATUS_TRUE,
-                "Remediating",
-                "Node required remediation",
-            );
-        }
-        "Suspended" => {
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_READY,
-                conditions::CONDITION_STATUS_FALSE,
-                "Suspended",
-                message.unwrap_or("Node is suspended"),
-            );
-            conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_PROGRESSING);
-            conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_DEGRADED);
-        }
-        "Maintenance" => {
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_READY,
-                conditions::CONDITION_STATUS_FALSE,
-                "Maintenance",
-                message.unwrap_or("Node is in maintenance mode"),
-            );
-            conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_PROGRESSING);
-            conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_DEGRADED);
-        }
-        _ => {
-            conditions::set_condition(
-                &mut conditions,
-                conditions::CONDITION_TYPE_READY,
-                conditions::CONDITION_STATUS_UNKNOWN,
-                "Unknown",
-                message.unwrap_or("Status unknown"),
-            );
-        }
-    }
+    apply_phase_conditions(&mut conditions, phase, message);
 
     // Set observed generation on all conditions
     if let Some(gen) = observed_generation {

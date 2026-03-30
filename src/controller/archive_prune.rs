@@ -146,10 +146,16 @@ impl PruneResult {
     pub fn print_summary(&self) {
         println!("\n=== Archive Pruning Summary ===");
         println!("Total checkpoints found:      {}", self.total_checkpoints);
-        println!("Eligible for deletion:        {}", self.eligible_for_deletion);
+        println!(
+            "Eligible for deletion:        {}",
+            self.eligible_for_deletion
+        );
         println!("Deleted:                      {}", self.deleted_count);
         println!("Retained:                     {}", self.retained_count);
-        println!("Space freed:                  {}", format_bytes(self.bytes_freed));
+        println!(
+            "Space freed:                  {}",
+            format_bytes(self.bytes_freed)
+        );
         println!("Dry-run mode:                 {}", self.dry_run);
 
         if !self.errors.is_empty() {
@@ -161,7 +167,8 @@ impl PruneResult {
 
         if self.deleted_count > 0 {
             println!("\nDeleted ledger sequences:");
-            let ledgers_str: Vec<String> = self.deleted_ledgers.iter().map(|l| l.to_string()).collect();
+            let ledgers_str: Vec<String> =
+                self.deleted_ledgers.iter().map(|l| l.to_string()).collect();
             println!("  {}", ledgers_str.join(", "));
         }
     }
@@ -245,11 +252,11 @@ async fn scan_s3_checkpoints(location: &ArchiveLocation) -> Result<Vec<Checkpoin
     // In production, this would use aws-sdk-s3 to list objects
     // For now, we simulate the structure
     debug!("Scanning S3 bucket: {}", location.bucket);
-    
+
     // Stellar archives follow the pattern:
     // {prefix}/hex/hex/hex/history-{hash}.xdr.gz
     // {prefix}/.well-known/stellar-history.json
-    
+
     // TODO: Implement actual S3 scanning with aws-sdk-s3
     warn!("S3 scanning not yet implemented - returning empty checkpoint list");
     Ok(vec![])
@@ -265,17 +272,20 @@ async fn scan_gcs_checkpoints(location: &ArchiveLocation) -> Result<Vec<Checkpoi
 
 /// Scan local filesystem for checkpoints
 async fn scan_local_checkpoints(location: &ArchiveLocation) -> Result<Vec<Checkpoint>, Error> {
-    use tokio::fs;
     use std::path::PathBuf;
+    use tokio::fs;
 
     debug!("Scanning local directory: {}", location.prefix);
-    
+
     let base_path = PathBuf::from(&location.prefix);
     let mut checkpoints = Vec::new();
 
     // Recursively scan for history-*.xdr.gz files
     let mut entries = fs::read_dir(&base_path).await.map_err(|e| {
-        Error::ConfigError(format!("Failed to read directory {}: {}", location.prefix, e))
+        Error::ConfigError(format!(
+            "Failed to read directory {}: {}",
+            location.prefix, e
+        ))
     })?;
 
     while let Some(entry) = entries.next_entry().await? {
@@ -293,8 +303,8 @@ async fn scan_local_checkpoints(location: &ArchiveLocation) -> Result<Vec<Checkp
 
 /// Scan a hex directory for checkpoint files
 async fn scan_hex_directory(dir_path: &std::path::Path) -> Result<Vec<Checkpoint>, Error> {
-    use tokio::fs;
     use std::path::PathBuf;
+    use tokio::fs;
 
     let mut checkpoints = Vec::new();
     let mut entries = fs::read_dir(dir_path).await?;
@@ -323,8 +333,8 @@ async fn parse_checkpoint_from_path(
     path: &std::path::Path,
     filename: &str,
 ) -> Result<Option<Checkpoint>, Error> {
-    use tokio::fs;
     use std::path::PathBuf;
+    use tokio::fs;
 
     // Filename format: history-{hash}.xdr.gz
     let hash = filename
@@ -335,7 +345,7 @@ async fn parse_checkpoint_from_path(
     // Get file metadata for size and timestamp
     let metadata = fs::metadata(path).await?;
     let size_bytes = metadata.len();
-    
+
     let modified = metadata.modified()?;
     let timestamp: chrono::DateTime<Utc> = modified.into();
 
@@ -378,18 +388,17 @@ pub fn identify_deletable_checkpoints(
 
     // Always retain the most recent N checkpoints (safety buffer)
     let min_retain = min_checkpoints.max(MIN_CHECKPOINTS_TO_RETAIN) as usize;
-    
+
     // Calculate cutoff based on retention policy
     let now = Utc::now();
     let cutoff_ledger = retention_ledgers.map(|ledgers| {
-        sorted.first()
+        sorted
+            .first()
             .map(|latest| latest.ledger_seq.saturating_sub(ledgers))
             .unwrap_or(0)
     });
 
-    let cutoff_time = retention_days.map(|days| {
-        now - Duration::days(days as i64)
-    });
+    let cutoff_time = retention_days.map(|days| now - Duration::days(days as i64));
 
     let max_age_cutoff = now - Duration::days(max_age_days as i64);
 
@@ -444,9 +453,12 @@ pub async fn execute_prune(
 
     if !force {
         // Dry-run mode
-        info!("DRY-RUN: Would delete {} checkpoints ({} freed)", 
-              deletable.len(), format_bytes(total_bytes));
-        
+        info!(
+            "DRY-RUN: Would delete {} checkpoints ({} freed)",
+            deletable.len(),
+            format_bytes(total_bytes)
+        );
+
         return Ok(PruneResult {
             total_checkpoints: 0, // Will be set by caller
             eligible_for_deletion: deletable.len(),
@@ -461,8 +473,14 @@ pub async fn execute_prune(
     }
 
     // Require confirmation for actual deletion
-    println!("\n⚠️  WARNING: You are about to permanently delete {} checkpoints.", deletable.len());
-    println!("This will free {} of storage space.", format_bytes(total_bytes));
+    println!(
+        "\n⚠️  WARNING: You are about to permanently delete {} checkpoints.",
+        deletable.len()
+    );
+    println!(
+        "This will free {} of storage space.",
+        format_bytes(total_bytes)
+    );
     println!("\nDeleted ledger sequences:");
     for ledger in &deleted_ledgers {
         println!("  - Ledger {}", ledger);
@@ -476,7 +494,8 @@ pub async fn execute_prune(
 
     // Perform deletions with concurrency limit
     let semaphore = Arc::new(Semaphore::new(concurrency));
-    let errors: Arc<tokio::sync::Mutex<Vec<String>>> = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let errors: Arc<tokio::sync::Mutex<Vec<String>>> =
+        Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
     let delete_stream = stream::iter(deletable.iter())
         .map(|checkpoint| {
@@ -491,8 +510,8 @@ pub async fn execute_prune(
                         debug!("Deleted checkpoint: ledger {}", checkpoint.ledger_seq);
                     }
                     Err(e) => {
-                        let error_msg = format!("Failed to delete ledger {}: {}", 
-                                               checkpoint.ledger_seq, e);
+                        let error_msg =
+                            format!("Failed to delete ledger {}: {}", checkpoint.ledger_seq, e);
                         error!("{}", error_msg);
                         errors.lock().await.push(error_msg);
                     }
@@ -510,8 +529,11 @@ pub async fn execute_prune(
 
     let deleted_count = deletable.len() - final_errors.len();
 
-    info!("Pruning complete: {} deleted, {} errors", 
-          deleted_count, final_errors.len());
+    info!(
+        "Pruning complete: {} deleted, {} errors",
+        deleted_count,
+        final_errors.len()
+    );
 
     Ok(PruneResult {
         total_checkpoints: 0, // Will be set by caller
@@ -527,7 +549,10 @@ pub async fn execute_prune(
 }
 
 /// Delete a single checkpoint
-async fn delete_checkpoint(checkpoint: &Checkpoint, location: &ArchiveLocation) -> Result<(), Error> {
+async fn delete_checkpoint(
+    checkpoint: &Checkpoint,
+    location: &ArchiveLocation,
+) -> Result<(), Error> {
     match location.backend {
         ArchiveBackend::S3 => delete_s3_checkpoint(checkpoint, location).await,
         ArchiveBackend::GCS => delete_gcs_checkpoint(checkpoint, location).await,
@@ -536,30 +561,39 @@ async fn delete_checkpoint(checkpoint: &Checkpoint, location: &ArchiveLocation) 
 }
 
 /// Delete checkpoint from S3
-async fn delete_s3_checkpoint(_checkpoint: &Checkpoint, _location: &ArchiveLocation) -> Result<(), Error> {
+async fn delete_s3_checkpoint(
+    _checkpoint: &Checkpoint,
+    _location: &ArchiveLocation,
+) -> Result<(), Error> {
     // TODO: Implement S3 deletion
     warn!("S3 deletion not yet implemented");
     Ok(())
 }
 
 /// Delete checkpoint from GCS
-async fn delete_gcs_checkpoint(_checkpoint: &Checkpoint, _location: &ArchiveLocation) -> Result<(), Error> {
+async fn delete_gcs_checkpoint(
+    _checkpoint: &Checkpoint,
+    _location: &ArchiveLocation,
+) -> Result<(), Error> {
     // TODO: Implement GCS deletion
     warn!("GCS deletion not yet implemented");
     Ok(())
 }
 
 /// Delete checkpoint from local filesystem
-async fn delete_local_checkpoint(checkpoint: &Checkpoint, _location: &ArchiveLocation) -> Result<(), Error> {
-    use tokio::fs;
+async fn delete_local_checkpoint(
+    checkpoint: &Checkpoint,
+    _location: &ArchiveLocation,
+) -> Result<(), Error> {
     use std::path::PathBuf;
+    use tokio::fs;
 
     let path = PathBuf::from(&checkpoint.path);
-    
+
     // In production, would also delete associated files (ledger, transactions, etc.)
-    fs::remove_file(&path).await.map_err(|e| {
-        Error::ConfigError(format!("Failed to delete {}: {}", checkpoint.path, e))
-    })?;
+    fs::remove_file(&path)
+        .await
+        .map_err(|e| Error::ConfigError(format!("Failed to delete {}: {}", checkpoint.path, e)))?;
 
     Ok(())
 }
@@ -568,7 +602,10 @@ async fn delete_local_checkpoint(checkpoint: &Checkpoint, _location: &ArchiveLoc
 pub async fn prune_archive(args: PruneArchiveArgs) -> Result<(), Error> {
     info!("Starting archive pruning operation...");
     info!("Archive URL: {}", args.archive_url);
-    info!("Retention: {:?} days, {:?} ledgers", args.retention_days, args.retention_ledgers);
+    info!(
+        "Retention: {:?} days, {:?} ledgers",
+        args.retention_days, args.retention_ledgers
+    );
     info!("Min checkpoints: {}", args.min_checkpoints);
     info!("Max age: {} days", args.max_age_days);
     info!("Force mode: {}", args.force);
@@ -576,13 +613,13 @@ pub async fn prune_archive(args: PruneArchiveArgs) -> Result<(), Error> {
     // Validate retention policy
     if args.retention_days.is_none() && args.retention_ledgers.is_none() {
         return Err(Error::ConfigError(
-            "Must specify either --retention-days or --retention-ledgers".to_string()
+            "Must specify either --retention-days or --retention-ledgers".to_string(),
         ));
     }
 
     if args.retention_days.is_some() && args.retention_ledgers.is_some() {
         return Err(Error::ConfigError(
-            "Cannot specify both --retention-days and --retention-ledgers".to_string()
+            "Cannot specify both --retention-days and --retention-ledgers".to_string(),
         ));
     }
 
@@ -711,7 +748,8 @@ mod tests {
             None,
             10, // min 10 checkpoints
             7,  // max age 7 days
-        ).unwrap();
+        )
+        .unwrap();
 
         // Oldest checkpoint should be deletable
         assert_eq!(deletable.len(), 1);
@@ -757,7 +795,8 @@ mod tests {
             Some(150000), // 150k ledgers retention
             10,
             30,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Oldest checkpoint should be deletable (200k ledgers old)
         assert_eq!(deletable.len(), 1);
@@ -787,7 +826,8 @@ mod tests {
             None,
             10, // But min is 10 checkpoints
             90,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Even though all are old, we retain minimum
         assert_eq!(deletable.len(), 0);

@@ -49,6 +49,11 @@ spec:
                   type: boolean
                   default: false
                   description: Suspend the node without deleting resources
+                podAntiAffinity:
+                  type: string
+                  enum: [Hard, Soft, Disabled]
+                  default: Hard
+                  description: Pod anti-affinity strength for same-network stellar-node pods
                 strategy:
                   type: object
                   properties:
@@ -114,6 +119,46 @@ spec:
                         type: string
                     catchupComplete:
                       type: boolean
+                    seedSecretSource:
+                      type: object
+                      description: Typed seed source; exactly one of localRef, externalRef, csiRef, vaultRef.
+                      properties:
+                        localRef:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                        externalRef:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                        csiRef:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                        vaultRef:
+                          type: object
+                          properties:
+                            role:
+                              type: string
+                            secretPath:
+                              type: string
+                            secretKey:
+                              type: string
+                              nullable: true
+                            secretFileName:
+                              type: string
+                              nullable: true
+                            template:
+                              type: string
+                              nullable: true
+                            restartOnSecretRotation:
+                              type: boolean
+                            extraPodAnnotations:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  name:
+                                    type: string
+                                  value:
+                                    type: string
                     hsmConfig:
                       type: object
                       properties:
@@ -169,6 +214,52 @@ spec:
                       minimum: 30000
                       maximum: 32767
                       description: NodePort for HTTP API access
+                snapshotSchedule:
+                  type: object
+                  description: Schedule and options for CSI VolumeSnapshots of the node data PVC (Validator only).
+                  properties:
+                    schedule:
+                      type: string
+                      description: Cron expression for scheduled snapshots (e.g. "0 2 * * *" for daily at 2 AM). If unset, snapshots only on annotation stellar.org/request-snapshot=true.
+                    volumeSnapshotClassName:
+                      type: string
+                      description: VolumeSnapshotClass name. If unset, default class for the driver is used.
+                    flushBeforeSnapshot:
+                      type: boolean
+                      default: false
+                      description: If true, attempt to flush/lock the Stellar DB briefly before creating the snapshot.
+                    retentionCount:
+                      type: integer
+                      format: int32
+                      default: 0
+                      description: Max snapshots to retain per node. 0 means no limit.
+                restoreFromSnapshot:
+                  type: object
+                  description: Bootstrap this node from an existing VolumeSnapshot (Validator only). PVC is created from the snapshot.
+                  properties:
+                    volumeSnapshotName:
+                      type: string
+                      description: Name of the VolumeSnapshot to restore from (same namespace as StellarNode).
+                    namespace:
+                      type: string
+                      description: Optional namespace of the VolumeSnapshot (CrossNamespaceVolumeDataSource).
+                forensicSnapshot:
+                  type: object
+                  description: Forensic capture (PCAP, core) uploaded to S3; trigger via annotation stellar.org/request-forensic-snapshot.
+                  properties:
+                    s3Bucket:
+                      type: string
+                    s3Prefix:
+                      type: string
+                      nullable: true
+                    kmsKeyId:
+                      type: string
+                      nullable: true
+                    credentialsSecretRef:
+                      type: string
+                      nullable: true
+                    enableShareProcessNamespace:
+                      type: boolean
             status:
               type: object
               properties:
@@ -207,6 +298,12 @@ spec:
                   type: integer
                 replicas:
                   type: integer
+                vaultObservedSecretVersion:
+                  type: string
+                  description: Last Vault secret version observed for rotation-driven rollouts.
+                forensicSnapshotPhase:
+                  type: string
+                  description: Phase of forensic snapshot (Capturing, Complete, Failed).
       subresources:
         status: {}
       additionalPrinterColumns:

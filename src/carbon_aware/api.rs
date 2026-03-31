@@ -48,7 +48,7 @@ impl CarbonIntensityAPI {
         base_url: &str,
         token: &str,
     ) -> Result<RegionCarbonData> {
-        let url = format!("{}/v3/carbon-intensity/latest", base_url);
+        let url = format!("{base_url}/v3/carbon-intensity/latest");
 
         let mut request = self.client.get(&url);
 
@@ -215,7 +215,7 @@ impl CarbonIntensityAPI {
     pub async fn health_check(&self) -> Result<bool> {
         match &self.provider {
             CarbonProvider::ElectricityMap { url, .. } => {
-                let health_url = format!("{}/health", url);
+                let health_url = format!("{url}/health");
                 let response = self.client.get(&health_url).send().await?;
                 Ok(response.status().is_success())
             }

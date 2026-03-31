@@ -150,6 +150,10 @@ fn get_metric_value(metric_type: &StellarMetricType, namespace: &str, name: &str
 }
 
 /// Handler for custom metrics API: /apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric
+#[tracing::instrument(
+    skip(_state),
+    fields(node_name = %name, namespace = %namespace, reconcile_id = "-")
+)]
 pub async fn get_pod_metric(
     State(_state): State<Arc<ControllerState>>,
     Path((namespace, name, metric_name)): Path<(String, String, String)>,
@@ -170,7 +174,7 @@ pub async fn get_pod_metric(
                 kind: "Status".to_string(),
                 api_version: "v1".to_string(),
                 metadata: BTreeMap::new(),
-                message: format!("Metric '{}' not found", metric_name),
+                message: format!("Metric '{metric_name}' not found"),
                 reason: "MetricNotFound".to_string(),
                 code: 404,
             };
@@ -209,6 +213,10 @@ pub async fn get_pod_metric(
 }
 
 /// Handler for custom metrics API: /apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/stellarnodes.stellar.org/:name/:metric
+#[tracing::instrument(
+    skip(_state),
+    fields(node_name = %name, namespace = %namespace, reconcile_id = "-")
+)]
 pub async fn get_stellar_node_metric(
     State(_state): State<Arc<ControllerState>>,
     Path((namespace, name, metric_name)): Path<(String, String, String)>,
@@ -229,7 +237,7 @@ pub async fn get_stellar_node_metric(
                 kind: "Status".to_string(),
                 api_version: "v1".to_string(),
                 metadata: BTreeMap::new(),
-                message: format!("Metric '{}' not found", metric_name),
+                message: format!("Metric '{metric_name}' not found"),
                 reason: "MetricNotFound".to_string(),
                 code: 404,
             };

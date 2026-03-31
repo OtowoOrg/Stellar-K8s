@@ -23,12 +23,23 @@ spec:
       serviceAccountName: {{ include "stellar-operator.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      volumes:
+        - name: operator-config
+          configMap:
+            name: {{ include "stellar-operator.fullname" . }}-config
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: STELLAR_OPERATOR_CONFIG
+              value: /etc/stellar-operator/config.yaml
+          volumeMounts:
+            - name: operator-config
+              mountPath: /etc/stellar-operator
+              readOnly: true
           args:
             - --log-level={{ .Values.operator.logLevel }}
             {{- if .Values.operator.restApiEnabled }}
@@ -36,8 +47,8 @@ spec:
             - --rest-api-port={{ .Values.operator.restApiPort }}
             {{- end }}
             - --metrics-port={{ .Values.operator.metricsPort }}
-            {{- range .Values.operator.watchNamespaces }}
-            - --watch-namespace={{ . }}
+            {{- if .Values.operator.watchNamespace }}
+            - --watch-namespace={{ .Values.operator.watchNamespace }}
             {{- end }}
           ports:
             - name: http
@@ -48,18 +59,52 @@ spec:
               protocol: TCP
           livenessProbe:
             httpGet:
-              path: /health
+              path: /livez
               port: http
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
-              path: /health
+              path: /readyz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          startupProbe:
+            httpGet:
+              path: /healthz
               port: http
             initialDelaySeconds: 5
             periodSeconds: 5
+            failureThreshold: 24
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+        {{- if .Values.sidecar.enabled }}
+        - name: crash-analyzer
+          image: "{{ .Values.sidecar.image.repository | default .Values.image.repository }}:{{ .Values.sidecar.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.sidecar.image.pullPolicy | default .Values.image.pullPolicy }}
+          command: ["/stellar-sidecar"]
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CONTAINER_NAME
+              value: {{ .Chart.Name }}
+            - name: RUST_LOG
+              value: {{ .Values.operator.logLevel }}
+          resources:
+            {{- toYaml .Values.sidecar.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

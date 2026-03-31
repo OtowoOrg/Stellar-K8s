@@ -21,6 +21,7 @@ pub const CANARY_DEPLOYMENT_ANNOTATION: &str = "stellar.org/canary-deployment";
 pub const CANARY_TEST_STATUS_ANNOTATION: &str = "stellar.org/canary-test-status";
 pub const CVE_ROLLOUT_STATUS_ANNOTATION: &str = "stellar.org/cve-rollout-status";
 pub const CVE_ROLLBACK_REASON_ANNOTATION: &str = "stellar.org/cve-rollback-reason";
+pub const CVE_AUTO_PATCH_ANNOTATION: &str = "stellar.org/cve-auto-patch";
 
 #[allow(dead_code)]
 const CANARY_TEST_TIMEOUT_SECS: u64 = 300;
@@ -329,7 +330,7 @@ impl RegistryScannerClient {
         let response = request
             .send()
             .await
-            .map_err(|e| Error::ConfigError(format!("Trivy API request failed: {}", e)))?;
+            .map_err(|e| Error::ConfigError(format!("Trivy API request failed: {e}")))?;
 
         if !response.status().is_success() {
             return Err(Error::ConfigError(format!(
@@ -341,7 +342,7 @@ impl RegistryScannerClient {
         let trivy_response: TrivyScanResponse = response
             .json()
             .await
-            .map_err(|e| Error::ConfigError(format!("Failed to parse Trivy response: {}", e)))?;
+            .map_err(|e| Error::ConfigError(format!("Failed to parse Trivy response: {e}")))?;
 
         let mut vulnerabilities = Vec::new();
         let mut cve_count = CVECount::default();
@@ -418,7 +419,7 @@ impl RegistryScannerClient {
             .rsplit_once(':')
             .unwrap_or((current_image, "latest"));
 
-        let patched_image = format!("{}:{}-patched", image_name, current_tag);
+        let patched_image = format!("{image_name}:{current_tag}-patched");
 
         info!(
             "Found patched version for {}: {}",

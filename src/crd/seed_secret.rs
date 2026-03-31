@@ -9,6 +9,7 @@
 //! | `LocalRef`     | Plain Kubernetes Secret                | Development only |
 //! | `ExternalRef`  | External Secrets Operator (ESO)        | Production       |
 //! | `CsiRef`       | Secrets Store CSI Driver               | Production       |
+//! | `VaultRef`     | HashiCorp Vault Agent Injector (sidecar) | Production       |
 //!
 //! # Migration from the old string field
 //!
@@ -89,6 +90,15 @@ pub struct SeedSecretSource {
     /// stellar-core reads the key from that file path.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub csi_ref: Option<CsiSecretRef>,
+
+    /// HashiCorp Vault via the **Vault Agent Injector** (init + sidecar).
+    ///
+    /// Requires the Vault Agent Injector mutating webhook in the cluster.
+    /// The operator sets standard `vault.hashicorp.com/*` pod annotations;
+    /// the injector adds the Vault Agent containers and renders the secret file
+    /// under `/vault/secrets/`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vault_ref: Option<VaultSecretRef>,
 }
 
 impl SeedSecretSource {
@@ -99,10 +109,12 @@ impl SeedSecretSource {
             self.local_ref.is_some(),
             self.external_ref.is_some(),
             self.csi_ref.is_some(),
+            self.vault_ref.is_some(),
         ) {
-            (true, false, false) => "local Kubernetes Secret (dev only)",
-            (false, true, false) => "External Secrets Operator",
-            (false, false, true) => "Secrets Store CSI Driver",
+            (true, false, false, false) => "local Kubernetes Secret (dev only)",
+            (false, true, false, false) => "External Secrets Operator",
+            (false, false, true, false) => "Secrets Store CSI Driver",
+            (false, false, false, true) => "HashiCorp Vault Agent Injector",
             _ => "invalid (multiple sources set)",
         }
     }
@@ -113,6 +125,7 @@ impl SeedSecretSource {
             self.local_ref.is_some(),
             self.external_ref.is_some(),
             self.csi_ref.is_some(),
+            self.vault_ref.is_some(),
         ]
         .iter()
         .filter(|&&b| b)
@@ -121,11 +134,11 @@ impl SeedSecretSource {
         match count {
             1 => Ok(()),
             0 => Err(
-                "seedSecretSource: at least one of localRef, externalRef, or csiRef must be set"
+                "seedSecretSource: at least one of localRef, externalRef, csiRef, or vaultRef must be set"
                     .to_string(),
             ),
             _ => Err(
-                "seedSecretSource: exactly one of localRef, externalRef, or csiRef must be set; multiple fields are set"
+                "seedSecretSource: exactly one of localRef, externalRef, csiRef, or vaultRef must be set; multiple fields are set"
                     .to_string(),
             ),
         }
@@ -299,6 +312,75 @@ impl CsiSecretRef {
 }
 
 // ============================================================================
+// Variant 4 — HashiCorp Vault Agent Injector
+// ============================================================================
+
+/// Native Vault integration: pod annotations consumed by the Vault Agent Injector.
+///
+/// Install the [Vault Helm chart](https://github.com/hashicorp/vault-helm) with
+/// `injector.enabled=true`. The operator never reads secret material; it only
+/// sets annotations so the injector adds the Agent init container and sidecar.
+///
+/// ```yaml
+/// seedSecretSource:
+///   vaultRef:
+///     role: stellar-validator
+///     secretPath: secret/data/stellar/validator
+///     secretKey: seed
+///     secretFileName: stellar-seed
+///     restartOnSecretRotation: true
+/// ```
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultSecretRef {
+    /// Vault Kubernetes auth role bound to this pod's ServiceAccount.
+    pub role: String,
+
+    /// Path passed to `vault.hashicorp.com/agent-inject-secret-<file>` (KV v1/v2 path as in Vault).
+    pub secret_path: String,
+
+    /// JSON field under `.Data.data` for KV v2 (default `seed`). Ignored if `template` is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_key: Option<String>,
+
+    /// Base file name rendered under `/vault/secrets/` (default `stellar-seed`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_file_name: Option<String>,
+
+    /// Custom Agent template; when set, overrides the default KV v2 template.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
+
+    /// When true, the operator compares Vault secret-version annotations on pods
+    /// and rolls the StatefulSet when the version changes after sync.
+    #[serde(default)]
+    pub restart_on_secret_rotation: bool,
+
+    /// Additional `vault.hashicorp.com/*` or other pod annotations to merge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_pod_annotations: Vec<VaultPodAnnotation>,
+}
+
+/// Key/value pair for extra Vault Agent pod annotations (CRD-friendly vs raw maps).
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultPodAnnotation {
+    pub name: String,
+    pub value: String,
+}
+
+impl VaultSecretRef {
+    /// Effective secret file name for injector annotations and `STELLAR_SEED_FILE`.
+    pub fn effective_secret_file_name(&self) -> &str {
+        self.secret_file_name
+            .as_deref()
+            .unwrap_or(DEFAULT_VAULT_SECRET_FILE)
+    }
+}
+
+const DEFAULT_VAULT_SECRET_FILE: &str = "stellar-seed";
+
+// ============================================================================
 // Defaults
 // ============================================================================
 
@@ -342,6 +424,7 @@ mod tests {
             }),
             external_ref: None,
             csi_ref: None,
+            vault_ref: None,
         }
     }
 
@@ -359,6 +442,7 @@ mod tests {
                 refresh_interval: Some("1h".to_string()),
             }),
             csi_ref: None,
+            vault_ref: None,
         }
     }
 
@@ -371,6 +455,24 @@ mod tests {
                 mount_path: None,
                 seed_file_name: None,
             }),
+            vault_ref: None,
+        }
+    }
+
+    fn vault_source() -> SeedSecretSource {
+        SeedSecretSource {
+            local_ref: None,
+            external_ref: None,
+            csi_ref: None,
+            vault_ref: Some(VaultSecretRef {
+                role: "validator".to_string(),
+                secret_path: "secret/data/stellar/validator".to_string(),
+                secret_key: Some("seed".to_string()),
+                secret_file_name: None,
+                template: None,
+                restart_on_secret_rotation: false,
+                extra_pod_annotations: vec![],
+            }),
         }
     }
 
@@ -379,6 +481,7 @@ mod tests {
         assert!(local_source().validate().is_ok());
         assert!(external_source().validate().is_ok());
         assert!(csi_source().validate().is_ok());
+        assert!(vault_source().validate().is_ok());
     }
 
     #[test]
@@ -387,6 +490,7 @@ mod tests {
             local_ref: None,
             external_ref: None,
             csi_ref: None,
+            vault_ref: None,
         };
         assert!(s.validate().is_err());
     }
@@ -403,6 +507,7 @@ mod tests {
         assert!(local_source().is_local());
         assert!(!external_source().is_local());
         assert!(!csi_source().is_local());
+        assert!(!vault_source().is_local());
     }
 
     #[test]
@@ -430,5 +535,6 @@ mod tests {
         assert!(local_source().describe().contains("dev only"));
         assert!(external_source().describe().contains("External Secrets"));
         assert!(csi_source().describe().contains("CSI"));
+        assert!(vault_source().describe().contains("Vault"));
     }
 }

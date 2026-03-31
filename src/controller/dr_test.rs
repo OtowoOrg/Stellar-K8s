@@ -22,6 +22,7 @@ mod tests {
             sync_strategy: sync,
             failover_dns: None,
             health_check_interval: 30,
+            drill_schedule: None,
         }
     }
 
@@ -42,6 +43,7 @@ mod tests {
             sync_strategy: DRSyncStrategy::Consensus,
             failover_dns: None,
             health_check_interval: 30,
+            drill_schedule: None,
         };
         // When enabled is false the reconciler returns Ok(None).
         // We verify the shape of the config to confirm the guard would fire.
@@ -180,7 +182,7 @@ mod tests {
         ];
 
         // Sort descending by priority (most preferred first)
-        targets.sort_by(|a, b| b.priority.cmp(&a.priority));
+        targets.sort_by_key(|b| std::cmp::Reverse(b.priority));
 
         assert_eq!(targets[0].cluster_id, "us-east-1");
         assert_eq!(targets[1].cluster_id, "ap-south-1");

@@ -14,10 +14,22 @@ use super::cve::{
     create_canary_deployment, delete_canary_deployment, rollback_version, trigger_rolling_update,
     CVERolloutStatus, CanaryTestRunner, CanaryTestStatus, ConsensusHealthMonitor,
     RegistryScannerClient, CANARY_DEPLOYMENT_ANNOTATION, CANARY_TEST_STATUS_ANNOTATION,
-    CVE_DETECTED_ANNOTATION, CVE_PATCHED_VERSION_ANNOTATION, CVE_ROLLBACK_REASON_ANNOTATION,
-    CVE_ROLLOUT_STATUS_ANNOTATION, CVE_SCAN_TIME_ANNOTATION, CVE_VULNERABLE_IMAGE_ANNOTATION,
+    CVE_AUTO_PATCH_ANNOTATION, CVE_DETECTED_ANNOTATION, CVE_PATCHED_VERSION_ANNOTATION,
+    CVE_ROLLBACK_REASON_ANNOTATION, CVE_ROLLOUT_STATUS_ANNOTATION, CVE_SCAN_TIME_ANNOTATION,
+    CVE_VULNERABLE_IMAGE_ANNOTATION,
 };
 use crate::crd::CVEHandlingConfig;
+
+/// Check if auto-patch is enabled via annotation (safety gate)
+/// Defaults to true if annotation is not present
+fn is_auto_patch_enabled(node: &StellarNode) -> bool {
+    node.metadata
+        .annotations
+        .as_ref()
+        .and_then(|ann| ann.get(CVE_AUTO_PATCH_ANNOTATION))
+        .map(|v| v == "true" || v == "enabled")
+        .unwrap_or(true) // Default to enabled if annotation not present
+}
 
 /// Handle CVE scanning and patching during reconciliation
 pub async fn reconcile_cve_patches(
@@ -28,6 +40,16 @@ pub async fn reconcile_cve_patches(
     if !config.enabled {
         debug!(
             "CVE handling disabled for {}/{}",
+            node.namespace().unwrap_or_else(|| "default".to_string()),
+            node.name_any()
+        );
+        return Ok(());
+    }
+
+    // Safety gate: Check opt-in/out annotation
+    if !is_auto_patch_enabled(node) {
+        debug!(
+            "CVE auto-patch disabled via annotation for {}/{}",
             node.namespace().unwrap_or_else(|| "default".to_string()),
             node.name_any()
         );

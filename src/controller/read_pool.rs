@@ -383,7 +383,7 @@ fn build_read_config_map(node: &StellarNode) -> ConfigMap {
         if !vc.history_archive_urls.is_empty() {
             script.push_str("ARCHIVES=(\n");
             for url in &vc.history_archive_urls {
-                script.push_str(&format!("  \"{}\"\n", url));
+                script.push_str(&format!("  \"{url}\"\n"));
             }
             script.push_str(")\n");
             script.push_str("ARCHIVE_COUNT=${#ARCHIVES[@]}\n");
@@ -397,7 +397,7 @@ fn build_read_config_map(node: &StellarNode) -> ConfigMap {
             script.push_str("RUN_STANDALONE=false\n");
             script.push_str(&format!(
                 "NETWORK_PASSPHRASE=\"{}\"\n",
-                node.spec.network.passphrase()
+                node.spec.network_passphrase()
             ));
             script.push_str("[HISTORY.h1]\n");
             script.push_str("get=\"curl -sf $SELECTED_ARCHIVE/{0} -o {1}\"\n\n");
@@ -408,7 +408,7 @@ fn build_read_config_map(node: &StellarNode) -> ConfigMap {
                 node.namespace().unwrap_or_else(|| "default".to_string())
             );
             script.push_str("[PREFERRED_PEERS]\n");
-            script.push_str(&format!("\"{}\"\n", validator_svc));
+            script.push_str(&format!("\"{validator_svc}\"\n"));
             script.push_str("EOF\n");
         }
     }
@@ -508,6 +508,7 @@ fn build_read_pod_template(
                 }),
                 ..Default::default()
             }]),
+            affinity: super::resources::merge_workload_affinity(node),
             topology_spread_constraints: Some(super::resources::build_topology_spread_constraints(
                 &node.spec,
                 &node.name_any(),

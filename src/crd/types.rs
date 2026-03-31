@@ -66,23 +66,88 @@ impl std::fmt::Display for HistoryMode {
 
 /// Target Stellar network
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub enum StellarNetwork {
     Mainnet,
     #[default]
     Testnet,
     Futurenet,
-    Custom(String),
+    Custom,
 }
 
 impl StellarNetwork {
-    pub fn passphrase(&self) -> &str {
+    pub fn passphrase<'a>(&'a self, custom: &'a Option<String>) -> &'a str {
         match self {
             StellarNetwork::Mainnet => "Public Global Stellar Network ; September 2015",
             StellarNetwork::Testnet => "Test SDF Network ; September 2015",
             StellarNetwork::Futurenet => "Test SDF Future Network ; October 2022",
-            StellarNetwork::Custom(passphrase) => passphrase,
+            StellarNetwork::Custom => custom.as_deref().unwrap_or(""),
         }
     }
+
+    /// Validate the custom network name against DNS-1123 label rules.
+    ///
+    /// Rules (applied only to `Custom` variants):
+    /// - Must not be empty (minLength: 1)
+    /// - Must not exceed 63 characters (maxLength: 63)
+    /// - Must match `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` (lowercase alphanumeric and hyphens,
+    ///   no leading/trailing hyphens)
+    pub fn validate_custom_name(&self) -> Result<(), String> {
+        let name = match self {
+            StellarNetwork::Custom(n) => n,
+            _ => return Ok(()),
+        };
+        if name.is_empty() {
+            return Err("customName must not be empty (minLength: 1)".to_string());
+        }
+        if name.len() > 63 {
+            return Err(format!(
+                "customName '{name}' exceeds 63 characters (maxLength: 63)"
+            ));
+        }
+        let valid = name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            && name.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && name.ends_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit());
+        if !valid {
+            return Err(format!(
+                "customName '{name}' is invalid: must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ (lowercase alphanumeric and hyphens only, no leading/trailing hyphens)"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Stable, DNS-1123-friendly label value for topology spread and anti-affinity.
+    pub fn scheduling_label_value(&self, custom: &Option<String>) -> String {
+        match self {
+            StellarNetwork::Mainnet => "mainnet".to_string(),
+            StellarNetwork::Testnet => "testnet".to_string(),
+            StellarNetwork::Futurenet => "futurenet".to_string(),
+            StellarNetwork::Custom => {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut h = DefaultHasher::new();
+                let passphrase = custom.as_deref().unwrap_or("");
+                passphrase.hash(&mut h);
+                format!("custom-{:x}", h.finish())
+            }
+        }
+    }
+}
+
+/// Controls default pod anti-affinity for spreading pods that share the same
+/// [`StellarNetwork`] across nodes.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
+pub enum PodAntiAffinityStrength {
+    /// `requiredDuringScheduling` — do not place on a node that already runs a matching pod.
+    #[default]
+    Hard,
+    /// `preferredDuringScheduling` — best-effort separation with weight 100.
+    Soft,
+    /// Do not inject pod anti-affinity (topology spread defaults still apply unless overridden).
+    Disabled,
 }
 
 /// Kubernetes-style resource requirements
@@ -124,25 +189,41 @@ impl Default for ResourceSpec {
     }
 }
 
+/// Storage mode for persistent data
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub enum StorageMode {
+    #[default]
+    PersistentVolume,
+    Local,
+}
+
 /// Storage configuration for persistent data
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageConfig {
+    #[serde(default)]
+    pub mode: StorageMode,
     pub storage_class: String,
     pub size: String,
     #[serde(default)]
     pub retention_policy: RetentionPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<BTreeMap<String, String>>,
+    /// Node affinity for local storage mode (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(schema_with = "super::schema_utils::object_schema")]
+    pub node_affinity: Option<k8s_openapi::api::core::v1::NodeAffinity>,
 }
 
 impl Default for StorageConfig {
     fn default() -> Self {
         Self {
+            mode: StorageMode::default(),
             storage_class: "standard".to_string(),
             size: "100Gi".to_string(),
             retention_policy: RetentionPolicy::default(),
             annotations: None,
+            node_affinity: None,
         }
     }
 }
@@ -153,6 +234,46 @@ pub enum RetentionPolicy {
     #[default]
     Delete,
     Retain,
+}
+
+/// Configuration for zero-downtime CSI VolumeSnapshot scheduling
+///
+/// When set, the operator will create Kubernetes VolumeSnapshot resources targeting
+/// the node's data PVC on the given schedule (or on-demand via annotation).
+/// For database consistency, the operator can optionally trigger a brief flush/lock
+/// before taking the snapshot when the storage driver does not guarantee crash consistency.
+///
+/// Only applies to Validator nodes (Stellar Core ledger data).
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotScheduleConfig {
+    /// Cron expression for scheduled snapshots (e.g. "0 2 * * *" for daily at 2 AM).
+    /// If unset, snapshots are only taken when triggered via annotation `stellar.org/request-snapshot: "true"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
+    /// VolumeSnapshotClass name. If unset, the default class for the PVC's driver is used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_snapshot_class_name: Option<String>,
+    /// If true, the operator will attempt to flush/lock the Stellar database briefly before creating the snapshot (e.g. via stellar-core HTTP or exec). Requires the node to be healthy.
+    #[serde(default)]
+    pub flush_before_snapshot: bool,
+    /// Maximum number of snapshots to retain per node. Oldest snapshots are deleted when exceeded. 0 means no limit.
+    #[serde(default)]
+    pub retention_count: u32,
+}
+
+/// Configuration to bootstrap a new node from an existing CSI VolumeSnapshot
+///
+/// When set, the node's PVC is created from the specified VolumeSnapshot instead of
+/// starting empty, enabling near-instant bootstrap without syncing from a history archive.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreFromSnapshotConfig {
+    /// Name of the VolumeSnapshot to restore from (must exist in the same namespace as the StellarNode).
+    pub volume_snapshot_name: String,
+    /// Optional: namespace of the VolumeSnapshot if different from the StellarNode. Requires CrossNamespaceVolumeDataSource where supported.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
 }
 
 /// VPA update mode
@@ -185,8 +306,33 @@ pub struct VpaConfig {
     pub container_policies: Vec<VpaContainerPolicy>,
 }
 
-/// Validator-specific configuration
+/// Forensic snapshot bundle upload (S3-compatible via AWS CLI in ephemeral capture).
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ForensicSnapshotConfig {
+    /// Target S3 bucket for the encrypted forensic tarball.
+    pub s3_bucket: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_prefix: Option<String>,
+
+    /// Optional KMS key id for SSE-KMS (`aws s3 cp --sse aws:kms`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kms_key_id: Option<String>,
+
+    /// Secret in the same namespace with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
+    /// when not using IRSA/instance roles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credentials_secret_ref: Option<String>,
+
+    /// Set `shareProcessNamespace: true` on validator pods so the capture container
+    /// can see `stellar-core` for core dumps (recommended for forensic workflows).
+    #[serde(default)]
+    pub enable_share_process_namespace: bool,
+}
+
+/// Validator-specific configuration
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidatorConfig {
     /// Secret name containing the validator seed (key: STELLAR_CORE_SEED)
@@ -251,6 +397,7 @@ impl ValidatorConfig {
                 }),
                 external_ref: None,
                 csi_ref: None,
+                vault_ref: None,
             });
         }
         None
@@ -258,7 +405,7 @@ impl ValidatorConfig {
 }
 
 /// Configuration for Hardware Security Module (HSM) integration
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct HsmConfig {
     pub provider: HsmProvider,
@@ -270,8 +417,9 @@ pub struct HsmConfig {
 }
 
 /// Supported HSM Providers
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum HsmProvider {
+    #[default]
     AWS,
     Azure,
 }
@@ -286,7 +434,7 @@ pub enum KeySource {
 }
 
 /// Configuration for cloud-native KMS or Vault
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct KmsConfig {
     pub key_id: String,
@@ -298,7 +446,7 @@ pub struct KmsConfig {
 }
 
 /// Horizon API server configuration
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct HorizonConfig {
     pub database_secret_ref: String,
@@ -322,7 +470,7 @@ fn default_ingest_workers() -> u32 {
 }
 
 /// Captive Core configuration for Soroban RPC
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptiveCoreConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -340,7 +488,7 @@ pub struct CaptiveCoreConfig {
 }
 
 /// Soroban RPC server configuration
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SorobanConfig {
     pub stellar_core_url: String,
@@ -557,13 +705,33 @@ impl Default for NetworkPolicyConfig {
     }
 }
 
+/// Rollout strategy type
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RolloutStrategyType {
+    #[default]
+    RollingUpdate,
+    Canary,
+}
+
 /// Rollout strategy for updates
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub enum RolloutStrategy {
-    #[default]
-    RollingUpdate,
-    Canary(CanaryConfig),
+pub struct RolloutStrategy {
+    #[serde(rename = "type")]
+    pub strategy_type: RolloutStrategyType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub canary: Option<CanaryConfig>,
+}
+
+impl RolloutStrategy {
+    pub fn canary(&self) -> Option<&CanaryConfig> {
+        if let RolloutStrategyType::Canary = self.strategy_type {
+            self.canary.as_ref()
+        } else {
+            None
+        }
+    }
 }
 
 /// Configuration for Canary rollout
@@ -842,6 +1010,41 @@ pub struct DisasterRecoveryConfig {
     pub failover_dns: Option<ExternalDNSConfig>,
     #[serde(default = "default_dr_check_interval")]
     pub health_check_interval: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drill_schedule: Option<DRDrillScheduleConfig>,
+
+    /// Configuration for history archive integrity checks
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archive_integrity_config: Option<ArchiveIntegrityConfig>,
+}
+
+/// Configuration for periodic history archive integrity checks
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveIntegrityConfig {
+    /// Enable periodic integrity checks
+    pub enabled: bool,
+    /// Interval between integrity checks (e.g. "1h", "6h", "24h")
+    #[serde(default = "default_archive_check_interval")]
+    pub interval: String,
+    /// Percentage of checkpoints to verify in each run (1-100)
+    #[serde(default = "default_archive_check_percentage")]
+    pub check_percentage: u32,
+    /// Maximum number of historical checkpoints to verify in each run
+    #[serde(default = "default_archive_check_max_checkpoints")]
+    pub max_checkpoints: u32,
+}
+
+fn default_archive_check_interval() -> String {
+    "6h".to_string()
+}
+
+fn default_archive_check_percentage() -> u32 {
+    5
+}
+
+fn default_archive_check_max_checkpoints() -> u32 {
+    10
 }
 
 fn default_dr_check_interval() -> u32 {
@@ -875,6 +1078,85 @@ pub struct DisasterRecoveryStatus {
     pub last_peer_contact: Option<String>,
     pub sync_lag: Option<u64>,
     pub failover_active: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_drill_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_drill_result: Option<DRDrillResult>,
+}
+
+/// Configuration for automated DR drill scheduling
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DRDrillScheduleConfig {
+    /// Cron expression for drill scheduling (e.g., "0 2 * * 0" for weekly Sunday 2 AM)
+    pub schedule: String,
+    /// Whether to actually perform failover or just simulate it (dry-run)
+    #[serde(default)]
+    pub dry_run: bool,
+    /// Maximum time to wait for failover to complete (seconds)
+    #[serde(default = "default_drill_timeout")]
+    pub timeout_seconds: u32,
+    /// Whether to automatically rollback after drill completion
+    #[serde(default = "default_drill_auto_rollback")]
+    pub auto_rollback: bool,
+    /// Rollback delay after drill completion (seconds)
+    #[serde(default = "default_drill_rollback_delay")]
+    pub rollback_delay_seconds: u32,
+}
+
+fn default_drill_timeout() -> u32 {
+    300 // 5 minutes
+}
+
+fn default_drill_auto_rollback() -> bool {
+    true
+}
+
+fn default_drill_rollback_delay() -> u32 {
+    60 // 1 minute
+}
+
+/// Result of a DR drill execution
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DRDrillResult {
+    /// Drill execution status
+    pub status: DRDrillStatus,
+    /// Time to recovery in milliseconds
+    pub time_to_recovery_ms: Option<u64>,
+    /// Whether standby successfully took over
+    pub standby_takeover_success: bool,
+    /// Whether application remained available during drill
+    pub application_availability: bool,
+    /// Human-readable message about drill result
+    pub message: String,
+    /// Timestamp when drill started
+    pub started_at: String,
+    /// Timestamp when drill completed
+    pub completed_at: Option<String>,
+}
+
+/// Placement configuration for intelligent pod scheduling.
+/// Enables SCP-aware anti-affinity to ensure validator resilience.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlacementConfig {
+    /// Enable SCP-aware anti-affinity.
+    /// When true, the operator will inject podAntiAffinity rules to discourage
+    /// placing nodes from the same quorum slice on the same physical host.
+    #[serde(default)]
+    pub scp_aware_anti_affinity: bool,
+}
+
+/// Status of a DR drill execution
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DRDrillStatus {
+    Pending,
+    Running,
+    Success,
+    Failed,
+    RolledBack,
 }
 
 /// Configuration for cross-cluster communication
@@ -1145,7 +1427,7 @@ impl Default for CVEHandlingConfig {
 // ============================================================================
 
 /// Configuration for managed High-Availability Postgres clusters via CloudNativePG
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedDatabaseConfig {
     #[serde(default = "default_db_instances")]
@@ -1258,6 +1540,28 @@ pub enum PgBouncerPoolMode {
 }
 
 // ============================================================================
+// NAT Traversal Configuration
+// ============================================================================
+
+/// Configuration for NAT traversal (STUN/TURN/ICE) for P2P networking.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NatTraversalConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stun_server: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_server: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_credentials_secret_ref: Option<String>,
+    #[serde(default = "default_true")]
+    pub enable_ice: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sidecar_image: Option<String>,
+}
+
+// ============================================================================
 // OCI Snapshot Sync (#231)
 // ============================================================================
 
@@ -1324,4 +1628,26 @@ pub struct OciSnapshotConfig {
     /// from `registry`, `image`, and `tag_strategy`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pull_image_ref: Option<String>,
+}
+
+// ============================================================================
+// Label Propagation Configuration
+// ============================================================================
+
+/// Filter policy controlling which StellarNode labels are propagated to child resources.
+///
+/// When both lists are empty, all user labels are propagated (subject to the implicit
+/// denylist for `kubernetes.io/` and `k8s.io/` prefixes).
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelPropagationConfig {
+    /// Glob patterns for label keys that are allowed to propagate.
+    /// When empty, all user labels are eligible (subject to denyList).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow_list: Vec<String>,
+
+    /// Glob patterns for label keys that are always blocked from propagation.
+    /// Takes precedence over allowList.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deny_list: Vec<String>,
 }

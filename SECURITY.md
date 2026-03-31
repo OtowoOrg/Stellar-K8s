@@ -2,137 +2,230 @@
 
 ## Supported Versions
 
-We actively support the following versions with security updates:
+The following versions of Stellar-K8s currently receive security updates:-
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.2.x   | :white_check_mark: |
-| 0.1.x   | :x:                |
+| Version | Supported          | End of Support |
+| ------- | ------------------ | -------------- |
+| 0.1.x   | :white_check_mark: | TBD            |
+
+> Only the latest patch release within a supported minor version receives security fixes.
+> Users are strongly encouraged to stay on the latest release.
+
+---
 
 ## Reporting a Vulnerability
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+**Do not report security vulnerabilities through public GitHub issues, pull requests, or discussions.**
 
-If you discover a security vulnerability in the Stellar-K8s operator, please report it by emailing:
+### Option 1 — GitHub Private Security Advisory (Preferred)
+
+Use GitHub's built-in private disclosure mechanism:
+
+1. Go to the [Security Advisories](../../security/advisories/new) tab of this repository
+2. Click **"Report a vulnerability"**
+3. Fill in the details and submit
+
+This keeps the report confidential and allows coordinated disclosure.
+
+### Option 2 — Encrypted Email
+
+Send an encrypted report to:
 
 **security@stellar-k8s.io**
 
-Please include the following information in your report:
+For encrypted communication, use our PGP public key:
 
-- **Type of issue** (e.g., buffer overflow, SQL injection, cross-site scripting, etc.)
-- **Full paths of source file(s)** related to the manifestation of the issue
-- **The location of the affected source code** (tag/branch/commit or direct URL)
-- **Any special configuration required** to reproduce the issue
-- **Step-by-step instructions** to reproduce the issue
-- **Proof-of-concept or exploit code** (if possible)
-- **Impact of the issue**, including how an attacker might exploit it
+```
+-----BEGIN PGP PUBLIC KEY BLOCK-----
 
-### What to Expect
+mQINBGYXXXXBEAC... (placeholder — replace with actual project PGP key)
+-----END PGP PUBLIC KEY BLOCK-----
+```
 
-- You will receive an acknowledgment within **48 hours**
-- We will provide a more detailed response within **5 business days** indicating the next steps
-- We will keep you informed of the progress towards a fix
-- We may ask for additional information or guidance
+Key fingerprint: `XXXX XXXX XXXX XXXX XXXX  XXXX XXXX XXXX XXXX XXXX`
 
-### Disclosure Policy
+> Until a project PGP key is published, reporters may use GitHub's private advisory
+> system (Option 1) or email **samuelotowo@gmail.com** directly.
 
-- Security vulnerabilities will be handled according to responsible disclosure principles
-- Once a fix is available, we will:
-  1. Notify users through security advisories
-  2. Release a patched version
-  3. Credit the reporter (unless they wish to remain anonymous)
-  4. Publish a security advisory with details
+---
+
+## What to Include in Your Report
+
+Please provide as much of the following as possible:
+
+- Type of vulnerability (e.g., privilege escalation, SSRF, RCE, information disclosure)
+- Affected component(s) and version(s)
+- Full path(s) of relevant source files
+- Step-by-step reproduction instructions
+- Proof-of-concept or exploit code (if available)
+- Potential impact and attack scenario
+- Any suggested mitigations
+
+---
+
+## Response Timeline
+
+| Stage                        | Target SLA         |
+| ---------------------------- | ------------------ |
+| Acknowledgment               | 48 hours           |
+| Initial triage & severity    | 5 business days    |
+| Fix development begins       | Based on severity  |
+| Patch release (Critical/High)| 14 days            |
+| Patch release (Medium/Low)   | 30–90 days         |
+| Public disclosure            | After patch ships  |
+
+Severity is assessed using [CVSS v3.1](https://www.first.org/cvss/calculator/3.1).
+
+---
+
+## Disclosure Policy
+
+We follow [coordinated vulnerability disclosure](https://cheatsheetseries.owasp.org/cheatsheets/Vulnerability_Disclosure_Cheat_Sheet.html):
+
+1. Reporter submits vulnerability privately
+2. We validate, triage, and assign a CVE if warranted
+3. We develop and test a fix in a private fork
+4. A patched release is published
+5. A GitHub Security Advisory is made public
+6. Reporter is credited (unless they prefer anonymity)
+
+We ask reporters to:
+- Allow at least **90 days** before public disclosure
+- Avoid accessing or modifying data beyond what is needed to demonstrate the issue
+- Not disrupt production systems or other users
+
+---
 
 ## Security Update Process
 
-1. **Report received** - Security team acknowledges the report
-2. **Validation** - Team validates and assesses severity (CVSS scoring)
-3. **Fix development** - Patch is developed and tested
-4. **Security advisory** - Advisory is drafted (kept private)
-5. **Release** - Patched version is released
-6. **Public disclosure** - Advisory is published with credits
+```
+Report received
+     │
+     ▼
+Acknowledgment (48h)
+     │
+     ▼
+Triage & CVSS scoring
+     │
+     ├─ Invalid / Not a vulnerability ──► Close with explanation
+     │
+     ▼
+Private fix branch + draft advisory
+     │
+     ▼
+Patch release + CVE assignment
+     │
+     ▼
+Public advisory + reporter credit
+```
 
-## Security Best Practices
+---
 
-When deploying the Stellar-K8s operator, we recommend:
+## Security Best Practices for Deployers
 
 ### Container Security
-- Always use the latest stable version
-- Scan container images for vulnerabilities regularly
-- Use non-root users (already configured in our images)
-- Implement Pod Security Standards/Policies
+- Use the latest stable release; pin image digests in production
+- Scan images with Trivy or Grype before deployment
+- Operator containers run as non-root by default — do not override this
+
+### RBAC & Permissions
+- Follow least-privilege; review the generated RBAC manifests before applying
+- Use dedicated service accounts per component
+- Audit RBAC bindings regularly
 
 ### Network Security
 - Enable mTLS for inter-component communication
-- Use network policies to restrict traffic
-- Implement proper ingress/egress rules
-- Enable audit logging
-
-### RBAC & Permissions
-- Follow principle of least privilege
-- Use separate service accounts for different components
-- Regularly audit RBAC permissions
-- Enable admission webhooks
+- Apply Kubernetes NetworkPolicies to restrict operator traffic
+- Protect the admission webhook endpoint with proper TLS certificates
 
 ### Secrets Management
-- Use Kubernetes secrets or external secret managers
-- Enable encryption at rest for etcd
-- Rotate secrets regularly
-- Never commit secrets to version control
+- Use an external secrets manager (Vault, AWS Secrets Manager, etc.)
+- Enable etcd encryption at rest
+- Rotate secrets and TLS certificates regularly
 
 ### Monitoring
-- Enable security monitoring and alerting
-- Review audit logs regularly
-- Monitor for suspicious activity
-- Set up vulnerability scanning in CI/CD
+- Enable audit logging on the API server
+- Alert on unexpected RBAC changes or CRD modifications
+- Monitor operator metrics via the Prometheus endpoint
+
+---
+
+## Security Scanning in CI/CD
+
+Our pipeline runs the following on every commit:
+
+| Tool          | Purpose                                      |
+| ------------- | -------------------------------------------- |
+| `cargo audit` | Rust dependency advisory checks (RUSTSEC DB) |
+| Trivy         | Container image vulnerability scanning       |
+| Dependabot    | Automated dependency update PRs              |
+| SBOM          | Software Bill of Materials generation        |
+
+Results are uploaded to GitHub Security tab as SARIF reports.
+
+---
 
 ## Known Security Considerations
 
-### API Authentication
-The operator's REST API should be protected by:
-- Network policies
-- Ingress authentication
-- mTLS (when enabled)
+### Admission Webhook
+The WASM-based admission webhook validates all `StellarNode` resources. Ensure:
+- The webhook TLS certificate is valid and rotated before expiry
+- WASM plugins are loaded only from trusted, integrity-verified sources (SHA-256 checked)
 
 ### CRD Validation
-The operator uses webhook validation to prevent:
-- Invalid configurations
-- Resource exhaustion
-- Privilege escalation
+Webhook validation prevents invalid configurations, resource exhaustion, and privilege escalation attempts via the `StellarNode` spec.
 
-### Dependencies
-We use:
-- Dependabot for automated dependency updates
-- Cargo audit for Rust security advisories
-- Trivy for container scanning
-- SBOM generation for supply chain security
+### REST API
+The optional REST API should be protected by network policies and ingress authentication. Do not expose it publicly without authentication.
 
-## Security Scanning
+## Security Scanning & Testing
 
-Our CI/CD pipeline includes:
-- **Trivy** - Container image vulnerability scanning
-- **Cargo Audit** - Rust dependency security checks
-- **SBOM Generation** - Software Bill of Materials
-- **CodeQL** - Static code analysis (planned)
+Our CI/CD pipeline includes comprehensive automated security testing:
 
-## Compliance
+### Vulnerability Scanning
+- **Trivy** - Container/FS/dependency scanning (CRITICAL/HIGH alerts)
+- **Cargo Audit** - Rust crates.io advisories
+- **SBOM Generation** - CycloneDX supply chain transparency
+- **CodeQL** - Semantic code analysis (GitHub Advanced Security)
 
-The operator is designed with the following standards in mind:
-- CIS Kubernetes Benchmark
-- NIST Cybersecurity Framework
-- OWASP Top 10
+### Penetration Testing
+- **k6** - API load/penetration scenarios (DDoS, slowloris sim)
+- **OWASP ZAP** - Baseline DAST for operator REST API
+- **Nuclei** - Template-based vulnerability scanning
+
+### Compliance Testing
+- **kube-bench** - CIS Kubernetes Benchmark automation
+- **Checkov** - IaC scanning for Helm charts/manifests
+- **kube-score** - K8s resource scoring
+
+Run locally: `make security-all`
+
+## Runtime Security Monitoring
+
+- **Prometheus + Grafana** - Security metrics dashboard
+- **Falco** - Behavioral runtime security (planned integration)
+- **Audit Logs** - API/server audit trails
+- **CVE Auto-remediation** - Controller-based patching (src/controller/cve.rs)
+
+- [CIS Kubernetes Benchmark](https://www.cisecurity.org/benchmark/kubernetes)
+- [NIST SP 800-190 — Container Security](https://csrc.nist.gov/publications/detail/sp/800-190/final)
+- [OWASP Kubernetes Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Kubernetes_Security_Cheat_Sheet.html)
+
+---
 
 ## Contact
 
-- **Security Email**: samuelotowo@gmail.com
-- **General Issues**: https://github.com/stellar-k8s/issues
-- **Discussions**: https://github.com/stellar-k8s/discussions
+| Channel              | Address / Link                                          |
+| -------------------- | ------------------------------------------------------- |
+| Security advisories  | [GitHub Security Tab](../../security/advisories)        |
+| Security email       | security@stellar-k8s.io                                 |
+| Maintainer contact   | samuelotowo@gmail.com                                   |
+| General issues       | [GitHub Issues](../../issues)                           |
+
+---
 
 ## Attribution
 
-We appreciate responsible disclosure and will credit security researchers who:
-- Report vulnerabilities responsibly
-- Allow reasonable time for fixes
-- Follow our disclosure policy
-
-Thank you for helping keep Stellar-K8s secure! 🔒
+We are grateful to security researchers who responsibly disclose vulnerabilities.
+Reporters will be credited in the GitHub Security Advisory and CHANGELOG unless they
+request anonymity.

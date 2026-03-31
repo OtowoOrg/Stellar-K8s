@@ -1,0 +1,33 @@
+# Experiment 04: Partition validator pods from each other (Stellar peer ports).
+#
+# Prerequisites: Chaos Mesh 2.x installed; validators labeled stellar.org/simulator-role
+#
+# After the experiment, delete this resource and verify StellarNodes converge (Ready).
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: stellar-validator-partition
+  namespace: chaos-testing
+  labels:
+    app.kubernetes.io/part-of: stellar-chaos-suite
+    chaos/experiment: "04-validator-peer-partition"
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces:
+      - stellar-system
+    labelSelectors:
+      stellar.org/simulator-role: validator-a
+  direction: both
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - stellar-system
+      labelSelectors:
+        stellar.org/simulator-role: validator-b
+  duration: "90s"
+  scheduler:
+    cron: "@once"

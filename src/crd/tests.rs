@@ -7,8 +7,7 @@
 mod stellar_node_spec_validation {
     use crate::crd::{
         AutoscalingConfig, HorizonConfig, IngressConfig, IngressHost, IngressPath, NodeType,
-        ResourceRequirements, ResourceSpec, SorobanConfig, SpecValidationError, StellarNetwork,
-        StellarNodeSpec, StorageConfig, ValidatorConfig,
+        SorobanConfig, SpecValidationError, StellarNetwork, StellarNodeSpec, ValidatorConfig,
     };
 
     /// Helper to create a minimal valid StellarNodeSpec for a Validator
@@ -17,21 +16,11 @@ mod stellar_node_spec_validation {
             node_type: NodeType::Validator,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
-            history_mode: Default::default(),
-            resources: default_resources(),
-            storage: default_storage(),
             validator_config: Some(ValidatorConfig {
                 seed_secret_ref: "validator-seed".to_string(),
-                seed_secret_source: Default::default(),
-                quorum_set: None,
-                enable_history_archive: false,
-                history_archive_urls: vec![],
-                catchup_complete: false,
-                key_source: Default::default(),
-                kms_config: None,
-                vl_source: None,
-                hsm_config: None,
+                ..Default::default()
             }),
+            ..Default::default()
             horizon_config: None,
             soroban_config: None,
             replicas: 1,
@@ -50,15 +39,23 @@ mod stellar_node_spec_validation {
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
+            pod_anti_affinity: Default::default(),
+            placement: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
             read_replica_config: None,
             db_maintenance_config: None,
             oci_snapshot: None,
             service_mesh: None,
+            forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            sidecars: None,
+            custom_network_passphrase: None,
         }
     }
 
@@ -68,20 +65,14 @@ mod stellar_node_spec_validation {
             node_type: NodeType::Horizon,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
-            history_mode: Default::default(),
-            resources: default_resources(),
-            storage: default_storage(),
-            validator_config: None,
             horizon_config: Some(HorizonConfig {
                 database_secret_ref: "horizon-db".to_string(),
                 enable_ingest: true,
                 stellar_core_url: "http://stellar-core:11626".to_string(),
-                ingest_workers: 1,
-                enable_experimental_ingestion: false,
-                auto_migration: false,
+                ..Default::default()
             }),
-            soroban_config: None,
             replicas: 2,
+            ..Default::default()
             min_available: None,
             max_unavailable: None,
             suspended: false,
@@ -97,15 +88,23 @@ mod stellar_node_spec_validation {
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
+            pod_anti_affinity: Default::default(),
+            placement: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
             read_replica_config: None,
             db_maintenance_config: None,
             oci_snapshot: None,
             service_mesh: None,
+            forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            sidecars: None,
+            custom_network_passphrase: None,
         }
     }
 
@@ -115,18 +114,9 @@ mod stellar_node_spec_validation {
             node_type: NodeType::SorobanRpc,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
-            history_mode: Default::default(),
-            resources: default_resources(),
-            storage: default_storage(),
-            validator_config: None,
-            horizon_config: None,
             soroban_config: Some(SorobanConfig {
                 stellar_core_url: "http://stellar-core:11626".to_string(),
-                #[allow(deprecated)]
-                captive_core_config: None,
-                captive_core_structured_config: None,
-                enable_preflight: true,
-                max_events_per_request: 10000,
+                ..Default::default()
             }),
             replicas: 2,
             min_available: None,
@@ -144,15 +134,23 @@ mod stellar_node_spec_validation {
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
+            pod_anti_affinity: Default::default(),
+            placement: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
             read_replica_config: None,
             db_maintenance_config: None,
             oci_snapshot: None,
             service_mesh: None,
+            forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            sidecars: None,
+            custom_network_passphrase: None,
         }
     }
 
@@ -175,6 +173,7 @@ mod stellar_node_spec_validation {
             size: "100Gi".to_string(),
             retention_policy: Default::default(),
             annotations: None,
+            ..Default::default()
         }
     }
 
@@ -737,8 +736,133 @@ mod stellar_node_spec_validation {
     #[test]
     fn test_validator_custom_network_passes() {
         let mut spec = valid_validator_spec();
-        spec.network = StellarNetwork::Custom("My Private Network".to_string());
+        spec.network = StellarNetwork::Custom("my-private-network".to_string());
         assert!(spec.validate().is_ok());
+    }
+
+    // =========================================================================
+    // Custom Network Name Validation Tests (#366)
+    // =========================================================================
+
+    #[test]
+    fn test_custom_network_valid_alphanumeric_passes() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("my-private-net".to_string());
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_custom_network_single_char_passes() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("a".to_string());
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_custom_network_63_chars_passes() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("a".repeat(63));
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_custom_network_empty_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("".to_string());
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "spec.network.customName" && e.message.contains("empty")));
+    }
+
+    #[test]
+    fn test_custom_network_exceeds_63_chars_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("a".repeat(64));
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "spec.network.customName" && e.message.contains("63")));
+    }
+
+    #[test]
+    fn test_custom_network_special_chars_fails() {
+        for bad in &["; drop table", "my@network", "net$name!", "net name"] {
+            let mut spec = valid_validator_spec();
+            spec.network = StellarNetwork::Custom(bad.to_string());
+            let result = spec.validate();
+            assert!(
+                result.is_err(),
+                "Expected validation failure for customName: '{bad}'"
+            );
+            let errors = result.unwrap_err();
+            assert!(
+                errors.iter().any(|e| e.field == "spec.network.customName"),
+                "Expected spec.network.customName error for '{bad}'"
+            );
+        }
+    }
+
+    #[test]
+    fn test_custom_network_leading_hyphen_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("-bad-name".to_string());
+        let result = spec.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.field == "spec.network.customName"));
+    }
+
+    #[test]
+    fn test_custom_network_trailing_hyphen_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("bad-name-".to_string());
+        let result = spec.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.field == "spec.network.customName"));
+    }
+
+    #[test]
+    fn test_non_custom_networks_skip_name_validation() {
+        for network in [
+            StellarNetwork::Mainnet,
+            StellarNetwork::Testnet,
+            StellarNetwork::Futurenet,
+        ] {
+            let mut spec = valid_validator_spec();
+            spec.network = network;
+            assert!(spec.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn test_custom_network_uppercase_fails() {
+        // DNS-1123 requires lowercase; uppercase must be rejected
+        for bad in &["MyNetwork", "My-Net", "MYNET"] {
+            let mut spec = valid_validator_spec();
+            spec.network = StellarNetwork::Custom(bad.to_string());
+            let result = spec.validate();
+            assert!(
+                result.is_err(),
+                "Expected validation failure for uppercase customName: '{bad}'"
+            );
+            assert!(
+                result
+                    .unwrap_err()
+                    .iter()
+                    .any(|e| e.field == "spec.network.customName"),
+                "Expected spec.network.customName error for '{bad}'"
+            );
+        }
     }
 
     // =========================================================================

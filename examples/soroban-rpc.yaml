@@ -1,0 +1,37 @@
+# soroban-rpc.yaml
+# Example configuration for a Soroban RPC node with Autoscaling.
+# Provides JSON-RPC to simulate and submit Soroban smart contract transactions.
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: soroban-rpc-testnet
+  namespace: stellar
+spec:
+  # 'SorobanRpc' provides smart contract execution environment.
+  nodeType: SorobanRpc
+
+  network: Testnet
+
+  version: "21.1.0"
+
+  # Soroban-specific settings including Captive Core.
+  sorobanConfig:
+    # Upstream Core instance for transaction submission.
+    stellarCoreUrl: "http://validator-testnet:11626"
+    # Type-safe configuration for the internal 'Captive Core' instance.
+    captiveCoreStructuredConfig:
+      logLevel: "info"
+      # Archives to use for snapshot ingestion (required for Soroban state).
+      historyArchiveUrls:
+        - "https://history.stellar.org/prd/core-testnet/core_testnet_001"
+    # Maximum number of smart contract events to return in a single request.
+    maxEventsPerRequest: 10000
+
+  # Horizontal Pod Autoscaling (HPA) configuration.
+  # Automatically scales replicas based on internal load.
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 10
+    # Scales up if average CPU usage across pods exceeds 70%.
+    targetCpuUtilizationPercentage: 70

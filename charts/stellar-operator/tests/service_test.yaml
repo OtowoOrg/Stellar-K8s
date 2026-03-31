@@ -1,0 +1,95 @@
+suite: service
+templates:
+  - templates/service.yaml
+
+tests:
+  - it: renders Service with default values
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-stellar-operator
+
+  - it: defaults to ClusterIP type
+    asserts:
+      - equal:
+          path: spec.type
+          value: ClusterIP
+
+  - it: uses custom service type
+    set:
+      service.type: LoadBalancer
+    asserts:
+      - equal:
+          path: spec.type
+          value: LoadBalancer
+
+  - it: exposes http port
+    asserts:
+      - contains:
+          path: spec.ports
+          content:
+            port: 9090
+            targetPort: http
+            protocol: TCP
+            name: http
+
+  - it: exposes metrics port
+    asserts:
+      - contains:
+          path: spec.ports
+          content:
+            port: 9090
+            targetPort: metrics
+            protocol: TCP
+            name: metrics
+
+  - it: uses custom restApiPort
+    set:
+      service.restApiPort: 8080
+    asserts:
+      - contains:
+          path: spec.ports
+          content:
+            port: 8080
+            targetPort: http
+            protocol: TCP
+            name: http
+
+  - it: uses custom metricsPort
+    set:
+      service.metricsPort: 9091
+    asserts:
+      - contains:
+          path: spec.ports
+          content:
+            port: 9091
+            targetPort: metrics
+            protocol: TCP
+            name: metrics
+
+  - it: has correct selector labels
+    asserts:
+      - equal:
+          path: spec.selector["app.kubernetes.io/name"]
+          value: stellar-operator
+      - equal:
+          path: spec.selector["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+
+  - it: has common labels
+    asserts:
+      - isSubset:
+          path: metadata.labels
+          content:
+            app.kubernetes.io/name: stellar-operator
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: uses fullnameOverride in service name
+    set:
+      fullnameOverride: my-operator
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-operator

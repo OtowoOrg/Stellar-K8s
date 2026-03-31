@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -14,21 +18,202 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      docker: ${{ steps.detect.outputs.docker }}
+      helm: ${{ steps.detect.outputs.helm }}
+      api_docs: ${{ steps.detect.outputs.api_docs }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect Docker-impacting changes
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+          else
+            BASE_SHA="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+          fi
+
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(Dockerfile|\.dockerignore|Cargo\.toml|Cargo\.lock|src/|config/|Makefile)'; then
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docker=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(charts/|config/crd/|config/samples/|examples/|Makefile)'; then
+            echo "helm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "helm=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(docs/|scripts/generate-api-docs\.py|config/crd/|src/crd/|src/rest_api/|Makefile)'; then
+            echo "api_docs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "api_docs=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  version-consistency:
+    name: Version Consistency Check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify Cargo.toml and stellar-operator version output
+        run: |
+          set -euo pipefail
+
+          CARGO_VERSION=$(grep '^version = ' Cargo.toml | head -1 | cut -d'"' -f2)
+
+          EXPECTED_VERSION="${EXPECTED_RELEASE_VERSION:-}"
+          if [[ -z "$EXPECTED_VERSION" && "${GITHUB_REF:-}" =~ ^refs/tags/v ]]; then
+            EXPECTED_VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          if [[ -z "$EXPECTED_VERSION" ]]; then
+            EXPECTED_VERSION="$CARGO_VERSION"
+          fi
+
+          cargo build --locked --bin stellar-operator
+
+          BIN_VERSION=$(./target/debug/stellar-operator version | sed -n 's/^Stellar-K8s Operator v//p' | head -1)
+
+          echo "Expected version: $EXPECTED_VERSION"
+          echo "Cargo.toml version: $CARGO_VERSION"
+          echo "stellar-operator version output: $BIN_VERSION"
+
+          [[ "$CARGO_VERSION" == "$EXPECTED_VERSION" ]] || {
+            echo "::error::Cargo.toml version ($CARGO_VERSION) does not match expected release version ($EXPECTED_VERSION)"
+            exit 1
+          }
+
+          [[ "$BIN_VERSION" == "$EXPECTED_VERSION" ]] || {
+            echo "::error::stellar-operator version output ($BIN_VERSION) does not match expected release version ($EXPECTED_VERSION)"
+            exit 1
+          }
+
+  helm-lint:
+    name: Helm Lint & Schema Validation
+    if: needs.changes.outputs.helm == 'true'
+    runs-on: ubuntu-latest
+    needs: [changes]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: "3.14.0"
+
+      - name: Lint chart with default values
+        run: make helm-lint
+
+      - name: Lint chart with strict mode
+        run: helm lint charts/stellar-operator --strict
+
+      - name: Validate schema rejects invalid logLevel
+        run: |
+          cat > /tmp/bad-loglevel.yaml <<'EOF'
+          operator:
+            logLevel: verbose
+          EOF
+          if helm lint charts/stellar-operator -f /tmp/bad-loglevel.yaml 2>&1 | grep -q "must be one of"; then
+            echo "Schema correctly rejected invalid logLevel"
+          else
+            echo "ERROR: Schema did not reject invalid logLevel" && exit 1
+          fi
+
+      - name: Validate schema rejects invalid service type
+        run: |
+          cat > /tmp/bad-service.yaml <<'EOF'
+          service:
+            type: ExternalName
+          EOF
+          if helm lint charts/stellar-operator -f /tmp/bad-service.yaml 2>&1 | grep -q "must be one of"; then
+            echo "Schema correctly rejected invalid service type"
+          else
+            echo "ERROR: Schema did not reject invalid service type" && exit 1
+          fi
+
+      - name: Validate schema rejects invalid pullPolicy
+        run: |
+          cat > /tmp/bad-pullpolicy.yaml <<'EOF'
+          image:
+            pullPolicy: Whenever
+          EOF
+          if helm lint charts/stellar-operator -f /tmp/bad-pullpolicy.yaml 2>&1 | grep -q "must be one of"; then
+            echo "Schema correctly rejected invalid pullPolicy"
+          else
+            echo "ERROR: Schema did not reject invalid pullPolicy" && exit 1
+          fi
+
+  examples-smoke-test:
+    name: Examples Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.13.0
+        with:
+          cluster_name: examples-test
+
+      - name: Apply StellarNode CRD
+        run: kubectl apply -f config/crd/stellarnode-crd.yaml
+
+      - name: Run smoke test on examples
+        run: |
+          echo "Creating required namespaces..."
+          kubectl create namespace stellar --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace stellar-nodes --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace stellar-system --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace metallb-system --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "Validating example manifests against the API server..."
+          # We skip broken.yaml and ensure other resource types are ignored if their CRDs are missing
+          # Actually, it's better to just test the principal examples
+          kubectl apply --dry-run=server -f examples/validator-mainnet.yaml
+          kubectl apply --dry-run=server -f examples/validator-testnet.yaml
+          kubectl apply --dry-run=server -f examples/horizon.yaml
+          kubectl apply --dry-run=server -f examples/soroban-rpc.yaml
+          kubectl apply --dry-run=server -f examples/dr-setup.yaml
+
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install cargo-audit
-        run: cargo install --locked cargo-audit
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Audit for critical vulnerabilities
-        run: cargo audit --deny unsound
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
 
-      - name: Check all vulnerabilities (non-blocking)
-        run: cargo audit || echo "::warning::Some dependency advisories detected"
-        continue-on-error: true
+      - name: Run cargo audit
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --ignore RUSTSEC-2020-0071 --ignore RUSTSEC-2024-0380 --ignore RUSTSEC-2024-0381
 
   lint:
     name: Lint & Format
@@ -39,19 +224,33 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          components: clippy, rustfmt
+          toolchain: "1.88"
+          components: rustfmt, clippy
 
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "ci-lint"
 
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: |
+          mapfile -t shell_files < <(find . -type f -name "*.sh")
+          if [ "${#shell_files[@]}" -eq 0 ]; then
+            echo "No shell scripts found"
+            exit 0
+          fi
+          shellcheck -S error "${shell_files[@]}"
+
       - name: Check formatting
-        run: cargo fmt --all --check
+        run: make fmt-check
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: make lint
 
   test:
     name: Test
@@ -62,22 +261,66 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
 
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "ci-test"
 
-      - name: Run tests
-        run: cargo test --workspace --all-features --verbose
+      - name: Run tests (Unit and Doc)
+        run: make test
 
-      - name: Run doc tests
-        run: cargo test --doc --workspace
+  helm-test:
+    name: Helm Unit Tests
+    if: needs.changes.outputs.helm == 'true'
+    runs-on: ubuntu-latest
+    needs: [changes, lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --version v0.5.1
+
+      - name: Run Helm unit tests
+        run: helm unittest charts/stellar-operator --strict --color
+
+  api-docs:
+    name: API Docs Drift Check
+    if: needs.changes.outputs.api_docs == 'true'
+    runs-on: ubuntu-latest
+    needs: [changes, lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Regenerate API docs
+        run: python3 scripts/generate-api-docs.py
+
+      - name: Fail if docs are out of date
+        run: |
+          if ! git diff --exit-code docs/api-reference.md; then
+            echo ""
+            echo "ERROR: docs/api-reference.md is out of date."
+            echo "Run 'make generate-api-docs' and commit the result."
+            exit 1
+          fi
+          echo "OK: docs/api-reference.md is up to date."
 
   build:
     name: Build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     needs: test
     steps:
@@ -92,34 +335,43 @@ jobs:
           shared-key: "ci-build"
 
       - name: Build release
-        run: cargo build --release --locked
+        run: make build
 
-      - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v7
         with:
-          name: stellar-operator
-          path: target/release/stellar-operator
+          name: stellar-k8s-binaries
+          path: |
+            target/release/stellar-operator
+            target/release/kubectl-stellar
           retention-days: 7
 
   docker:
     name: Docker Build
+    if: >-
+      github.event_name != 'pull_request' &&
+      needs.changes.outputs.docker == 'true' &&
+      (needs.helm-test.result == 'success' || needs.helm-test.result == 'skipped') &&
+      (needs.api-docs.result == 'success' || needs.api-docs.result == 'skipped')
     runs-on: ubuntu-latest
-    needs: build
+    needs: [changes, build, helm-test, api-docs]
+    env:
+      DOCKER_PLATFORMS: linux/amd64
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Lowercase IMAGE_NAME
+        run: echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -127,25 +379,28 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
-            type=sha
+            type=sha,prefix=sha-,format=long
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          target: runtime
+          platforms: ${{ env.DOCKER_PLATFORMS }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=stellar-k8s-docker
+          cache-to: type=gha,mode=max,scope=stellar-k8s-docker
+          provenance: false
+          sbom: false
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
@@ -160,16 +415,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Lowercase IMAGE_NAME
+        run: echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Run Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ github.sha }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
 
       - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-results.sarif

@@ -24,7 +24,7 @@ use super::types::{
     Operation, PluginConfig, PluginExecutionResult, PluginMetadata, UserInfo, ValidationInput,
     ValidationOutput,
 };
-use crate::crd::StellarNode;
+use crate::crd::{StellarNode, StellarNodeSpec};
 use crate::error::{Error, Result};
 
 /// Webhook server state
@@ -175,12 +175,22 @@ impl WebhookServer {
     }
 
     /// Validate a StellarNode (built-in spec validation first, then Wasm plugins)
-    #[instrument(skip(self, input))]
+    #[instrument(
+        skip(self, input),
+        fields(node_name = "-", namespace = "-", reconcile_id = "-")
+    )]
     pub async fn validate(&self, input: ValidationInput) -> ServerValidationResult {
-        // Built-in validation: reject invalid nodeType or missing required fields before plugins
+        let mut warnings = Vec::new();
+
         if let Some(ref object) = input.object {
             if matches!(input.operation, Operation::Create | Operation::Update) {
-                if let Some(builtin) = validate_spec_builtin(object) {
+                // Collect image pinning warnings
+                if let Ok(node) = serde_json::from_value::<StellarNode>(object.clone()) {
+                    warnings.extend(check_image_pinning(&node.spec));
+                }
+
+                if let Some(mut builtin) = validate_spec_builtin(object) {
+                    builtin.warnings.extend(warnings);
                     return builtin;
                 }
             }
@@ -192,7 +202,7 @@ impl WebhookServer {
             return ServerValidationResult {
                 allowed: true,
                 message: Some("No validation plugins configured".to_string()),
-                warnings: vec![],
+                warnings,
                 plugin_results: vec![],
                 total_execution_time_ms: 0,
             };
@@ -203,7 +213,7 @@ impl WebhookServer {
 
         let mut allowed = true;
         let mut messages = Vec::new();
-        let mut warnings = Vec::new();
+        let mut warnings_from_plugins = Vec::new();
         let mut plugin_results = Vec::new();
 
         for result in results {
@@ -215,7 +225,7 @@ impl WebhookServer {
                             messages.push(format!("{}: {}", exec_result.plugin_name, msg));
                         }
                     }
-                    warnings.extend(exec_result.output.warnings.clone());
+                    warnings_from_plugins.extend(exec_result.output.warnings.clone());
                     plugin_results.push(exec_result);
                 }
                 Err(e) => {
@@ -239,7 +249,11 @@ impl WebhookServer {
             } else {
                 Some(messages.join("; "))
             },
-            warnings,
+            warnings: {
+                let mut w = warnings;
+                w.extend(warnings_from_plugins);
+                w
+            },
             plugin_results,
             total_execution_time_ms: start.elapsed().as_millis() as u64,
         }
@@ -262,7 +276,7 @@ impl WebhookServer {
             .route("/plugins", get(list_plugins_handler))
             .route("/plugins", post(add_plugin_handler))
             .route(
-                "/plugins/:name",
+                "/plugins/{name}",
                 axum::routing::delete(remove_plugin_handler),
             )
             .with_state(state);
@@ -319,7 +333,10 @@ async fn ready_handler(State(state): State<Arc<WebhookServer>>) -> impl IntoResp
     }
 }
 
-#[instrument(skip(state, review))]
+#[instrument(
+    skip(state, review),
+    fields(node_name = "-", namespace = "-", reconcile_id = "-")
+)]
 async fn validate_handler(
     State(state): State<Arc<WebhookServer>>,
     Json(review): Json<AdmissionReview<StellarNode>>,
@@ -327,7 +344,7 @@ async fn validate_handler(
     let request = match review.try_into() {
         Ok(req) => req,
         Err(e) => {
-            error!("Failed to parse admission request: {}", e);
+            error!("Failed to parse admission request: {e}");
             return (
                 StatusCode::BAD_REQUEST,
                 Json(
@@ -370,7 +387,10 @@ async fn validate_handler(
     (StatusCode::OK, Json(response.into_review()))
 }
 
-#[instrument(skip(_state, review))]
+#[instrument(
+    skip(_state, review),
+    fields(node_name = "-", namespace = "-", reconcile_id = "-")
+)]
 async fn mutate_handler(
     State(_state): State<Arc<WebhookServer>>,
     Json(review): Json<AdmissionReview<StellarNode>>,
@@ -387,7 +407,7 @@ async fn mutate_handler(
                     let mut response = AdmissionResponse::from(&req);
                     // Convert JSON patch to bytes
                     let patch_bytes = serde_json::to_vec(&patch)
-                        .map_err(|e| format!("Failed to serialize patch: {}", e))
+                        .map_err(|e| format!("Failed to serialize patch: {e}"))
                         .unwrap_or_default();
                     response.patch = Some(patch_bytes);
 
@@ -400,7 +420,7 @@ async fn mutate_handler(
                     (StatusCode::OK, Json(response.into_review()))
                 }
                 Err(e) => {
-                    error!("Failed to apply mutations: {}", e);
+                    error!("Failed to apply mutations: {e}");
                     let response =
                         AdmissionResponse::from(&req).deny(format!("Mutation failed: {e}"));
                     (StatusCode::OK, Json(response.into_review()))
@@ -408,7 +428,7 @@ async fn mutate_handler(
             }
         }
         Err(e) => {
-            error!("Failed to parse admission request: {}", e);
+            error!("Failed to parse admission request: {e}");
             (
                 StatusCode::BAD_REQUEST,
                 Json(
@@ -420,7 +440,10 @@ async fn mutate_handler(
     }
 }
 
-#[instrument(skip(state, payload))]
+#[instrument(
+    skip(state, payload),
+    fields(node_name = "-", namespace = "-", reconcile_id = "-")
+)]
 async fn db_trigger_handler(
     State(state): State<Arc<WebhookServer>>,
     Json(payload): Json<super::types::DbTriggerInput>,
@@ -491,22 +514,19 @@ async fn db_trigger_handler(
                                 updated_nodes.push(output.name.clone());
                             }
                             Err(e) => {
-                                error!("Failed to update node status reactively: {}", e);
+                                error!("Failed to update node status reactively: {e}");
                                 errors.push(e.to_string());
                             }
                         }
                     }
                     Err(e) => {
-                        error!("Failed to create Kube client: {}", e);
+                        error!("Failed to create Kube client: {e}");
                         errors.push(e.to_string());
                     }
                 }
             }
             Err(e) => {
-                warn!(
-                    "Plugin {} failed on db trigger: {}",
-                    plugin.metadata.name, e
-                );
+                warn!("Plugin {} failed on db trigger: {e}", plugin.metadata.name);
                 errors.push(e.to_string());
             }
         }
@@ -569,7 +589,7 @@ async fn add_plugin_handler(
             Json(serde_json::json!({"status": "created"})),
         ),
         Err(e) => {
-            error!("Failed to add plugin: {}", e);
+            error!("Failed to add plugin: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": e.to_string()})),
@@ -588,7 +608,7 @@ async fn remove_plugin_handler(
             Json(serde_json::json!({"status": "removed"})),
         ),
         Err(e) => {
-            error!("Failed to remove plugin: {}", e);
+            error!("Failed to remove plugin: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": e.to_string()})),
@@ -604,7 +624,7 @@ fn validate_spec_builtin(object: &serde_json::Value) -> Option<ServerValidationR
         Err(e) => {
             return Some(ServerValidationResult {
                 allowed: false,
-                message: Some(format!("Invalid StellarNode manifest: {}", e)),
+                message: Some(format!("Invalid StellarNode manifest: {e}")),
                 warnings: vec![],
                 plugin_results: vec![],
                 total_execution_time_ms: 0,
@@ -624,6 +644,25 @@ fn validate_spec_builtin(object: &serde_json::Value) -> Option<ServerValidationR
         plugin_results: vec![],
         total_execution_time_ms: 0,
     })
+}
+
+/// Check if image is pinned by digest and return warnings if not.
+fn check_image_pinning(spec: &StellarNodeSpec) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if !spec.version.contains("@sha256:") {
+        if spec.version == "latest" {
+            warnings.push(format!(
+                "Using mutable tag 'latest' is a security risk. For production, always use an image digest (e.g., 'version: {}@sha256:...') to ensure reproducibility and prevent supply chain attacks.",
+                spec.version
+            ));
+        } else {
+            warnings.push(format!(
+                "Mutable image tag '{}' used. For production, it is recommended to pin the image by digest (e.g., 'version: {}@sha256:...') for better security.",
+                spec.version, spec.version
+            ));
+        }
+    }
+    warnings
 }
 
 /// Build ValidationInput from AdmissionRequest
@@ -764,8 +803,7 @@ mod tests {
                 || msg.contains("nodeType")
                 || msg.contains("parse")
                 || msg.contains("unknown"),
-            "expected descriptive rejection message, got: {}",
-            msg
+            "expected descriptive rejection message, got: {msg}"
         );
     }
 
@@ -791,8 +829,7 @@ mod tests {
         let msg = result.message.unwrap_or_default();
         assert!(
             msg.contains("validatorConfig") || msg.contains("required"),
-            "expected message about missing required field, got: {}",
-            msg
+            "expected message about missing required field, got: {msg}"
         );
     }
 

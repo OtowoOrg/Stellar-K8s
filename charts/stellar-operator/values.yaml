@@ -91,11 +91,68 @@ operator:
   restApiPort: 9090
   # Metrics port
   metricsPort: 9090
-  # Namespaces to watch (empty = all namespaces)
-  watchNamespaces: []
+  # Namespace to watch (empty = all namespaces)
+  watchNamespace: ""
+
+# Diagnostic sidecar configuration
+sidecar:
+  enabled: true
+  image:
+    repository: ghcr.io/stellar/stellar-k8s
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 50m
+      memory: 32Mi
 
 # Service for REST API and metrics
 service:
   type: ClusterIP
   restApiPort: 9090
   metricsPort: 9090
+
+# Default resource requests/limits for managed StellarNode pods.
+# Precedence: StellarNode spec.resources > Helm defaults > operator hardcoded fallback.
+# These are written into a ConfigMap that the operator reads at startup.
+defaultResources:
+  validator:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  horizon:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  sorobanRpc:
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+
+security:
+  audit:
+    enabled: true
+    logLevel: "Audit"
+  podSecurityStandard: "restricted"
+  falco:
+    enabled: true
+  networkPolicy:
+    enabled: true
+    ingress:
+      namespaceSelector: true
+  admissionWebhook:
+    failurePolicy: Fail
+  imagePolicy:
+    allowLatestTag: false

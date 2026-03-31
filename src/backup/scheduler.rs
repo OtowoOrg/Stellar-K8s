@@ -5,7 +5,7 @@ use cron::Schedule;
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{error, info};
+use tracing::{error, info, Instrument};
 
 pub struct BackupScheduler {
     config: DecentralizedBackupConfig,
@@ -62,6 +62,7 @@ impl BackupScheduler {
         ));
 
         let mut tasks = vec![];
+        let current_span = tracing::Span::current();
         for segment in segments {
             let sem = semaphore.clone();
             let provider = self.provider.clone();
@@ -71,7 +72,8 @@ impl BackupScheduler {
             let task = tokio::spawn(async move {
                 let _permit = sem.acquire().await.unwrap();
                 Self::upload_segment(segment, provider, uploaded, compression).await
-            });
+            })
+            .instrument(current_span.clone());
 
             tasks.push(task);
         }

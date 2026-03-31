@@ -66,14 +66,14 @@ impl MaintenanceController {
         }
 
         for table in bloated_tables {
-            info!("Running VACUUM FULL on table {}", table);
-            sqlx::query(&format!("VACUUM FULL {}", table))
+            info!("Running VACUUM FULL on table {table}");
+            sqlx::query(&format!("VACUUM FULL {table}"))
                 .execute(&pool)
                 .await?;
 
             if config.auto_reindex {
-                info!("Reindexing table {}", table);
-                sqlx::query(&format!("REINDEX TABLE {}", table))
+                info!("Reindexing table {table}");
+                sqlx::query(&format!("REINDEX TABLE {table}"))
                     .execute(&pool)
                     .await?;
             }

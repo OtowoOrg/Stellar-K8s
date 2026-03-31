@@ -10,7 +10,7 @@ spec:
   network: Mainnet
   version: "v21.0.0"
   replicas: 2
-  
+
   resources:
     requests:
       cpu: "1"
@@ -18,17 +18,17 @@ spec:
     limits:
       cpu: "4"
       memory: "8Gi"
-  
+
   storage:
     storageClass: "fast-ssd"
     size: "200Gi"
-  
+
   horizonConfig:
     databaseSecretRef: "horizon-db-credentials"
     enableIngest: true
     stellarCoreUrl: "http://stellar-core-svc:11626"
     ingestWorkers: 4
-  
+
   # Horizontal Pod Autoscaling
   autoscaling:
     minReplicas: 2
@@ -36,30 +36,30 @@ spec:
     targetCpuUtilizationPercentage: 70
     customMetrics:
       - "http_requests_per_second"
-  
+
   # Ingress for HTTPS exposure with cert-manager
   ingress:
     className: "nginx"  # Use NGINX ingress controller
-    
+
     hosts:
       - host: "horizon.stellar.example.com"
         paths:
           - path: "/"
             pathType: "Prefix"
-      
+
       - host: "horizon-api.example.com"
         paths:
           - path: "/api/v1"
             pathType: "Prefix"
           - path: "/metrics"
             pathType: "Exact"
-    
+
     # Use Let's Encrypt with cert-manager
     certManagerClusterIssuer: "letsencrypt-prod"
-    
+
     # TLS secret name where the certificate will be stored
     tlsSecretName: "horizon-tls-cert"
-    
+
     # Additional annotations for ingress controller
     annotations:
       cert-manager.io/issue-temporary-certificate: "true"
@@ -78,7 +78,7 @@ spec:
   network: Mainnet
   version: "v21.0.0"
   replicas: 3
-  
+
   resources:
     requests:
       cpu: "2"
@@ -86,16 +86,16 @@ spec:
     limits:
       cpu: "8"
       memory: "16Gi"
-  
+
   storage:
     storageClass: "fast-ssd"
     size: "300Gi"
-  
+
   sorobanConfig:
     stellarCoreUrl: "http://stellar-core-svc:11626"
     enablePreflight: true
     maxEventsPerRequest: 50000
-  
+
   # Horizontal Pod Autoscaling
   autoscaling:
     minReplicas: 3
@@ -114,23 +114,23 @@ spec:
           - policyType: "Percent"
             value: 50
             periodSeconds: 60
-  
+
   # Ingress for HTTPS exposure
   ingress:
     className: "traefik"  # Use Traefik ingress controller
-    
+
     hosts:
       - host: "soroban-rpc.example.com"
         paths:
           - path: "/"
             pathType: "Prefix"
-    
+
     # Reference a namespaced cert-manager Issuer
     certManagerIssuer: "soroban-issuer"
-    
+
     # TLS configuration
     tlsSecretName: "soroban-tls"
-    
+
     annotations:
       traefik.ingress.kubernetes.io/router.tls.certresolver: "letsencrypt"
 

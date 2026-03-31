@@ -7,7 +7,7 @@ This document describes the automated performance benchmarking suite for the Ste
 The benchmarking suite consists of:
 
 - **k6 Load Tests**: Comprehensive load testing scripts measuring API endpoints, CRD operations, and reconciliation loops
-- **Baseline Management**: Version-tagged performance baselines for regression comparison
+- **Baseline Management**: Version-taggeds performance baselines for regression comparison
 - **Regression Detection**: Automated comparison tool that fails builds when performance degrades
 - **CI/CD Integration**: GitHub Actions workflow for automated benchmarking on every PR and release
 

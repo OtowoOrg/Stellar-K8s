@@ -352,7 +352,7 @@ mod tests {
                 assert_eq!(gateway, "https://arweave.net");
                 assert!(tags.is_empty());
             }
-            other => panic!("Expected Arweave, got {:?}", other),
+            other => panic!("Expected Arweave, got {other:?}"),
         }
     }
 
@@ -378,7 +378,7 @@ mod tests {
             StorageProvider::Filecoin { deal_params, .. } => {
                 assert!(!deal_params.verified);
             }
-            other => panic!("Expected Filecoin, got {:?}", other),
+            other => panic!("Expected Filecoin, got {other:?}"),
         }
     }
 

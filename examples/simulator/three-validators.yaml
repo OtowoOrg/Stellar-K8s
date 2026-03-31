@@ -1,0 +1,113 @@
+# Demo bundle for `stellar-operator simulator up`.
+# Replace seed values before any real network use (development only).
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sim-validator-a-seed
+  namespace: stellar-system
+type: Opaque
+stringData:
+  STELLAR_CORE_SEED: "SB3OIHVQNBKPYIHQIYRQLYKUAUC7DZOUBM7KEMPIJGPYEWKB7P3E7ENW"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sim-validator-b-seed
+  namespace: stellar-system
+type: Opaque
+stringData:
+  STELLAR_CORE_SEED: "SCV6MXXYYFYA3M26CBBBLCRFHF6BTZ7T2BFRSV45TPRGYIZWXUI7TQHW"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sim-validator-c-seed
+  namespace: stellar-system
+type: Opaque
+stringData:
+  STELLAR_CORE_SEED: "SDHOHHQ6UVIEBTI4WYSNOXL64RZHLXQJ7Z5F2H7CFRQY3FR2EBI4ZU3F"
+---
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: sim-validator-a
+  namespace: stellar-system
+spec:
+  resourceMeta:
+    labels:
+      stellar.org/simulator-role: validator-a
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  storage:
+    storageClass: "standard"
+    size: "20Gi"
+    retentionPolicy: Delete
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+  validatorConfig:
+    seedSecretRef: sim-validator-a-seed
+    enableHistoryArchive: false
+---
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: sim-validator-b
+  namespace: stellar-system
+spec:
+  resourceMeta:
+    labels:
+      stellar.org/simulator-role: validator-b
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  storage:
+    storageClass: "standard"
+    size: "20Gi"
+    retentionPolicy: Delete
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+  validatorConfig:
+    seedSecretRef: sim-validator-b-seed
+    enableHistoryArchive: false
+---
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: sim-validator-c
+  namespace: stellar-system
+spec:
+  resourceMeta:
+    labels:
+      stellar.org/simulator-role: validator-c
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  storage:
+    storageClass: "standard"
+    size: "20Gi"
+    retentionPolicy: Delete
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+  validatorConfig:
+    seedSecretRef: sim-validator-c-seed
+    enableHistoryArchive: false

@@ -7,6 +7,7 @@ use crate::controller::resource_meta::merge_resource_meta;
 
 // *** NEW: import kms_secret so we can accept SeedInjectionSpec ***
 use super::kms_secret;
+use super::label_propagation::LabelPropagator;
 
 use std::collections::BTreeMap;
 
@@ -17,10 +18,12 @@ use k8s_openapi::api::autoscaling::v2::{
     MetricTarget, ObjectMetricSource,
 };
 use k8s_openapi::api::core::v1::{
-    ConfigMap, Container, ContainerPort, EnvVar, EnvVarSource, PersistentVolumeClaim,
-    PersistentVolumeClaimSpec, PodSpec, PodTemplateSpec, ResourceRequirements as K8sResources,
-    SecretKeySelector, Service, ServicePort, ServiceSpec, Volume, VolumeMount,
-    VolumeResourceRequirements,
+    Affinity, Capabilities, ConfigMap, Container, ContainerPort, EnvVar, EnvVarSource,
+    PersistentVolumeClaim, PersistentVolumeClaimSpec, PodAffinityTerm, PodAntiAffinity,
+    PodSecurityContext, PodSpec, PodTemplateSpec, ResourceRequirements as K8sResources,
+    SeccompProfile, SecretKeySelector, SecurityContext, Service, ServicePort, ServiceSpec,
+    TypedLocalObjectReference, Volume, VolumeMount, VolumeResourceRequirements,
+    WeightedPodAffinityTerm,
 };
 use k8s_openapi::api::networking::v1::{
     HTTPIngressPath, HTTPIngressRuleValue, IPBlock, Ingress, IngressBackend, IngressRule,
@@ -35,18 +38,20 @@ use kube::api::{Api, DeleteParams, Patch, PatchParams, PostParams};
 use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
+use crate::crd::types::PodAntiAffinityStrength;
 use crate::crd::{
     BackupConfiguration, BarmanObjectStore, BootstrapConfiguration, Cluster, ClusterSpec,
     HistoryMode, HsmProvider, IngressConfig, InitDbConfiguration, KeySource, ManagedDatabaseConfig,
     MonitoringConfiguration, NetworkPolicyConfig, NodeType, PgBouncerSpec, Pooler, PoolerCluster,
     PoolerSpec, PostgresConfiguration, RolloutStrategy, S3Credentials,
-    SecretKeySelector as CnpgSecretKeySelector, StellarNode, StorageConfiguration,
+    SecretKeySelector as CnpgSecretKeySelector, StellarNode, StellarNodeSpec, StorageConfiguration,
     WalBackupConfiguration,
 };
 use crate::error::{Error, Result};
+use crate::scheduler::scoring::extract_peer_names_from_toml;
 
 /// Get the standard labels for a StellarNode's resources
-pub fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
+pub(crate) fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
     let mut labels = BTreeMap::new();
     labels.insert(
         "app.kubernetes.io/name".to_string(),
@@ -65,11 +70,15 @@ pub fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
         "stellar.org/node-type".to_string(),
         node.spec.node_type.to_string(),
     );
+    labels.insert(
+        "stellar-network".to_string(),
+        node.spec.network.scheduling_label_value(&node.spec.custom_network_passphrase),
+    );
     labels
 }
 
 /// Create an OwnerReference for garbage collection
-pub fn owner_reference(node: &StellarNode) -> OwnerReference {
+pub(crate) fn owner_reference(node: &StellarNode) -> OwnerReference {
     OwnerReference {
         api_version: StellarNode::api_version(&()).to_string(),
         kind: StellarNode::kind(&()).to_string(),
@@ -81,8 +90,41 @@ pub fn owner_reference(node: &StellarNode) -> OwnerReference {
 }
 
 /// Build the resource name for a given component
-fn resource_name(node: &StellarNode, suffix: &str) -> String {
+pub(crate) fn resource_name(node: &StellarNode, suffix: &str) -> String {
     format!("{}-{}", node.name_any(), suffix)
+}
+
+/// Create PostParams with dry-run support
+fn post_params(dry_run: bool) -> PostParams {
+    if dry_run {
+        PostParams {
+            dry_run: true,
+            ..Default::default()
+        }
+    } else {
+        PostParams::default()
+    }
+}
+
+/// Create PatchParams with dry-run support
+fn patch_params(dry_run: bool) -> PatchParams {
+    let mut params = PatchParams::apply("stellar-operator").force();
+    if dry_run {
+        params.dry_run = true;
+    }
+    params
+}
+
+/// Create DeleteParams with dry-run support
+fn delete_params(dry_run: bool) -> DeleteParams {
+    if dry_run {
+        DeleteParams {
+            dry_run: true,
+            ..Default::default()
+        }
+    } else {
+        DeleteParams::default()
+    }
 }
 
 // ============================================================================
@@ -90,21 +132,65 @@ fn resource_name(node: &StellarNode, suffix: &str) -> String {
 // ============================================================================
 
 /// Ensure a PersistentVolumeClaim exists for the node
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_pvc(client: &Client, node: &StellarNode) -> Result<()> {
+#[instrument(skip(client, node, propagated_labels), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_pvc(
+    client: &Client,
+    node: &StellarNode,
+    propagated_labels: &BTreeMap<String, String>,
+    dry_run: bool,
+) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<PersistentVolumeClaim> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "data");
 
-    let pvc = build_pvc(node);
+    // Dynamic resolution of storage class for local mode.
+    let mut has_local_path = false;
+    let mut has_local_storage = false;
+    if node.spec.storage.mode == crate::crd::types::StorageMode::Local
+        && node.spec.storage.storage_class.is_empty()
+    {
+        let sc_api: Api<k8s_openapi::api::storage::v1::StorageClass> = Api::all(client.clone());
+        has_local_path = sc_api.get("local-path").await.is_ok();
+        has_local_storage = sc_api.get("local-storage").await.is_ok();
+    }
+    let resolved_storage_class = resolve_pvc_storage_class(node, has_local_path, has_local_storage);
+    if node.spec.storage.mode == crate::crd::types::StorageMode::Local
+        && resolved_storage_class.is_empty()
+    {
+        warn!(
+            "Local StorageMode requested but no storageClass provided and local-path/local-storage auto-detection failed."
+        );
+    }
+
+    // Fetch existing resource labels for stale-label removal
+    let existing_labels = match api.get(&name).await {
+        Ok(existing) => existing.metadata.labels.clone().unwrap_or_default(),
+        Err(kube::Error::Api(e)) if e.code == 404 => BTreeMap::new(),
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
+    let mut pvc = build_pvc(node, resolved_storage_class);
+
+    // Apply label propagation: merge propagated labels, then remove stale ones
+    let base_labels = pvc.metadata.labels.clone().unwrap_or_default();
+    let merged = LabelPropagator::merge_onto(&base_labels, propagated_labels);
+    let final_labels =
+        LabelPropagator::remove_stale_labels(&merged, propagated_labels, &existing_labels);
+    pvc.metadata.labels = Some(final_labels);
 
     match api.get(&name).await {
-        Ok(_existing) => {
-            info!("PVC {} already exists", name);
+        Ok(existing) => {
+            if pvc_needs_update(&existing, &pvc) {
+                info!("Updating PVC {}", name);
+                api.patch(&name, &patch_params(dry_run), &Patch::Apply(&pvc))
+                    .await?;
+            } else {
+                info!("PVC {} already exists and is up-to-date", name);
+            }
         }
         Err(kube::Error::Api(e)) if e.code == 404 => {
             info!("Creating PVC {}", name);
-            api.create(&PostParams::default(), &pvc).await?;
+            api.create(&post_params(dry_run), &pvc).await?;
         }
         Err(e) => return Err(Error::KubeError(e)),
     }
@@ -112,7 +198,34 @@ pub async fn ensure_pvc(client: &Client, node: &StellarNode) -> Result<()> {
     Ok(())
 }
 
-fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
+fn resolve_pvc_storage_class(
+    node: &StellarNode,
+    has_local_path: bool,
+    has_local_storage: bool,
+) -> String {
+    let resolved_storage_class = node.spec.storage.storage_class.clone();
+    if node.spec.storage.mode != crate::crd::types::StorageMode::Local
+        || !resolved_storage_class.is_empty()
+    {
+        return resolved_storage_class;
+    }
+
+    if has_local_path {
+        "local-path".to_string()
+    } else if has_local_storage {
+        "local-storage".to_string()
+    } else {
+        String::new()
+    }
+}
+
+fn pvc_needs_update(existing: &PersistentVolumeClaim, desired: &PersistentVolumeClaim) -> bool {
+    existing.spec != desired.spec
+        || existing.metadata.labels != desired.metadata.labels
+        || existing.metadata.annotations != desired.metadata.annotations
+}
+
+fn build_pvc(node: &StellarNode, storage_class_name: String) -> PersistentVolumeClaim {
     let labels = standard_labels(node);
     let name = resource_name(node, "data");
 
@@ -128,6 +241,17 @@ fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
     requests.insert("storage".to_string(), Quantity(effective_storage_size));
 
     let annotations = node.spec.storage.annotations.clone().unwrap_or_default();
+
+    // When restoring from a VolumeSnapshot, set dataSource so the PVC is populated from the snapshot
+    let data_source = node
+        .spec
+        .restore_from_snapshot
+        .as_ref()
+        .map(|r| TypedLocalObjectReference {
+            api_group: Some("snapshot.storage.k8s.io".to_string()),
+            kind: "VolumeSnapshot".to_string(),
+            name: r.volume_snapshot_name.clone(),
+        });
 
     PersistentVolumeClaim {
         metadata: merge_resource_meta(
@@ -147,7 +271,12 @@ fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
         ),
         spec: Some(PersistentVolumeClaimSpec {
             access_modes: Some(vec!["ReadWriteOnce".to_string()]),
-            storage_class_name: Some(node.spec.storage.storage_class.clone()),
+            storage_class_name: if storage_class_name.is_empty() {
+                None
+            } else {
+                Some(storage_class_name)
+            },
+            data_source,
             resources: Some(VolumeResourceRequirements {
                 requests: Some(requests),
                 ..Default::default()
@@ -160,12 +289,12 @@ fn build_pvc(node: &StellarNode) -> PersistentVolumeClaim {
 
 /// Delete the PersistentVolumeClaim for a node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_pvc(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_pvc(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<PersistentVolumeClaim> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "data");
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("Deleted PVC {}", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {
             warn!("PVC {} not found, already deleted", name);
@@ -187,6 +316,7 @@ pub async fn ensure_config_map(
     node: &StellarNode,
     quorum_override: Option<crate::controller::vsl::QuorumSet>,
     enable_mtls: bool,
+    dry_run: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
@@ -195,17 +325,12 @@ pub async fn ensure_config_map(
     let cm = build_config_map(node, quorum_override, enable_mtls);
 
     let patch = Patch::Apply(&cm);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     Ok(())
 }
 
-fn build_config_map(
+pub(crate) fn build_config_map(
     node: &StellarNode,
     quorum_override: Option<crate::controller::vsl::QuorumSet>,
     enable_mtls: bool,
@@ -217,7 +342,8 @@ fn build_config_map(
 
     data.insert(
         "NETWORK_PASSPHRASE".to_string(),
-        node.spec.network.passphrase().to_string(),
+                node.spec.network_passphrase()
+.to_string(),
     );
 
     if enable_mtls {
@@ -325,12 +451,12 @@ fn build_config_map(
 
 /// Delete the ConfigMap for a node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_config_map(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_config_map(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "config");
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("Deleted ConfigMap {}", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {
             warn!("ConfigMap {} not found", name);
@@ -346,25 +472,36 @@ pub async fn delete_config_map(client: &Client, node: &StellarNode) -> Result<()
 // ============================================================================
 
 /// Ensure a Deployment exists for RPC nodes
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[instrument(skip(client, node, propagated_labels), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_deployment(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
+    propagated_labels: &BTreeMap<String, String>,
+    dry_run: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
-    let deployment = build_deployment(node, enable_mtls);
+    // Fetch existing resource labels for stale-label removal
+    let existing_labels = match api.get(&name).await {
+        Ok(existing) => existing.metadata.labels.clone().unwrap_or_default(),
+        Err(kube::Error::Api(e)) if e.code == 404 => BTreeMap::new(),
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
+    let mut deployment = build_deployment(node, enable_mtls);
+
+    // Apply label propagation: merge propagated labels, then remove stale ones
+    let base_labels = deployment.metadata.labels.clone().unwrap_or_default();
+    let merged = LabelPropagator::merge_onto(&base_labels, propagated_labels);
+    let final_labels =
+        LabelPropagator::remove_stale_labels(&merged, propagated_labels, &existing_labels);
+    deployment.metadata.labels = Some(final_labels);
 
     let patch = Patch::Apply(&deployment);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     Ok(())
 }
@@ -374,6 +511,7 @@ pub async fn ensure_canary_deployment(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
+    dry_run: bool,
 ) -> Result<()> {
     let canary_version = match node
         .status
@@ -395,29 +533,17 @@ pub async fn ensure_canary_deployment(
     deployment.metadata.name = Some(name.clone());
 
     if let Some(spec) = &mut deployment.spec {
-        let mut labels = spec
-            .template
-            .metadata
-            .as_ref()
-            .and_then(|m| m.labels.clone())
-            .unwrap_or_default();
+        let mut labels = standard_labels(&canary_node);
         labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
         spec.template.metadata.as_mut().unwrap().labels = Some(labels.clone());
         spec.selector.match_labels = Some(labels.clone());
 
         let meta = &mut deployment.metadata;
-        let mut meta_labels = meta.labels.clone().unwrap_or_default();
-        meta_labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
-        meta.labels = Some(meta_labels);
+        meta.labels = Some(labels);
     }
 
     let patch = Patch::Apply(&deployment);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     Ok(())
 }
@@ -466,28 +592,38 @@ fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deployment {
 /// `seed_injection` describes how the validator seed should be mounted into
 /// the pod — either as an env var from a Secret/ExternalSecret, or as a CSI
 /// volume mount. Pass `None` when called for non-validator nodes.
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[instrument(skip(client, node, propagated_labels), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_statefulset(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
-    // *** NEW PARAMETER ***
     seed_injection: Option<&kms_secret::SeedInjectionSpec>,
+    propagated_labels: &BTreeMap<String, String>,
+    dry_run: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<StatefulSet> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
+    // Fetch existing resource labels for stale-label removal
+    let existing_labels = match api.get(&name).await {
+        Ok(existing) => existing.metadata.labels.clone().unwrap_or_default(),
+        Err(kube::Error::Api(e)) if e.code == 404 => BTreeMap::new(),
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
     // *** Pass seed_injection down to the builder ***
-    let statefulset = build_statefulset(node, enable_mtls, seed_injection);
+    let mut statefulset = build_statefulset(node, enable_mtls, seed_injection);
+
+    // Apply label propagation: merge propagated labels, then remove stale ones
+    let base_labels = statefulset.metadata.labels.clone().unwrap_or_default();
+    let merged = LabelPropagator::merge_onto(&base_labels, propagated_labels);
+    let final_labels =
+        LabelPropagator::remove_stale_labels(&merged, propagated_labels, &existing_labels);
+    statefulset.metadata.labels = Some(final_labels);
 
     let patch = Patch::Apply(&statefulset);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     Ok(())
 }
@@ -538,14 +674,14 @@ fn build_statefulset(
 
 /// Delete the workload (Deployment or StatefulSet) for a node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_workload(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_workload(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
 
     match node.spec.node_type {
         NodeType::Validator => {
             let api: Api<StatefulSet> = Api::namespaced(client.clone(), &namespace);
-            match api.delete(&name, &DeleteParams::default()).await {
+            match api.delete(&name, &delete_params(dry_run)).await {
                 Ok(_) => info!("Deleted StatefulSet {}", name),
                 Err(kube::Error::Api(e)) if e.code == 404 => {
                     warn!("StatefulSet {} not found", name);
@@ -555,7 +691,7 @@ pub async fn delete_workload(client: &Client, node: &StellarNode) -> Result<()> 
         }
         _ => {
             let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
-            match api.delete(&name, &DeleteParams::default()).await {
+            match api.delete(&name, &delete_params(dry_run)).await {
                 Ok(_) => info!("Deleted Deployment {}", name),
                 Err(kube::Error::Api(e)) if e.code == 404 => {
                     warn!("Deployment {} not found", name);
@@ -573,21 +709,36 @@ pub async fn delete_workload(client: &Client, node: &StellarNode) -> Result<()> 
 // ============================================================================
 
 /// Ensure a Service exists for the node
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_service(client: &Client, node: &StellarNode, enable_mtls: bool) -> Result<()> {
+#[instrument(skip(client, node, propagated_labels), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_service(
+    client: &Client,
+    node: &StellarNode,
+    enable_mtls: bool,
+    propagated_labels: &BTreeMap<String, String>,
+    dry_run: bool,
+) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
-    let service = build_service(node, enable_mtls);
+    // Fetch existing resource labels for stale-label removal
+    let existing_labels = match api.get(&name).await {
+        Ok(existing) => existing.metadata.labels.clone().unwrap_or_default(),
+        Err(kube::Error::Api(e)) if e.code == 404 => BTreeMap::new(),
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
+    let mut service = build_service(node, enable_mtls);
+
+    // Apply label propagation: merge propagated labels, then remove stale ones
+    let base_labels = service.metadata.labels.clone().unwrap_or_default();
+    let merged = LabelPropagator::merge_onto(&base_labels, propagated_labels);
+    let final_labels =
+        LabelPropagator::remove_stale_labels(&merged, propagated_labels, &existing_labels);
+    service.metadata.labels = Some(final_labels);
 
     let patch = Patch::Apply(&service);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     Ok(())
 }
@@ -597,6 +748,7 @@ pub async fn ensure_canary_service(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
+    dry_run: bool,
 ) -> Result<()> {
     if node
         .status
@@ -615,23 +767,16 @@ pub async fn ensure_canary_service(
     service.metadata.name = Some(name.clone());
 
     if let Some(spec) = &mut service.spec {
-        let mut selector = spec.selector.clone().unwrap_or_default();
-        selector.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
-        spec.selector = Some(selector);
+        let mut labels = standard_labels(node);
+        labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
+        spec.selector = Some(labels.clone());
 
         let meta = &mut service.metadata;
-        let mut labels = meta.labels.clone().unwrap_or_default();
-        labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
         meta.labels = Some(labels);
     }
 
     let patch = Patch::Apply(&service);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     Ok(())
 }
@@ -715,12 +860,12 @@ pub async fn delete_metallb_config(_client: &Client, _node: &StellarNode) -> Res
 
 /// Delete the Service for a node
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_service(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_service(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("Deleted Service {}", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {
             warn!("Service {} not found", name);
@@ -736,7 +881,7 @@ pub async fn delete_service(client: &Client, node: &StellarNode) -> Result<()> {
 // ============================================================================
 
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_cnpg_cluster(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_cnpg_cluster(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let managed_db = match &node.spec.managed_database {
         Some(cfg) => cfg,
         None => return Ok(()),
@@ -749,12 +894,7 @@ pub async fn ensure_cnpg_cluster(client: &Client, node: &StellarNode) -> Result<
     let cluster = build_cnpg_cluster(node, managed_db);
 
     let patch = Patch::Apply(&cluster);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     info!("CNPG Cluster ensured for {}/{}", namespace, name);
     Ok(())
@@ -837,7 +977,7 @@ fn build_cnpg_cluster(node: &StellarNode, config: &ManagedDatabaseConfig) -> Clu
 }
 
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_cnpg_pooler(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_cnpg_pooler(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let managed_db = match &node.spec.managed_database {
         Some(cfg) => cfg,
         None => return Ok(()),
@@ -855,12 +995,7 @@ pub async fn ensure_cnpg_pooler(client: &Client, node: &StellarNode) -> Result<(
     let pooler = build_cnpg_pooler(node, pgbouncer);
 
     let patch = Patch::Apply(&pooler);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     info!("CNPG Pooler ensured for {}/{}", namespace, name);
     Ok(())
@@ -915,7 +1050,11 @@ fn build_cnpg_pooler(node: &StellarNode, config: &crate::crd::PgBouncerConfig) -
 }
 
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_cnpg_resources(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_cnpg_resources(
+    client: &Client,
+    node: &StellarNode,
+    dry_run: bool,
+) -> Result<()> {
     if node.spec.managed_database.is_none() {
         return Ok(());
     }
@@ -925,13 +1064,13 @@ pub async fn delete_cnpg_resources(client: &Client, node: &StellarNode) -> Resul
     let pooler_api: Api<Pooler> = Api::namespaced(client.clone(), &namespace);
     let pooler_name = resource_name(node, "pooler");
     let _ = pooler_api
-        .delete(&pooler_name, &DeleteParams::default())
+        .delete(&pooler_name, &delete_params(dry_run))
         .await;
 
     let cluster_api: Api<Cluster> = Api::namespaced(client.clone(), &namespace);
     let cluster_name = node.name_any();
     let _ = cluster_api
-        .delete(&cluster_name, &DeleteParams::default())
+        .delete(&cluster_name, &delete_params(dry_run))
         .await;
 
     Ok(())
@@ -942,7 +1081,7 @@ pub async fn delete_cnpg_resources(client: &Client, node: &StellarNode) -> Resul
 // ============================================================================
 
 #[allow(dead_code)]
-pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_ingress(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let ingress_cfg = match &node.spec.ingress {
         Some(cfg)
             if matches!(
@@ -961,16 +1100,12 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
 
     let ingress = build_ingress(node, ingress_cfg);
 
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &Patch::Apply(&ingress),
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &Patch::Apply(&ingress))
+        .await?;
 
     info!("Ingress ensured for {}/{}", namespace, name);
 
-    if let RolloutStrategy::Canary(ref cfg) = node.spec.strategy {
+    if let Some(cfg) = node.spec.strategy.canary() {
         if node
             .status
             .as_ref()
@@ -1017,14 +1152,14 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode) -> Result<()> {
 
             api.patch(
                 &canary_name,
-                &PatchParams::apply("stellar-operator").force(),
+                &patch_params(dry_run),
                 &Patch::Apply(&canary_ingress),
             )
             .await?;
             info!("Canary Ingress ensured for {}/{}", namespace, canary_name);
         } else {
             let canary_name = format!("{name}-canary");
-            let _ = api.delete(&canary_name, &DeleteParams::default()).await;
+            let _ = api.delete(&canary_name, &delete_params(dry_run)).await;
         }
     }
 
@@ -1115,7 +1250,7 @@ fn build_ingress(node: &StellarNode, config: &IngressConfig) -> Ingress {
     }
 }
 
-pub async fn delete_ingress(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_ingress(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     if node.spec.ingress.is_none() {
         return Ok(());
     }
@@ -1124,7 +1259,7 @@ pub async fn delete_ingress(client: &Client, node: &StellarNode) -> Result<()> {
     let api: Api<Ingress> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "ingress");
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("Deleted Ingress {}", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {
             warn!("Ingress {} not found, already deleted", name);
@@ -1176,8 +1311,25 @@ fn build_pod_template(
             &node.spec,
             &node.name_any(),
         )),
+        affinity: merge_workload_affinity(node),
+        security_context: Some(PodSecurityContext {
+            run_as_non_root: Some(true),
+            seccomp_profile: Some(SeccompProfile {
+                localhost_profile: None,
+                type_: "RuntimeDefault".to_string(),
+            }),
+            ..Default::default()
+        }),
         ..Default::default()
     };
+
+    if node.spec.node_type == NodeType::Validator {
+        if let Some(fs) = &node.spec.forensic_snapshot {
+            if fs.enable_share_process_namespace {
+                pod_spec.share_process_namespace = Some(true);
+            }
+        }
+    }
 
     // Add Horizon database migration init container
     if let NodeType::Horizon = node.spec.node_type {
@@ -1285,9 +1437,108 @@ fn build_pod_template(
                         }]),
                         ..Default::default()
                     });
+                } else if hsm_config.provider == HsmProvider::Azure {
+                    volumes.push(Volume {
+                        name: "dedicatedhsm-socket".to_string(),
+                        empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource {
+                            medium: Some("Memory".to_string()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    });
+
+                    let containers = &mut pod_spec.containers;
+                    containers.push(Container {
+                        name: "dedicatedhsm-client".to_string(),
+                        image: Some("azure/dedicated-hsm-client:latest".to_string()),
+                        command: Some(
+                            vec!["/opt/dedicatedhsm/bin/dedicatedhsm_client".to_string()],
+                        ),
+                        args: Some(vec!["--foreground".to_string()]),
+                        volume_mounts: Some(vec![VolumeMount {
+                            name: "dedicatedhsm-socket".to_string(),
+                            mount_path: "/var/run/dedicatedhsm".to_string(),
+                            ..Default::default()
+                        }]),
+                        ..Default::default()
+                    });
                 }
             }
         }
+    }
+
+    // Add NAT traversal sidecar
+    if let Some(nat_cfg) = &node.spec.nat_traversal {
+        if nat_cfg.enabled {
+            let mut env = vec![EnvVar {
+                name: "ENABLE_ICE".to_string(),
+                value: Some(nat_cfg.enable_ice.to_string()),
+                ..Default::default()
+            }];
+
+            if let Some(stun) = &nat_cfg.stun_server {
+                env.push(EnvVar {
+                    name: "STUN_SERVER".to_string(),
+                    value: Some(stun.clone()),
+                    ..Default::default()
+                });
+            }
+
+            if let Some(turn) = &nat_cfg.turn_server {
+                env.push(EnvVar {
+                    name: "TURN_SERVER".to_string(),
+                    value: Some(turn.clone()),
+                    ..Default::default()
+                });
+            }
+
+            if let Some(secret_ref) = &nat_cfg.turn_credentials_secret_ref {
+                env.push(EnvVar {
+                    name: "TURN_USERNAME".to_string(),
+                    value: None,
+                    value_from: Some(EnvVarSource {
+                        secret_key_ref: Some(SecretKeySelector {
+                            name: Some(secret_ref.clone()),
+                            key: "username".to_string(),
+                            optional: Some(false),
+                        }),
+                        ..Default::default()
+                    }),
+                });
+                env.push(EnvVar {
+                    name: "TURN_PASSWORD".to_string(),
+                    value: None,
+                    value_from: Some(EnvVarSource {
+                        secret_key_ref: Some(SecretKeySelector {
+                            name: Some(secret_ref.clone()),
+                            key: "password".to_string(),
+                            optional: Some(false),
+                        }),
+                        ..Default::default()
+                    }),
+                });
+            }
+
+            let sidecar_image = nat_cfg
+                .sidecar_image
+                .clone()
+                .unwrap_or_else(|| "stellar/nat-traversal:latest".to_string());
+
+            let containers = &mut pod_spec.containers;
+            containers.push(Container {
+                name: "nat-traversal".to_string(),
+                image: Some(sidecar_image),
+                env: Some(env),
+                ..Default::default()
+            });
+        }
+    }
+
+    // ==========================================================================
+    // Merge user-defined sidecar containers into the pod spec
+    // ==========================================================================
+    if let Some(sidecars) = &node.spec.sidecars {
+        pod_spec.containers.extend(sidecars.iter().cloned());
     }
 
     // ==========================================================================
@@ -1317,26 +1568,231 @@ fn build_pod_template(
     }
     // ==========================================================================
 
+    let mut apparmor_annotations = BTreeMap::new();
+    if let Some(containers) = &pod_spec.init_containers {
+        for container in containers {
+            apparmor_annotations.insert(
+                format!(
+                    "container.apparmor.security.beta.kubernetes.io/{}",
+                    container.name
+                ),
+                "runtime/default".to_string(),
+            );
+        }
+    }
+    for container in &pod_spec.containers {
+        apparmor_annotations.insert(
+            format!(
+                "container.apparmor.security.beta.kubernetes.io/{}",
+                container.name
+            ),
+            "runtime/default".to_string(),
+        );
+    }
+
+    let mut pod_object_meta = ObjectMeta {
+        labels: Some(labels.clone()),
+        annotations: if apparmor_annotations.is_empty() {
+            None
+        } else {
+            Some(apparmor_annotations)
+        },
+        ..Default::default()
+    };
+    if let Some(inj) = seed_injection {
+        if let Some(ann) = inj.pod_annotations() {
+            let mut merged = pod_object_meta.annotations.unwrap_or_default();
+            merged.extend(ann.iter().map(|(k, v)| (k.clone(), v.clone())));
+            pod_object_meta.annotations = Some(merged);
+        }
+    }
+
     PodTemplateSpec {
         metadata: Some(merge_resource_meta(
-            ObjectMeta {
-                labels: Some(labels.clone()),
-                ..Default::default()
-            },
+            pod_object_meta,
             &node.spec.resource_meta,
         )),
         spec: Some(pod_spec),
     }
 }
 
+fn parse_cpu_millicores(cpu: &str) -> Option<u32> {
+    let trimmed = cpu.trim();
+    if let Some(milli) = trimmed.strip_suffix('m') {
+        return milli.parse::<u32>().ok();
+    }
+
+    let cores = trimmed.parse::<f64>().ok()?;
+    if cores.is_sign_negative() {
+        return None;
+    }
+
+    Some((cores * 1000.0).round() as u32)
+}
+
+fn derive_worker_threads(node: &StellarNode) -> u32 {
+    let millicores = parse_cpu_millicores(&node.spec.resources.limits.cpu)
+        .or_else(|| parse_cpu_millicores(&node.spec.resources.requests.cpu))
+        .unwrap_or(1000);
+
+    let cores = millicores.div_ceil(1000).clamp(1, 32);
+    cores.max(1)
+}
+
+fn network_spread_label_selector(spec: &StellarNodeSpec) -> LabelSelector {
+    LabelSelector {
+        match_labels: Some(BTreeMap::from([
+            (
+                "app.kubernetes.io/name".to_string(),
+                "stellar-node".to_string(),
+            ),
+            (
+                "stellar-network".to_string(),
+                spec.network.scheduling_label_value(&spec.custom_network_passphrase),
+            ),
+            (
+                "app.kubernetes.io/component".to_string(),
+                spec.node_type.to_string().to_lowercase(),
+            ),
+        ])),
+        ..Default::default()
+    }
+}
+
+pub(crate) fn merge_workload_affinity(node: &StellarNode) -> Option<Affinity> {
+    let mut aff = Affinity::default();
+    if let Some(na) = node.spec.storage.node_affinity.clone() {
+        aff.node_affinity = Some(na);
+    }
+
+    let mut req_terms = Vec::new();
+    let mut pref_terms = Vec::new();
+
+    // 1. Default network-level separation
+    if let Some(pa) = build_network_pod_anti_affinity(node) {
+        if let Some(mut req) = pa.required_during_scheduling_ignored_during_execution {
+            req_terms.append(&mut req);
+        }
+        if let Some(mut pref) = pa.preferred_during_scheduling_ignored_during_execution {
+            pref_terms.append(&mut pref);
+        }
+    }
+
+    // 2. SCP-aware separation (Validators only)
+    if let Some(pa) = build_scp_aware_pod_anti_affinity(node) {
+        if let Some(mut req) = pa.required_during_scheduling_ignored_during_execution {
+            req_terms.append(&mut req);
+        }
+        if let Some(mut pref) = pa.preferred_during_scheduling_ignored_during_execution {
+            pref_terms.append(&mut pref);
+        }
+    }
+
+    if !req_terms.is_empty() || !pref_terms.is_empty() {
+        aff.pod_anti_affinity = Some(PodAntiAffinity {
+            required_during_scheduling_ignored_during_execution: if req_terms.is_empty() {
+                None
+            } else {
+                Some(req_terms)
+            },
+            preferred_during_scheduling_ignored_during_execution: if pref_terms.is_empty() {
+                None
+            } else {
+                Some(pref_terms)
+            },
+        });
+    }
+
+    if aff.node_affinity.is_none() && aff.pod_anti_affinity.is_none() {
+        None
+    } else {
+        Some(aff)
+    }
+}
+
+fn build_scp_aware_pod_anti_affinity(node: &StellarNode) -> Option<PodAntiAffinity> {
+    // Only applies to Validators when SCP-aware placement is enabled
+    if node.spec.node_type != NodeType::Validator || !node.spec.placement.scp_aware_anti_affinity {
+        return None;
+    }
+
+    let qset = node
+        .spec
+        .validator_config
+        .as_ref()
+        .and_then(|c| c.quorum_set.as_ref())?;
+
+    let peer_names = extract_peer_names_from_toml(qset);
+    if peer_names.is_empty() {
+        return None;
+    }
+
+    let mut terms = Vec::new();
+
+    for peer_name in peer_names {
+        // We discourage placing this validator on the same node as its quorum set members.
+        // Each peer is identified by its instance name label.
+        let mut match_labels = BTreeMap::new();
+        match_labels.insert("app.kubernetes.io/instance".to_string(), peer_name);
+
+        terms.push(WeightedPodAffinityTerm {
+            weight: 100,
+            pod_affinity_term: PodAffinityTerm {
+                label_selector: Some(LabelSelector {
+                    match_labels: Some(match_labels),
+                    ..Default::default()
+                }),
+                topology_key: "kubernetes.io/hostname".to_string(),
+                ..Default::default()
+            },
+        });
+    }
+
+    Some(PodAntiAffinity {
+        preferred_during_scheduling_ignored_during_execution: Some(terms),
+        ..Default::default()
+    })
+}
+
+fn build_network_pod_anti_affinity(node: &StellarNode) -> Option<PodAntiAffinity> {
+    match node.spec.pod_anti_affinity {
+        PodAntiAffinityStrength::Disabled => None,
+        PodAntiAffinityStrength::Hard => {
+            let term = PodAffinityTerm {
+                label_selector: Some(network_spread_label_selector(&node.spec)),
+                topology_key: "kubernetes.io/hostname".to_string(),
+                ..Default::default()
+            };
+            Some(PodAntiAffinity {
+                required_during_scheduling_ignored_during_execution: Some(vec![term]),
+                ..Default::default()
+            })
+        }
+        PodAntiAffinityStrength::Soft => {
+            let term = PodAffinityTerm {
+                label_selector: Some(network_spread_label_selector(&node.spec)),
+                topology_key: "kubernetes.io/hostname".to_string(),
+                ..Default::default()
+            };
+            Some(PodAntiAffinity {
+                preferred_during_scheduling_ignored_during_execution: Some(vec![
+                    WeightedPodAffinityTerm {
+                        weight: 100,
+                        pod_affinity_term: term,
+                    },
+                ]),
+                ..Default::default()
+            })
+        }
+    }
+}
+
 /// Build `TopologySpreadConstraints` for a pod spec.
 pub fn build_topology_spread_constraints(
     spec: &crate::crd::StellarNodeSpec,
-    node_name: &str,
+    _node_name: &str,
 ) -> Vec<k8s_openapi::api::core::v1::TopologySpreadConstraint> {
     use k8s_openapi::api::core::v1::TopologySpreadConstraint;
-    use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
-    use std::collections::BTreeMap;
 
     if let Some(constraints) = &spec.topology_spread_constraints {
         if !constraints.is_empty() {
@@ -1344,32 +1800,27 @@ pub fn build_topology_spread_constraints(
         }
     }
 
-    let selector = LabelSelector {
-        match_labels: Some(BTreeMap::from([
-            (
-                "app.kubernetes.io/name".to_string(),
-                "stellar-node".to_string(),
-            ),
-            (
-                "app.kubernetes.io/instance".to_string(),
-                node_name.to_string(),
-            ),
-        ])),
-        ..Default::default()
+    let when_unsatisfiable = match spec.pod_anti_affinity {
+        PodAntiAffinityStrength::Soft => "ScheduleAnyway".to_string(),
+        PodAntiAffinityStrength::Hard | PodAntiAffinityStrength::Disabled => {
+            "DoNotSchedule".to_string()
+        }
     };
+
+    let selector = network_spread_label_selector(spec);
 
     vec![
         TopologySpreadConstraint {
             max_skew: 1,
             topology_key: "kubernetes.io/hostname".to_string(),
-            when_unsatisfiable: "DoNotSchedule".to_string(),
+            when_unsatisfiable: when_unsatisfiable.clone(),
             label_selector: Some(selector.clone()),
             ..Default::default()
         },
         TopologySpreadConstraint {
             max_skew: 1,
             topology_key: "topology.kubernetes.io/zone".to_string(),
-            when_unsatisfiable: "DoNotSchedule".to_string(),
+            when_unsatisfiable,
             label_selector: Some(selector),
             ..Default::default()
         },
@@ -1405,9 +1856,50 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
 
     let mut env_vars = vec![EnvVar {
         name: "NETWORK_PASSPHRASE".to_string(),
-        value: Some(node.spec.network.passphrase().to_string()),
+        value: Some(node.spec.network_passphrase().to_string()),
         ..Default::default()
     }];
+
+    let worker_threads = derive_worker_threads(node);
+    match node.spec.node_type {
+        NodeType::Validator => {
+            env_vars.push(EnvVar {
+                name: "STELLAR_CORE_WORKER_THREADS".to_string(),
+                value: Some(worker_threads.to_string()),
+                ..Default::default()
+            });
+            env_vars.push(EnvVar {
+                name: "STELLAR_CORE_HTTP_QUERY_THREADS".to_string(),
+                value: Some((worker_threads.max(2) / 2).max(1).to_string()),
+                ..Default::default()
+            });
+        }
+        NodeType::Horizon => {
+            let ingest_workers = node
+                .spec
+                .horizon_config
+                .as_ref()
+                .map(|cfg| cfg.ingest_workers.max(1))
+                .unwrap_or(worker_threads);
+            env_vars.push(EnvVar {
+                name: "HORIZON_INGEST_WORKERS".to_string(),
+                value: Some(ingest_workers.to_string()),
+                ..Default::default()
+            });
+        }
+        NodeType::SorobanRpc => {
+            env_vars.push(EnvVar {
+                name: "SOROBAN_RPC_WORKER_THREADS".to_string(),
+                value: Some(worker_threads.to_string()),
+                ..Default::default()
+            });
+            env_vars.push(EnvVar {
+                name: "CAPTIVE_CORE_WORKER_THREADS".to_string(),
+                value: Some((worker_threads / 2).max(1).to_string()),
+                ..Default::default()
+            });
+        }
+    }
 
     // Source validator seed from Secret or shared RAM volume (KMS)
     if let NodeType::Validator = node.spec.node_type {
@@ -1554,6 +2046,13 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
                         mount_path: "/var/run/cloudhsm".to_string(),
                         ..Default::default()
                     });
+                } else if hsm_config.provider == HsmProvider::Azure {
+                    // Sidecar bridge for PKCS#11 access to Azure Dedicated HSM.
+                    extra_volume_mounts.push(VolumeMount {
+                        name: "dedicatedhsm-socket".to_string(),
+                        mount_path: "/var/run/dedicatedhsm".to_string(),
+                        ..Default::default()
+                    });
                 }
             }
         }
@@ -1611,6 +2110,19 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
             limits: Some(limits),
             claims: None,
         }),
+        security_context: Some(SecurityContext {
+            allow_privilege_escalation: Some(false),
+            capabilities: Some(Capabilities {
+                add: None,
+                drop: Some(vec!["ALL".to_string()]),
+            }),
+            run_as_non_root: Some(true),
+            seccomp_profile: Some(SeccompProfile {
+                localhost_profile: None,
+                type_: "RuntimeDefault".to_string(),
+            }),
+            ..Default::default()
+        }),
         volume_mounts: Some(volume_mounts),
         ..Default::default()
     }
@@ -1637,7 +2149,7 @@ fn build_horizon_migration_container(node: &StellarNode) -> Container {
 // HorizontalPodAutoscaler — unchanged
 // ============================================================================
 
-pub async fn ensure_hpa(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_hpa(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     if !matches!(
         node.spec.node_type,
         NodeType::Horizon | NodeType::SorobanRpc
@@ -1653,12 +2165,7 @@ pub async fn ensure_hpa(client: &Client, node: &StellarNode) -> Result<()> {
     let hpa = build_hpa(node)?;
 
     let patch = Patch::Apply(&hpa);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     info!("HPA ensured for {}/{}", namespace, name);
     Ok(())
@@ -1668,12 +2175,12 @@ pub async fn ensure_hpa(client: &Client, node: &StellarNode) -> Result<()> {
 // Alerting — unchanged
 // ============================================================================
 
-pub async fn ensure_alerting(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_alerting(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = resource_name(node, "alerts");
 
     if !node.spec.alerting {
-        return delete_alerting(client, node).await;
+        return delete_alerting(client, node, dry_run).await;
     }
 
     let labels = standard_labels(node);
@@ -1730,12 +2237,7 @@ pub async fn ensure_alerting(client: &Client, node: &StellarNode) -> Result<()> 
 
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
     let patch = Patch::Apply(&cm);
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &patch,
-    )
-    .await?;
+    api.patch(&name, &patch_params(dry_run), &patch).await?;
 
     info!(
         "Alerting ConfigMap {} ensured for {}/{}",
@@ -1865,7 +2367,7 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
     Ok(hpa)
 }
 
-pub async fn delete_hpa(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_hpa(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     if node.spec.autoscaling.is_none() {
         return Ok(());
     }
@@ -1874,7 +2376,7 @@ pub async fn delete_hpa(client: &Client, node: &StellarNode) -> Result<()> {
     let api: Api<HorizontalPodAutoscaler> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "hpa");
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => {
             info!("HPA deleted for {}/{}", namespace, name);
         }
@@ -1929,12 +2431,12 @@ pub async fn delete_service_monitor(_client: &Client, node: &StellarNode) -> Res
     Ok(())
 }
 
-pub async fn delete_alerting(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_alerting(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = resource_name(node, "alerts");
 
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("Deleted alerting ConfigMap {}", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {}
         Err(e) => return Err(Error::KubeError(e)),
@@ -1943,22 +2445,26 @@ pub async fn delete_alerting(client: &Client, node: &StellarNode) -> Result<()> 
     Ok(())
 }
 
-pub async fn delete_canary_resources(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_canary_resources(
+    client: &Client,
+    node: &StellarNode,
+    dry_run: bool,
+) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
     let canary_name = format!("{name}-canary");
 
     if node.spec.ingress.is_some() {
         let api: Api<Ingress> = Api::namespaced(client.clone(), &namespace);
-        let _ = api.delete(&canary_name, &DeleteParams::default()).await;
+        let _ = api.delete(&canary_name, &delete_params(dry_run)).await;
     }
 
     let api_svc: Api<Service> = Api::namespaced(client.clone(), &namespace);
-    let _ = api_svc.delete(&canary_name, &DeleteParams::default()).await;
+    let _ = api_svc.delete(&canary_name, &delete_params(dry_run)).await;
 
     let api_deploy: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
     let _ = api_deploy
-        .delete(&canary_name, &DeleteParams::default())
+        .delete(&canary_name, &delete_params(dry_run))
         .await;
 
     Ok(())
@@ -1969,7 +2475,11 @@ pub async fn delete_canary_resources(client: &Client, node: &StellarNode) -> Res
 // ============================================================================
 
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_network_policy(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_network_policy(
+    client: &Client,
+    node: &StellarNode,
+    dry_run: bool,
+) -> Result<()> {
     let policy_cfg = match &node.spec.network_policy {
         Some(cfg) if cfg.enabled => cfg,
         _ => return Ok(()),
@@ -1983,7 +2493,7 @@ pub async fn ensure_network_policy(client: &Client, node: &StellarNode) -> Resul
 
     api.patch(
         &name,
-        &PatchParams::apply("stellar-operator").force(),
+        &patch_params(dry_run),
         &Patch::Apply(&network_policy),
     )
     .await?;
@@ -2146,12 +2656,16 @@ fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> Net
 }
 
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn delete_network_policy(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_network_policy(
+    client: &Client,
+    node: &StellarNode,
+    dry_run: bool,
+) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<NetworkPolicy> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "netpol");
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("NetworkPolicy {} deleted", name),
         Err(kube::Error::Api(e)) if e.code == 404 => {
             info!("NetworkPolicy {} not found, skipping delete", name);
@@ -2205,9 +2719,9 @@ fn build_pdb(node: &StellarNode) -> Option<PodDisruptionBudget> {
     })
 }
 
-pub async fn ensure_pdb(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_pdb(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     if node.spec.replicas <= 1 {
-        return delete_pdb(client, node).await;
+        return delete_pdb(client, node, dry_run).await;
     }
 
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
@@ -2217,7 +2731,7 @@ pub async fn ensure_pdb(client: &Client, node: &StellarNode) -> Result<()> {
         let name = pdb.metadata.name.clone().unwrap();
 
         info!("Reconciling PodDisruptionBudget {}/{}", namespace, name);
-        let params = PatchParams::apply("stellar-operator").force();
+        let params = patch_params(dry_run);
         api.patch(&name, &params, &Patch::Apply(&pdb))
             .await
             .map_err(Error::KubeError)?;
@@ -2226,17 +2740,194 @@ pub async fn ensure_pdb(client: &Client, node: &StellarNode) -> Result<()> {
     Ok(())
 }
 
-pub async fn delete_pdb(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn delete_pdb(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
 
     let api: Api<PodDisruptionBudget> = Api::namespaced(client.clone(), &namespace);
 
-    match api.delete(&name, &DeleteParams::default()).await {
+    match api.delete(&name, &delete_params(dry_run)).await {
         Ok(_) => info!("Deleted PodDisruptionBudget {}/{}", namespace, name),
         Err(kube::Error::Api(e)) if e.code == 404 => {}
         Err(e) => return Err(Error::KubeError(e)),
     }
 
     Ok(())
+}
+
+// ============================================================================
+// Test helpers — thin wrappers that expose private builders for unit tests
+// (Issue #298)
+// ============================================================================
+
+#[cfg(test)]
+pub(crate) fn build_pvc_for_test(
+    node: &StellarNode,
+    storage_class: String,
+) -> k8s_openapi::api::core::v1::PersistentVolumeClaim {
+    build_pvc(node, storage_class)
+}
+
+#[cfg(test)]
+pub(crate) fn build_config_map_for_test(node: &StellarNode) -> ConfigMap {
+    build_config_map(node, None, false)
+}
+
+#[cfg(test)]
+pub(crate) fn build_deployment_for_test(
+    node: &StellarNode,
+) -> k8s_openapi::api::apps::v1::Deployment {
+    build_deployment(node, false)
+}
+
+#[cfg(test)]
+pub(crate) fn build_statefulset_for_test(
+    node: &StellarNode,
+) -> k8s_openapi::api::apps::v1::StatefulSet {
+    build_statefulset(node, false, None)
+}
+
+#[cfg(test)]
+pub(crate) fn build_service_for_test(node: &StellarNode) -> k8s_openapi::api::core::v1::Service {
+    build_service(node, false)
+}
+
+#[cfg(test)]
+mod ensure_pvc_tests {
+    use super::{build_pvc, pvc_needs_update, resolve_pvc_storage_class};
+    use crate::crd::{
+        types::{ResourceRequirements, ResourceSpec, StorageMode},
+        NodeType, StellarNetwork, StellarNode, StellarNodeSpec,
+    };
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+
+    fn test_node() -> StellarNode {
+        StellarNode {
+            metadata: ObjectMeta {
+                name: Some("test-node".to_string()),
+                namespace: Some("stellar-system".to_string()),
+                uid: Some("abc-123".to_string()),
+                ..Default::default()
+            },
+            spec: StellarNodeSpec {
+                node_type: NodeType::Validator,
+                network: StellarNetwork::Testnet,
+                version: "v21.0.0".to_string(),
+                resources: ResourceRequirements {
+                    requests: ResourceSpec {
+                        cpu: "500m".to_string(),
+                        memory: "1Gi".to_string(),
+                    },
+                    limits: ResourceSpec {
+                        cpu: "2".to_string(),
+                        memory: "4Gi".to_string(),
+                    },
+                },
+                replicas: 1,
+                ..Default::default()
+                min_available: None,
+                max_unavailable: None,
+                suspended: false,
+                alerting: false,
+                database: None,
+                managed_database: None,
+                autoscaling: None,
+                vpa_config: None,
+                ingress: None,
+                load_balancer: None,
+                global_discovery: None,
+                cross_cluster: None,
+                strategy: Default::default(),
+                maintenance_mode: false,
+                network_policy: None,
+                dr_config: None,
+                pod_anti_affinity: Default::default(),
+                placement: Default::default(),
+                topology_spread_constraints: None,
+                cve_handling: None,
+                snapshot_schedule: None,
+                restore_from_snapshot: None,
+                read_replica_config: None,
+                read_pool_endpoint: None,
+                db_maintenance_config: None,
+                oci_snapshot: None,
+                service_mesh: None,
+                forensic_snapshot: None,
+                label_propagation: None,
+                resource_meta: None,
+            },
+            status: None,
+        }
+    }
+
+    #[test]
+    fn resolves_storage_class_with_explicit_value() {
+        let mut node = test_node();
+        node.spec.storage.mode = StorageMode::Local;
+        node.spec.storage.storage_class = "fast-ssd".to_string();
+
+        let resolved = resolve_pvc_storage_class(&node, true, true);
+        assert_eq!(resolved, "fast-ssd");
+    }
+
+    #[test]
+    fn resolves_storage_class_to_local_path_for_local_mode() {
+        let mut node = test_node();
+        node.spec.storage.mode = StorageMode::Local;
+        node.spec.storage.storage_class.clear();
+
+        let resolved = resolve_pvc_storage_class(&node, true, false);
+        assert_eq!(resolved, "local-path");
+    }
+
+    #[test]
+    fn resolves_storage_class_to_local_storage_when_path_missing() {
+        let mut node = test_node();
+        node.spec.storage.mode = StorageMode::Local;
+        node.spec.storage.storage_class.clear();
+
+        let resolved = resolve_pvc_storage_class(&node, false, true);
+        assert_eq!(resolved, "local-storage");
+    }
+
+    #[test]
+    fn resolves_storage_class_to_empty_when_no_local_class_found() {
+        let mut node = test_node();
+        node.spec.storage.mode = StorageMode::Local;
+        node.spec.storage.storage_class.clear();
+
+        let resolved = resolve_pvc_storage_class(&node, false, false);
+        assert!(resolved.is_empty());
+    }
+
+    #[test]
+    fn build_pvc_uses_resolved_storage_class() {
+        let node = test_node();
+        let pvc = build_pvc(&node, "gp3".to_string());
+
+        assert_eq!(
+            pvc.spec
+                .as_ref()
+                .and_then(|s| s.storage_class_name.as_deref()),
+            Some("gp3")
+        );
+    }
+
+    #[test]
+    fn pvc_update_detects_storage_class_change() {
+        let node = test_node();
+        let existing = build_pvc(&node, "standard".to_string());
+        let desired = build_pvc(&node, "gp3".to_string());
+
+        assert!(pvc_needs_update(&existing, &desired));
+    }
+
+    #[test]
+    fn pvc_update_skips_when_specs_match() {
+        let node = test_node();
+        let existing = build_pvc(&node, "standard".to_string());
+        let desired = build_pvc(&node, "standard".to_string());
+
+        assert!(!pvc_needs_update(&existing, &desired));
+    }
 }

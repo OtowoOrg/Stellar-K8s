@@ -14,6 +14,7 @@
 //! | `LocalRef` | nothing — Secret already exists          | env var from `secretKeyRef`|
 //! | `ExternalRef` | `ExternalSecret` CR (ESO managed)     | env var from `secretKeyRef`|
 //! | `CsiRef`   | nothing — `SecretProviderClass` pre-exists | file mount via CSI volume |
+//! | `VaultRef` | Vault Agent Injector annotations only      | `STELLAR_SEED_FILE` under `/vault/secrets/` |
 //!
 //! # Security guarantees
 //!
@@ -21,18 +22,23 @@
 //! - Log messages only reference secret **names** and **resource types**.
 //! - Status conditions reference resource names, never values.
 
+use k8s_openapi::api::apps::v1::StatefulSet;
 use k8s_openapi::api::core::v1::{
-    CSIVolumeSource, EnvVar, EnvVarSource, SecretKeySelector, Volume, VolumeMount,
+    CSIVolumeSource, EnvVar, EnvVarSource, Pod, SecretKeySelector, Volume, VolumeMount,
 };
 use kube::{
-    api::{Api, Patch, PatchParams},
+    api::{Api, ListParams, Patch, PatchParams},
     Client, ResourceExt,
 };
 use serde_json::json;
 use tracing::{info, warn};
 
+use std::collections::BTreeMap;
+
 use crate::crd::{
-    seed_secret::{CsiSecretRef, ExternalSecretRef, SeedSecretSource, DEFAULT_SEED_KEY},
+    seed_secret::{
+        CsiSecretRef, ExternalSecretRef, SeedSecretSource, VaultSecretRef, DEFAULT_SEED_KEY,
+    },
     StellarNode,
 };
 use crate::error::{Error, Result};
@@ -89,8 +95,8 @@ pub async fn reconcile_seed_secret(
             node = %node.name_any(),
             namespace = %node.namespace().unwrap_or_default(),
             "ValidatorConfig is using a plain Kubernetes Secret as the seed source. \
-             This is NOT recommended for production. Use seedSecretSource.externalRef \
-             or seedSecretSource.csiRef instead."
+             This is NOT recommended for production. Use seedSecretSource.externalRef, \
+             csiRef, or vaultRef instead."
         );
     }
 
@@ -124,11 +130,55 @@ pub async fn reconcile_seed_secret(
             csi_ref: Some(cr), ..
         } => Ok(SeedInjectionSpec::csi_mount(cr.clone())),
 
+        SeedSecretSource {
+            vault_ref: Some(vr),
+            ..
+        } => Ok(SeedInjectionSpec::vault_agent(vr.clone())),
+
         _ => Err(Error::ValidationError(
             "SeedSecretSource has no variant set — this should have been caught by validation"
                 .to_string(),
         )),
     }
+}
+
+/// Build Vault Agent Injector annotations for a [`VaultSecretRef`].
+pub fn vault_agent_annotations(vr: &VaultSecretRef) -> BTreeMap<String, String> {
+    let file = vr.effective_secret_file_name();
+    let mut m = BTreeMap::new();
+    m.insert(
+        "vault.hashicorp.com/agent-inject".to_string(),
+        "true".to_string(),
+    );
+    m.insert(
+        "vault.hashicorp.com/agent-pre-populate-only".to_string(),
+        "false".to_string(),
+    );
+    m.insert(
+        format!("vault.hashicorp.com/agent-inject-secret-{file}"),
+        vr.secret_path.clone(),
+    );
+    if let Some(tpl) = &vr.template {
+        m.insert(
+            format!("vault.hashicorp.com/agent-inject-template-{file}"),
+            tpl.clone(),
+        );
+    } else {
+        let key = vr.secret_key.as_deref().unwrap_or("seed");
+        let tpl = format!(
+            "{{{{ with secret \"{}\" }}}}\n{{{{ index .Data.data \"{}\" }}}}\n{{{{ end }}}}",
+            vr.secret_path, key
+        );
+        m.insert(
+            format!("vault.hashicorp.com/agent-inject-template-{file}"),
+            tpl,
+        );
+    }
+    m.insert("vault.hashicorp.com/role".to_string(), vr.role.clone());
+    for pair in &vr.extra_pod_annotations {
+        m.insert(pair.name.clone(), pair.value.clone());
+    }
+    m
 }
 
 // ============================================================================
@@ -362,6 +412,12 @@ pub enum SeedInjectionSpec {
     /// The pod-builder will add a CSI volume + mount and set
     /// `STELLAR_SEED_FILE` to the file path instead of `STELLAR_CORE_SEED`.
     CsiMount { config: CsiSecretRef },
+
+    /// HashiCorp Vault Agent Injector: annotations + `STELLAR_SEED_FILE` under `/vault/secrets/`.
+    VaultAgent {
+        config: VaultSecretRef,
+        pod_annotations: BTreeMap<String, String>,
+    },
 }
 
 impl SeedInjectionSpec {
@@ -376,6 +432,43 @@ impl SeedInjectionSpec {
         Self::CsiMount { config }
     }
 
+    fn vault_agent(config: VaultSecretRef) -> Self {
+        let pod_annotations = vault_agent_annotations(&config);
+        Self::VaultAgent {
+            config,
+            pod_annotations,
+        }
+    }
+
+    /// Pod template annotations (Vault Agent only).
+    pub fn pod_annotations(&self) -> Option<&BTreeMap<String, String>> {
+        match self {
+            Self::VaultAgent {
+                pod_annotations, ..
+            } => Some(pod_annotations),
+            _ => None,
+        }
+    }
+
+    /// Whether the operator should roll pods when Vault secret version changes.
+    pub fn vault_restart_on_rotation(&self) -> bool {
+        match self {
+            Self::VaultAgent { config, .. } => config.restart_on_secret_rotation,
+            _ => false,
+        }
+    }
+
+    /// Annotation key the injector sets for secret versioning (best-effort).
+    pub fn vault_version_annotation_key(&self) -> Option<String> {
+        match self {
+            Self::VaultAgent { config, .. } => Some(format!(
+                "vault.hashicorp.com/secret-version-{}",
+                config.effective_secret_file_name()
+            )),
+            _ => None,
+        }
+    }
+
     // ── Helpers for the pod builder ──────────────────────────────────────────
 
     /// Returns the `EnvVar` entries to add to the container spec.
@@ -384,6 +477,14 @@ impl SeedInjectionSpec {
     /// - `CsiMount`      → one env var: `STELLAR_SEED_FILE` pointing at mount
     pub fn env_vars(&self) -> Vec<EnvVar> {
         match self {
+            Self::VaultAgent { config, .. } => {
+                let path = format!("/vault/secrets/{}", config.effective_secret_file_name());
+                vec![EnvVar {
+                    name: "STELLAR_SEED_FILE".to_string(),
+                    value: Some(path),
+                    ..Default::default()
+                }]
+            }
             Self::EnvFromSecret {
                 secret_name,
                 secret_key,
@@ -458,8 +559,106 @@ impl SeedInjectionSpec {
                 config.secret_provider_class_name,
                 config.effective_mount_path()
             ),
+            Self::VaultAgent { config, .. } => format!(
+                "Vault Agent Injector (role='{}', path='{}')",
+                config.role, config.secret_path
+            ),
         }
     }
+}
+
+/// When Vault rotates a secret, the Agent updates pod annotations; roll pods so stellar-core reloads.
+pub async fn reconcile_vault_secret_rotation(
+    client: &Client,
+    node: &StellarNode,
+    seed: Option<&SeedInjectionSpec>,
+) -> Result<()> {
+    let inj = match seed {
+        Some(s) if s.vault_restart_on_rotation() => s,
+        _ => return Ok(()),
+    };
+    let ver_key = match inj.vault_version_annotation_key() {
+        Some(k) => k,
+        None => return Ok(()),
+    };
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let selector = format!("app.kubernetes.io/instance={}", node.name_any());
+    let pods: Api<Pod> = Api::namespaced(client.clone(), &namespace);
+    let list = pods
+        .list(&ListParams::default().labels(&selector))
+        .await
+        .map_err(Error::KubeError)?;
+
+    let mut observed: Option<String> = None;
+    for p in list.items {
+        if let Some(ann) = p.metadata.annotations.as_ref() {
+            if let Some(v) = ann.get(&ver_key) {
+                if !v.is_empty() {
+                    observed = Some(v.clone());
+                    break;
+                }
+            }
+        }
+    }
+    let obs_str = match &observed {
+        Some(s) => s.as_str(),
+        None => return Ok(()),
+    };
+
+    let current = node
+        .status
+        .as_ref()
+        .and_then(|st| st.vault_observed_secret_version.as_deref());
+
+    if current == Some(obs_str) {
+        return Ok(());
+    }
+
+    let sts_api: Api<StatefulSet> = Api::namespaced(client.clone(), &namespace);
+    let name = node.name_any();
+    let restart_ts = chrono::Utc::now().to_rfc3339();
+    let patch = json!({
+        "spec": {
+            "template": {
+                "metadata": {
+                    "annotations": {
+                        "stellar.org/vault-rollout-restart": restart_ts
+                    }
+                }
+            }
+        }
+    });
+    sts_api
+        .patch(
+            &name,
+            &PatchParams::apply("stellar-operator").force(),
+            &Patch::Merge(&patch),
+        )
+        .await
+        .map_err(Error::KubeError)?;
+
+    let api_sn: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+    let st_patch = json!({
+        "status": {
+            "vaultObservedSecretVersion": obs_str
+        }
+    });
+    api_sn
+        .patch_status(
+            &node.name_any(),
+            &PatchParams::apply("stellar-operator"),
+            &Patch::Merge(&st_patch),
+        )
+        .await
+        .map_err(Error::KubeError)?;
+
+    info!(
+        node = %node.name_any(),
+        annotation = %ver_key,
+        version = %obs_str,
+        "Triggered StatefulSet rollout for Vault secret rotation"
+    );
+    Ok(())
 }
 
 // ============================================================================
@@ -469,7 +668,26 @@ impl SeedInjectionSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::seed_secret::CsiSecretRef;
+    use crate::crd::seed_secret::{CsiSecretRef, VaultSecretRef};
+
+    #[test]
+    fn test_vault_agent_env_and_annotations() {
+        let vr = VaultSecretRef {
+            role: "r".to_string(),
+            secret_path: "secret/data/x".to_string(),
+            secret_key: None,
+            secret_file_name: Some("myseed".to_string()),
+            template: None,
+            restart_on_secret_rotation: true,
+            extra_pod_annotations: vec![],
+        };
+        let spec = SeedInjectionSpec::vault_agent(vr);
+        let vars = spec.env_vars();
+        assert_eq!(vars[0].name, "STELLAR_SEED_FILE");
+        assert_eq!(vars[0].value.as_deref(), Some("/vault/secrets/myseed"));
+        assert!(spec.pod_annotations().is_some());
+        assert!(spec.vault_restart_on_rotation());
+    }
 
     #[test]
     fn test_env_from_secret_vars() {

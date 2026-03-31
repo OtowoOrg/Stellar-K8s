@@ -29,6 +29,38 @@ pub const SERVER_CERT_SECRET_NAME: &str = "stellar-operator-server-cert";
 /// Default number of days before certificate expiration at which to trigger rotation.
 pub const DEFAULT_CERT_ROTATION_THRESHOLD_DAYS: u32 = 30;
 
+/// Build mTLS runtime config from a Kubernetes Secret.
+///
+/// The secret must contain `tls.crt`, `tls.key`, and `ca.crt` entries.
+pub fn load_mtls_config_from_secret(secret: &Secret) -> Result<crate::MtlsConfig> {
+    let data = secret
+        .data
+        .as_ref()
+        .ok_or_else(|| Error::ConfigError("Secret has no data".to_string()))?;
+
+    let cert_pem = data
+        .get("tls.crt")
+        .ok_or_else(|| Error::ConfigError("Missing tls.crt".to_string()))?
+        .0
+        .clone();
+    let key_pem = data
+        .get("tls.key")
+        .ok_or_else(|| Error::ConfigError("Missing tls.key".to_string()))?
+        .0
+        .clone();
+    let ca_pem = data
+        .get("ca.crt")
+        .ok_or_else(|| Error::ConfigError("Missing ca.crt".to_string()))?
+        .0
+        .clone();
+
+    Ok(crate::MtlsConfig {
+        cert_pem,
+        key_pem,
+        ca_pem,
+    })
+}
+
 /// Ensure the CA exists in the cluster
 pub async fn ensure_ca(client: &Client, namespace: &str) -> Result<()> {
     let secrets: Api<Secret> = Api::namespaced(client.clone(), namespace);
@@ -376,6 +408,7 @@ pub async fn ensure_node_cert(client: &Client, node: &StellarNode) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use k8s_openapi::ByteString;
 
     fn make_self_signed_cert(not_before: (i32, u8, u8), not_after: (i32, u8, u8)) -> Vec<u8> {
         let mut params = CertificateParams::default();
@@ -431,5 +464,41 @@ mod tests {
     #[test]
     fn rotation_threshold_constant() {
         assert_eq!(DEFAULT_CERT_ROTATION_THRESHOLD_DAYS, 30);
+    }
+
+    #[test]
+    fn load_mtls_config_from_secret_extracts_all_cert_data() {
+        let mut data = BTreeMap::new();
+        data.insert("tls.crt".to_string(), ByteString(b"cert-pem".to_vec()));
+        data.insert("tls.key".to_string(), ByteString(b"key-pem".to_vec()));
+        data.insert("ca.crt".to_string(), ByteString(b"ca-pem".to_vec()));
+
+        let secret = Secret {
+            data: Some(data),
+            ..Default::default()
+        };
+
+        let cfg = load_mtls_config_from_secret(&secret).expect("config should load");
+        assert_eq!(cfg.cert_pem, b"cert-pem".to_vec());
+        assert_eq!(cfg.key_pem, b"key-pem".to_vec());
+        assert_eq!(cfg.ca_pem, b"ca-pem".to_vec());
+    }
+
+    #[test]
+    fn load_mtls_config_from_secret_requires_tls_crt() {
+        let mut data = BTreeMap::new();
+        data.insert("tls.key".to_string(), ByteString(b"key-pem".to_vec()));
+        data.insert("ca.crt".to_string(), ByteString(b"ca-pem".to_vec()));
+
+        let secret = Secret {
+            data: Some(data),
+            ..Default::default()
+        };
+
+        let err = load_mtls_config_from_secret(&secret).expect_err("tls.crt must be required");
+        assert!(
+            err.to_string().contains("Missing tls.crt"),
+            "unexpected error: {err}"
+        );
     }
 }

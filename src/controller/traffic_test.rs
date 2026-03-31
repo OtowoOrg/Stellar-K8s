@@ -19,13 +19,8 @@ mod tests {
             node_type: NodeType::Horizon,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
-            history_mode: Default::default(),
-            resources: ResourceRequirements::default(),
-            storage: Default::default(),
-            validator_config: None,
-            horizon_config: None,
-            soroban_config: None,
             replicas: 1,
+            ..Default::default()
             min_available: None,
             max_unavailable: None,
             suspended: false,
@@ -41,15 +36,23 @@ mod tests {
             maintenance_mode: false,
             network_policy: None,
             dr_config: None,
+            pod_anti_affinity: Default::default(),
+            placement: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
             read_replica_config: None,
             db_maintenance_config: None,
             oci_snapshot: None,
             service_mesh: None,
+            forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            sidecars: None,
+            custom_network_passphrase: None,
         }
     }
 
@@ -73,12 +76,6 @@ mod tests {
                 node_type: NodeType::Horizon,
                 network: StellarNetwork::Testnet,
                 version: "v21.0.0".to_string(),
-                history_mode: Default::default(),
-                resources: ResourceRequirements::default(),
-                storage: Default::default(),
-                validator_config: None,
-                horizon_config: None,
-                soroban_config: None,
                 replicas: 1,
                 min_available: None,
                 max_unavailable: None,
@@ -95,20 +92,29 @@ mod tests {
                 maintenance_mode: false,
                 network_policy: None,
                 dr_config: None,
+                pod_anti_affinity: Default::default(),
+                placement: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
+                snapshot_schedule: None,
+                restore_from_snapshot: None,
                 read_replica_config: Some(ReadReplicaConfig {
                     replicas: 3,
                     resources: ResourceRequirements::default(),
                     strategy: strategy.clone(),
                     archive_sharding: false,
                 }),
+                ..Default::default()
                 db_maintenance_config: None,
                 oci_snapshot: None,
                 service_mesh: None,
+                forensic_snapshot: None,
+                label_propagation: None,
                 resource_meta: None,
                 vpa_config: None,
                 read_pool_endpoint: None,
+                sidecars: None,
+            custom_network_passphrase: None,
             },
             status: None,
         }
@@ -130,13 +136,8 @@ mod tests {
                 node_type: NodeType::Validator,
                 network: StellarNetwork::Mainnet,
                 version: "v21.0.0".to_string(),
-                history_mode: Default::default(),
-                resources: ResourceRequirements::default(),
-                storage: Default::default(),
-                validator_config: None,
-                horizon_config: None,
-                soroban_config: None,
                 replicas: 1,
+                ..Default::default()
                 min_available: None,
                 max_unavailable: None,
                 suspended: false,
@@ -152,15 +153,23 @@ mod tests {
                 maintenance_mode: false,
                 network_policy: None,
                 dr_config: None,
+                pod_anti_affinity: Default::default(),
+                placement: Default::default(),
                 topology_spread_constraints: None,
                 db_maintenance_config: None,
                 cve_handling: None,
+                snapshot_schedule: None,
+                restore_from_snapshot: None,
                 read_replica_config: None,
                 oci_snapshot: None,
                 service_mesh: None,
+                forensic_snapshot: None,
+                label_propagation: None,
                 resource_meta: None,
                 vpa_config: None,
                 read_pool_endpoint: None,
+                sidecars: None,
+            custom_network_passphrase: None,
             },
             status: None,
         }
@@ -723,10 +732,8 @@ mod tests {
     #[test]
     fn test_pod_list_params_label_selector() {
         let node_name = "test-node";
-        let label_selector = format!(
-            "app.kubernetes.io/instance={},stellar.org/role=read-replica",
-            node_name
-        );
+        let label_selector =
+            format!("app.kubernetes.io/instance={node_name},stellar.org/role=read-replica");
 
         // Verify label selector format is correct for Kubernetes API
         assert!(label_selector.contains("app.kubernetes.io/instance="));

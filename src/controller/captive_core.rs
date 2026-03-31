@@ -76,7 +76,7 @@ impl CaptiveCoreConfigBuilder {
         let network_passphrase = config
             .network_passphrase
             .clone()
-            .unwrap_or_else(|| node.spec.network.passphrase().to_string());
+            .unwrap_or_else(|| node.spec.network_passphrase().to_string());
 
         // Validate history archive URLs
         if config.history_archive_urls.is_empty() {
@@ -219,6 +219,7 @@ mod tests {
                     size: "100Gi".to_string(),
                     retention_policy: Default::default(),
                     annotations: None,
+                    ..Default::default()
                 },
                 validator_config: None,
                 horizon_config: None,
@@ -231,31 +232,39 @@ mod tests {
                     max_events_per_request: 10000,
                 }),
                 replicas: 2,
+                ..Default::default()
                 min_available: None,
                 max_unavailable: None,
                 suspended: false,
                 alerting: false,
                 database: None,
-                // Added this field to resolve the E0063 error
                 managed_database: None,
                 autoscaling: None,
                 ingress: None,
                 load_balancer: None,
                 global_discovery: None,
                 cross_cluster: None,
+                snapshot_schedule: None,
+                restore_from_snapshot: None,
                 strategy: Default::default(),
                 maintenance_mode: false,
                 network_policy: None,
                 dr_config: None,
+                pod_anti_affinity: Default::default(),
+                placement: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 read_replica_config: None,
                 db_maintenance_config: None,
                 oci_snapshot: None,
                 service_mesh: None,
+                forensic_snapshot: None,
+                label_propagation: None,
                 resource_meta: None,
                 vpa_config: None,
                 read_pool_endpoint: None,
+                sidecars: None,
+                custom_network_passphrase: None,
             },
             status: None,
         }
@@ -555,12 +564,13 @@ mod tests {
         };
 
         let mut node = create_test_node(config);
-        node.spec.network = StellarNetwork::Custom(custom_passphrase.to_string());
+        node.spec.network = StellarNetwork::Custom;
+        node.spec.custom_network_passphrase = Some(custom_passphrase.to_string());
 
         let builder = CaptiveCoreConfigBuilder::from_node_config(&node).unwrap();
         let toml = builder.build_toml().unwrap();
 
-        assert!(toml.contains(&format!("NETWORK_PASSPHRASE=\"{}\"", custom_passphrase)));
+        assert!(toml.contains(&format!("NETWORK_PASSPHRASE=\"{custom_passphrase}\"")));
     }
 
     /// Test handling missing optional fields (all defaults)
@@ -659,7 +669,7 @@ mod tests {
         let toml = builder.build_toml().unwrap();
 
         // Should use override, not Testnet passphrase
-        assert!(toml.contains(&format!("NETWORK_PASSPHRASE=\"{}\"", custom_passphrase)));
+        assert!(toml.contains(&format!("NETWORK_PASSPHRASE=\"{custom_passphrase}\"")));
         assert!(!toml.contains("Test SDF Network"));
     }
 
@@ -711,9 +721,9 @@ mod tests {
             let builder = CaptiveCoreConfigBuilder::from_node_config(&node).unwrap();
             let toml = builder.build_toml();
 
-            assert!(toml.is_ok(), "Log level '{}' should be valid", log_level);
+            assert!(toml.is_ok(), "Log level '{log_level}' should be valid");
             let toml = toml.unwrap();
-            assert!(toml.contains(&format!("LOG_LEVEL=\"{}\"", log_level)));
+            assert!(toml.contains(&format!("LOG_LEVEL=\"{log_level}\"")));
         }
     }
 

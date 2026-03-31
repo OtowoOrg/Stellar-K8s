@@ -1,0 +1,56 @@
+---
+# ServiceAccount for dashboard access
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: stellar-dashboard-viewer
+  namespace: stellar-system
+---
+# ClusterRole with read permissions for StellarNode resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: stellar-dashboard-viewer
+rules:
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes/status"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+---
+# ClusterRoleBinding to grant permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: stellar-dashboard-viewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: stellar-dashboard-viewer
+subjects:
+  - kind: ServiceAccount
+    name: stellar-dashboard-viewer
+    namespace: stellar-system
+---
+# ClusterRole with admin permissions for dashboard actions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: stellar-dashboard-admin
+rules:
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "delete"]
+---
+# Example: Get ServiceAccount token for dashboard access
+# kubectl create token stellar-dashboard-viewer -n stellar-system --duration=24h

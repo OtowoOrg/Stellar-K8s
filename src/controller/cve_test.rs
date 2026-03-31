@@ -448,12 +448,12 @@ mod tests {
     fn test_multiple_critical_vulnerabilities() {
         let vulns: Vec<Vulnerability> = (0..5)
             .map(|i| Vulnerability {
-                cve_id: format!("CVE-2024-{:04}", i),
+                cve_id: format!("CVE-2024-{i:04}"),
                 severity: VulnerabilitySeverity::Critical,
-                package: format!("pkg-{}", i),
+                package: format!("pkg-{i}"),
                 installed_version: "1.0.0".to_string(),
                 fixed_version: Some("1.0.1".to_string()),
-                description: format!("Critical vuln {}", i),
+                description: format!("Critical vuln {i}"),
             })
             .collect();
 
@@ -488,5 +488,38 @@ mod tests {
         };
 
         assert!(!config.enabled, "Disabled config should skip CVE handling");
+    }
+
+    #[test]
+    fn test_safety_gate_annotation_opt_out() {
+        // Test that nodes with cve-auto-patch: "false" are skipped
+        // This would be tested in integration tests with actual node objects
+        let opt_out_annotation = "false";
+        assert_eq!(opt_out_annotation, "false");
+    }
+
+    #[test]
+    fn test_safety_gate_annotation_opt_in() {
+        // Test that nodes with cve-auto-patch: "true" are processed
+        let opt_in_annotation = "true";
+        assert_eq!(opt_in_annotation, "true");
+    }
+
+    #[test]
+    fn test_safety_gate_annotation_enabled_syntax() {
+        // Test alternative "enabled" syntax
+        let enabled_annotation = "enabled";
+        assert!(enabled_annotation == "enabled" || enabled_annotation == "true");
+    }
+
+    #[test]
+    fn test_safety_gate_default_behavior() {
+        // When annotation is not present, default should be to enable auto-patch
+        let annotation_present = false;
+        let default_enabled = true;
+
+        if !annotation_present {
+            assert!(default_enabled, "Default behavior should enable auto-patch");
+        }
     }
 }

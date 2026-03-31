@@ -42,7 +42,7 @@ spec:
   nodeType: Horizon
   network: Mainnet
   version: "v21.0.0"
-  
+
   loadBalancer:
     enabled: true
     mode: L2
@@ -64,14 +64,14 @@ spec:
   nodeType: Horizon
   network: Mainnet
   version: "v21.0.0"
-  
+
   loadBalancer:
     enabled: true
     mode: BGP
     addressPool: "stellar-anycast-pool"
     loadBalancerIP: "192.0.2.100"
     externalTrafficPolicy: Local
-    
+
     bgp:
       localASN: 64512
       peers:
@@ -80,14 +80,14 @@ spec:
           holdTime: 90
           keepaliveTime: 30
           gracefulRestart: true
-          
+
       communities:
         - "64512:100"
-        
+
       advertisement:
         aggregationLength: 32
         localPref: 100
-        
+
       bfdEnabled: true
       bfdProfile: "stellar-bfd"
 ```
@@ -140,7 +140,7 @@ globalDiscovery:
   zone: "us-east-1a"
   priority: 100
   topologyAwareHints: true
-  
+
   externalDns:
     hostname: "horizon.stellar.example.com"
     ttl: 60

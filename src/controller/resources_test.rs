@@ -66,6 +66,14 @@ mod tests {
             forensic_snapshot: None,
             label_propagation: None,
             resource_meta: None,
+            history_mode: Default::default(),
+            storage: Default::default(),
+            validator_config: None,
+            read_pool_endpoint: None,
+            horizon_config: None,
+            soroban_config: None,
+            nat_traversal: None,
+            custom_network_passphrase: None,
         }
     }
 

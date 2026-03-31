@@ -542,6 +542,11 @@ mod tests {
             forensic_snapshot: None,
             label_propagation: None,
             resource_meta: None,
+            vpa_config: None,
+            read_pool_endpoint: None,
+            sidecars: None,
+            nat_traversal: None,
+            custom_network_passphrase: None,
         }
     }
 

@@ -270,6 +270,10 @@ mod tests {
                 forensic_snapshot: None,
                 label_propagation: None,
                 resource_meta: None,
+                placement: Default::default(),
+                sidecars: None,
+                nat_traversal: None,
+                custom_network_passphrase: None,
             },
             status: None,
         }

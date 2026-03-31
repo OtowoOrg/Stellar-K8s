@@ -166,6 +166,9 @@ mod tests {
             label_propagation: None,
             read_pool_endpoint: None,
             resource_meta: None,
+            sidecars: None,
+            nat_traversal: None,
+            custom_network_passphrase: None,
         }
     }
 

@@ -2856,6 +2856,11 @@ mod ensure_pvc_tests {
                 forensic_snapshot: None,
                 label_propagation: None,
                 resource_meta: None,
+                sidecars: None,
+                nat_traversal: None,
+                custom_network_passphrase: None,
+                history_mode: Default::default(),
+                storage: Default::default(),
             },
             status: None,
         }

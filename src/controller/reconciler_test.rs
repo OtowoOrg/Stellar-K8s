@@ -577,7 +577,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         );
 
         // Test Custom
-        node.spec.network = StellarNetwork::Custom;
+        node.spec.network = StellarNetwork::Custom("My Custom Network".to_string());
         node.spec.custom_network_passphrase = Some("My Custom Network".to_string());
         assert_eq!(node.spec.network_passphrase(), "My Custom Network");
     }

@@ -7,7 +7,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::{routing::get, Router};
+use axum::{middleware, routing::get, Router};
 use axum_server::tls_rustls::RustlsConfig;
 use rustls::server::WebPkiClientVerifier;
 use rustls::RootCertStore;
@@ -20,6 +20,7 @@ use tracing::info;
 use crate::controller::ControllerState;
 use crate::{Error, Result};
 
+use super::auth;
 use super::custom_metrics;
 use super::dashboard_handlers;
 use super::handlers;
@@ -79,15 +80,29 @@ async fn dashboard_ui() -> axum::response::Html<&'static str> {
 /// shared with a certificate rotation task: after rotating the Secret, build a new
 /// `ServerConfig` and call `reload_from_config` on the RustlsConfig to adopt the new
 /// certificate without dropping active connections.
+#[tracing::instrument(
+    skip(state),
+    fields(node_name = "-", namespace = "-", reconcile_id = "-")
+)]
 pub async fn run_server(
     state: Arc<ControllerState>,
     rustls_config: Option<RustlsConfig>,
 ) -> Result<()> {
     let mut app = Router::new()
         .route("/health", get(handlers::health))
+        .route("/healthz", get(handlers::healthz))
+        .route("/readyz", get(handlers::readyz))
+        .route("/livez", get(handlers::livez))
         .route("/leader", get(handlers::leader_status))
         .route("/api/v1/nodes", get(handlers::list_nodes))
         .route("/api/v1/nodes/:namespace/:name", get(handlers::get_node))
+        // Log level dynamic control
+        .route(
+            "/config/log-level",
+            get(handlers::get_log_level)
+                .post(handlers::set_log_level)
+                .route_layer(middleware::from_fn_with_state(state.clone(), auth::k8s_rbac_auth)),
+        )
         // Dashboard routes
         .route("/", get(dashboard_ui))
         .route("/api/v1/dashboard/overview", get(dashboard_handlers::dashboard_overview))
@@ -95,6 +110,8 @@ pub async fn run_server(
         .route("/api/v1/dashboard/nodes/:namespace/:name/conditions", get(dashboard_handlers::get_node_conditions))
         .route("/api/v1/dashboard/nodes/:namespace/:name/metrics", get(dashboard_handlers::get_node_metrics))
         .route("/api/v1/dashboard/nodes/:namespace/:name/actions", axum::routing::post(dashboard_handlers::execute_node_action))
+        // Documentation search API
+        .route("/api/v1/docs/search-index", get(handlers::get_search_index))
         // Custom metrics API
         .route(
             "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric",

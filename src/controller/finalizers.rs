@@ -156,6 +156,7 @@ mod tests {
             network_policy: None,
             dr_config: None,
             pod_anti_affinity: Default::default(),
+            placement: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
             snapshot_schedule: None,
@@ -165,6 +166,7 @@ mod tests {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            label_propagation: None,
             read_pool_endpoint: None,
             resource_meta: None,
         }

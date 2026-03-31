@@ -285,6 +285,62 @@ rate(rest_client_requests_total[5m])
 stellar_operator_workqueue_depth
 ```
 
+### Performance-Aware Scheduling
+
+Node Feature Discovery labels can be used to correlate validator performance with the CPU generation of
+the Kubernetes node hosting the workload. The operator now inspects
+`feature.node.kubernetes.io/*` labels for each Stellar workload pod and exposes the inferred
+hardware generation as the `hardware_generation` Prometheus label on workload metrics such as
+`stellar_node_ledger_sequence`, `stellar_node_ingestion_lag`, and quorum metrics.
+
+Inspect the current placement and raw feature labels with:
+
+```bash
+stellar-operator info --namespace stellar-system
+```
+
+Example PromQL for comparing lag by hardware generation:
+
+```promql
+max by (hardware_generation, name) (
+  stellar_node_ingestion_lag{node_type="Validator"}
+)
+```
+
+Example PromQL for spotting validator groups running on mixed hosts:
+
+```promql
+count by (hardware_generation) (
+  stellar_node_ledger_sequence{node_type="Validator"}
+)
+```
+
+If a certain generation consistently underperforms, pin new validators to faster nodes with
+`spec.storage.nodeAffinity` or any existing pod affinity rules. For example, after labeling nodes
+with a preferred generation:
+
+```yaml
+spec:
+  storage:
+    mode: Local
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: feature.node.kubernetes.io/custom-cpu.generation
+                operator: In
+                values: ["Graviton 3", "Intel Icelake"]
+```
+
+Recommended workflow:
+
+1. Use `stellar-operator info` to confirm the raw `feature.node.kubernetes.io/*` labels on the
+   nodes currently hosting your validators.
+2. Build a dashboard or alert grouped by `hardware_generation` to identify laggy generations or
+   noisy-neighbor patterns.
+3. Add targeted node affinity for new validator placements once you know which generations perform
+   best in your cluster.
+
 ### Alerting Thresholds
 
 | Metric | Warning | Critical |

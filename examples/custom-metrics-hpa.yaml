@@ -4,11 +4,11 @@
 #
 # Prerequisites:
 # 1. Stellar operator must be running with REST API enabled
-# 2. Custom metrics API must be registered: 
+# 2. Custom metrics API must be registered:
 #    kubectl get apiservice | grep custom.metrics
 # 3. Horizon pods must have resource requests defined
 #
-# Note: This requires the operator to expose custom metrics through the 
+# Note: This requires the operator to expose custom metrics through the
 # Kubernetes Custom Metrics API aggregation layer
 
 apiVersion: autoscaling/v2
@@ -24,10 +24,10 @@ spec:
     apiVersion: stellar.org/v1alpha1
     kind: StellarNode
     name: horizon-prod
-  
+
   minReplicas: 2
   maxReplicas: 10
-  
+
   metrics:
   # Scale based on ledger ingestion lag
   # If lag exceeds 5 ledgers, scale up additional Horizon replicas
@@ -37,7 +37,7 @@ spec:
       target:
         type: Utilization
         averageUtilization: 70
-  
+
   # Custom metric: ledger ingestion lag
   # Target: Keep lag below 5 ledgers by scaling out
   - type: Pods
@@ -47,7 +47,7 @@ spec:
       target:
         type: AverageValue
         averageValue: "5"
-  
+
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 300
@@ -82,10 +82,10 @@ spec:
     apiVersion: stellar.org/v1alpha1
     kind: StellarNode
     name: horizon-prod
-  
+
   minReplicas: 1
   maxReplicas: 5
-  
+
   metrics:
   # Scale based on network activity (ledger sequence growth rate)
   - type: Pods
@@ -95,7 +95,7 @@ spec:
       target:
         type: AverageValue
         averageValue: "10000000"  # Scale when average ledger number is high
-  
+
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 600
@@ -126,10 +126,10 @@ spec:
     apiVersion: stellar.org/v1alpha1
     kind: StellarNode
     name: horizon-prod
-  
+
   minReplicas: 3
   maxReplicas: 20
-  
+
   metrics:
   # Scale based on transactions per second
   - type: Pods
@@ -139,7 +139,7 @@ spec:
       target:
         type: AverageValue
         averageValue: "1000"  # Scale up if TPS exceeds 1000 per pod
-  
+
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 300
@@ -170,10 +170,10 @@ spec:
     apiVersion: stellar.org/v1alpha1
     kind: StellarNode
     name: stellar-validator-prod
-  
+
   minReplicas: 1
   maxReplicas: 3
-  
+
   metrics:
   # Scale based on active peer connections
   - type: Pods
@@ -183,7 +183,7 @@ spec:
       target:
         type: AverageValue
         averageValue: "100"  # Scale up if average connections exceed 100
-  
+
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 600

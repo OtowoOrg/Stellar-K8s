@@ -145,6 +145,10 @@ pub fn sustainability_router() -> Router<SustainabilityState> {
 
 /// Get overall sustainability metrics
 #[allow(dead_code)]
+#[tracing::instrument(
+    skip(state),
+    fields(node_name = "-", namespace = "-", reconcile_id = "-")
+)]
 pub async fn get_sustainability_metrics(
     State(state): State<SustainabilityState>,
 ) -> Result<Json<SustainabilityMetrics>, StatusCode> {

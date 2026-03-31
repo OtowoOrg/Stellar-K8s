@@ -1,0 +1,47 @@
+﻿Lint & Format	Run clippy	∩╗┐2026-03-25T13:16:52.3399428Z ##[group]Run cargo clippy --workspace --all-targets --all-features -- -D warnings
+Lint & Format	Run clippy	2026-03-25T13:16:52.3400044Z [36;1mcargo clippy --workspace --all-targets --all-features -- -D warnings[0m
+Lint & Format	Run clippy	2026-03-25T13:16:52.3447675Z shell: /usr/bin/bash -e {0}
+Lint & Format	Run clippy	2026-03-25T13:16:52.3447920Z env:
+Lint & Format	Run clippy	2026-03-25T13:16:52.3448096Z   CARGO_TERM_COLOR: always
+Lint & Format	Run clippy	2026-03-25T13:16:52.3448313Z   RUST_BACKTRACE: 1
+Lint & Format	Run clippy	2026-03-25T13:16:52.3448506Z   RUSTFLAGS: -D warnings
+Lint & Format	Run clippy	2026-03-25T13:16:52.3448710Z   REGISTRY: ghcr.io
+Lint & Format	Run clippy	2026-03-25T13:16:52.3448914Z   IMAGE_NAME: Adeswalla/Stellar-K8s
+Lint & Format	Run clippy	2026-03-25T13:16:52.3449166Z   CARGO_HOME: /home/runner/.cargo
+Lint & Format	Run clippy	2026-03-25T13:16:52.3449390Z   CARGO_INCREMENTAL: 0
+Lint & Format	Run clippy	2026-03-25T13:16:52.3449593Z   CACHE_ON_FAILURE: false
+Lint & Format	Run clippy	2026-03-25T13:16:52.3449794Z ##[endgroup]
+Lint & Format	Run clippy	2026-03-25T13:16:53.3076549Z [1m[32m    Updating[0m crates.io index
+Lint & Format	Run clippy	2026-03-25T13:16:56.0003214Z [1m[32m   Compiling[0m stellar-k8s v0.1.0 (/home/runner/work/Stellar-K8s/Stellar-K8s)
+Lint & Format	Run clippy	2026-03-25T13:16:57.9181923Z [0m[1m[38;5;9merror[0m[0m[1m: unused imports: `AtomicU64` and `Ordering`[0m
+Lint & Format	Run clippy	2026-03-25T13:16:57.9183177Z [0m  [0m[0m[1m[38;5;12m--> [0m[0msrc/controller/reconciler.rs:22:25[0m
+Lint & Format	Run clippy	2026-03-25T13:16:57.9184104Z [0m   [0m[0m[1m[38;5;12m|[0m
+Lint & Format	Run clippy	2026-03-25T13:16:57.9191286Z [0m[1m[38;5;12m22[0m[0m [0m[0m[1m[38;5;12m|[0m[0m [0m[0muse std::sync::atomic::{AtomicU64, Ordering};[0m
+Lint & Format	Run clippy	2026-03-25T13:16:57.9192672Z [0m   [0m[0m[1m[38;5;12m|[0m[0m                         [0m[0m[1m[38;5;9m^^^^^^^^^[0m[0m  [0m[0m[1m[38;5;9m^^^^^^^^[0m
+Lint & Format	Run clippy	2026-03-25T13:16:57.9193570Z [0m   [0m[0m[1m[38;5;12m|[0m
+Lint & Format	Run clippy	2026-03-25T13:16:57.9194655Z [0m   [0m[0m[1m[38;5;12m= [0m[0m[1mnote[0m[0m: `-D unused-imports` implied by `-D warnings`[0m
+Lint & Format	Run clippy	2026-03-25T13:16:57.9195817Z [0m   [0m[0m[1m[38;5;12m= [0m[0m[1mhelp[0m[0m: to override `-D warnings` add `#[allow(unused_imports)]`[0m
+Lint & Format	Run clippy	2026-03-25T13:16:57.9196435Z 
+Lint & Format	Run clippy	2026-03-25T13:16:58.1656981Z [0m[1m[38;5;9merror[0m[0m[1m: unused import: `AtomicU64`[0m
+Lint & Format	Run clippy	2026-03-25T13:16:58.1658121Z [0m  [0m[0m[1m[38;5;12m--> [0m[0msrc/controller/reconciler_test.rs:22:41[0m
+Lint & Format	Run clippy	2026-03-25T13:16:58.1658769Z [0m   [0m[0m[1m[38;5;12m|[0m
+Lint & Format	Run clippy	2026-03-25T13:16:58.1659882Z [0m[1m[38;5;12m22[0m[0m [0m[0m[1m[38;5;12m|[0m[0m [0m[0m    use std::sync::atomic::{AtomicBool, AtomicU64};[0m
+Lint & Format	Run clippy	2026-03-25T13:16:58.1660950Z [0m   [0m[0m[1m[38;5;12m|[0m[0m                                         [0m[0m[1m[38;5;9m^^^^^^^^^[0m
+Lint & Format	Run clippy	2026-03-25T13:16:58.1661434Z 
+Lint & Format	Run clippy	2026-03-25T13:17:00.3930907Z [0m[1m[38;5;9merror[E0599][0m[0m[1m: no method named `next_reconcile_id` found for struct `std::sync::Arc<controller::reconciler::ControllerState>` in the current scope[0m
+Lint & Format	Run clippy	2026-03-25T13:17:00.3932417Z [0m   [0m[0m[1m[38;5;12m--> [0m[0msrc/controller/reconciler.rs:278:28[0m
+Lint & Format	Run clippy	2026-03-25T13:17:00.3933090Z [0m    [0m[0m[1m[38;5;12m|[0m
+Lint & Format	Run clippy	2026-03-25T13:17:00.3934190Z [0m[1m[38;5;12m278[0m[0m [0m[0m[1m[38;5;12m|[0m[0m [0m[0m    let reconcile_id = ctx.next_reconcile_id();[0m
+Lint & Format	Run clippy	2026-03-25T13:17:00.3935631Z [0m    [0m[0m[1m[38;5;12m|[0m[0m                            [0m[0m[1m[38;5;9m^^^^^^^^^^^^^^^^^[0m[0m [0m[0m[1m[38;5;9mmethod not found in `Arc<ControllerState>`[0m
+Lint & Format	Run clippy	2026-03-25T13:17:00.3936748Z 
+Lint & Format	Run clippy	2026-03-25T13:17:03.4988895Z [0m[1m[38;5;9merror[E0599][0m[0m[1m: no method named `next_reconcile_id` found for struct `std::sync::Arc<controller::reconciler::ControllerState>` in the current scope[0m
+Lint & Format	Run clippy	2026-03-25T13:17:03.4990436Z [0m    [0m[0m[1m[38;5;12m--> [0m[0msrc/controller/reconciler.rs:2284:28[0m
+Lint & Format	Run clippy	2026-03-25T13:17:03.4991134Z [0m     [0m[0m[1m[38;5;12m|[0m
+Lint & Format	Run clippy	2026-03-25T13:17:03.4992020Z [0m[1m[38;5;12m2284[0m[0m [0m[0m[1m[38;5;12m|[0m[0m [0m[0m    let reconcile_id = ctx.next_reconcile_id();[0m
+Lint & Format	Run clippy	2026-03-25T13:17:03.4993433Z [0m     [0m[0m[1m[38;5;12m|[0m[0m                            [0m[0m[1m[38;5;9m^^^^^^^^^^^^^^^^^[0m[0m [0m[0m[1m[38;5;9mmethod not found in `Arc<ControllerState>`[0m
+Lint & Format	Run clippy	2026-03-25T13:17:03.4994403Z 
+Lint & Format	Run clippy	2026-03-25T13:17:06.9422647Z [0m[1mFor more information about this error, try `rustc --explain E0599`.[0m
+Lint & Format	Run clippy	2026-03-25T13:17:06.9937050Z [1m[31merror[0m[1m:[0m could not compile `stellar-k8s` (lib) due to 3 previous errors
+Lint & Format	Run clippy	2026-03-25T13:17:06.9937763Z [1m[33mwarning[0m[1m:[0m build failed, waiting for other jobs to finish...
+Lint & Format	Run clippy	2026-03-25T13:17:07.9308120Z [1m[31merror[0m[1m:[0m could not compile `stellar-k8s` (lib test) due to 4 previous errors
+Lint & Format	Run clippy	2026-03-25T13:17:07.9778489Z ##[error]Process completed with exit code 101.

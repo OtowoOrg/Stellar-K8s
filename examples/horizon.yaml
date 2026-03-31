@@ -1,0 +1,48 @@
+# horizon.yaml
+# Example configuration for a Horizon API server with Ingress.
+# Horizon provides a REST API to query ledger state and submit transactions.
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-mainnet
+  namespace: stellar
+spec:
+  # 'Horizon' runs the API server and ingestion logic.
+  nodeType: Horizon
+
+  network: Mainnet
+
+  # Horizon image version.
+  version: "2.30.0"
+
+  # Number of replicas to run. Horizon is horizontally scalable.
+  replicas: 3
+
+  # Horizon-specific settings.
+  horizonConfig:
+    # K8s Secret containing the Postgres connection string (DATABASE_URL).
+    databaseSecretRef: "horizon-db-secret"
+    # URL of a running stellar-core (Validator) to fetch ledger data from.
+    stellarCoreUrl: "http://validator-mainnet:11626"
+    # Enable the ingestion process to populate the Horizon database.
+    enableIngest: true
+    # Number of concurrent workers for parallel ingestion (improves catchup speed).
+    ingestWorkers: 2
+
+  # Ingress configuration for external access via HTTP/HTTPS.
+  ingress:
+    # The Ingress class to use (e.g., 'nginx', 'traefik').
+    className: "nginx"
+    hosts:
+      - host: "horizon.example.com"
+        paths:
+          - path: "/"
+            # 'Prefix' path matching is standard for APIs.
+            pathType: Prefix
+    # Secret containing SSL/TLS certificates for HTTPS.
+    tlsSecretName: "horizon-tls-secret"
+
+  # Rollout strategy for updates. 'RollingUpdate' ensures minimal downtime.
+  strategy:
+    type: rollingUpdate

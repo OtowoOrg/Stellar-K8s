@@ -11,17 +11,28 @@
 mod tests {
     use super::super::reconciler::*;
     use crate::crd::{
-        CaptiveCoreConfig, HorizonConfig, ManagedDatabaseConfig, NodeType, ResourceRequirements,
-        ResourceSpec, SorobanConfig, StellarNetwork, StellarNode, StellarNodeSpec, StorageConfig,
-        ValidatorConfig,
+        CaptiveCoreConfig, Condition, HorizonConfig, ManagedDatabaseConfig, NodeType,
+        ResourceRequirements, ResourceSpec, SorobanConfig, StellarNetwork, StellarNode,
+        StellarNodeSpec, StorageConfig, ValidatorConfig,
     };
     use crate::error::Error;
     use kube::api::ObjectMeta;
     use kube::runtime::controller::Action;
     use kube::Client;
+    use proptest::prelude::*;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use std::time::Duration;
+    use tracing_subscriber::{EnvFilter, Registry};
+
+    fn make_reload_handle() -> tracing_subscriber::reload::Handle<EnvFilter, Registry> {
+        let env_filter = EnvFilter::new("info");
+        let (_layer, handle): (
+            tracing_subscriber::reload::Layer<EnvFilter, Registry>,
+            tracing_subscriber::reload::Handle<EnvFilter, Registry>,
+        ) = tracing_subscriber::reload::Layer::new(env_filter);
+        handle
+    }
 
     /// Helper to create a minimal test StellarNode for Validator
     fn create_test_validator_node(name: &str, namespace: &str) -> StellarNode {
@@ -94,6 +105,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 network_policy: None,
                 dr_config: None,
                 pod_anti_affinity: Default::default(),
+                placement: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -103,9 +115,11 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 read_pool_endpoint: None,
                 resource_meta: None,
                 vpa_config: None,
+                custom_network_passphrase: None,
             },
             status: None,
         }
@@ -183,6 +197,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 network_policy: None,
                 dr_config: None,
                 pod_anti_affinity: Default::default(),
+                placement: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -192,9 +207,11 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 read_pool_endpoint: None,
                 resource_meta: None,
                 vpa_config: None,
+                custom_network_passphrase: None,
             },
             status: None,
         }
@@ -270,6 +287,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 network_policy: None,
                 dr_config: None,
                 pod_anti_affinity: Default::default(),
+                placement: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -279,9 +297,11 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 read_pool_endpoint: None,
                 resource_meta: None,
                 vpa_config: None,
+                custom_network_passphrase: None,
             },
             status: None,
         }
@@ -316,6 +336,10 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 instance: None,
             },
             operator_config: Arc::new(Default::default()),
+            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
+            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
         });
 
         // Test with a retriable error (network-related)
@@ -350,6 +374,10 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 instance: None,
             },
             operator_config: Arc::new(Default::default()),
+            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
+            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
         });
 
         // Test with validation error (non-retriable)
@@ -383,6 +411,10 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 instance: None,
             },
             operator_config: Arc::new(Default::default()),
+            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
+            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
         });
 
         let errors = vec![
@@ -519,27 +551,28 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         // Test Testnet
         node.spec.network = StellarNetwork::Testnet;
         assert_eq!(
-            node.spec.network.passphrase(),
+            node.spec.network_passphrase(),
             "Test SDF Network ; September 2015"
         );
 
         // Test Mainnet
         node.spec.network = StellarNetwork::Mainnet;
         assert_eq!(
-            node.spec.network.passphrase(),
+            node.spec.network_passphrase(),
             "Public Global Stellar Network ; September 2015"
         );
 
         // Test Futurenet
         node.spec.network = StellarNetwork::Futurenet;
         assert_eq!(
-            node.spec.network.passphrase(),
+            node.spec.network_passphrase(),
             "Test SDF Future Network ; October 2022"
         );
 
         // Test Custom
-        node.spec.network = StellarNetwork::Custom("My Custom Network".to_string());
-        assert_eq!(node.spec.network.passphrase(), "My Custom Network");
+        node.spec.network = StellarNetwork::Custom;
+        node.spec.custom_network_passphrase = Some("My Custom Network".to_string());
+        assert_eq!(node.spec.network_passphrase(), "My Custom Network");
     }
 
     /// Test that validator nodes require quorum set
@@ -608,6 +641,10 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 instance: None,
             },
             operator_config: Arc::new(Default::default()),
+            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
+            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
         };
 
         assert_eq!(state.operator_namespace, "test-namespace");
@@ -637,6 +674,10 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 instance: None,
             },
             operator_config: Arc::new(Default::default()),
+            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
+            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
         };
 
         assert!(
@@ -673,5 +714,109 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             node.spec.version.contains('.'),
             "Version should contain dots for semantic versioning"
         );
+    }
+
+    fn condition_status<'a>(conditions: &'a [Condition], condition_type: &str) -> Option<&'a str> {
+        conditions
+            .iter()
+            .find(|condition| condition.type_ == condition_type)
+            .map(|condition| condition.status.as_str())
+    }
+
+    proptest! {
+        #[test]
+        fn prop_phase_transition_invariants(
+            phase in prop_oneof![
+                Just("Ready".to_string()),
+                Just("Creating".to_string()),
+                Just("Pending".to_string()),
+                Just("Syncing".to_string()),
+                Just("Running".to_string()),
+                Just("Degraded".to_string()),
+                Just("Failed".to_string()),
+                Just("Remediating".to_string()),
+                Just("Suspended".to_string()),
+                Just("Maintenance".to_string()),
+            ],
+            message in proptest::option::of("[A-Za-z0-9 _.-]{1,40}"),
+        ) {
+            let mut conditions = Vec::new();
+            apply_phase_conditions(&mut conditions, &phase, message.as_deref());
+
+            let ready = condition_status(&conditions, super::super::conditions::CONDITION_TYPE_READY);
+            prop_assert!(ready.is_some());
+
+            match phase.as_str() {
+                "Ready" | "Running" => {
+                    prop_assert_eq!(ready, Some(super::super::conditions::CONDITION_STATUS_TRUE));
+                }
+                _ => {
+                    prop_assert_ne!(ready, Some(super::super::conditions::CONDITION_STATUS_TRUE));
+                }
+            }
+
+            match phase.as_str() {
+                "Degraded" | "Failed" | "Remediating" => {
+                    prop_assert_eq!(
+                        condition_status(&conditions, super::super::conditions::CONDITION_TYPE_DEGRADED),
+                        Some(super::super::conditions::CONDITION_STATUS_TRUE)
+                    );
+                }
+                "Ready" => {
+                    prop_assert_eq!(
+                        condition_status(&conditions, super::super::conditions::CONDITION_TYPE_DEGRADED),
+                        Some(super::super::conditions::CONDITION_STATUS_FALSE)
+                    );
+                }
+                _ => {}
+            }
+        }
+
+        #[test]
+        fn prop_unknown_phase_sets_ready_unknown(
+            phase in "[A-Za-z][A-Za-z0-9_-]{0,24}",
+        ) {
+            prop_assume!(![
+                "Ready", "Creating", "Pending", "Syncing", "Running",
+                "Degraded", "Failed", "Remediating", "Suspended", "Maintenance"
+            ].contains(&phase.as_str()));
+
+            let mut conditions = Vec::new();
+            apply_phase_conditions(&mut conditions, &phase, None);
+
+            prop_assert_eq!(
+                condition_status(&conditions, super::super::conditions::CONDITION_TYPE_READY),
+                Some(super::super::conditions::CONDITION_STATUS_UNKNOWN)
+            );
+        }
+
+        #[test]
+        fn prop_condition_types_remain_unique_after_sequences(
+            phases in proptest::collection::vec(
+                prop_oneof![
+                    Just("Ready".to_string()),
+                    Just("Creating".to_string()),
+                    Just("Pending".to_string()),
+                    Just("Syncing".to_string()),
+                    Just("Running".to_string()),
+                    Just("Degraded".to_string()),
+                    Just("Failed".to_string()),
+                    Just("Remediating".to_string()),
+                    Just("Suspended".to_string()),
+                    Just("Maintenance".to_string()),
+                ],
+                1..32
+            )
+        ) {
+            let mut conditions = Vec::new();
+            for phase in phases {
+                apply_phase_conditions(&mut conditions, &phase, None);
+            }
+
+            let mut seen = std::collections::BTreeSet::new();
+            for condition in &conditions {
+                prop_assert!(seen.insert(condition.type_.clone()));
+            }
+        }
     }
 }

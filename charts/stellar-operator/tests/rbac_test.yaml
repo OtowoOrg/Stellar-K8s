@@ -1,0 +1,141 @@
+suite: rbac
+templates:
+  - templates/rbac.yaml
+
+tests:
+  - it: renders ClusterRole with correct name
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-stellar-operator
+
+  - it: ClusterRole has stellar.org stellarnodes rules
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["stellar.org"]
+            resources: ["stellarnodes"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - it: ClusterRole has stellarnodes/status rules
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["stellar.org"]
+            resources: ["stellarnodes/status"]
+            verbs: ["get", "update", "patch"]
+
+  - it: ClusterRole has stellarnodes/finalizers rules
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["stellar.org"]
+            resources: ["stellarnodes/finalizers"]
+            verbs: ["update"]
+
+  - it: ClusterRole has deployments rules
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["apps"]
+            resources: ["deployments"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - it: ClusterRole has leases rules for leader election
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["coordination.k8s.io"]
+            resources: ["leases"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - it: ClusterRole has events rules
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: ["events"]
+            verbs: ["create", "patch"]
+
+  - it: ClusterRole has common labels
+    documentIndex: 0
+    asserts:
+      - isSubset:
+          path: metadata.labels
+          content:
+            app.kubernetes.io/name: stellar-operator
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: renders ClusterRoleBinding with correct name
+    documentIndex: 1
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-stellar-operator
+
+  - it: ClusterRoleBinding references correct ClusterRole
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: roleRef.kind
+          value: ClusterRole
+      - equal:
+          path: roleRef.name
+          value: RELEASE-NAME-stellar-operator
+      - equal:
+          path: roleRef.apiGroup
+          value: rbac.authorization.k8s.io
+
+  - it: ClusterRoleBinding binds to the ServiceAccount in release namespace
+    documentIndex: 1
+    asserts:
+      - contains:
+          path: subjects
+          content:
+            kind: ServiceAccount
+            name: RELEASE-NAME-stellar-operator
+            namespace: NAMESPACE
+
+  - it: ClusterRoleBinding has common labels
+    documentIndex: 1
+    asserts:
+      - isSubset:
+          path: metadata.labels
+          content:
+            app.kubernetes.io/name: stellar-operator
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: uses fullnameOverride in ClusterRole name
+    set:
+      fullnameOverride: custom-name
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.name
+          value: custom-name
+
+  - it: uses fullnameOverride in ClusterRoleBinding name
+    set:
+      fullnameOverride: custom-name
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: metadata.name
+          value: custom-name

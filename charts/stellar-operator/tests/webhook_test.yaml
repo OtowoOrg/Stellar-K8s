@@ -1,0 +1,112 @@
+suite: webhook
+templates:
+  - templates/webhook.yaml
+
+tests:
+  - it: renders all expected resource kinds
+    asserts:
+      - containsDocument:
+          kind: Namespace
+          apiVersion: v1
+      - containsDocument:
+          kind: ServiceAccount
+          apiVersion: v1
+      - containsDocument:
+          kind: ClusterRole
+          apiVersion: rbac.authorization.k8s.io/v1
+      - containsDocument:
+          kind: ClusterRoleBinding
+          apiVersion: rbac.authorization.k8s.io/v1
+      - containsDocument:
+          kind: Deployment
+          apiVersion: apps/v1
+      - containsDocument:
+          kind: Service
+          apiVersion: v1
+      - containsDocument:
+          kind: ValidatingWebhookConfiguration
+          apiVersion: admissionregistration.k8s.io/v1
+
+  - it: webhook Namespace is stellar-webhook
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: Namespace
+      - equal:
+          path: metadata.name
+          value: stellar-webhook
+
+  - it: webhook Deployment has 2 replicas for HA
+    documentIndex: 4
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.replicas
+          value: 2
+
+  - it: webhook Deployment has liveness probe
+    documentIndex: 4
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+
+  - it: webhook Deployment has readiness probe
+    documentIndex: 4
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /ready
+
+  - it: webhook Deployment runs as non-root
+    documentIndex: 4
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+
+  - it: webhook Service exposes port 443
+    documentIndex: 5
+    asserts:
+      - isKind:
+          of: Service
+      - contains:
+          path: spec.ports
+          content:
+            name: https
+            port: 443
+            targetPort: https
+            protocol: TCP
+
+  - it: ValidatingWebhookConfiguration targets stellarnodes
+    documentIndex: 6
+    asserts:
+      - isKind:
+          of: ValidatingWebhookConfiguration
+      - equal:
+          path: webhooks[0].rules[0].resources[0]
+          value: stellarnodes
+
+  - it: ValidatingWebhookConfiguration has failurePolicy Fail
+    documentIndex: 6
+    asserts:
+      - equal:
+          path: webhooks[0].failurePolicy
+          value: Fail
+
+  - it: ValidatingWebhookConfiguration has sideEffects None
+    documentIndex: 6
+    asserts:
+      - equal:
+          path: webhooks[0].sideEffects
+          value: None
+
+  - it: PodDisruptionBudget ensures minAvailable 1
+    documentIndex: 9
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.minAvailable
+          value: 1

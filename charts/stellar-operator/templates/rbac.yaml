@@ -29,8 +29,8 @@ rules:
 
   # Core resources managed by the operator
   - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list", "watch"]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch", "patch", "update"]
   - apiGroups: [""]
     resources: ["pods/ephemeralcontainers"]
     verbs: ["get", "patch", "update"]

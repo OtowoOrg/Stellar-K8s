@@ -94,6 +94,21 @@ operator:
   # Namespace to watch (empty = all namespaces)
   watchNamespace: ""
 
+# Diagnostic sidecar configuration
+sidecar:
+  enabled: true
+  image:
+    repository: ghcr.io/stellar/stellar-k8s
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 50m
+      memory: 32Mi
+
 # Service for REST API and metrics
 service:
   type: ClusterIP
@@ -126,19 +141,18 @@ defaultResources:
       cpu: "4"
       memory: "8Gi"
 
-# Runtime feature flags written into the stellar-operator-config ConfigMap.
-# The operator watches this ConfigMap and reloads flags without restart.
-# See docs/quickstart.md for full documentation of each flag.
-featureFlags:
-  # Enable automatic CVE patch reconciliation
-  enableCveScanning: "true"
-  # Enable read-replica pool management
-  enableReadPool: "false"
-  # Enable disaster-recovery drill scheduling
-  enableDr: "false"
-  # Enable automatic peer discovery
-  enablePeerDiscovery: "true"
-  # Enable history archive health checks
-  enableArchiveHealth: "true"
-  # Enable Soroban-specific Prometheus metrics collection
-  enableSorobanMetrics: "true"
+security:
+  audit:
+    enabled: true
+    logLevel: "Audit"
+  podSecurityStandard: "restricted"
+  falco:
+    enabled: true
+  networkPolicy:
+    enabled: true
+    ingress:
+      namespaceSelector: true
+  admissionWebhook:
+    failurePolicy: Fail
+  imagePolicy:
+    allowLatestTag: false

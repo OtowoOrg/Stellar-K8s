@@ -1,0 +1,24 @@
+# kube-bench config for Stellar-K8s
+# Focuses on Operator + StellarNode CIS compliance
+
+version: v1.28.0  # Match K8s version
+
+checks:
+  - control:
+      text: "Stellar-K8s Operator Security Hardening"
+      id: "SEC-hardening"
+    file: "CIS/control-hardening.yaml" # Custom if needed
+  - control:
+      text: "Worker Nodes"
+      id: "4.2"
+  - control:
+      text: "Control Plane"
+      id: "4.1"
+  - audit:
+      id: "1.7.1"
+      text: "Kubelet config validation"
+    check:
+    - value: true
+      path: "/path/to/kubelet-arg"
+      setting: "--anonymous-auth"
+

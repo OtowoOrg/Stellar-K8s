@@ -57,6 +57,7 @@ mod tests {
             network_policy: None,
             dr_config: None,
             pod_anti_affinity: Default::default(),
+            placement: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
             snapshot_schedule: None,
@@ -67,6 +68,7 @@ mod tests {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
         }
     }
@@ -308,10 +310,68 @@ mod tests {
 
     use crate::controller::resources::{
         build_config_map_for_test, build_deployment_for_test, build_pvc_for_test,
-        build_service_for_test, build_statefulset_for_test, owner_reference, standard_labels,
+        build_service_for_test, build_statefulset_for_test, merge_workload_affinity,
+        owner_reference, standard_labels,
     };
+    use crate::crd::types::ValidatorConfig;
     use crate::crd::StellarNode;
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+
+    #[test]
+    fn test_scp_aware_anti_affinity_injection() {
+        let mut node = make_node(NodeType::Validator);
+        node.spec.placement.scp_aware_anti_affinity = true;
+        node.spec.validator_config = Some(ValidatorConfig {
+            seed_secret_ref: String::new(),
+            seed_secret_source: None,
+            quorum_set: Some(
+                r#"
+[VALIDATORS]
+peer-1 = "G..."
+peer-2 = "G..."
+"#
+                .to_string(),
+            ),
+            enable_history_archive: false,
+            history_archive_urls: vec![],
+            catchup_complete: false,
+            key_source: Default::default(),
+            kms_config: None,
+            vl_source: None,
+            hsm_config: None,
+        });
+
+        let affinity = merge_workload_affinity(&node).expect("affinity should be generated");
+        let pa = affinity
+            .pod_anti_affinity
+            .expect("podAntiAffinity should be generated");
+        let preferred = pa
+            .preferred_during_scheduling_ignored_during_execution
+            .expect("preferred terms should be generated");
+
+        assert_eq!(preferred.len(), 2);
+
+        let instances: Vec<String> = preferred
+            .iter()
+            .filter_map(|t| {
+                t.pod_affinity_term
+                    .label_selector
+                    .as_ref()?
+                    .match_labels
+                    .as_ref()?
+                    .get("app.kubernetes.io/instance")
+                    .cloned()
+            })
+            .collect();
+
+        assert!(instances.contains(&"peer-1".to_string()));
+        assert!(instances.contains(&"peer-2".to_string()));
+
+        for t in preferred {
+            assert_eq!(t.pod_affinity_term.topology_key, "kubernetes.io/hostname");
+            assert_eq!(t.weight, 100);
+        }
+    }
 
     fn make_node(node_type: NodeType) -> StellarNode {
         use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;

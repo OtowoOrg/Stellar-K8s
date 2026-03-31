@@ -1,4 +1,4 @@
-.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart
+.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart
 
 # Default target
 .DEFAULT_GOAL := help
@@ -39,7 +39,7 @@ audit: ## Security audit
 
 test: ## Run tests
 	@echo "→ Running tests..."
-	@$(CARGO) test --workspace --all-features --verbose
+	@$(CARGO) test --workspace --all-features --tests --lib --bins --verbose
 	@echo "→ Running doc tests..."
 	@$(CARGO) test --doc --workspace
 
@@ -47,9 +47,17 @@ build: ## Build release
 	@echo "→ Building release..."
 	@$(CARGO) build --release --locked
 
-docker-build: ## Build Docker image
-	@echo "→ Building Docker image..."
-	$(DOCKER) build -t $(IMAGE_NAME):$(IMAGE_TAG) .
+docker-build: ## Fast local Docker build using host release binaries
+	@echo "→ Building Docker image (fast local mode)..."
+	@if [ ! -f target/release/stellar-operator ] || [ ! -f target/release/kubectl-stellar ]; then \
+		echo "→ Release binaries not found, building once..."; \
+		$(MAKE) build; \
+	fi
+	DOCKER_BUILDKIT=1 $(DOCKER) build --target runtime-local -t $(IMAGE_NAME):$(IMAGE_TAG) .
+
+docker-build-ci: ## Reproducible CI Docker build (builds binaries in container)
+	@echo "→ Building Docker image (CI mode)..."
+	DOCKER_BUILDKIT=1 $(DOCKER) build --target runtime -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
 docker-multiarch: ## Build multi-arch Docker image
 	$(DOCKER) buildx build --platform linux/amd64,linux/arm64 -t $(IMAGE_NAME):$(IMAGE_TAG) .
@@ -62,8 +70,32 @@ quick: fmt-check ## Quick pre-commit check
 	@$(CARGO) check --workspace
 	@echo "✓ Quick checks passed"
 
+pre-commit: ## Run pre-commit hooks manually
+	@echo "→ Running pre-commit hooks..."
+	@command -v pre-commit >/dev/null 2>&1 || (echo "✗ pre-commit not installed. Run: make dev-setup" && exit 1)
+	@pre-commit run --all-files
+
+pre-commit-install: ## Install pre-commit hooks
+	@command -v pre-commit >/dev/null 2>&1 || pip install pre-commit
+	pre-commit install
+	pre-commit install --hook-type pre-push
+
 clean: ## Clean build artifacts
 	$(CARGO) clean
+
+generate-api-docs: ## Generate API reference docs from CRD schema
+	@echo "→ Generating API reference docs..."
+	@python3 scripts/generate-api-docs.py \
+		--crd config/crd/stellarnode-crd.yaml \
+		--output docs/api-reference.md
+	@echo "✓ Generated docs/api-reference.md"
+
+check-api-docs: ## Check API docs are up to date (used in CI)
+	@echo "→ Checking API reference docs are up to date..."
+	@python3 scripts/generate-api-docs.py \
+		--crd config/crd/stellarnode-crd.yaml \
+		--output docs/api-reference.md \
+		--check
 
 install-crd: ## Install CRDs
 	$(KUBECTL) apply -f config/crd/stellarnode-crd.yaml
@@ -95,6 +127,9 @@ dev-setup: ## Setup dev environment
 	rustup default stable
 	rustup component add clippy rustfmt
 	cargo install cargo-audit cargo-watch
+	@command -v pre-commit >/dev/null 2>&1 || pip install pre-commit
+	pre-commit install
+	pre-commit install --hook-type pre-push
 
 watch: ## Watch and rebuild
 	cargo watch -x check -x test -x build
@@ -119,6 +154,11 @@ benchmark-webhook-save: ## Save current results as baseline
 	@./benchmarks/run-webhook-benchmark.sh save-baseline
 
 benchmark-all: benchmark benchmark-webhook ## Run all benchmarks
+
+benchmark-upgrade: ## Run upgrade load test with k6
+	@echo "→ Running upgrade load test..."
+	@command -v k6 >/dev/null 2>&1 || (echo "✗ k6 not installed. Install: https://k6.io/docs/get-started/installation/" && exit 1)
+	cd benchmarks && k6 run k6/upgrade-load-test.js
 
 run-local: build ## Run locally
 	RUST_LOG=info ./target/release/stellar-operator
@@ -150,7 +190,8 @@ quickstart: ## End-to-end local quickstart: kind cluster + CRD + operator + samp
 	@echo "→ Creating kind cluster 'stellar-dev'..."
 	@kind create cluster --name stellar-dev --wait 120s || echo "  (cluster may already exist, continuing)"
 	@echo "→ Building operator image..."
-	@$(DOCKER) build -t stellar-operator:dev .
+	@$(MAKE) build
+	@DOCKER_BUILDKIT=1 $(DOCKER) build --target runtime-local -t stellar-operator:dev .
 	@echo "→ Loading image into kind cluster..."
 	@kind load docker-image stellar-operator:dev --name stellar-dev
 	@echo "→ Installing CRD..."

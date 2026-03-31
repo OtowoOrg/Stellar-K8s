@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # ==============================================================================
 # Stage 1: Chef - Dependency Caching Layer
 # ==============================================================================
@@ -18,19 +19,59 @@ FROM chef AS builder
 
 # Copy the recipe and build dependencies first (cached layer)
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+  --mount=type=cache,target=/usr/local/cargo/git \
+  --mount=type=cache,target=/app/target \
+  cargo chef cook --release --recipe-path recipe.json
 
-# Now copy source and build both binaries in a single step to share
+# Now copy source and build binaries in a single step to share
 # the dependency cache layer and avoid redundant recompilation.
 COPY . .
-RUN cargo build --release --bin stellar-operator --bin kubectl-stellar
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+  --mount=type=cache,target=/usr/local/cargo/git \
+  --mount=type=cache,target=/app/target \
+  cargo build --release --bin stellar-operator --bin kubectl-stellar
 
-# Strip both binaries to reduce image size
+# Strip binaries to reduce image size
 RUN strip /app/target/release/stellar-operator \
-    && strip /app/target/release/kubectl-stellar
+    && strip /app/target/release/kubectl-stellar \
+    && strip /app/target/release/stellar-sidecar
 
 # ==============================================================================
-# Stage 4: Runtime - Minimal distroless image (~15-20MB total)
+# Stage 4: Local Binaries - Fast local packaging from host build artifacts
+# ==============================================================================
+FROM scratch AS local-binaries
+COPY target/release/stellar-operator /stellar-operator
+COPY target/release/kubectl-stellar /kubectl-stellar
+
+# ==============================================================================
+# Stage 5: Runtime Local - Minimal image for local dev (no container recompile)
+# ==============================================================================
+FROM gcr.io/distroless/cc-debian12:nonroot AS runtime-local
+
+# Labels for container registry
+LABEL org.opencontainers.image.source="https://github.com/stellar/stellar-k8s"
+LABEL org.opencontainers.image.description="Stellar-K8s Kubernetes Operator"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+# Copy prebuilt local binaries
+COPY --from=local-binaries /stellar-operator /stellar-operator
+COPY --from=local-binaries /kubectl-stellar /kubectl-stellar
+
+# Run as non-root user (UID 65532 is the nonroot user in distroless)
+USER nonroot:nonroot
+
+# Expose metrics and REST API ports
+EXPOSE 8080 9090
+
+# Health check endpoint
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD ["/stellar-operator", "--health-check"] || exit 1
+
+ENTRYPOINT ["/stellar-operator"]
+
+# ==============================================================================
+# Stage 6: Runtime - Minimal distroless image (~15-20MB total)
 # ==============================================================================
 FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 
@@ -39,9 +80,10 @@ LABEL org.opencontainers.image.source="https://github.com/stellar/stellar-k8s"
 LABEL org.opencontainers.image.description="Stellar-K8s Kubernetes Operator"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
-# Copy both stripped binaries
+# Copy stripped binaries
 COPY --from=builder /app/target/release/stellar-operator /stellar-operator
 COPY --from=builder /app/target/release/kubectl-stellar /kubectl-stellar
+COPY --from=builder /app/target/release/stellar-sidecar /stellar-sidecar
 
 # Run as non-root user (UID 65532 is the nonroot user in distroless)
 USER nonroot:nonroot

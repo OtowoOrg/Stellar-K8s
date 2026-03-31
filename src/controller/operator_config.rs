@@ -402,4 +402,107 @@ reconciler:
         assert_eq!(cfg.reconciler.max_backoff, 600);
         assert!(!cfg.reconciler.enable_jitter);
     }
+
+    #[test]
+    fn test_validator_production_resources() {
+        // Test recommended production resources for Validator
+        let validator_resources = hardcoded_defaults(&NodeType::Validator);
+
+        // Verify requests are reasonable for production
+        assert!(!validator_resources.requests.cpu.is_empty());
+        assert!(!validator_resources.requests.memory.is_empty());
+
+        // Verify limits are set
+        assert!(!validator_resources.limits.cpu.is_empty());
+        assert!(!validator_resources.limits.memory.is_empty());
+
+        // Validator should have at least 500m CPU and 1Gi memory
+        assert_eq!(validator_resources.requests.cpu, "500m");
+        assert_eq!(validator_resources.requests.memory, "1Gi");
+    }
+
+    #[test]
+    fn test_horizon_resources_lower_than_validator() {
+        // Horizon should have lower resource requirements than Validator
+        let validator = hardcoded_defaults(&NodeType::Validator);
+        let horizon = hardcoded_defaults(&NodeType::Horizon);
+
+        // Parse CPU requests (simplified comparison)
+        let validator_cpu = validator.requests.cpu.trim_end_matches('m');
+        let horizon_cpu = horizon.requests.cpu.trim_end_matches('m');
+
+        // Horizon should request less CPU than Validator
+        assert_eq!(horizon.requests.cpu, "250m");
+        assert_eq!(horizon.requests.memory, "512Mi");
+
+        // Verify Horizon has lower requests
+        let v_cpu: u32 = validator_cpu.parse().unwrap_or(500);
+        let h_cpu: u32 = horizon_cpu.parse().unwrap_or(250);
+        assert!(h_cpu < v_cpu, "Horizon CPU should be less than Validator");
+    }
+
+    #[test]
+    fn test_soroban_rpc_highest_resources() {
+        // Soroban RPC should have highest resource limits due to Wasm execution
+        let soroban = hardcoded_defaults(&NodeType::SorobanRpc);
+        let validator = hardcoded_defaults(&NodeType::Validator);
+        let horizon = hardcoded_defaults(&NodeType::Horizon);
+
+        // Soroban should have highest memory request
+        assert_eq!(soroban.requests.memory, "2Gi");
+        assert_eq!(soroban.limits.cpu, "4");
+        assert_eq!(soroban.limits.memory, "8Gi");
+
+        // Verify Soroban has higher limits than others
+        let soroban_limit_cpu: u32 = soroban.limits.cpu.parse().unwrap_or(4);
+        let validator_limit_cpu: u32 = validator.limits.cpu.parse().unwrap_or(2);
+        let horizon_limit_cpu: u32 = horizon.limits.cpu.parse().unwrap_or(2);
+
+        assert!(soroban_limit_cpu >= validator_limit_cpu);
+        assert!(soroban_limit_cpu >= horizon_limit_cpu);
+    }
+
+    #[test]
+    fn test_all_node_types_have_valid_resource_format() {
+        // Verify all node types have properly formatted resource strings
+        for node_type in [NodeType::Validator, NodeType::Horizon, NodeType::SorobanRpc] {
+            let resources = hardcoded_defaults(&node_type);
+
+            // CPU should end with 'm' (millicores) or be a number
+            assert!(
+                resources.requests.cpu.ends_with('m')
+                    || resources.requests.cpu.parse::<u32>().is_ok(),
+                "Invalid CPU format for {:?}: {}",
+                node_type,
+                resources.requests.cpu
+            );
+
+            // Memory should end with Gi, Mi, or be a number with unit
+            assert!(
+                resources.requests.memory.ends_with("Gi")
+                    || resources.requests.memory.ends_with("Mi")
+                    || resources.requests.memory.ends_with("Ki"),
+                "Invalid memory format for {:?}: {}",
+                node_type,
+                resources.requests.memory
+            );
+
+            // Limits should also be valid
+            assert!(
+                resources.limits.cpu.parse::<u32>().is_ok() || resources.limits.cpu.ends_with('m'),
+                "Invalid CPU limit format for {:?}: {}",
+                node_type,
+                resources.limits.cpu
+            );
+
+            assert!(
+                resources.limits.memory.ends_with("Gi")
+                    || resources.limits.memory.ends_with("Mi")
+                    || resources.limits.memory.ends_with("Ki"),
+                "Invalid memory limit format for {:?}: {}",
+                node_type,
+                resources.limits.memory
+            );
+        }
+    }
 }

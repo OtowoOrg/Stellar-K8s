@@ -177,7 +177,7 @@ async fn score_nodes_quorum_proximity<'a>(
 
 /// Helper to extract peer instance names from Stellar Core quorum set TOML.
 /// Handles both [VALIDATORS] map and [QUORUM_SET] VSL formats.
-fn extract_peer_names_from_toml(toml_str: &str) -> Vec<String> {
+pub fn extract_peer_names_from_toml(toml_str: &str) -> Vec<String> {
     let mut names = Vec::new();
 
     // Try to parse as TOML Table

@@ -41,8 +41,13 @@
 //!               "GCB2VSADESRV2DDTIVTFLBDI562K6KE3KMKILBHUHUWFXCUBHGQDI7VL"]
 //! ```
 
+use std::collections::HashMap;
+use std::sync::{OnceLock, RwLock};
+use std::time::{Duration, Instant};
+
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use ed25519_dalek::{Signature, VerifyingKey};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
@@ -61,6 +66,17 @@ pub const TRUSTED_VSL_SIGNERS: &[&str] = &[
     // with the real SDF key when integrating against production VSLs).
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
 ];
+
+const VSL_CACHE_TTL: Duration = Duration::from_secs(30);
+
+#[derive(Clone, Debug)]
+struct CachedVsl {
+    quorum_set: QuorumSet,
+    fetched_at: Instant,
+}
+
+static VSL_CACHE: OnceLock<RwLock<HashMap<String, CachedVsl>>> = OnceLock::new();
+static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
 
 // ---------------------------------------------------------------------------
 // Structured types
@@ -321,6 +337,45 @@ pub fn parse_and_verify_vsl(raw_toml: &str) -> Result<QuorumSet> {
     })
 }
 
+fn vsl_cache() -> &'static RwLock<HashMap<String, CachedVsl>> {
+    VSL_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn cached_vsl(url: &str) -> Option<QuorumSet> {
+    let cache = vsl_cache().read().ok()?;
+    let entry = cache.get(url)?;
+
+    if entry.fetched_at.elapsed() <= VSL_CACHE_TTL {
+        Some(entry.quorum_set.clone())
+    } else {
+        None
+    }
+}
+
+fn store_cached_vsl(url: &str, quorum_set: QuorumSet) {
+    if let Ok(mut cache) = vsl_cache().write() {
+        cache.insert(
+            url.to_string(),
+            CachedVsl {
+                quorum_set,
+                fetched_at: Instant::now(),
+            },
+        );
+    }
+}
+
+fn http_client() -> Result<&'static Client> {
+    if let Some(client) = HTTP_CLIENT.get() {
+        return Ok(client);
+    }
+    let client = Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| Error::ConfigError(format!("Failed to build HTTP client: {e}")))?;
+    // If another thread raced us, discard our client and use theirs.
+    Ok(HTTP_CLIENT.get_or_init(|| client))
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -332,19 +387,22 @@ pub fn parse_and_verify_vsl(raw_toml: &str) -> Result<QuorumSet> {
 /// The reconciler passes the returned [`QuorumSet`] to the
 /// stellar-core.cfg generation logic.
 pub async fn fetch_vsl(url: &str) -> Result<QuorumSet> {
+    if let Some(cached) = cached_vsl(url) {
+        debug!("Using cached VSL for {}", url);
+        return Ok(cached);
+    }
+
     debug!("Fetching VSL from {}", url);
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| Error::ConfigError(format!("Failed to build HTTP client: {e}")))?;
-
-    let response = client.get(url).send().await.map_err(Error::HttpError)?;
+    let response = http_client()?
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| Error::ConfigError(format!("Failed to fetch VSL from {url}: {e}")))?;
 
     if !response.status().is_success() {
         return Err(Error::ConfigError(format!(
-            "Failed to fetch VSL from {}: HTTP {}",
-            url,
+            "Failed to fetch VSL from {url}: HTTP {}",
             response.status()
         )));
     }
@@ -352,7 +410,9 @@ pub async fn fetch_vsl(url: &str) -> Result<QuorumSet> {
     let raw_toml = response.text().await.map_err(Error::HttpError)?;
     info!("Fetched VSL from {} ({} bytes)", url, raw_toml.len());
 
-    parse_and_verify_vsl(&raw_toml)
+    let quorum_set = parse_and_verify_vsl(&raw_toml)?;
+    store_cached_vsl(url, quorum_set.clone());
+    Ok(quorum_set)
 }
 
 /// Trigger a configuration reload in Stellar Core if it's already running.
@@ -424,6 +484,12 @@ public_key = "GDPJ4DPPFEIP2YTSQNOKT7NMLPKU2FFVOEIJVG4ZCJQHLMRXOLXOIUT"
 host = "v3.example.com"
 "#
         .to_string()
+    }
+
+    fn clear_vsl_cache() {
+        if let Ok(mut cache) = vsl_cache().write() {
+            cache.clear();
+        }
     }
 
     /// Build a signed VSL TOML, injecting the signature into the document.
@@ -618,6 +684,36 @@ host = "v3.example.com"
     // -----------------------------------------------------------------------
     // QuorumSet — to_stellar_core_toml
     // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_vsl_cache_returns_recent_entry() {
+        clear_vsl_cache();
+        let url = "https://example.com/vsl.toml";
+        let quorum_set = parse_and_verify_vsl(&minimal_unsigned_vsl()).unwrap();
+
+        store_cached_vsl(url, quorum_set.clone());
+
+        assert_eq!(cached_vsl(url), Some(quorum_set));
+    }
+
+    #[test]
+    fn test_vsl_cache_expires_stale_entry() {
+        clear_vsl_cache();
+        let url = "https://example.com/vsl.toml";
+        let quorum_set = parse_and_verify_vsl(&minimal_unsigned_vsl()).unwrap();
+
+        if let Ok(mut cache) = vsl_cache().write() {
+            cache.insert(
+                url.to_string(),
+                CachedVsl {
+                    quorum_set,
+                    fetched_at: Instant::now() - VSL_CACHE_TTL - Duration::from_secs(1),
+                },
+            );
+        }
+
+        assert_eq!(cached_vsl(url), None);
+    }
 
     #[test]
     fn test_to_stellar_core_toml_basic() {

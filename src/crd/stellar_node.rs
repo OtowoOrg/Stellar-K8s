@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 use super::types::{
     AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
     DisasterRecoveryStatus, ExternalDatabaseConfig, ForensicSnapshotConfig, GlobalDiscoveryConfig,
-    HistoryMode, HorizonConfig, IngressConfig, LoadBalancerConfig, ManagedDatabaseConfig,
-    NetworkPolicyConfig, NodeType, OciSnapshotConfig, PlacementConfig, PodAntiAffinityStrength,
-    ResourceRequirements, RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy,
-    SnapshotScheduleConfig, SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig,
-    VpaConfig,
+    HistoryMode, HorizonConfig, IngressConfig, LabelPropagationConfig, LoadBalancerConfig,
+    ManagedDatabaseConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig, PlacementConfig,
+    PodAntiAffinityStrength, ResourceRequirements, RestoreFromSnapshotConfig, RetentionPolicy,
+    RolloutStrategy, SnapshotScheduleConfig, SorobanConfig, StellarNetwork, StorageConfig,
+    ValidatorConfig, VpaConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`
@@ -59,6 +59,8 @@ impl SpecValidationError {
 pub struct StellarNodeSpec {
     pub node_type: NodeType,
     pub network: StellarNetwork,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_network_passphrase: Option<String>,
     pub version: String,
 
     #[serde(default)]
@@ -87,11 +89,11 @@ pub struct StellarNodeSpec {
     pub replicas: i32,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<serde_json::Value>")]
+    #[schemars(schema_with = "super::schema_utils::int_or_string_schema")]
     pub min_available: Option<IntOrString>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<serde_json::Value>")]
+    #[schemars(schema_with = "super::schema_utils::int_or_string_schema")]
     pub max_unavailable: Option<IntOrString>,
 
     #[serde(default)]
@@ -150,7 +152,7 @@ pub struct StellarNodeSpec {
     pub placement: PlacementConfig,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<Vec<serde_json::Value>>")]
+    #[schemars(schema_with = "super::schema_utils::array_of_objects_schema")]
     pub topology_spread_constraints:
         Option<Vec<k8s_openapi::api::core::v1::TopologySpreadConstraint>>,
 
@@ -194,9 +196,32 @@ pub struct StellarNodeSpec {
     /// NAT Traversal sidecar configuration (STUN/TURN/ICE) for P2P networking
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nat_traversal: Option<super::types::NatTraversalConfig>,
+    /// Label propagation filter policy for child resources.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_propagation: Option<LabelPropagationConfig>,
 
     #[schemars(skip)]
     pub resource_meta: Option<ObjectMeta>,
+
+    /// Optional sidecar containers to run alongside the main Stellar container.
+    ///
+    /// These containers share the pod's network namespace and can mount the same
+    /// volumes (e.g. `data`, `config`) as the main container. Useful for log
+    /// forwarders, monitoring agents, proxies, etc.
+    ///
+    /// # Example
+    /// ```yaml
+    /// sidecars:
+    ///   - name: log-forwarder
+    ///     image: fluent/fluent-bit:latest
+    ///     volumeMounts:
+    ///       - name: data
+    ///         mountPath: /stellar-data
+    ///         readOnly: true
+    /// ```
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Vec<serde_json::Value>>")]
+    pub sidecars: Option<Vec<k8s_openapi::api::core::v1::Container>>,
 }
 
 fn default_replicas() -> i32 {
@@ -251,6 +276,11 @@ impl Default for StellarNodeSpec {
 }
 
 impl StellarNodeSpec {
+    /// Get the network passphrase based on network type and custom string
+    pub fn network_passphrase(&self) -> &str {
+        self.network.passphrase(&self.custom_network_passphrase)
+    }
+
     /// Validate the spec based on node type
     ///
     /// Performs comprehensive validation of the StellarNodeSpec including:
@@ -271,6 +301,46 @@ impl StellarNodeSpec {
     /// let spec = StellarNodeSpec {
     ///     // ... configuration
     ///     ..Default::default()
+    /// # node_type: Default::default(),
+    /// # network: Default::default(),
+    /// # version: "v21".to_string(),
+    /// # history_mode: Default::default(),
+    /// # resources: Default::default(),
+    /// # storage: Default::default(),
+    /// # validator_config: None,
+    /// # horizon_config: None,
+    /// # soroban_config: None,
+    /// # replicas: 1,
+    /// # min_available: None,
+    /// # max_unavailable: None,
+    /// # suspended: false,
+    /// # alerting: false,
+    /// # database: None,
+    /// # managed_database: None,
+    /// # autoscaling: None,
+    /// # ingress: None,
+    /// # load_balancer: None,
+    /// # global_discovery: None,
+    /// # cross_cluster: None,
+    /// # snapshot_schedule: None,
+    /// # restore_from_snapshot: None,
+    /// # strategy: Default::default(),
+    /// # maintenance_mode: false,
+    /// # network_policy: None,
+    /// # dr_config: None,
+    /// # pod_anti_affinity: Default::default(),
+    /// # topology_spread_constraints: None,
+    /// # cve_handling: None,
+    /// # read_replica_config: None,
+    /// # db_maintenance_config: None,
+    /// # oci_snapshot: None,
+    /// # service_mesh: None,
+    /// # forensic_snapshot: None,
+    /// # label_propagation: None,
+    /// # vpa_config: None,
+    /// # resource_meta: None,
+    /// # read_pool_endpoint: None,
+    /// # sidecars: None,
     /// };
     /// match spec.validate() {
     ///     Ok(_) => println!("Valid spec"),
@@ -283,6 +353,15 @@ impl StellarNodeSpec {
     /// ```
     pub fn validate(&self) -> Result<(), Vec<SpecValidationError>> {
         let mut errors: Vec<SpecValidationError> = Vec::new();
+
+        // 0. Custom network name validation
+        if let Err(msg) = self.network.validate_custom_name() {
+            errors.push(SpecValidationError::new(
+                "spec.network.customName",
+                msg,
+                "Use only lowercase alphanumeric characters and hyphens, 1–63 characters, no leading/trailing hyphens (DNS-1123). Example: \"my-private-net\".",
+            ));
+        }
 
         // 1. Database Mutual Exclusion
         if self.database.is_some() && self.managed_database.is_some() {
@@ -366,7 +445,7 @@ impl StellarNodeSpec {
                     ));
                 }
                 // Canary strategy not supported
-                if matches!(self.strategy, RolloutStrategy::Canary(_)) {
+                if self.strategy.canary().is_some() {
                     errors.push(SpecValidationError::new(
                         "spec.strategy",
                         "canary rollout strategy is not supported for Validator nodes",
@@ -1025,6 +1104,11 @@ pub struct StellarNodeStatus {
     /// Phase of the last forensic snapshot request (`Pending`, `Capturing`, `Complete`, `Failed`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forensic_snapshot_phase: Option<String>,
+
+    /// Result of the last label propagation pass.
+    /// One of: "Synced", "Partial", "Failed"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_propagation_status: Option<String>,
 }
 
 /// BGP advertisement status information
@@ -1206,6 +1290,47 @@ mod tests {
                 check_interval_seconds: 300,
             }),
             ..Default::default()
+            horizon_config: None,
+            soroban_config: None,
+            replicas: 1,
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            managed_database: None,
+            autoscaling: None,
+            ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            strategy: RolloutStrategy {
+                strategy_type: RolloutStrategyType::Canary,
+                canary: Some(CanaryConfig {
+                    weight: 10,
+                    check_interval_seconds: 300,
+                }),
+            },
+            custom_network_passphrase: None,
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            pod_anti_affinity: Default::default(),
+            placement: Default::default(),
+            topology_spread_constraints: None,
+            cross_cluster: None,
+            cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
+            read_replica_config: None,
+            db_maintenance_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
+            forensic_snapshot: None,
+            label_propagation: None,
+            resource_meta: None,
+            vpa_config: None,
+            read_pool_endpoint: None,
+            sidecars: None,
         };
 
         assert!(spec.validate().is_err());
@@ -1229,6 +1354,44 @@ mod tests {
                 check_interval_seconds: 300,
             }),
             ..Default::default()
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            managed_database: None,
+            autoscaling: None,
+            ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            strategy: RolloutStrategy {
+                strategy_type: RolloutStrategyType::Canary,
+                canary: Some(CanaryConfig {
+                    weight: 20,
+                    check_interval_seconds: 300,
+                }),
+            },
+            custom_network_passphrase: None,
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            pod_anti_affinity: Default::default(),
+            placement: Default::default(),
+            topology_spread_constraints: None,
+            cross_cluster: None,
+            cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
+            read_replica_config: None,
+            db_maintenance_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
+            forensic_snapshot: None,
+            label_propagation: None,
+            resource_meta: None,
+            vpa_config: None,
+            read_pool_endpoint: None,
+            sidecars: None,
         };
 
         assert!(spec.validate().is_ok());
@@ -1243,6 +1406,36 @@ mod tests {
             version: "v21.0.0".to_string(),
             replicas: 1,
             ..Default::default()
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            managed_database: None,
+            autoscaling: None,
+            vpa_config: None,
+            ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            cross_cluster: None,
+            strategy: Default::default(),
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            pod_anti_affinity: Default::default(),
+            placement: Default::default(),
+            topology_spread_constraints: None,
+            cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
+            read_replica_config: None,
+            db_maintenance_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
+            forensic_snapshot: None,
+            label_propagation: None,
+            resource_meta: None,
+            read_pool_endpoint: None,
         };
         assert_eq!(spec.container_image(), "stellar/stellar-core:v21.0.0");
 

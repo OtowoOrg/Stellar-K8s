@@ -21,6 +21,41 @@ mod stellar_node_spec_validation {
                 ..Default::default()
             }),
             ..Default::default()
+            horizon_config: None,
+            soroban_config: None,
+            replicas: 1,
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            managed_database: None,
+            autoscaling: None,
+            ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            cross_cluster: None,
+            strategy: Default::default(),
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            pod_anti_affinity: Default::default(),
+            placement: Default::default(),
+            topology_spread_constraints: None,
+            cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
+            read_replica_config: None,
+            db_maintenance_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
+            forensic_snapshot: None,
+            label_propagation: None,
+            resource_meta: None,
+            vpa_config: None,
+            read_pool_endpoint: None,
+            sidecars: None,
+            custom_network_passphrase: None,
         }
     }
 
@@ -38,6 +73,38 @@ mod stellar_node_spec_validation {
             }),
             replicas: 2,
             ..Default::default()
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            managed_database: None,
+            autoscaling: None,
+            ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            cross_cluster: None,
+            strategy: Default::default(),
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            pod_anti_affinity: Default::default(),
+            placement: Default::default(),
+            topology_spread_constraints: None,
+            cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
+            read_replica_config: None,
+            db_maintenance_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
+            forensic_snapshot: None,
+            label_propagation: None,
+            resource_meta: None,
+            vpa_config: None,
+            read_pool_endpoint: None,
+            sidecars: None,
+            custom_network_passphrase: None,
         }
     }
 
@@ -52,6 +119,60 @@ mod stellar_node_spec_validation {
                 ..Default::default()
             }),
             replicas: 2,
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            managed_database: None,
+            autoscaling: None,
+            ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            cross_cluster: None,
+            strategy: Default::default(),
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            pod_anti_affinity: Default::default(),
+            placement: Default::default(),
+            topology_spread_constraints: None,
+            cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
+            read_replica_config: None,
+            db_maintenance_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
+            forensic_snapshot: None,
+            label_propagation: None,
+            resource_meta: None,
+            vpa_config: None,
+            read_pool_endpoint: None,
+            sidecars: None,
+            custom_network_passphrase: None,
+        }
+    }
+
+    fn default_resources() -> ResourceRequirements {
+        ResourceRequirements {
+            requests: ResourceSpec {
+                cpu: "500m".to_string(),
+                memory: "1Gi".to_string(),
+            },
+            limits: ResourceSpec {
+                cpu: "2".to_string(),
+                memory: "4Gi".to_string(),
+            },
+        }
+    }
+
+    fn default_storage() -> StorageConfig {
+        StorageConfig {
+            storage_class: "standard".to_string(),
+            size: "100Gi".to_string(),
+            retention_policy: Default::default(),
+            annotations: None,
             ..Default::default()
         }
     }
@@ -615,8 +736,133 @@ mod stellar_node_spec_validation {
     #[test]
     fn test_validator_custom_network_passes() {
         let mut spec = valid_validator_spec();
-        spec.network = StellarNetwork::Custom("My Private Network".to_string());
+        spec.network = StellarNetwork::Custom("my-private-network".to_string());
         assert!(spec.validate().is_ok());
+    }
+
+    // =========================================================================
+    // Custom Network Name Validation Tests (#366)
+    // =========================================================================
+
+    #[test]
+    fn test_custom_network_valid_alphanumeric_passes() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("my-private-net".to_string());
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_custom_network_single_char_passes() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("a".to_string());
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_custom_network_63_chars_passes() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("a".repeat(63));
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_custom_network_empty_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("".to_string());
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "spec.network.customName" && e.message.contains("empty")));
+    }
+
+    #[test]
+    fn test_custom_network_exceeds_63_chars_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("a".repeat(64));
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "spec.network.customName" && e.message.contains("63")));
+    }
+
+    #[test]
+    fn test_custom_network_special_chars_fails() {
+        for bad in &["; drop table", "my@network", "net$name!", "net name"] {
+            let mut spec = valid_validator_spec();
+            spec.network = StellarNetwork::Custom(bad.to_string());
+            let result = spec.validate();
+            assert!(
+                result.is_err(),
+                "Expected validation failure for customName: '{bad}'"
+            );
+            let errors = result.unwrap_err();
+            assert!(
+                errors.iter().any(|e| e.field == "spec.network.customName"),
+                "Expected spec.network.customName error for '{bad}'"
+            );
+        }
+    }
+
+    #[test]
+    fn test_custom_network_leading_hyphen_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("-bad-name".to_string());
+        let result = spec.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.field == "spec.network.customName"));
+    }
+
+    #[test]
+    fn test_custom_network_trailing_hyphen_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("bad-name-".to_string());
+        let result = spec.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.field == "spec.network.customName"));
+    }
+
+    #[test]
+    fn test_non_custom_networks_skip_name_validation() {
+        for network in [
+            StellarNetwork::Mainnet,
+            StellarNetwork::Testnet,
+            StellarNetwork::Futurenet,
+        ] {
+            let mut spec = valid_validator_spec();
+            spec.network = network;
+            assert!(spec.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn test_custom_network_uppercase_fails() {
+        // DNS-1123 requires lowercase; uppercase must be rejected
+        for bad in &["MyNetwork", "My-Net", "MYNET"] {
+            let mut spec = valid_validator_spec();
+            spec.network = StellarNetwork::Custom(bad.to_string());
+            let result = spec.validate();
+            assert!(
+                result.is_err(),
+                "Expected validation failure for uppercase customName: '{bad}'"
+            );
+            assert!(
+                result
+                    .unwrap_err()
+                    .iter()
+                    .any(|e| e.field == "spec.network.customName"),
+                "Expected spec.network.customName error for '{bad}'"
+            );
+        }
     }
 
     // =========================================================================

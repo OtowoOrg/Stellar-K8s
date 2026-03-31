@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::process::{Command, Stdio};
 use std::thread::sleep;
@@ -17,10 +18,12 @@ fn tool_available(binary: &str) -> bool {
 const OPERATOR_NAMESPACE: &str = "stellar-system";
 const TEST_NAMESPACE: &str = "stellar-e2e";
 const HORIZON_TEST_NAMESPACE: &str = "stellar-e2e-horizon";
+const UPGRADE_TEST_NAMESPACE: &str = "stellar-e2e-upgrade";
 const OPERATOR_NAME: &str = "stellar-operator";
 const NODE_NAME: &str = "test-soroban";
 const E2E_NODE_NAME: &str = "e2e-soroban";
 const HORIZON_NODE_NAME: &str = "test-horizon";
+const UPGRADE_NODE_NAME: &str = "upgrade-soroban";
 
 // ---------------------------------------------------------------------------
 // Issue #156: E2E reconciliation test
@@ -799,6 +802,120 @@ fn run_cmd_with_stdin_quiet(
     Ok(())
 }
 
+/// Parses `kubectl` JSONPath output of the form `name=count\n...` into a map.
+///
+/// Lines that are empty or cannot be parsed are silently skipped.
+pub fn parse_restart_counts(output: &str) -> HashMap<String, u32> {
+    let mut map = HashMap::new();
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some((name, count_str)) = line.split_once('=') {
+            if let Ok(count) = count_str.trim().parse::<u32>() {
+                map.insert(name.trim().to_string(), count);
+            }
+        }
+    }
+    map
+}
+
+/// Queries pod restart counts for all pods belonging to `deployment` in `namespace`.
+///
+/// Uses the label selector `app.kubernetes.io/instance={deployment}` and a JSONPath
+/// template that emits `{pod-name}={restartCount}` lines.
+fn record_pod_restart_counts(
+    namespace: &str,
+    deployment: &str,
+) -> Result<HashMap<String, u32>, Box<dyn Error>> {
+    let label = format!("app.kubernetes.io/instance={deployment}");
+    let jsonpath =
+        "{range .items[*]}{.metadata.name}={.status.containerStatuses[0].restartCount}\\n{end}";
+    let output = run_cmd(
+        "kubectl",
+        &[
+            "get",
+            "pods",
+            "-l",
+            &label,
+            "-n",
+            namespace,
+            "-o",
+            &format!("jsonpath={jsonpath}"),
+        ],
+    )?;
+    Ok(parse_restart_counts(&output))
+}
+
+/// Extracts the lease holder identity from raw `kubectl` JSONPath output.
+///
+/// Trims leading/trailing whitespace. Returns an empty string for empty input.
+pub fn parse_lease_holder(output: &str) -> String {
+    output.trim().to_string()
+}
+
+/// Queries the `stellar-operator` lease holder in `namespace`.
+///
+/// Returns the trimmed holder identity string, or an empty string if the lease
+/// does not exist (i.e. `kubectl` returns an error).
+fn get_lease_holder(namespace: &str) -> Result<String, Box<dyn Error>> {
+    match run_cmd(
+        "kubectl",
+        &[
+            "get",
+            "lease",
+            "stellar-operator",
+            "-n",
+            namespace,
+            "-o",
+            "jsonpath={.spec.holderIdentity}",
+        ],
+    ) {
+        Ok(output) => Ok(parse_lease_holder(&output)),
+        Err(_) => Ok("".to_string()),
+    }
+}
+
+/// Parses raw `kubectl` JSONPath output into a list of pod names.
+///
+/// Splits on newlines and filters out empty strings. This is the pure
+/// parsing counterpart to `get_pod_names_for_deployment`, needed for
+/// property testing (task 2.6).
+pub fn parse_pod_names(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// Queries pod names for all pods belonging to `deployment` in `namespace`.
+///
+/// Uses the label selector `app.kubernetes.io/instance={deployment}` and a
+/// JSONPath template that emits one pod name per line.
+fn get_pod_names_for_deployment(
+    namespace: &str,
+    deployment: &str,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let label = format!("app.kubernetes.io/instance={deployment}");
+    let jsonpath = "{range .items[*]}{.metadata.name}\\n{end}";
+    let output = run_cmd(
+        "kubectl",
+        &[
+            "get",
+            "pods",
+            "-l",
+            &label,
+            "-n",
+            namespace,
+            "-o",
+            &format!("jsonpath={jsonpath}"),
+        ],
+    )?;
+    Ok(parse_pod_names(&output))
+}
+
 fn soroban_node_manifest(version: &str, replicas: i32, suspended: bool) -> String {
     format!(
         r#"apiVersion: stellar.org/v1alpha1
@@ -826,6 +943,40 @@ spec:
     size: "1Gi"
     retentionPolicy: Delete
 "#
+    )
+}
+
+/// Manifest for the operator upgrade simulation test node.
+///
+/// Mirrors `soroban_node_manifest` but uses `UPGRADE_TEST_NAMESPACE` and
+/// `UPGRADE_NODE_NAME` so the upgrade test has its own isolated resource.
+fn upgrade_soroban_manifest(version: &str) -> String {
+    format!(
+        r#"apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: {UPGRADE_NODE_NAME}
+  namespace: {UPGRADE_TEST_NAMESPACE}
+spec:
+  nodeType: SorobanRpc
+  network: Testnet
+  version: "{version}"
+  replicas: 1
+  suspended: false
+  sorobanConfig:
+    stellarCoreUrl: "http://stellar-core.default:11626"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+  storage:
+    storageClass: "standard"
+    size: "1Gi"
+    retentionPolicy: Delete
+"#,
     )
 }
 
@@ -912,6 +1063,55 @@ impl Drop for HorizonCleanup {
                 "delete",
                 "namespace",
                 HORIZON_TEST_NAMESPACE,
+                "--ignore-not-found=true",
+            ],
+        );
+        let _ = run_cmd_quiet(
+            "kubectl",
+            &[
+                "delete",
+                "namespace",
+                OPERATOR_NAMESPACE,
+                "--ignore-not-found=true",
+            ],
+        );
+    }
+}
+
+/// RAII cleanup guard for the operator upgrade simulation test.
+struct UpgradeCleanup {
+    operator_manifest: String,
+}
+
+impl UpgradeCleanup {
+    fn new(operator_manifest: String) -> Self {
+        Self { operator_manifest }
+    }
+}
+
+impl Drop for UpgradeCleanup {
+    fn drop(&mut self) {
+        let _ = run_cmd_quiet(
+            "kubectl",
+            &[
+                "delete",
+                "stellarnode",
+                UPGRADE_NODE_NAME,
+                "-n",
+                UPGRADE_TEST_NAMESPACE,
+                "--ignore-not-found=true",
+                "--timeout=60s",
+                "--wait=true",
+            ],
+        );
+        let _ =
+            run_cmd_with_stdin_quiet("kubectl", &["delete", "-f", "-"], &self.operator_manifest);
+        let _ = run_cmd_quiet(
+            "kubectl",
+            &[
+                "delete",
+                "namespace",
+                UPGRADE_TEST_NAMESPACE,
                 "--ignore-not-found=true",
             ],
         );
@@ -1417,6 +1617,313 @@ spec:
             "--ignore-not-found=true",
         ],
     );
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Operator upgrade simulation E2E test
+//
+// Verifies that upgrading the stellar-operator from an old version to a new
+// version does not disrupt managed StellarNode resources.
+// Run with: E2E_KIND=1 cargo test --test e2e_kind -- --ignored
+// ---------------------------------------------------------------------------
+
+/// End-to-end test that simulates an operator upgrade from an old image to a
+/// new image and verifies that managed StellarNode resources are unaffected.
+///
+/// Phases (implemented incrementally across tasks):
+///   1. Scaffolding — cluster setup, CRD install, namespace creation, cleanup guard
+///   2. Old operator steady state
+///   3. Upgrade execution
+///   4. Leader election handover verification
+///   5. Managed pod stability verification
+///   6. Status field correctness after upgrade
+#[test]
+#[ignore]
+fn e2e_operator_upgrade_simulation() -> Result<(), Box<dyn Error>> {
+    // ── Phase 1: Scaffolding ─────────────────────────────────────────────────
+
+    // Req 1.2 — skip when E2E_KIND is not set
+    if std::env::var("E2E_KIND").is_err() {
+        eprintln!("E2E_KIND is not set; skipping operator upgrade simulation test.");
+        return Ok(());
+    }
+
+    // Req 1.3 — cluster name
+    let cluster_name = std::env::var("KIND_CLUSTER_NAME").unwrap_or_else(|_| "stellar-e2e".into());
+
+    // Req 1.4 — operator images
+    let old_image =
+        std::env::var("E2E_OLD_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:old".into());
+
+    // Req 1.3 — create or reuse Kind cluster
+    ensure_kind_cluster(&cluster_name)?;
+
+    // Req 1.5 — install CRD
+    run_cmd(
+        "kubectl",
+        &["apply", "-f", "config/crd/stellarnode-crd.yaml"],
+    )?;
+
+    // Create operator namespace (dry-run + apply pattern)
+    run_cmd(
+        "kubectl",
+        &[
+            "create",
+            "namespace",
+            OPERATOR_NAMESPACE,
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+    )
+    .and_then(|output| kubectl_apply(&output))?;
+
+    // Create upgrade test namespace (dry-run + apply pattern)
+    run_cmd(
+        "kubectl",
+        &[
+            "create",
+            "namespace",
+            UPGRADE_TEST_NAMESPACE,
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+    )
+    .and_then(|output| kubectl_apply(&output))?;
+
+    // Build old operator manifest and register RAII cleanup guard (Req 1.6)
+    let old_operator_yaml = operator_manifest(&old_image, None);
+    let _cleanup = UpgradeCleanup::new(old_operator_yaml.clone());
+
+    // ── Phase 2: Old Operator Steady State ──────────────────────────────────
+
+    // Req 2.1 — deploy old operator and wait for rollout
+    kubectl_apply(&old_operator_yaml)?;
+    run_cmd(
+        "kubectl",
+        &[
+            "rollout",
+            "status",
+            "deployment/stellar-operator",
+            "-n",
+            OPERATOR_NAMESPACE,
+            "--timeout=180s",
+        ],
+    )?;
+
+    // Apply the StellarNode manifest
+    kubectl_apply(&upgrade_soroban_manifest("v21.0.0"))?;
+
+    // Req 2.2 — wait for StellarNode to reach Running phase
+    wait_for(
+        "StellarNode Running (old operator)",
+        Duration::from_secs(120),
+        || {
+            let phase = run_cmd(
+                "kubectl",
+                &[
+                    "get",
+                    "stellarnode",
+                    UPGRADE_NODE_NAME,
+                    "-n",
+                    UPGRADE_TEST_NAMESPACE,
+                    "-o",
+                    "jsonpath={.status.phase}",
+                ],
+            )
+            .unwrap_or_default();
+            Ok(phase == "Running")
+        },
+    )?;
+
+    // Req 2.3 — record baseline restart counts
+    let baseline_restarts = record_pod_restart_counts(UPGRADE_TEST_NAMESPACE, UPGRADE_NODE_NAME)?;
+
+    // Req 2.4 — record old lease holder
+    let _old_lease_holder = get_lease_holder(OPERATOR_NAMESPACE)?;
+
+    // ── Phase 3: Upgrade Execution ───────────────────────────────────────────
+
+    // Req 3.4 — read new image (moved from placeholder above)
+    let new_image =
+        std::env::var("E2E_NEW_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:new".into());
+
+    // Req 3.1 — apply new operator manifest
+    let new_operator_yaml = operator_manifest(&new_image, None);
+    kubectl_apply(&new_operator_yaml)?;
+
+    // Req 3.2 — wait for new operator rollout
+    run_cmd(
+        "kubectl",
+        &[
+            "rollout",
+            "status",
+            "deployment/stellar-operator",
+            "-n",
+            OPERATOR_NAMESPACE,
+            "--timeout=180s",
+        ],
+    )
+    .map_err(|_| -> Box<dyn Error> { "New operator rollout timed out after 180s".into() })?;
+
+    // Req 3.3 — verify StellarNode still exists (not deleted/recreated)
+    run_cmd(
+        "kubectl",
+        &[
+            "get",
+            "stellarnode",
+            UPGRADE_NODE_NAME,
+            "-n",
+            UPGRADE_TEST_NAMESPACE,
+        ],
+    )?;
+
+    // ── Phase 4: Leader Election Handover ────────────────────────────────────
+
+    // Req 4.1 — get new operator pod names
+    let new_pod_names = get_pod_names_for_deployment(OPERATOR_NAMESPACE, OPERATOR_NAME)?;
+
+    // Req 4.2 / 4.3 — poll until lease holder is one of the new pods
+    let mut last_holder = String::new();
+    wait_for(
+        "Lease transferred to new operator",
+        Duration::from_secs(60),
+        || {
+            let holder = get_lease_holder(OPERATOR_NAMESPACE)?;
+            last_holder = holder.clone();
+            Ok(!holder.is_empty() && new_pod_names.contains(&holder))
+        },
+    )
+    .map_err(|_| -> Box<dyn Error> {
+        format!("Lease did not transfer within 60s; last holder: {last_holder}").into()
+    })?;
+
+    // ── Phase 5: Managed Pod Stability ───────────────────────────────────────
+
+    // Req 5.1 — settling period after lease acquisition
+    sleep(Duration::from_secs(30));
+
+    // Req 5.2 — record post-upgrade restart counts
+    let post_restarts = record_pod_restart_counts(UPGRADE_TEST_NAMESPACE, UPGRADE_NODE_NAME)?;
+
+    // Req 5.3 — fail if any pod restarted relative to baseline
+    for (pod, &before) in &baseline_restarts {
+        let after = post_restarts.get(pod).copied().unwrap_or(0);
+        if after > before {
+            return Err(format!(
+                "Pod {pod} restarted {} times during upgrade (before={before}, after={after})",
+                after - before
+            )
+            .into());
+        }
+    }
+
+    // Req 5.4 — fail if pod count changed
+    if post_restarts.len() != baseline_restarts.len() {
+        return Err(format!(
+            "Pod count changed during upgrade: before={}, after={}",
+            baseline_restarts.len(),
+            post_restarts.len()
+        )
+        .into());
+    }
+
+    // ── Phase 6: Status Field Correctness ────────────────────────────────────
+
+    // Helper closure to fetch full status JSON for error context (Req 6.4)
+    let full_status = || {
+        run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "stellarnode",
+                UPGRADE_NODE_NAME,
+                "-n",
+                UPGRADE_TEST_NAMESPACE,
+                "-o",
+                "jsonpath={.status}",
+            ],
+        )
+        .unwrap_or_else(|_| "<unavailable>".to_string())
+    };
+
+    // Req 6.1 — status.phase == "Running"
+    let phase = run_cmd(
+        "kubectl",
+        &[
+            "get",
+            "stellarnode",
+            UPGRADE_NODE_NAME,
+            "-n",
+            UPGRADE_TEST_NAMESPACE,
+            "-o",
+            "jsonpath={.status.phase}",
+        ],
+    )?;
+    if phase != "Running" {
+        return Err(format!(
+            "Expected status.phase=Running after upgrade, got: {phase}\nFull status: {}",
+            full_status()
+        )
+        .into());
+    }
+
+    // Req 6.2 — status.observedGeneration == metadata.generation
+    let observed_gen = run_cmd(
+        "kubectl",
+        &[
+            "get",
+            "stellarnode",
+            UPGRADE_NODE_NAME,
+            "-n",
+            UPGRADE_TEST_NAMESPACE,
+            "-o",
+            "jsonpath={.status.observedGeneration}",
+        ],
+    )?;
+    let generation = run_cmd(
+        "kubectl",
+        &[
+            "get",
+            "stellarnode",
+            UPGRADE_NODE_NAME,
+            "-n",
+            UPGRADE_TEST_NAMESPACE,
+            "-o",
+            "jsonpath={.metadata.generation}",
+        ],
+    )?;
+    if observed_gen != generation {
+        return Err(format!(
+            "observedGeneration ({observed_gen}) != generation ({generation}) after upgrade\nFull status: {}",
+            full_status()
+        )
+        .into());
+    }
+
+    // Req 6.3 — status.conditions contains type=Ready, status=True
+    let ready_status = run_cmd(
+        "kubectl",
+        &[
+            "get",
+            "stellarnode",
+            UPGRADE_NODE_NAME,
+            "-n",
+            UPGRADE_TEST_NAMESPACE,
+            "-o",
+            r#"jsonpath={.status.conditions[?(@.type=="Ready")].status}"#,
+        ],
+    )?;
+    if ready_status != "True" {
+        return Err(format!(
+            "Expected Ready condition status=True after upgrade, got: {ready_status}\nFull status: {}",
+            full_status()
+        )
+        .into());
+    }
 
     Ok(())
 }

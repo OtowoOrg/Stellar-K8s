@@ -66,34 +66,69 @@ impl std::fmt::Display for HistoryMode {
 
 /// Target Stellar network
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub enum StellarNetwork {
     Mainnet,
     #[default]
     Testnet,
     Futurenet,
-    Custom(String),
+    Custom,
 }
 
 impl StellarNetwork {
-    pub fn passphrase(&self) -> &str {
+    pub fn passphrase<'a>(&'a self, custom: &'a Option<String>) -> &'a str {
         match self {
             StellarNetwork::Mainnet => "Public Global Stellar Network ; September 2015",
             StellarNetwork::Testnet => "Test SDF Network ; September 2015",
             StellarNetwork::Futurenet => "Test SDF Future Network ; October 2022",
-            StellarNetwork::Custom(passphrase) => passphrase,
+            StellarNetwork::Custom => custom.as_deref().unwrap_or(""),
         }
     }
 
+    /// Validate the custom network name against DNS-1123 label rules.
+    ///
+    /// Rules (applied only to `Custom` variants):
+    /// - Must not be empty (minLength: 1)
+    /// - Must not exceed 63 characters (maxLength: 63)
+    /// - Must match `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` (lowercase alphanumeric and hyphens,
+    ///   no leading/trailing hyphens)
+    pub fn validate_custom_name(&self) -> Result<(), String> {
+        let name = match self {
+            StellarNetwork::Custom(n) => n,
+            _ => return Ok(()),
+        };
+        if name.is_empty() {
+            return Err("customName must not be empty (minLength: 1)".to_string());
+        }
+        if name.len() > 63 {
+            return Err(format!(
+                "customName '{name}' exceeds 63 characters (maxLength: 63)"
+            ));
+        }
+        let valid = name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            && name.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && name.ends_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit());
+        if !valid {
+            return Err(format!(
+                "customName '{name}' is invalid: must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ (lowercase alphanumeric and hyphens only, no leading/trailing hyphens)"
+            ));
+        }
+        Ok(())
+    }
+
     /// Stable, DNS-1123-friendly label value for topology spread and anti-affinity.
-    pub fn scheduling_label_value(&self) -> String {
+    pub fn scheduling_label_value(&self, custom: &Option<String>) -> String {
         match self {
             StellarNetwork::Mainnet => "mainnet".to_string(),
             StellarNetwork::Testnet => "testnet".to_string(),
             StellarNetwork::Futurenet => "futurenet".to_string(),
-            StellarNetwork::Custom(passphrase) => {
+            StellarNetwork::Custom => {
                 use std::collections::hash_map::DefaultHasher;
                 use std::hash::{Hash, Hasher};
                 let mut h = DefaultHasher::new();
+                let passphrase = custom.as_deref().unwrap_or("");
                 passphrase.hash(&mut h);
                 format!("custom-{:x}", h.finish())
             }
@@ -176,7 +211,7 @@ pub struct StorageConfig {
     pub annotations: Option<BTreeMap<String, String>>,
     /// Node affinity for local storage mode (optional)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<serde_json::Value>")]
+    #[schemars(schema_with = "super::schema_utils::object_schema")]
     pub node_affinity: Option<k8s_openapi::api::core::v1::NodeAffinity>,
 }
 
@@ -670,13 +705,33 @@ impl Default for NetworkPolicyConfig {
     }
 }
 
+/// Rollout strategy type
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RolloutStrategyType {
+    #[default]
+    RollingUpdate,
+    Canary,
+}
+
 /// Rollout strategy for updates
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub enum RolloutStrategy {
-    #[default]
-    RollingUpdate,
-    Canary(CanaryConfig),
+pub struct RolloutStrategy {
+    #[serde(rename = "type")]
+    pub strategy_type: RolloutStrategyType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub canary: Option<CanaryConfig>,
+}
+
+impl RolloutStrategy {
+    pub fn canary(&self) -> Option<&CanaryConfig> {
+        if let RolloutStrategyType::Canary = self.strategy_type {
+            self.canary.as_ref()
+        } else {
+            None
+        }
+    }
 }
 
 /// Configuration for Canary rollout
@@ -957,6 +1012,39 @@ pub struct DisasterRecoveryConfig {
     pub health_check_interval: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drill_schedule: Option<DRDrillScheduleConfig>,
+
+    /// Configuration for history archive integrity checks
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archive_integrity_config: Option<ArchiveIntegrityConfig>,
+}
+
+/// Configuration for periodic history archive integrity checks
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveIntegrityConfig {
+    /// Enable periodic integrity checks
+    pub enabled: bool,
+    /// Interval between integrity checks (e.g. "1h", "6h", "24h")
+    #[serde(default = "default_archive_check_interval")]
+    pub interval: String,
+    /// Percentage of checkpoints to verify in each run (1-100)
+    #[serde(default = "default_archive_check_percentage")]
+    pub check_percentage: u32,
+    /// Maximum number of historical checkpoints to verify in each run
+    #[serde(default = "default_archive_check_max_checkpoints")]
+    pub max_checkpoints: u32,
+}
+
+fn default_archive_check_interval() -> String {
+    "6h".to_string()
+}
+
+fn default_archive_check_percentage() -> u32 {
+    5
+}
+
+fn default_archive_check_max_checkpoints() -> u32 {
+    10
 }
 
 fn default_dr_check_interval() -> u32 {
@@ -1540,4 +1628,26 @@ pub struct OciSnapshotConfig {
     /// from `registry`, `image`, and `tag_strategy`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pull_image_ref: Option<String>,
+}
+
+// ============================================================================
+// Label Propagation Configuration
+// ============================================================================
+
+/// Filter policy controlling which StellarNode labels are propagated to child resources.
+///
+/// When both lists are empty, all user labels are propagated (subject to the implicit
+/// denylist for `kubernetes.io/` and `k8s.io/` prefixes).
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelPropagationConfig {
+    /// Glob patterns for label keys that are allowed to propagate.
+    /// When empty, all user labels are eligible (subject to denyList).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow_list: Vec<String>,
+
+    /// Glob patterns for label keys that are always blocked from propagation.
+    /// Takes precedence over allowList.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deny_list: Vec<String>,
 }

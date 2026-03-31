@@ -202,7 +202,7 @@ mod tests {
         let our_err = Error::KubeError(kube_serde_err);
 
         // The Display implementation should include the error code prefix
-        let display = format!("{}", our_err);
+        let display = format!("{our_err}");
         assert!(display.contains("[SK8S-001]"));
         assert!(display.contains("Kubernetes API error"));
     }

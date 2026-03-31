@@ -1,0 +1,151 @@
+# .github/workflows/soak-test.yml
+#
+# 1-hour memory soak test for the stellar-operator.
+#
+# Runs on:
+#   - Manual trigger (workflow_dispatch) — run anytime on any branch
+#   - Weekly schedule (Saturday 02:00 UTC) — regular leak check on main
+#
+# The test creates/deletes 100 StellarNode resources in a tight loop while
+# sampling the operator's RSS every 60 s. CI fails if memory grows more than
+# 5 MB (5 120 kB) from the baseline reading taken at the start of the run.
+
+name: Memory Soak Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      soak_duration:
+        description: "Soak duration in seconds (default: 3600)"
+        required: false
+        default: "3600"
+      threshold_kb:
+        description: "Max allowed RSS growth in kB (default: 5120 = 5 MB)"
+        required: false
+        default: "5120"
+  schedule:
+    - cron: "0 2 * * 6"   # Every Saturday at 02:00 UTC
+
+env:
+  CARGO_TERM_COLOR: always
+  CLUSTER_NAME: stellar-soak
+  OPERATOR_NAMESPACE: stellar-system
+
+jobs:
+  soak-test:
+    name: Operator Memory Soak (1 h)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90   # 1 h soak + 30 min build/setup headroom
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      # ── 2. Build operator ────────────────────────────────────────────────────
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "soak-build"
+
+      - name: Build operator binary
+        run: cargo build --release --locked --bin stellar-operator
+
+      # ── 3. Build Docker image ────────────────────────────────────────────────
+      - name: Build Docker image
+        run: docker build -t stellar-operator:soak-test .
+
+      # ── 4. Create kind cluster ───────────────────────────────────────────────
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.14.0
+        with:
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          config: |
+            kind: Cluster
+            apiVersion: kind.x-k8s.io/v1alpha4
+            nodes:
+              - role: control-plane
+              - role: worker
+
+      # ── 5. Load image & install CRDs ─────────────────────────────────────────
+      - name: Load image into kind
+        run: kind load docker-image stellar-operator:soak-test --name ${{ env.CLUSTER_NAME }}
+
+      - name: Install CRDs
+        run: kubectl apply -f config/crd/stellarnode-crd.yaml
+
+      # ── 6. Deploy operator ───────────────────────────────────────────────────
+      - name: Deploy operator
+        run: |
+          kubectl create namespace ${{ env.OPERATOR_NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl apply -f - <<EOF
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: stellar-operator
+            namespace: ${{ env.OPERATOR_NAMESPACE }}
+            labels:
+              app: stellar-operator
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: stellar-operator
+            template:
+              metadata:
+                labels:
+                  app: stellar-operator
+              spec:
+                containers:
+                  - name: operator
+                    image: stellar-operator:soak-test
+                    imagePullPolicy: Never
+                    command: ["stellar-operator", "run"]
+                    env:
+                      - name: RUST_LOG
+                        value: info
+                      - name: OPERATOR_NAMESPACE
+                        value: ${{ env.OPERATOR_NAMESPACE }}
+                    resources:
+                      requests:
+                        cpu: 200m
+                        memory: 128Mi
+                      limits:
+                        cpu: 500m
+                        memory: 512Mi
+          EOF
+
+          kubectl wait deployment/stellar-operator \
+            --for=condition=available \
+            --namespace=${{ env.OPERATOR_NAMESPACE }} \
+            --timeout=120s
+
+      # ── 7. Run soak test ─────────────────────────────────────────────────────
+      - name: Run soak test
+        env:
+          OPERATOR_NAMESPACE: ${{ env.OPERATOR_NAMESPACE }}
+          SOAK_DURATION: ${{ github.event.inputs.soak_duration || '3600' }}
+          THRESHOLD_KB: ${{ github.event.inputs.threshold_kb || '5120' }}
+          TEST_NAMESPACE: soak-test
+          RESULTS_FILE: /tmp/soak-memory.log
+        run: bash scripts/soak-test.sh
+
+      # ── 8. Upload results (always, so failures are inspectable) ──────────────
+      - name: Upload memory samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-memory-samples
+          path: /tmp/soak-memory.log
+          retention-days: 30
+
+      # ── 9. Dump operator logs on failure ─────────────────────────────────────
+      - name: Dump operator logs
+        if: failure()
+        run: |
+          kubectl logs -n ${{ env.OPERATOR_NAMESPACE }} \
+            -l app=stellar-operator --tail=200 || true

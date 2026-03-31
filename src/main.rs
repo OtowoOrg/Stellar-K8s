@@ -12,7 +12,7 @@ use kube::ResourceExt;
 use stellar_k8s::controller::archive_prune::{prune_archive, PruneArchiveArgs};
 use stellar_k8s::controller::diff::{diff, DiffArgs};
 use stellar_k8s::infra;
-use stellar_k8s::{controller, crd::StellarNode, preflight, Error};
+use stellar_k8s::{controller, crd::StellarNode, incident, preflight, Error};
 use tracing::{debug, info, info_span, warn, Instrument, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -56,6 +56,8 @@ enum Commands {
     PruneArchive(PruneArchiveArgs),
     /// Show difference between desired and live cluster state
     Diff(DiffArgs),
+    /// Generate a troubleshooting runbook for a StellarNode
+    GenerateRunbook(GenerateRunbookArgs),
     /// Local simulator (kind/k3s + operator + demo validators)
     Simulator(SimulatorCli),
     /// Generate shell completion scripts
@@ -64,6 +66,8 @@ enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    /// Generate an incident report for a specific time window
+    IncidentReport(incident::IncidentReportArgs),
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -149,19 +153,12 @@ struct RunArgs {
     scheduler_name: String,
 
     /// Print the resolved runtime configuration and exit without starting the operator.
-    ///
-    /// Loads the operator config from the path in STELLAR_OPERATOR_CONFIG (or the default
-    /// /etc/stellar-operator/config.yaml), merges it with all CLI flags and environment
-    /// variables, prints the result as YAML, and exits with code 0.
-    ///
-    /// Example: --dump-config
     #[arg(long)]
-    dump_config: bool,
+    pub dump_config: bool,
 
-    /// Run preflight checks and exit without starting the operator.
-    /// Env: PREFLIGHT_ONLY
+    /// Run preflight checks and exit without starting the operator
     #[arg(long, env = "PREFLIGHT_ONLY")]
-    preflight_only: bool,
+    pub preflight_only: bool,
 }
 
 impl RunArgs {
@@ -189,6 +186,40 @@ struct InfoArgs {
     /// Example: --namespace stellar-system
     #[arg(long, env = "OPERATOR_NAMESPACE", default_value = "default")]
     namespace: String,
+}
+
+#[derive(Parser, Debug)]
+#[command(
+    about = "Generate a troubleshooting runbook for a StellarNode",
+    long_about = "Generates a context-aware troubleshooting runbook tailored to the specific\n\
+        configuration of a deployed StellarNode. The runbook includes:\n\n\
+        - Exact kubectl commands to fetch logs from specific containers\n\
+        - KMS key status checks if KMS is configured\n\
+        - S3/GCS CLI commands to verify archive buckets if archiving is enabled\n\
+        - Network information and expected peer connections based on quorum set\n\
+        - Resource and storage troubleshooting steps\n\n\
+        EXAMPLES:\n  \
+        stellar-operator generate-runbook my-validator -n stellar\n  \
+        stellar-operator generate-runbook my-validator -n stellar -o runbook.md\n  \
+        stellar-operator generate-runbook my-validator -n stellar | less"
+)]
+struct GenerateRunbookArgs {
+    /// Name of the StellarNode resource
+    node_name: String,
+
+    /// Kubernetes namespace containing the StellarNode
+    ///
+    /// Env: OPERATOR_NAMESPACE
+    ///
+    /// Example: --namespace stellar-system
+    #[arg(short, long, env = "OPERATOR_NAMESPACE", default_value = "default")]
+    namespace: String,
+
+    /// Output file path (optional, defaults to stdout)
+    ///
+    /// Example: --output runbook.md
+    #[arg(short, long)]
+    output: Option<String>,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -328,11 +359,8 @@ async fn main() -> Result<(), Error> {
             generate(shell, &mut cmd, name, &mut std::io::stdout());
             return Ok(());
         }
-        Commands::PruneArchive(prune_args) => {
-            return prune_archive(prune_args).await;
-        }
-        Commands::Diff(diff_args) => {
-            return diff(diff_args).await;
+        Commands::IncidentReport(args) => {
+            return incident::run_incident_report(args).await;
         }
     }
 }
@@ -720,6 +748,42 @@ async fn run_info(args: InfoArgs) -> Result<(), Error> {
     Ok(())
 }
 
+async fn run_generate_runbook(args: GenerateRunbookArgs) -> Result<(), Error> {
+    use kube::Client;
+    use kube::api::Api;
+    use stellar_k8s::runbook::generate_runbook;
+
+    // Create Kubernetes client
+    let client = Client::try_default()
+        .await
+        .map_err(|e| Error::ConfigError(format!("Failed to create Kubernetes client: {e}")))?;
+
+    // Get the StellarNode resource
+    let api: Api<stellar_k8s::crd::StellarNode> = Api::namespaced(client, &args.namespace);
+    let node = api
+        .get(&args.node_name)
+        .await
+        .map_err(|e| Error::NotFound {
+            kind: "StellarNode".to_string(),
+            name: args.node_name.clone(),
+            namespace: args.namespace.clone(),
+        })?;
+
+    // Generate the runbook
+    let runbook = generate_runbook(&node)?;
+
+    // Output to file or stdout
+    if let Some(output_path) = args.output {
+        std::fs::write(&output_path, &runbook)
+            .map_err(|e| Error::IoError(e))?;
+        println!("Runbook generated successfully: {}", output_path);
+    } else {
+        println!("{}", runbook);
+    }
+
+    Ok(())
+}
+
 #[cfg(feature = "admission-webhook")]
 async fn run_webhook(args: WebhookArgs) -> Result<(), Error> {
     use stellar_k8s::webhook::{runtime::WasmRuntime, server::WebhookServer};
@@ -735,6 +799,7 @@ async fn run_webhook(args: WebhookArgs) -> Result<(), Error> {
 
     tracing_subscriber::registry()
         .with(env_filter)
+        .with(ScrubLayer::new())
         .with(fmt_layer)
         .init();
 
@@ -821,6 +886,7 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
     // Register the subscriber with both stdout logging and OpenTelemetry tracing
     let registry = tracing_subscriber::registry()
         .with(env_filter)
+        .with(ScrubLayer::new())
         .with(fmt_layer);
 
     // Only enable OTEL if an endpoint is provided or via a flag
@@ -978,6 +1044,7 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         log_reload_handle: reload_handle,
         log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
+        last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     });
 
     // Start the peer discovery manager

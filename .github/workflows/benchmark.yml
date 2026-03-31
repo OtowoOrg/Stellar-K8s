@@ -384,7 +384,7 @@ jobs:
             P95=$(cat results/benchmark-summary.json | jq -r '.metrics.http_req_duration.p95 // "N/A"')
             P99=$(cat results/benchmark-summary.json | jq -r '.metrics.http_req_duration.p99 // "N/A"')
             ERRORS=$(cat results/benchmark-summary.json | jq -r '.metrics.error_rate // "N/A"')
-            
+
             COMMENT+="### Key Metrics\n"
             COMMENT+="| Metric | Value |\n"
             COMMENT+="|--------|-------|\n"
@@ -397,13 +397,13 @@ jobs:
           if [[ -f results/regression-report.json ]]; then
             PASSED=$(cat results/regression-report.json | jq -r '.overall_passed')
             SUMMARY=$(cat results/regression-report.json | jq -r '.summary')
-            
+
             if [[ "$PASSED" == "true" ]]; then
               COMMENT+="### ✅ Regression Check: PASSED\n"
             else
               COMMENT+="### ❌ Regression Check: FAILED\n"
               COMMENT+="\n**Summary:** ${SUMMARY}\n\n"
-              
+
               REGRESSIONS=$(cat results/regression-report.json | jq -r '.regressions | length')
               if [[ "$REGRESSIONS" -gt 0 ]]; then
                 COMMENT+="<details>\n<summary>View Regressions</summary>\n\n"

@@ -187,8 +187,8 @@ impl DiffResult {
         println!("\n{}", "═".repeat(80));
         println!(
             "🔍 Diff for StellarNode: {}/{}",
-            self.namespace.bold(),
-            self.node_name.bold()
+            self.namespace.as_str().bold(),
+            self.node_name.as_str().bold()
         );
         println!("{}\n", "═".repeat(80));
 
@@ -266,13 +266,13 @@ impl DiffResult {
 
     fn print_count(&self, prefix: &str, count: &usize, color: &str) {
         let colored = match color {
-            "green" => format!("\x1b[32m{}\x1b[0m", count),
-            "red" => format!("\x1b[31m{}\x1b[0m", count),
-            "yellow" => format!("\x1b[33m{}\x1b[0m", count),
-            "gray" => format!("\x1b[90m{}\x1b[0m", count),
+            "green" => format!("\x1b[32m{count}\x1b[0m"),
+            "red" => format!("\x1b[31m{count}\x1b[0m"),
+            "yellow" => format!("\x1b[33m{count}\x1b[0m"),
+            "gray" => format!("\x1b[90m{count}\x1b[0m"),
             _ => count.to_string(),
         };
-        println!("{}{}", prefix, colored);
+        println!("{prefix}{colored}");
     }
 
     fn print_resource_diff_terminal(
@@ -309,13 +309,13 @@ impl DiffResult {
         if !diff.changed_fields.is_empty() {
             println!("   Changed fields:");
             for field in &diff.changed_fields {
-                println!("     - {}", field);
+                println!("     - {field}");
             }
         }
 
         // Show diff text if available
         if let Some(diff_text) = &diff.diff_text {
-            println!("\n{}", diff_text);
+            println!("\n{diff_text}");
         }
 
         // Show ConfigMap data if requested
@@ -325,12 +325,12 @@ impl DiffResult {
                     println!("\n   📄 ConfigMap data:");
                     if let Some(obj) = data.as_object() {
                         for (key, value) in obj {
-                            println!("   ── {} ──", key);
+                            println!("   ── {key} ──");
                             // Show first few lines of config files
                             let value_str = value.as_str().unwrap_or("");
                             let lines: Vec<&str> = value_str.lines().take(10).collect();
                             for line in lines {
-                                println!("     {}", line);
+                                println!("     {line}");
                             }
                             if value_str.lines().count() > 10 {
                                 println!(
@@ -350,7 +350,7 @@ impl DiffResult {
     /// Print JSON output
     fn print_json(&self) -> Result<(), Error> {
         let json = serde_json::to_string_pretty(self)?;
-        println!("{}", json);
+        println!("{json}");
         Ok(())
     }
 
@@ -372,7 +372,7 @@ impl DiffResult {
             println!("+++ b/{}/{}", diff.kind.to_lowercase(), diff.name);
 
             if let Some(diff_text) = &diff.diff_text {
-                println!("{}", diff_text);
+                println!("{diff_text}");
             }
             println!();
         }
@@ -394,7 +394,8 @@ pub async fn diff(args: DiffArgs) -> Result<(), Error> {
             context: Some(context.clone()),
             ..Default::default()
         })
-        .await?;
+        .await
+        .map_err(|e| Error::ConfigError(format!("Failed to load kubeconfig context: {e}")))?;
         Client::try_from(kube_config)?
     } else {
         Client::try_default().await?
@@ -744,15 +745,15 @@ fn generate_diff(
 
             for (key, value) in &desired_labels {
                 if !live_labels.contains_key(key) {
-                    changed.push(format!("labels.{} (missing)", key));
+                    changed.push(format!("labels.{key} (missing)"));
                 } else if live_labels.get(key) != Some(value) {
-                    changed.push(format!("labels.{}", key));
+                    changed.push(format!("labels.{key}"));
                 }
             }
 
             for key in live_labels.keys() {
                 if !desired_labels.contains_key(key) {
-                    changed.push(format!("labels.{} (extra)", key));
+                    changed.push(format!("labels.{key} (extra)"));
                 }
             }
 
@@ -762,9 +763,9 @@ fn generate_diff(
 
             for (key, value) in &desired_annotations {
                 if !live_annotations.contains_key(key) {
-                    changed.push(format!("annotations.{} (missing)", key));
+                    changed.push(format!("annotations.{key} (missing)"));
                 } else if live_annotations.get(key) != Some(value) {
-                    changed.push(format!("annotations.{}", key));
+                    changed.push(format!("annotations.{key}"));
                 }
             }
 
@@ -774,8 +775,8 @@ fn generate_diff(
                 let diff_text = generate_unified_diff(
                     &format!("a/{kind}/{name}"),
                     &format!("b/{kind}/{name}"),
-                    &format!("{:#?}", desired_meta),
-                    &format!("{:#?}", live),
+                    &format!("{desired_meta:#?}"),
+                    &format!("{live:#?}"),
                 );
                 ("modified".to_string(), Some(diff_text), changed)
             }
@@ -810,8 +811,8 @@ fn generate_unified_diff(
     let to_lines: Vec<&str> = to_content.lines().collect();
 
     let mut result = String::new();
-    writeln!(&mut result, "--- {}", from_label).unwrap();
-    writeln!(&mut result, "+++ {}", to_label).unwrap();
+    writeln!(&mut result, "--- {from_label}").unwrap();
+    writeln!(&mut result, "+++ {to_label}").unwrap();
 
     // Simple line-by-line diff (in production, use a proper diff library)
     let mut i = 0;
@@ -854,6 +855,7 @@ impl ColoredOutput for &str {
 impl ColoredOutput for String {
     fn bold(&self) -> String {
         format!("\x1b[1m{}\x1b[0m", self)
+        format!("\x1b[1m{self}\x1b[0m")
     }
 }
 

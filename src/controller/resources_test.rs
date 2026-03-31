@@ -36,6 +36,37 @@ mod tests {
             },
             replicas: 3,
             ..Default::default()
+            min_available: None,
+            max_unavailable: None,
+            suspended: false,
+            alerting: false,
+            database: None,
+            managed_database: None,
+            autoscaling: None,
+            vpa_config: None,
+            ingress: None,
+            load_balancer: None,
+            global_discovery: None,
+            cross_cluster: None,
+            strategy: Default::default(),
+            maintenance_mode: false,
+            network_policy: None,
+            dr_config: None,
+            pod_anti_affinity: Default::default(),
+            placement: Default::default(),
+            topology_spread_constraints: None,
+            cve_handling: None,
+            snapshot_schedule: None,
+            restore_from_snapshot: None,
+            read_replica_config: None,
+            read_pool_endpoint: None,
+            sidecars: None,
+            db_maintenance_config: None,
+            oci_snapshot: None,
+            service_mesh: None,
+            forensic_snapshot: None,
+            label_propagation: None,
+            resource_meta: None,
         }
     }
 
@@ -288,6 +319,8 @@ mod tests {
         let mut node = make_node(NodeType::Validator);
         node.spec.placement.scp_aware_anti_affinity = true;
         node.spec.validator_config = Some(ValidatorConfig {
+            seed_secret_ref: String::new(),
+            seed_secret_source: None,
             quorum_set: Some(
                 r#"
 [VALIDATORS]
@@ -296,7 +329,13 @@ peer-2 = "G..."
 "#
                 .to_string(),
             ),
-            ..Default::default()
+            enable_history_archive: false,
+            history_archive_urls: vec![],
+            catchup_complete: false,
+            key_source: Default::default(),
+            kms_config: None,
+            vl_source: None,
+            hsm_config: None,
         });
 
         let affinity = merge_workload_affinity(&node).expect("affinity should be generated");

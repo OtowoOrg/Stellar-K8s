@@ -236,7 +236,7 @@ scrape_configs:
 
 ### Average Wasm Execution Time
 ```promql
-rate(soroban_rpc_wasm_execution_duration_microseconds_sum[5m]) / 
+rate(soroban_rpc_wasm_execution_duration_microseconds_sum[5m]) /
 rate(soroban_rpc_wasm_execution_duration_microseconds_count[5m])
 ```
 
@@ -317,12 +317,12 @@ test_soroban_labels_creation ... ok
 
 The Soroban-specific Grafana dashboard is **complete and production-ready**:
 
-✅ All acceptance criteria met  
-✅ All CI checks passing  
-✅ 17 comprehensive panels  
-✅ 8 new Soroban metrics  
-✅ Complete documentation  
-✅ Ready for import  
+✅ All acceptance criteria met
+✅ All CI checks passing
+✅ 17 comprehensive panels
+✅ 8 new Soroban metrics
+✅ Complete documentation
+✅ Ready for import
 
 The implementation provides enterprise-grade monitoring for Soroban RPC nodes with specialized insights into smart contract performance, resource consumption, and transaction analytics.
 
@@ -336,8 +336,8 @@ The implementation provides enterprise-grade monitoring for Soroban RPC nodes wi
 
 ---
 
-**Issue**: #222  
-**Difficulty**: High (200 Points)  
-**Status**: ✅ COMPLETE  
-**Date**: 2026-02-26  
+**Issue**: #222
+**Difficulty**: High (200 Points)
+**Status**: ✅ COMPLETE
+**Date**: 2026-02-26
 **CI Status**: ALL PASSING ✅

@@ -161,7 +161,7 @@ impl PruneResult {
         if !self.errors.is_empty() {
             println!("\nErrors encountered:");
             for error in &self.errors {
-                println!("  - {}", error);
+                println!("  - {error}");
             }
         }
 
@@ -186,7 +186,7 @@ fn format_bytes(bytes: u64) -> String {
         b if b >= GB => format!("{:.2} GB", b as f64 / GB as f64),
         b if b >= MB => format!("{:.2} MB", b as f64 / MB as f64),
         b if b >= KB => format!("{:.2} KB", b as f64 / KB as f64),
-        b => format!("{} B", b),
+        b => format!("{b} B"),
     }
 }
 
@@ -229,8 +229,7 @@ impl ArchiveLocation {
             })
         } else {
             Err(Error::ConfigError(format!(
-                "Unsupported archive URL scheme: {}. Must be s3://, gs://, or file://",
-                url
+                "Unsupported archive URL scheme: {url}. Must be s3://, gs://, or file://"
             )))
         }
     }
@@ -488,7 +487,7 @@ pub async fn execute_prune(
     );
     println!("\nDeleted ledger sequences:");
     for ledger in &deleted_ledgers {
-        println!("  - Ledger {}", ledger);
+        println!("  - Ledger {ledger}");
     }
     println!("\nThis operation CANNOT be undone.");
 
@@ -804,10 +803,10 @@ mod tests {
         let checkpoints: Vec<Checkpoint> = (1..=5)
             .map(|i| Checkpoint {
                 ledger_seq: i * 1000,
-                checkpoint_hash: format!("hash{}", i),
+                checkpoint_hash: format!("hash{i}"),
                 timestamp: now - Duration::days(100),
                 size_bytes: 1000,
-                path: format!("/test/{}", i),
+                path: format!("/test/{i}"),
                 is_valid: true,
             })
             .collect();

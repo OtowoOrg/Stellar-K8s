@@ -123,6 +123,8 @@ enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    /// Generate an incident report for a specific time window
+    IncidentReport(stellar_k8s::incident::IncidentReportArgs),
 }
 
 #[tokio::main]
@@ -138,25 +140,36 @@ async fn main() {
 async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Version => {
-            // Fetch operator version from cluster if available
-            let operator_version = {
-                match Client::try_default().await {
-                    Ok(client) => {
-                        // Try to get operator deployment version
-                        let deployments: kube::Api<k8s_openapi::api::apps::v1::Deployment> =
-                            kube::Api::namespaced(client, "stellar-system");
-                        match deployments.get("stellar-operator").await {
-                            Ok(deploy) => deploy
-                                .spec
-                                .and_then(|s| s.template.spec)
-                                .and_then(|p| p.containers.first().cloned())
-                                .and_then(|c| c.image)
-                                .unwrap_or_else(|| "unknown".to_string()),
-                            Err(_) => "not deployed".to_string(),
+            let operator_version = match Client::try_default().await {
+                Ok(client) => {
+                    let deployments: kube::Api<k8s_openapi::api::apps::v1::Deployment> =
+                        kube::Api::namespaced(client, "stellar-system");
+                    match deployments.get("stellar-operator").await {
+                        Ok(deploy) => {
+                            // Prefer the well-known label set by Helm
+                            deploy
+                                .metadata
+                                .labels
+                                .as_ref()
+                                .and_then(|l| l.get("app.kubernetes.io/version"))
+                                .cloned()
+                                // Fall back to parsing the image tag
+                                .or_else(|| {
+                                    deploy
+                                        .spec
+                                        .and_then(|s| s.template.spec)
+                                        .and_then(|p| p.containers.into_iter().next())
+                                        .and_then(|c| c.image)
+                                        .and_then(|img| {
+                                            img.rsplit_once(':').map(|(_, tag)| tag.to_string())
+                                        })
+                                })
+                                .unwrap_or_else(|| "unknown".to_string())
                         }
+                        Err(e) => format!("not deployed ({e})"),
                     }
-                    Err(_) => "cluster not accessible".to_string(),
                 }
+                Err(_) => "cluster not accessible".to_string(),
             };
 
             println!("kubectl-stellar v{}", env!("CARGO_PKG_VERSION"));
@@ -253,6 +266,9 @@ async fn run(cli: Cli) -> Result<()> {
             generate(shell, &mut cmd, name, &mut std::io::stdout());
             Ok(())
         }
+        Commands::IncidentReport(args) => {
+            stellar_k8s::incident::run_incident_report(args).await
+        }
     }
 }
 
@@ -261,7 +277,7 @@ fn search_docs(query: &str, full: bool) -> Result<()> {
     let results = search::search(query);
 
     if results.is_empty() {
-        println!("No results found for '{}'", query);
+        println!("No results found for '{query}'");
         return Ok(());
     }
 
@@ -273,7 +289,7 @@ fn search_docs(query: &str, full: bool) -> Result<()> {
             println!("{}\n", doc.content);
         } else {
             for snippet in snippets {
-                println!("  {}\n", snippet);
+                println!("  {snippet}\n");
             }
         }
     }
@@ -807,6 +823,42 @@ mod tests {
                 version: "v21.0.0".to_string(),
                 replicas: 1,
                 ..Default::default()
+                resources: Default::default(),
+                storage: Default::default(),
+                validator_config: None,
+                horizon_config: None,
+                soroban_config: None,
+                min_available: None,
+                max_unavailable: None,
+                suspended: false,
+                alerting: false,
+                database: None,
+                managed_database: None,
+                autoscaling: None,
+                vpa_config: None,
+                ingress: None,
+                load_balancer: None,
+                global_discovery: None,
+                cross_cluster: None,
+                snapshot_schedule: None,
+                restore_from_snapshot: None,
+                strategy: Default::default(),
+                maintenance_mode: false,
+                network_policy: None,
+                dr_config: None,
+                pod_anti_affinity: Default::default(),
+                placement: Default::default(),
+                topology_spread_constraints: None,
+                cve_handling: None,
+                read_replica_config: None,
+                db_maintenance_config: None,
+                oci_snapshot: None,
+                service_mesh: None,
+                forensic_snapshot: None,
+                label_propagation: None,
+                resource_meta: None,
+                read_pool_endpoint: None,
+                sidecars: None,
             },
             status: Some(StellarNodeStatus {
                 #[allow(deprecated)]
@@ -830,6 +882,7 @@ mod tests {
                 quorum_analysis_timestamp: None,
                 vault_observed_secret_version: None,
                 forensic_snapshot_phase: None,
+                label_propagation_status: None,
             }),
         }
     }
@@ -898,6 +951,17 @@ mod tests {
                 "Failed for all_namespaces={all_namespaces:?}, node_name={node_name:?}, namespace={namespace:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_image_tag_fallback_parsing() {
+        // Simulates the fallback: extract tag from image string
+        let image = "ghcr.io/stellar/stellar-k8s:v1.2.3";
+        let tag = image.rsplit_once(':').map(|(_, t)| t.to_string());
+        assert_eq!(tag, Some("v1.2.3".to_string()));
+
+        let no_tag = "ghcr.io/stellar/stellar-k8s";
+        assert!(no_tag.rsplit_once(':').is_none());
     }
 
     #[test]

@@ -575,14 +575,14 @@
                 renderNodesTable(nodes.items);
             } catch (error) {
                 console.error('Failed to load dashboard:', error);
-                document.getElementById('nodesContent').innerHTML = 
+                document.getElementById('nodesContent').innerHTML =
                     `<div class="error-message">Failed to load dashboard: ${error.message}</div>`;
             }
         }
 
         function renderNodesTable(nodes) {
             if (nodes.length === 0) {
-                document.getElementById('nodesContent').innerHTML = 
+                document.getElementById('nodesContent').innerHTML =
                     '<div class="loading">No nodes found</div>';
                 return;
             }

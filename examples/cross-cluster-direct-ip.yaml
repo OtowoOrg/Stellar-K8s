@@ -17,9 +17,9 @@ spec:
   nodeType: Validator
   network: Mainnet
   version: "v21.0.0"
-  
 
-  
+
+
   resources:
     requests:
       cpu: "4"
@@ -27,18 +27,18 @@ spec:
     limits:
       cpu: "8"
       memory: "32Gi"
-  
+
   storage:
     storageClass: "fast-ssd"
     size: "1Ti"
     retentionPolicy: Retain
-  
+
   validatorConfig:
     seedSecretRef: "validator-seed-cluster-a"
     enableHistoryArchive: true
     historyArchiveUrls:
       - "https://history.stellar.org/prd/core-live/core_live_001"
-  
+
   # LoadBalancer configuration for external access
   loadBalancer:
     enabled: true
@@ -48,12 +48,12 @@ spec:
     externalTrafficPolicy: Local
     healthCheckEnabled: true
     healthCheckPort: 9100
-  
+
   # Cross-cluster using Direct IP
   crossCluster:
     enabled: true
     mode: DirectIP
-    
+
     # Peer clusters with static IPs
     peerClusters:
       - clusterId: "cluster-b"
@@ -64,7 +64,7 @@ spec:
         priority: 100
         port: 11625
         enabled: true
-      
+
       - clusterId: "cluster-c"
         endpoint: "203.0.113.30"
         latencyThresholdMs: 100
@@ -72,16 +72,16 @@ spec:
         priority: 90
         port: 11625
         enabled: true
-    
+
     latencyThresholdMs: 150
-    
+
     healthCheck:
       enabled: true
       intervalSeconds: 30
       timeoutSeconds: 5
       failureThreshold: 3
       successThreshold: 1
-      
+
       latencyMeasurement:
         enabled: true
         method: tcp

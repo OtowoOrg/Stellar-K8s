@@ -7,6 +7,7 @@ use crate::controller::resource_meta::merge_resource_meta;
 
 // *** NEW: import kms_secret so we can accept SeedInjectionSpec ***
 use super::kms_secret;
+use super::label_propagation::LabelPropagator;
 
 use std::collections::BTreeMap;
 
@@ -17,9 +18,10 @@ use k8s_openapi::api::autoscaling::v2::{
     MetricTarget, ObjectMetricSource,
 };
 use k8s_openapi::api::core::v1::{
-    Affinity, ConfigMap, Container, ContainerPort, EnvVar, EnvVarSource, PersistentVolumeClaim,
-    PersistentVolumeClaimSpec, PodAffinityTerm, PodAntiAffinity, PodSpec, PodTemplateSpec,
-    ResourceRequirements as K8sResources, SecretKeySelector, Service, ServicePort, ServiceSpec,
+    Affinity, Capabilities, ConfigMap, Container, ContainerPort, EnvVar, EnvVarSource,
+    PersistentVolumeClaim, PersistentVolumeClaimSpec, PodAffinityTerm, PodAntiAffinity,
+    PodSecurityContext, PodSpec, PodTemplateSpec, ResourceRequirements as K8sResources,
+    SeccompProfile, SecretKeySelector, SecurityContext, Service, ServicePort, ServiceSpec,
     TypedLocalObjectReference, Volume, VolumeMount, VolumeResourceRequirements,
     WeightedPodAffinityTerm,
 };
@@ -70,7 +72,7 @@ pub(crate) fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
     );
     labels.insert(
         "stellar-network".to_string(),
-        node.spec.network.scheduling_label_value(),
+        node.spec.network.scheduling_label_value(&node.spec.custom_network_passphrase),
     );
     labels
 }
@@ -130,8 +132,13 @@ fn delete_params(dry_run: bool) -> DeleteParams {
 // ============================================================================
 
 /// Ensure a PersistentVolumeClaim exists for the node
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub async fn ensure_pvc(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
+#[instrument(skip(client, node, propagated_labels), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_pvc(
+    client: &Client,
+    node: &StellarNode,
+    propagated_labels: &BTreeMap<String, String>,
+    dry_run: bool,
+) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<PersistentVolumeClaim> = Api::namespaced(client.clone(), &namespace);
     let name = resource_name(node, "data");
@@ -155,7 +162,21 @@ pub async fn ensure_pvc(client: &Client, node: &StellarNode, dry_run: bool) -> R
         );
     }
 
-    let pvc = build_pvc(node, resolved_storage_class);
+    // Fetch existing resource labels for stale-label removal
+    let existing_labels = match api.get(&name).await {
+        Ok(existing) => existing.metadata.labels.clone().unwrap_or_default(),
+        Err(kube::Error::Api(e)) if e.code == 404 => BTreeMap::new(),
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
+    let mut pvc = build_pvc(node, resolved_storage_class);
+
+    // Apply label propagation: merge propagated labels, then remove stale ones
+    let base_labels = pvc.metadata.labels.clone().unwrap_or_default();
+    let merged = LabelPropagator::merge_onto(&base_labels, propagated_labels);
+    let final_labels =
+        LabelPropagator::remove_stale_labels(&merged, propagated_labels, &existing_labels);
+    pvc.metadata.labels = Some(final_labels);
 
     match api.get(&name).await {
         Ok(existing) => {
@@ -321,7 +342,8 @@ pub(crate) fn build_config_map(
 
     data.insert(
         "NETWORK_PASSPHRASE".to_string(),
-        node.spec.network.passphrase().to_string(),
+                node.spec.network_passphrase()
+.to_string(),
     );
 
     if enable_mtls {
@@ -450,18 +472,33 @@ pub async fn delete_config_map(client: &Client, node: &StellarNode, dry_run: boo
 // ============================================================================
 
 /// Ensure a Deployment exists for RPC nodes
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[instrument(skip(client, node, propagated_labels), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_deployment(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
+    propagated_labels: &BTreeMap<String, String>,
     dry_run: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
-    let deployment = build_deployment(node, enable_mtls);
+    // Fetch existing resource labels for stale-label removal
+    let existing_labels = match api.get(&name).await {
+        Ok(existing) => existing.metadata.labels.clone().unwrap_or_default(),
+        Err(kube::Error::Api(e)) if e.code == 404 => BTreeMap::new(),
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
+    let mut deployment = build_deployment(node, enable_mtls);
+
+    // Apply label propagation: merge propagated labels, then remove stale ones
+    let base_labels = deployment.metadata.labels.clone().unwrap_or_default();
+    let merged = LabelPropagator::merge_onto(&base_labels, propagated_labels);
+    let final_labels =
+        LabelPropagator::remove_stale_labels(&merged, propagated_labels, &existing_labels);
+    deployment.metadata.labels = Some(final_labels);
 
     let patch = Patch::Apply(&deployment);
     api.patch(&name, &patch_params(dry_run), &patch).await?;
@@ -496,20 +533,13 @@ pub async fn ensure_canary_deployment(
     deployment.metadata.name = Some(name.clone());
 
     if let Some(spec) = &mut deployment.spec {
-        let mut labels = spec
-            .template
-            .metadata
-            .as_ref()
-            .and_then(|m| m.labels.clone())
-            .unwrap_or_default();
+        let mut labels = standard_labels(&canary_node);
         labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
         spec.template.metadata.as_mut().unwrap().labels = Some(labels.clone());
         spec.selector.match_labels = Some(labels.clone());
 
         let meta = &mut deployment.metadata;
-        let mut meta_labels = meta.labels.clone().unwrap_or_default();
-        meta_labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
-        meta.labels = Some(meta_labels);
+        meta.labels = Some(labels);
     }
 
     let patch = Patch::Apply(&deployment);
@@ -562,20 +592,35 @@ fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deployment {
 /// `seed_injection` describes how the validator seed should be mounted into
 /// the pod — either as an env var from a Secret/ExternalSecret, or as a CSI
 /// volume mount. Pass `None` when called for non-validator nodes.
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[instrument(skip(client, node, propagated_labels), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_statefulset(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
     seed_injection: Option<&kms_secret::SeedInjectionSpec>,
+    propagated_labels: &BTreeMap<String, String>,
     dry_run: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<StatefulSet> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
+    // Fetch existing resource labels for stale-label removal
+    let existing_labels = match api.get(&name).await {
+        Ok(existing) => existing.metadata.labels.clone().unwrap_or_default(),
+        Err(kube::Error::Api(e)) if e.code == 404 => BTreeMap::new(),
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
     // *** Pass seed_injection down to the builder ***
-    let statefulset = build_statefulset(node, enable_mtls, seed_injection);
+    let mut statefulset = build_statefulset(node, enable_mtls, seed_injection);
+
+    // Apply label propagation: merge propagated labels, then remove stale ones
+    let base_labels = statefulset.metadata.labels.clone().unwrap_or_default();
+    let merged = LabelPropagator::merge_onto(&base_labels, propagated_labels);
+    let final_labels =
+        LabelPropagator::remove_stale_labels(&merged, propagated_labels, &existing_labels);
+    statefulset.metadata.labels = Some(final_labels);
 
     let patch = Patch::Apply(&statefulset);
     api.patch(&name, &patch_params(dry_run), &patch).await?;
@@ -664,18 +709,33 @@ pub async fn delete_workload(client: &Client, node: &StellarNode, dry_run: bool)
 // ============================================================================
 
 /// Ensure a Service exists for the node
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[instrument(skip(client, node, propagated_labels), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_service(
     client: &Client,
     node: &StellarNode,
     enable_mtls: bool,
+    propagated_labels: &BTreeMap<String, String>,
     dry_run: bool,
 ) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
     let name = node.name_any();
 
-    let service = build_service(node, enable_mtls);
+    // Fetch existing resource labels for stale-label removal
+    let existing_labels = match api.get(&name).await {
+        Ok(existing) => existing.metadata.labels.clone().unwrap_or_default(),
+        Err(kube::Error::Api(e)) if e.code == 404 => BTreeMap::new(),
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
+    let mut service = build_service(node, enable_mtls);
+
+    // Apply label propagation: merge propagated labels, then remove stale ones
+    let base_labels = service.metadata.labels.clone().unwrap_or_default();
+    let merged = LabelPropagator::merge_onto(&base_labels, propagated_labels);
+    let final_labels =
+        LabelPropagator::remove_stale_labels(&merged, propagated_labels, &existing_labels);
+    service.metadata.labels = Some(final_labels);
 
     let patch = Patch::Apply(&service);
     api.patch(&name, &patch_params(dry_run), &patch).await?;
@@ -707,13 +767,11 @@ pub async fn ensure_canary_service(
     service.metadata.name = Some(name.clone());
 
     if let Some(spec) = &mut service.spec {
-        let mut selector = spec.selector.clone().unwrap_or_default();
-        selector.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
-        spec.selector = Some(selector);
+        let mut labels = standard_labels(node);
+        labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
+        spec.selector = Some(labels.clone());
 
         let meta = &mut service.metadata;
-        let mut labels = meta.labels.clone().unwrap_or_default();
-        labels.insert("stellar.org/rollout-type".to_string(), "canary".to_string());
         meta.labels = Some(labels);
     }
 
@@ -1047,7 +1105,7 @@ pub async fn ensure_ingress(client: &Client, node: &StellarNode, dry_run: bool) 
 
     info!("Ingress ensured for {}/{}", namespace, name);
 
-    if let RolloutStrategy::Canary(ref cfg) = node.spec.strategy {
+    if let Some(cfg) = node.spec.strategy.canary() {
         if node
             .status
             .as_ref()
@@ -1254,6 +1312,14 @@ fn build_pod_template(
             &node.name_any(),
         )),
         affinity: merge_workload_affinity(node),
+        security_context: Some(PodSecurityContext {
+            run_as_non_root: Some(true),
+            seccomp_profile: Some(SeccompProfile {
+                localhost_profile: None,
+                type_: "RuntimeDefault".to_string(),
+            }),
+            ..Default::default()
+        }),
         ..Default::default()
     };
 
@@ -1469,6 +1535,13 @@ fn build_pod_template(
     }
 
     // ==========================================================================
+    // Merge user-defined sidecar containers into the pod spec
+    // ==========================================================================
+    if let Some(sidecars) = &node.spec.sidecars {
+        pod_spec.containers.extend(sidecars.iter().cloned());
+    }
+
+    // ==========================================================================
     // NEW: Inject KMS/ESO/CSI seed env vars, volumes, and volume mounts
     // ==========================================================================
     if let Some(inj) = seed_injection {
@@ -1495,9 +1568,35 @@ fn build_pod_template(
     }
     // ==========================================================================
 
+    let mut apparmor_annotations = BTreeMap::new();
+    if let Some(containers) = &pod_spec.init_containers {
+        for container in containers {
+            apparmor_annotations.insert(
+                format!(
+                    "container.apparmor.security.beta.kubernetes.io/{}",
+                    container.name
+                ),
+                "runtime/default".to_string(),
+            );
+        }
+    }
+    for container in &pod_spec.containers {
+        apparmor_annotations.insert(
+            format!(
+                "container.apparmor.security.beta.kubernetes.io/{}",
+                container.name
+            ),
+            "runtime/default".to_string(),
+        );
+    }
+
     let mut pod_object_meta = ObjectMeta {
         labels: Some(labels.clone()),
-        annotations: None,
+        annotations: if apparmor_annotations.is_empty() {
+            None
+        } else {
+            Some(apparmor_annotations)
+        },
         ..Default::default()
     };
     if let Some(inj) = seed_injection {
@@ -1517,6 +1616,29 @@ fn build_pod_template(
     }
 }
 
+fn parse_cpu_millicores(cpu: &str) -> Option<u32> {
+    let trimmed = cpu.trim();
+    if let Some(milli) = trimmed.strip_suffix('m') {
+        return milli.parse::<u32>().ok();
+    }
+
+    let cores = trimmed.parse::<f64>().ok()?;
+    if cores.is_sign_negative() {
+        return None;
+    }
+
+    Some((cores * 1000.0).round() as u32)
+}
+
+fn derive_worker_threads(node: &StellarNode) -> u32 {
+    let millicores = parse_cpu_millicores(&node.spec.resources.limits.cpu)
+        .or_else(|| parse_cpu_millicores(&node.spec.resources.requests.cpu))
+        .unwrap_or(1000);
+
+    let cores = millicores.div_ceil(1000).clamp(1, 32);
+    cores.max(1)
+}
+
 fn network_spread_label_selector(spec: &StellarNodeSpec) -> LabelSelector {
     LabelSelector {
         match_labels: Some(BTreeMap::from([
@@ -1526,7 +1648,7 @@ fn network_spread_label_selector(spec: &StellarNodeSpec) -> LabelSelector {
             ),
             (
                 "stellar-network".to_string(),
-                spec.network.scheduling_label_value(),
+                spec.network.scheduling_label_value(&spec.custom_network_passphrase),
             ),
             (
                 "app.kubernetes.io/component".to_string(),
@@ -1734,9 +1856,50 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
 
     let mut env_vars = vec![EnvVar {
         name: "NETWORK_PASSPHRASE".to_string(),
-        value: Some(node.spec.network.passphrase().to_string()),
+        value: Some(node.spec.network_passphrase().to_string()),
         ..Default::default()
     }];
+
+    let worker_threads = derive_worker_threads(node);
+    match node.spec.node_type {
+        NodeType::Validator => {
+            env_vars.push(EnvVar {
+                name: "STELLAR_CORE_WORKER_THREADS".to_string(),
+                value: Some(worker_threads.to_string()),
+                ..Default::default()
+            });
+            env_vars.push(EnvVar {
+                name: "STELLAR_CORE_HTTP_QUERY_THREADS".to_string(),
+                value: Some((worker_threads.max(2) / 2).max(1).to_string()),
+                ..Default::default()
+            });
+        }
+        NodeType::Horizon => {
+            let ingest_workers = node
+                .spec
+                .horizon_config
+                .as_ref()
+                .map(|cfg| cfg.ingest_workers.max(1))
+                .unwrap_or(worker_threads);
+            env_vars.push(EnvVar {
+                name: "HORIZON_INGEST_WORKERS".to_string(),
+                value: Some(ingest_workers.to_string()),
+                ..Default::default()
+            });
+        }
+        NodeType::SorobanRpc => {
+            env_vars.push(EnvVar {
+                name: "SOROBAN_RPC_WORKER_THREADS".to_string(),
+                value: Some(worker_threads.to_string()),
+                ..Default::default()
+            });
+            env_vars.push(EnvVar {
+                name: "CAPTIVE_CORE_WORKER_THREADS".to_string(),
+                value: Some((worker_threads / 2).max(1).to_string()),
+                ..Default::default()
+            });
+        }
+    }
 
     // Source validator seed from Secret or shared RAM volume (KMS)
     if let NodeType::Validator = node.spec.node_type {
@@ -1946,6 +2109,19 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
             requests: Some(requests),
             limits: Some(limits),
             claims: None,
+        }),
+        security_context: Some(SecurityContext {
+            allow_privilege_escalation: Some(false),
+            capabilities: Some(Capabilities {
+                add: None,
+                drop: Some(vec!["ALL".to_string()]),
+            }),
+            run_as_non_root: Some(true),
+            seccomp_profile: Some(SeccompProfile {
+                localhost_profile: None,
+                type_: "RuntimeDefault".to_string(),
+            }),
+            ..Default::default()
         }),
         volume_mounts: Some(volume_mounts),
         ..Default::default()
@@ -2649,6 +2825,36 @@ mod ensure_pvc_tests {
                 },
                 replicas: 1,
                 ..Default::default()
+                min_available: None,
+                max_unavailable: None,
+                suspended: false,
+                alerting: false,
+                database: None,
+                managed_database: None,
+                autoscaling: None,
+                vpa_config: None,
+                ingress: None,
+                load_balancer: None,
+                global_discovery: None,
+                cross_cluster: None,
+                strategy: Default::default(),
+                maintenance_mode: false,
+                network_policy: None,
+                dr_config: None,
+                pod_anti_affinity: Default::default(),
+                placement: Default::default(),
+                topology_spread_constraints: None,
+                cve_handling: None,
+                snapshot_schedule: None,
+                restore_from_snapshot: None,
+                read_replica_config: None,
+                read_pool_endpoint: None,
+                db_maintenance_config: None,
+                oci_snapshot: None,
+                service_mesh: None,
+                forensic_snapshot: None,
+                label_propagation: None,
+                resource_meta: None,
             },
             status: None,
         }

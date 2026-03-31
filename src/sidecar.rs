@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::Utc;
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::{Event, ObjectReference, Pod};
 use kube::{
@@ -183,7 +184,7 @@ async fn report_recommendation(
     let now = chrono::Utc::now();
     let event = Event {
         metadata: ObjectMeta {
-            generate_name: Some(format!("{}-fix-", pod_name)),
+            generate_name: Some(format!("{pod_name}-fix-")),
             namespace: Some(namespace.to_string()),
             ..ObjectMeta::default()
         },

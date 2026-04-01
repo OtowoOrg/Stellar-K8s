@@ -49,7 +49,7 @@ clap_complete = "4.5"
 chrono = { version = "0.4", features = ["serde"] }
 # Pinned to fix RUSTSEC-2026-0009 (stack exhaustion DoS); also used transitively
 # by rcgen/yasna/x509-parser.
-time = { version = "0.3.37", optional = true }
+time = { version = "0.3.47", optional = true }
 # Pinned to fix RUSTSEC-2026-0007; used transitively by many HTTP/async crates.
 bytes = { version = "1.11.1", optional = true }
 
@@ -154,9 +154,9 @@ reconciler-fuzz = []
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3"
-wiremock = "=0.6.4"
+wiremock = "=0.6.5"
 proptest = "1.5"
-wat = "1.245"
+wat = "1.246"
 
 [[bin]]
 name = "stellar-operator"

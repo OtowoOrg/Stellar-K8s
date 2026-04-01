@@ -18,7 +18,7 @@ jobs:
     name: Cargo Security Audit
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -32,7 +32,7 @@ jobs:
     name: Trivy Vulnerability Scanner (Code/FS/Dep/Containers)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     
     - name: Run Trivy vulnerability scanner FS
       uses: aquasecurity/trivy-action@master
@@ -54,12 +54,12 @@ jobs:
         args: ['--scanners', 'vuln', '--vuln-type', 'library']
     
     - name: Upload Trivy scan results FS
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: trivy-fs-results.sarif
         
     - name: Upload Trivy cargo results
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: trivy-cargo-results.sarif
 
@@ -67,7 +67,7 @@ jobs:
     name: Trivy Container Scan
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     
     - name: Build Docker image
       run: docker build -t stellar-operator:scan .
@@ -81,7 +81,7 @@ jobs:
         severity: 'CRITICAL,HIGH'
 
     - name: Upload Trivy Docker scan
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: trivy-docker.sarif
 
@@ -89,7 +89,7 @@ jobs:
     name: IaC Security Scan (Helm/K8s manifests)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     
     - name: Checkov IaC scan
       uses: bridgecrewio/checkov-action@v12
@@ -100,7 +100,7 @@ jobs:
         output_file_path: checkov-results.sarif
 
     - name: Upload Checkov results
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: checkov-results.sarif
 
@@ -108,7 +108,7 @@ jobs:
     name: Kubernetes Compliance (CIS Kube-bench)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     
     - name: Run kube-bench
       run: |
@@ -122,7 +122,7 @@ jobs:
     name: Penetration Testing Scenarios (k6)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     
     - name: Setup k6
       uses: grafana/xk6-action@v2
@@ -142,7 +142,7 @@ jobs:
     needs: [cargo-audit, trivy-vuln-scan, docker-trivy, iac-checkov, compliance-kube-bench, pen-testing-k6]
     if: always()
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Security Status Summary
       run: |
         echo \"## Security Scan Results\" >> $GITHUB_STEP_SUMMARY

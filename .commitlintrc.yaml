@@ -16,13 +16,7 @@ rules:
       - style
       - test
   subject-case:
-    - 2
-    - always
-    - - sentence-case
-      - start-case
-      - pascal-case
-      - upper-case
-      - lower-case
+    - 0
   body-max-line-length:
     - 2
     - always

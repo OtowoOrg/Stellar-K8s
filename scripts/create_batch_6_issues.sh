@@ -2,6 +2,10 @@
 # Stellar-K8s Wave Issue Creation Script - BATCH 6
 # 10 Elite Engineering Issues (200 pts each)
 
+# Source shared retry/backoff and dry-run helper.
+# shellcheck source=scripts/retry_helper.sh
+source "$(dirname "$0")/retry_helper.sh"
+
 # Helper to create label if not exists
 create_label() {
   gh label create "$1" --color "$2" --description "$3" || true
@@ -19,11 +23,12 @@ create_label "automation" "ffb3b3" "Automated workflows"
 echo "Creating Batch 6 (Elite) issues..."
 
 # 1. Cross-Region Multi-Cluster Disaster Recovery (High - 200 pts)
-gh issue create \
-  --title "Implement Cross-Region Multi-Cluster Disaster Recovery" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue \
+  "Implement Cross-Region Multi-Cluster Disaster Recovery" \
+  "stellar-wave,architecture,reliability" \
+  "### 🔴 Difficulty: High (200 Points)
 
-Standard backups are not enough. This task involves building a controller that manages a 'hot standby' node in a completely different Kubernetes cluster (and region), ensuring minimal RTO/RPO for the Stellar network.
+Standard backups are not enough. This task involves building a controller that manages a hot standby node in a completely different Kubernetes cluster (and region), ensuring minimal RTO/RPO for the Stellar network.
 
 ### ✅ Acceptance Criteria
 - Implement cross-cluster state synchronization logic.
@@ -33,12 +38,13 @@ Standard backups are not enough. This task involves building a controller that m
 ### 📚 Resources
 - [Stellar High Availability](https://developers.stellar.org/docs/run-core-node/monitoring#high-availability)
 - [Multi-cluster K8s with Submariner](https://submariner.io/)
-" --label "stellar-wave,architecture,reliability" || echo "Failed issue 1"
+"
 
 # 2. MetalLB/BGP Anycast for Node Discovery (High - 200 pts)
-gh issue create \
-  --title "Integrate MetalLB/BGP Anycast for Global Node Discovery" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue \
+  "Integrate MetalLB/BGP Anycast for Global Node Discovery" \
+  "stellar-wave,kubernetes,reliability" \
+  "### 🔴 Difficulty: High (200 Points)
 
 To make Stellar nodes truly resilient, we should announce node IPs via BGP Anycast. This allows the network to route traffic to the nearest healthy node automatically.
 
@@ -50,28 +56,30 @@ To make Stellar nodes truly resilient, we should announce node IPs via BGP Anyca
 ### 📚 Resources
 - [MetalLB BGP Mode](https://metallb.universe.tf/concepts/bgp/)
 - [Cilium BGP Control Plane](https://docs.cilium.io/en/stable/network/bgp-control-plane/)
-" --label "stellar-wave,kubernetes,reliability" || echo "Failed issue 2"
+"
 
 # 3. CloudNativePG (Postgres Operator) Integration (High - 200 pts)
-gh issue create \
-  --title "Automate High-Availability DBs via CloudNativePG Integration" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue \
+  "Automate High-Availability DBs via CloudNativePG Integration" \
+  "stellar-wave,architecture,automation" \
+  "### 🔴 Difficulty: High (200 Points)
 
 Currently, DB management is manual or basic. This task involves integrating the Stellar-K8s operator with the CloudNativePG operator to manage self-healing, HA Postgres clusters for Horizon and Core.
 
 ### ✅ Acceptance Criteria
-- Provision \`Cluster\` resources (CNPG) instead of simple Deployments.
+- Provision Cluster resources (CNPG) instead of simple Deployments.
 - Automated backup/restore integration with CNPG Barman.
 - Connection pooling support (PgBouncer).
 
 ### 📚 Resources
 - [CloudNativePG Documentation](https://cloudnative-pg.io/documentation/1.22/)
-" --label "stellar-wave,architecture,automation" || echo "Failed issue 3"
+"
 
 # 4. Hardware Security Module (HSM) Native Support (High - 200 pts)
-gh issue create \
-  --title "Implement Native Hardware Security Module (HSM) Support" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue \
+  "Implement Native Hardware Security Module (HSM) Support" \
+  "stellar-wave,security,architecture" \
+  "### 🔴 Difficulty: High (200 Points)
 
 Validators require the highest level of key security. This task implements native integration for cloud HSMs (AWS CloudHSM, Azure Dedicated HSM) to sign transactions without keys ever leaving the secure module.
 
@@ -82,12 +90,13 @@ Validators require the highest level of key security. This task implements nativ
 
 ### 📚 Resources
 - [Stellar Core Security](https://developers.stellar.org/docs/run-core-node/security-best-practices)
-" --label "stellar-wave,security,architecture" || echo "Failed issue 4"
+"
 
 # 5. Automated Performance Regression Testing (High - 200 pts)
-gh issue create \
-  --title "Implement Automated Performance Regression Test Suite" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue \
+  "Implement Automated Performance Regression Test Suite" \
+  "stellar-wave,performance,testing" \
+  "### 🔴 Difficulty: High (200 Points)
 
 As the operator grows, performance can degrade. Implement an automated benchmarking suite that measures TPS, latency, and resource consumption for every new release.
 
@@ -98,14 +107,15 @@ As the operator grows, performance can degrade. Implement an automated benchmark
 
 ### 📚 Resources
 - [k6 for Kubernetes](https://k6.io/docs/testing-guides/running-k6-on-kubernetes/)
-" --label "stellar-wave,performance,testing" || echo "Failed issue 5"
+"
 
 # 6. Wasm-based Validating Admission Webhook (High - 200 pts)
-gh issue create \
-  --title "Implement Wasm-powered Validating Admission Webhook" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue \
+  "Implement Wasm-powered Validating Admission Webhook" \
+  "stellar-wave,architecture,rust" \
+  "### 🔴 Difficulty: High (200 Points)
 
-Standard validation is static. Implement a webhook that allows users to provide custom Wasm-based validation logic for their \`StellarNode\` resources (e.g., complex infrastructure constraints).
+Standard validation is static. Implement a webhook that allows users to provide custom Wasm-based validation logic for their StellarNode resources (e.g., complex infrastructure constraints).
 
 ### ✅ Acceptance Criteria
 - Rust-based admission controller integration.
@@ -114,12 +124,13 @@ Standard validation is static. Implement a webhook that allows users to provide 
 
 ### 📚 Resources
 - [Kubernetes Admission Controllers](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/)
-" --label "stellar-wave,architecture,rust" || echo "Failed issue 6"
+"
 
 # 7. Zero-Knowledge Telemetry Proxy (High - 200 pts)
-gh issue create \
-  --title "Implement Zero-Knowledge Telemetry Proxy" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue \
+  "Implement Zero-Knowledge Telemetry Proxy" \
+  "stellar-wave,security,observability" \
+  "### 🔴 Difficulty: High (200 Points)
 
 Nodes need to report health, but privacy is key. Implement a proxy that scrubs sensitive metadata (IPs, cluster names) from telemetry before sending it to public dashboards or monitoring servers.
 
@@ -130,12 +141,13 @@ Nodes need to report health, but privacy is key. Implement a proxy that scrubs s
 
 ### 📚 Resources
 - [Stellar Dashboard](https://dashboard.stellar.org/)
-" --label "stellar-wave,security,observability" || echo "Failed issue 7"
+"
 
 # 8. Automated Rolling Security Patching logic (High - 200 pts)
-gh issue create \
-  --title "Implement Automated Rolling Security Patching" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue \
+  "Implement Automated Rolling Security Patching" \
+  "stellar-wave,security,automation" \
+  "### 🔴 Difficulty: High (200 Points)
 
 When CVEs are found in standard images, the operator should automatically trigger a rolling update to the patched version, but only after passing automated smoke tests on a canary node.
 
@@ -146,12 +158,13 @@ When CVEs are found in standard images, the operator should automatically trigge
 
 ### 📚 Resources
 - [ArgoCD Rollouts](https://argoproj.github.io/argo-rollouts/)
-" --label "stellar-wave,security,automation" || echo "Failed issue 8"
+"
 
 # 9. Stellar Core Horizontal 'Read-Only' Scaling (High - 200 pts)
-gh issue create \
-  --title "Implement Horizontal Scaling for Read-Only Nodes" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue \
+  "Implement Horizontal Scaling for Read-Only Nodes" \
+  "stellar-wave,architecture,performance" \
+  "### 🔴 Difficulty: High (200 Points)
 
 While validators are sensitive, read-only nodes can be scaled horizontally. Implement a separate controller/logic to manage auto-scaling pools of Read-Only Stellar nodes.
 
@@ -162,12 +175,13 @@ While validators are sensitive, read-only nodes can be scaled horizontally. Impl
 
 ### 📚 Resources
 - [Stellar Core Scaling](https://developers.stellar.org/docs/run-core-node/monitoring#scaling)
-" --label "stellar-wave,architecture,performance" || echo "Failed issue 9"
+"
 
 # 10. Custom Scheduler for Data Proximity (High - 200 pts)
-gh issue create \
-  --title "Implement Custom Scheduler for Data/Peer Proximity" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue \
+  "Implement Custom Scheduler for Data/Peer Proximity" \
+  "stellar-wave,architecture,performance" \
+  "### 🔴 Difficulty: High (200 Points)
 
 Latency between peers is critical. Implement a custom Kubernetes scheduler (or scheduler-plugin) that places pods based on network proximity to other high-value peers.
 
@@ -178,6 +192,6 @@ Latency between peers is critical. Implement a custom Kubernetes scheduler (or s
 
 ### 📚 Resources
 - [Kubernetes Scheduler Plugins](https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/)
-" --label "stellar-wave,architecture,performance" || echo "Failed issue 10"
+"
 
 echo "Done! Batch 6 Elite issues created."

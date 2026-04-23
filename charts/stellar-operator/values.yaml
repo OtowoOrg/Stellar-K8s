@@ -84,8 +84,6 @@ affinity: {}
 # PodDisruptionBudget configuration for operator deployment
 podDisruptionBudget:
   enabled: false
-  minAvailable: null
-  maxUnavailable: null
 
 # Operator configuration
 operator:

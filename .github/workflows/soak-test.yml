@@ -23,6 +23,10 @@ on:
         description: "Max allowed RSS growth in kB (default: 5120 = 5 MB)"
         required: false
         default: "5120"
+      cleanup_timeout_seconds:
+        description: "Cleanup wait timeout in seconds (default: 120)"
+        required: false
+        default: "120"
   schedule:
     - cron: "0 2 * * 6"   # Every Saturday at 02:00 UTC
 
@@ -130,6 +134,7 @@ jobs:
           OPERATOR_NAMESPACE: ${{ env.OPERATOR_NAMESPACE }}
           SOAK_DURATION: ${{ github.event.inputs.soak_duration || '3600' }}
           THRESHOLD_KB: ${{ github.event.inputs.threshold_kb || '5120' }}
+          CLEANUP_TIMEOUT_SECONDS: ${{ github.event.inputs.cleanup_timeout_seconds || '120' }}
           TEST_NAMESPACE: soak-test
           RESULTS_FILE: /tmp/soak-memory.log
         run: bash scripts/soak-test.sh

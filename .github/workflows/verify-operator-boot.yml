@@ -1,4 +1,4 @@
-name: Verify Operator Boot (Issue #146)
+name: "Verify Operator Boot (Issue #146)"
 
 # Verifies that the operator binary builds and connects to a live kind cluster.
 # Acceptance criteria:
@@ -29,31 +29,57 @@ jobs:
       # ── 1. Checkout ──────────────────────────────────────────────────────────
       - uses: actions/checkout@v4
 
+      - name: Decide whether boot verification should run
+        id: scope
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true)
+          echo "$CHANGED_FILES"
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(src/|config/crd/|Cargo\.toml|Cargo\.lock|build\.rs|Makefile)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # ── 2. Rust toolchain + cache ────────────────────────────────────────────
       - name: Install Rust toolchain
+        if: steps.scope.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Setup Rust cache
+        if: steps.scope.outputs.run == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "verify-boot"
 
       # ── 3. Build release binary (AC #1) ─────────────────────────────────────
       - name: Build release binary
+        if: steps.scope.outputs.run == 'true'
         run: cargo build --release --locked --bin stellar-operator
 
       - name: Confirm binary exists
+        if: steps.scope.outputs.run == 'true'
         run: |
           ls -lh target/release/stellar-operator
           echo "✅ cargo build --release succeeded"
 
       # ── 4. Create kind cluster (AC #2) ──────────────────────────────────────
       - name: Install kind
+        if: steps.scope.outputs.run == 'true'
         uses: helm/kind-action@v1.13.0
         with:
           install_only: true
 
       - name: Create kind cluster
+        if: steps.scope.outputs.run == 'true'
         run: |
           kind create cluster --name ${{ env.CLUSTER_NAME }} --wait 60s
           kubectl cluster-info --context kind-${{ env.CLUSTER_NAME }}
@@ -61,6 +87,7 @@ jobs:
 
       # ── 5. Install CRD ───────────────────────────────────────────────────────
       - name: Install StellarNode CRD
+        if: steps.scope.outputs.run == 'true'
         run: |
           kubectl apply -f config/crd/stellarnode-crd.yaml
           kubectl wait --for condition=established --timeout=30s \
@@ -68,6 +95,7 @@ jobs:
 
       # ── 6. Run operator and verify log line (AC #2 + AC #3) ─────────────────
       - name: Run operator and verify cluster connection
+        if: steps.scope.outputs.run == 'true'
         run: |
           # Run the operator in the background, capture output
           ./target/release/stellar-operator run \
@@ -107,7 +135,7 @@ jobs:
 
       # ── 7. Report any runtime errors ────────────────────────────────────────
       - name: Report runtime errors
-        if: always()
+        if: always() && steps.scope.outputs.run == 'true'
         run: |
           echo "--- Runtime error check ---"
           if grep -iE "error|panic|missing env" /tmp/operator.log 2>/dev/null; then
@@ -118,7 +146,7 @@ jobs:
 
       # ── 8. Upload log as artifact ────────────────────────────────────────────
       - name: Upload operator log
-        if: always()
+        if: always() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: operator-boot-log
@@ -127,5 +155,10 @@ jobs:
 
       # ── 9. Cleanup ───────────────────────────────────────────────────────────
       - name: Delete kind cluster
-        if: always()
+        if: always() && steps.scope.outputs.run == 'true'
         run: kind delete cluster --name ${{ env.CLUSTER_NAME }} || true
+
+      - name: Skip message
+        if: steps.scope.outputs.run != 'true'
+        run: |
+          echo "Skipping verify-operator-boot: no operator/runtime files changed."

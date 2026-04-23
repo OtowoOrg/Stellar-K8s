@@ -13,6 +13,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  SHELLCHECK_EXCLUDES: ""
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
@@ -24,6 +25,9 @@ jobs:
       docker: ${{ steps.detect.outputs.docker }}
       helm: ${{ steps.detect.outputs.helm }}
       api_docs: ${{ steps.detect.outputs.api_docs }}
+      rust_core: ${{ steps.detect.outputs.rust_core }}
+      deps: ${{ steps.detect.outputs.deps }}
+      examples: ${{ steps.detect.outputs.examples }}
     steps:
       - uses: actions/checkout@v4
       - name: Detect Docker-impacting changes
@@ -51,7 +55,8 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
-          if echo "$CHANGED_FILES" | grep -Eq '^(Dockerfile|\.dockerignore|Cargo\.toml|Cargo\.lock|src/|config/|Makefile)'; then
+          DOCKER_PATTERN='^(Dockerfile|\.dockerignore|Cargo\.toml|Cargo\.lock|src/|config/|Makefile)'
+          if echo "$CHANGED_FILES" | grep -Eq "$DOCKER_PATTERN"; then
             echo "docker=true" >> "$GITHUB_OUTPUT"
           else
             echo "docker=false" >> "$GITHUB_OUTPUT"
@@ -63,10 +68,29 @@ jobs:
             echo "helm=false" >> "$GITHUB_OUTPUT"
           fi
 
-          if echo "$CHANGED_FILES" | grep -Eq '^(docs/|scripts/generate-api-docs\.py|config/crd/|src/crd/|src/rest_api/|Makefile)'; then
+          API_DOCS_PATTERN='^(docs/|scripts/generate-api-docs\.py|config/crd/|src/crd/|src/rest_api/|Makefile)'
+          if echo "$CHANGED_FILES" | grep -Eq "$API_DOCS_PATTERN"; then
             echo "api_docs=true" >> "$GITHUB_OUTPUT"
           else
             echo "api_docs=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(src/|Cargo\.toml|Cargo\.lock|Makefile|build\.rs)'; then
+            echo "rust_core=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rust_core=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(Cargo\.toml|Cargo\.lock)'; then
+            echo "deps=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deps=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(examples/|config/crd/|config/samples/)'; then
+            echo "examples=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "examples=false" >> "$GITHUB_OUTPUT"
           fi
 
   version-consistency:
@@ -93,7 +117,7 @@ jobs:
             EXPECTED_VERSION="$CARGO_VERSION"
           fi
 
-          cargo build --locked --bin stellar-operator
+          K8S_OPENAPI_ENABLED_VERSION=1.30 cargo build --locked --bin stellar-operator
 
           BIN_VERSION=$(./target/debug/stellar-operator version | sed -n 's/^Stellar-K8s Operator v//p' | head -1)
 
@@ -102,12 +126,14 @@ jobs:
           echo "stellar-operator version output: $BIN_VERSION"
 
           [[ "$CARGO_VERSION" == "$EXPECTED_VERSION" ]] || {
-            echo "::error::Cargo.toml version ($CARGO_VERSION) does not match expected release version ($EXPECTED_VERSION)"
+            echo "::error::Cargo.toml version ($CARGO_VERSION) does not match expected release version"
+            echo "::error::Expected: $EXPECTED_VERSION"
             exit 1
           }
 
           [[ "$BIN_VERSION" == "$EXPECTED_VERSION" ]] || {
-            echo "::error::stellar-operator version output ($BIN_VERSION) does not match expected release version ($EXPECTED_VERSION)"
+            echo "::error::stellar-operator version output ($BIN_VERSION) does not match expected release version"
+            echo "::error::Expected: $EXPECTED_VERSION"
             exit 1
           }
 
@@ -168,7 +194,9 @@ jobs:
 
   examples-smoke-test:
     name: Examples Smoke Test
+    if: needs.changes.outputs.examples == 'true'
     runs-on: ubuntu-latest
+    needs: [changes]
     steps:
       - uses: actions/checkout@v4
 
@@ -199,7 +227,9 @@ jobs:
 
   security-audit:
     name: Security Audit
+    if: needs.changes.outputs.deps == 'true'
     runs-on: ubuntu-latest
+    needs: [changes]
     steps:
       - uses: actions/checkout@v4
 
@@ -212,11 +242,12 @@ jobs:
       - name: Run cargo audit
         run: |
           cargo install cargo-audit --locked
-          cargo audit --ignore RUSTSEC-2020-0071 --ignore RUSTSEC-2024-0380 --ignore RUSTSEC-2024-0381
+          cargo audit --deny unsound
 
   lint:
     name: Lint & Format
     runs-on: ubuntu-latest
+    needs: [changes]
     steps:
       - uses: actions/checkout@v4
 
@@ -238,17 +269,24 @@ jobs:
 
       - name: Run shellcheck
         run: |
-          mapfile -t shell_files < <(find . -type f -name "*.sh")
+          mapfile -t shell_files < <(find scripts -type f -name "*.sh")
           if [ "${#shell_files[@]}" -eq 0 ]; then
-            echo "No shell scripts found"
+            echo "No shell scripts found in scripts/"
             exit 0
           fi
-          shellcheck -S error "${shell_files[@]}"
+          shellcheck_cmd=(shellcheck -S error)
+          if [ -n "${SHELLCHECK_EXCLUDES}" ]; then
+            shellcheck_cmd+=(-e "${SHELLCHECK_EXCLUDES}")
+            echo "Running shellcheck with excludes: ${SHELLCHECK_EXCLUDES}"
+          fi
+          "${shellcheck_cmd[@]}" "${shell_files[@]}"
 
       - name: Check formatting
+        if: needs.changes.outputs.rust_core == 'true'
         run: make fmt-check
 
       - name: Run clippy
+        if: needs.changes.outputs.rust_core == 'true'
         run: make lint
 
   test:

@@ -117,6 +117,7 @@ Please do not delete the template sections. PRs with empty descriptions or unche
 
 - **Formatting**: Always run `cargo fmt` before committing.
 - **Linting**: We use Clippy. Ensure `cargo clippy --all-targets --all-features -- -D warnings` passes.
+- **Shell scripts**: We lint scripts under `scripts/` with ShellCheck. Run `find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error` locally.
 - **Security**: All dependencies must be audited. We resolve all `RUSTSEC` advisories immediately.
 - **Error Handling**: Prefer the `Result<T>` type defined in `src/error.rs` using `thiserror`.
 

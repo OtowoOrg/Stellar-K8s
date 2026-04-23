@@ -19,7 +19,7 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy
-        entry: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        entry: env K8S_OPENAPI_ENABLED_VERSION=1.30 cargo clippy --workspace --all-targets --all-features -- -D warnings
         language: system
         types: [rust]
         pass_filenames: false

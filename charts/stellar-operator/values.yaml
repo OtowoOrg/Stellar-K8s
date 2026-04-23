@@ -141,6 +141,15 @@ defaultResources:
       cpu: "4"
       memory: "8Gi"
 
+# Feature flags — toggle operator capabilities at runtime without restart.
+featureFlags:
+  enableCveScanning: false
+  enableReadPool: false
+  enableDr: false
+  enablePeerDiscovery: true
+  enableArchiveHealth: true
+  enableSorobanMetrics: false
+
 security:
   audit:
     enabled: true

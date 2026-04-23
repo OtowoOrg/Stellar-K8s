@@ -365,56 +365,28 @@
     },
     "featureFlags": {
       "type": "object",
-      "additionalProperties": false,
-      "description": "Runtime feature flags written into the stellar-operator-config ConfigMap",
+      "description": "Feature flag toggles for operator capabilities",
+      "additionalProperties": {
+        "type": "boolean"
+      },
       "properties": {
         "enableCveScanning": {
-          "type": "string",
-          "enum": [
-            "true",
-            "false"
-          ],
-          "description": "Enable automatic CVE patch reconciliation"
+          "type": "boolean"
         },
         "enableReadPool": {
-          "type": "string",
-          "enum": [
-            "true",
-            "false"
-          ],
-          "description": "Enable read-replica pool management"
+          "type": "boolean"
         },
         "enableDr": {
-          "type": "string",
-          "enum": [
-            "true",
-            "false"
-          ],
-          "description": "Enable disaster-recovery drill scheduling"
+          "type": "boolean"
         },
         "enablePeerDiscovery": {
-          "type": "string",
-          "enum": [
-            "true",
-            "false"
-          ],
-          "description": "Enable automatic peer discovery"
+          "type": "boolean"
         },
         "enableArchiveHealth": {
-          "type": "string",
-          "enum": [
-            "true",
-            "false"
-          ],
-          "description": "Enable history archive health checks"
+          "type": "boolean"
         },
         "enableSorobanMetrics": {
-          "type": "string",
-          "enum": [
-            "true",
-            "false"
-          ],
-          "description": "Enable Soroban-specific Prometheus metrics collection"
+          "type": "boolean"
         }
       }
     },

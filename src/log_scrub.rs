@@ -308,7 +308,7 @@ mod tests {
         // A valid-looking Stellar seed (56 base58 chars starting with S)
         let seed = "SCZANGBA5RLMQ4DQTARF4VIRYOIMTUPN4MXQHZIX3BGOANFZFZQAVSC";
         let input = format!("reconciling node seed={seed}");
-        let output = redact(input);
+        let output = redact(&input);
         assert!(!output.contains(seed), "seed must be redacted");
         assert!(
             output.contains("[REDACTED:stellar_seed]"),
@@ -321,7 +321,7 @@ mod tests {
         // Public keys start with 'G' — must NOT be redacted
         let pubkey = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
         let input = format!("node public_key={pubkey}");
-        let output = redact(input);
+        let output = redact(&input);
         // Public keys are 56 chars starting with G — not matched by stellar_seed pattern
         assert!(
             output.contains(pubkey),
@@ -333,7 +333,7 @@ mod tests {
     fn test_pem_private_key_is_redacted() {
         let pem = "-----BEGIN EC PRIVATE KEY-----\nABCDEFGHIJKLMNOP\n-----END EC PRIVATE KEY-----";
         let input = format!("loaded key: {pem}");
-        let output = redact(input);
+        let output = redact(&input);
         assert!(
             !output.contains("BEGIN EC PRIVATE KEY"),
             "PEM block must be redacted"
@@ -358,7 +358,7 @@ mod tests {
         let b64 = "dGhpcyBpcyBhIHNlY3JldCBrZXkgbWF0ZXJpYWw=";
         assert!(b64.len() >= 40);
         let input = format!("raw_payload={b64}");
-        let output = redact(input);
+        let output = redact(&input);
         assert!(
             !output.contains(b64),
             "long base64 must be redacted: {output}"
@@ -371,7 +371,7 @@ mod tests {
         // Short base64 (< 40 chars) — common in k8s UIDs, should NOT be redacted
         let short = "c3RlbGxhcg=="; // "stellar" in base64, 12 chars
         let input = format!("uid={short}");
-        let output = redact(input);
+        let output = redact(&input);
         assert!(output.contains(short), "short base64 must NOT be redacted");
     }
 
@@ -381,7 +381,7 @@ mod tests {
         let hash = "a3f5c2d1e4b6a7890123456789abcdef0123456789abcdef0123456789abcdef";
         assert_eq!(hash.len(), 64);
         let input = format!("internal_hash={hash}");
-        let output = redact(input);
+        let output = redact(&input);
         assert!(
             !output.contains(hash),
             "hex hash must be redacted: {output}"
@@ -394,7 +394,7 @@ mod tests {
         // Short hex (< 64 chars) — common in resource versions, should NOT be redacted
         let short_hex = "deadbeef1234";
         let input = format!("resource_version={short_hex}");
-        let output = redact(input);
+        let output = redact(&input);
         assert!(output.contains(short_hex), "short hex must NOT be redacted");
     }
 
@@ -410,7 +410,7 @@ mod tests {
         let seed = "SCZANGBA5RLMQ4DQTARF4VIRYOIMTUPN4MXQHZIX3BGOANFZFZQAVSC";
         let hash = "a3f5c2d1e4b6a7890123456789abcdef0123456789abcdef0123456789abcdef";
         let input = format!("seed={seed} hash={hash}");
-        let output = redact(input);
+        let output = redact(&input);
         assert!(!output.contains(seed));
         assert!(!output.contains(hash));
         assert!(output.contains("[REDACTED:stellar_seed]"));
@@ -421,7 +421,7 @@ mod tests {
     fn test_redact_is_idempotent() {
         let seed = "SCZANGBA5RLMQ4DQTARF4VIRYOIMTUPN4MXQHZIX3BGOANFZFZQAVSC";
         let input = format!("seed={seed}");
-        let once = redact(input);
+        let once = redact(&input);
         let twice = redact(&once);
         assert_eq!(once, twice, "redact must be idempotent");
     }

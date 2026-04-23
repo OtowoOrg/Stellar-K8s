@@ -2939,4 +2939,75 @@ mod ensure_pvc_tests {
 
         assert!(!pvc_needs_update(&existing, &desired));
     }
+
+    // -----------------------------------------------------------------------
+    // Retention policy — Delete scenario
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn should_delete_pvc_returns_true_for_delete_policy() {
+        use crate::crd::types::RetentionPolicy;
+        let mut node = test_node();
+        node.spec.storage.retention_policy = RetentionPolicy::Delete;
+        assert!(
+            node.spec.should_delete_pvc(),
+            "Delete policy must trigger PVC deletion"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Retention policy — Retain scenario
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn should_delete_pvc_returns_false_for_retain_policy() {
+        use crate::crd::types::RetentionPolicy;
+        let mut node = test_node();
+        node.spec.storage.retention_policy = RetentionPolicy::Retain;
+        assert!(
+            !node.spec.should_delete_pvc(),
+            "Retain policy must prevent PVC deletion"
+        );
+    }
+
+    #[test]
+    fn default_retention_policy_is_delete() {
+        // StorageConfig::default() must use Delete so orphaned PVCs are
+        // cleaned up unless the user explicitly opts into Retain.
+        let node = test_node();
+        assert!(
+            node.spec.should_delete_pvc(),
+            "default retention policy must be Delete"
+        );
+    }
+
+    #[test]
+    fn pvc_built_with_delete_policy_has_correct_storage_class() {
+        use crate::crd::types::RetentionPolicy;
+        let mut node = test_node();
+        node.spec.storage.retention_policy = RetentionPolicy::Delete;
+        let pvc = build_pvc(&node, "fast-ssd".to_string());
+        assert_eq!(
+            pvc.spec
+                .as_ref()
+                .and_then(|s| s.storage_class_name.as_deref()),
+            Some("fast-ssd"),
+            "PVC storage class must be preserved regardless of retention policy"
+        );
+    }
+
+    #[test]
+    fn pvc_built_with_retain_policy_has_correct_storage_class() {
+        use crate::crd::types::RetentionPolicy;
+        let mut node = test_node();
+        node.spec.storage.retention_policy = RetentionPolicy::Retain;
+        let pvc = build_pvc(&node, "standard".to_string());
+        assert_eq!(
+            pvc.spec
+                .as_ref()
+                .and_then(|s| s.storage_class_name.as_deref()),
+            Some("standard"),
+            "PVC storage class must be preserved regardless of retention policy"
+        );
+    }
 }

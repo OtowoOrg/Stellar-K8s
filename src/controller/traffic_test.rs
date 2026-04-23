@@ -187,7 +187,7 @@ mod tests {
                 read_pool_endpoint: None,
                 sidecars: None,
                 custom_network_passphrase: None,
-            nat_traversal: None,
+                nat_traversal: None,
             },
             status: None,
         }

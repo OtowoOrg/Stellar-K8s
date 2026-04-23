@@ -19,10 +19,12 @@ pub struct ArchiveIntegrityCheckResult {
     /// Whether the integrity check passed
     pub healthy: bool,
     /// Number of checkpoints verified
+    #[allow(dead_code)]
     pub checkpoints_verified: u32,
     /// Details of the check
     pub message: String,
     /// Error message if the check failed
+    #[allow(dead_code)]
     pub error: Option<String>,
 }
 

@@ -43,7 +43,7 @@ use tracing::{debug, error, info, info_span, instrument, warn};
 use tracing_subscriber::{reload::Handle, EnvFilter, Registry};
 
 use crate::crd::{
-    Condition, DisasterRecoveryStatus, NodeType, RolloutStrategy, SpecValidationError, StellarNode,
+    Condition, DisasterRecoveryStatus, NodeType, SpecValidationError, StellarNode,
     StellarNodeStatus,
 };
 use crate::error::{Error, Result};
@@ -2875,18 +2875,18 @@ async fn run_archive_checkpoint_verification(
 /// Helper to parse duration string (e.g. "1h", "6h", "24h")
 fn parse_duration(s: &str) -> Result<Duration> {
     let s = s.trim();
-    if s.ends_with('h') {
-        let hours = s[..s.len() - 1]
+    if let Some(h) = s.strip_suffix('h') {
+        let hours = h
             .parse::<u64>()
             .map_err(|_| Error::ConfigError(format!("Invalid duration: {s}")))?;
         Ok(Duration::from_secs(hours * 3600))
-    } else if s.ends_with('m') {
-        let mins = s[..s.len() - 1]
+    } else if let Some(m) = s.strip_suffix('m') {
+        let mins = m
             .parse::<u64>()
             .map_err(|_| Error::ConfigError(format!("Invalid duration: {s}")))?;
         Ok(Duration::from_secs(mins * 60))
-    } else if s.ends_with('s') {
-        let secs = s[..s.len() - 1]
+    } else if let Some(sec) = s.strip_suffix('s') {
+        let secs = sec
             .parse::<u64>()
             .map_err(|_| Error::ConfigError(format!("Invalid duration: {s}")))?;
         Ok(Duration::from_secs(secs))

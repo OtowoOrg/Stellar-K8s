@@ -117,21 +117,21 @@ fn calculate_window(
 
 fn parse_duration_string(s: &str) -> Result<Duration> {
     let s = s.trim();
-    if s.ends_with('h') {
-        let h = s[..s.len() - 1]
+    if let Some(h) = s.strip_suffix('h') {
+        let hours = h
             .parse::<u64>()
             .map_err(|_| Error::ConfigError(format!("Invalid duration: {s}")))?;
-        Ok(Duration::from_secs(h * 3600))
-    } else if s.ends_with('m') {
-        let m = s[..s.len() - 1]
+        Ok(Duration::from_secs(hours * 3600))
+    } else if let Some(m) = s.strip_suffix('m') {
+        let mins = m
             .parse::<u64>()
             .map_err(|_| Error::ConfigError(format!("Invalid duration: {s}")))?;
-        Ok(Duration::from_secs(m * 60))
-    } else if s.ends_with('s') {
-        let s_val = s[..s.len() - 1]
+        Ok(Duration::from_secs(mins * 60))
+    } else if let Some(sec) = s.strip_suffix('s') {
+        let secs = sec
             .parse::<u64>()
             .map_err(|_| Error::ConfigError(format!("Invalid duration: {s}")))?;
-        Ok(Duration::from_secs(s_val))
+        Ok(Duration::from_secs(secs))
     } else {
         Err(Error::ConfigError(format!(
             "Unsupported duration format: {s} (use 'h', 'm', or 's')"

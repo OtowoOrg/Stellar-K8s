@@ -315,7 +315,7 @@ pub async fn cleanup_blue_deployment(client: &Client, node: &StellarNode) -> Res
 ///
 /// True if smoke tests pass
 pub async fn run_smoke_tests(
-    client: &Client,
+    _client: &Client,
     node: &StellarNode,
     health_endpoint: &str,
 ) -> Result<bool> {

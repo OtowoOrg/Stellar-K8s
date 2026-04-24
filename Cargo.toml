@@ -157,6 +157,10 @@ tempfile = "3"
 wiremock = "=0.6.5"
 proptest = "1.5"
 wat = "1.246"
+# k8s-openapi 0.22 is pulled in transitively by kube 0.94 without a version
+# feature, which causes `cargo clippy` / `cargo check` to fail. Adding it as a
+# dev-dependency with a feature satisfies the build-script requirement.
+k8s-openapi = { version = "0.22", default-features = false, features = ["v1_30"] }
 
 [[bin]]
 name = "stellar-operator"

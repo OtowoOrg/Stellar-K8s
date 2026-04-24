@@ -136,6 +136,10 @@ pub struct StellarNodeSpec {
     #[serde(default)]
     pub maintenance_mode: bool,
 
+    /// Optimize pod placement based on network latency to quorum peers
+    #[serde(default)]
+    pub proximity_aware: bool,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_policy: Option<NetworkPolicyConfig>,
 

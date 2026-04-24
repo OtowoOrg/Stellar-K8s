@@ -3,7 +3,9 @@ use k8s_openapi::api::core::v1::{Node, Pod};
 use kube::{Client, ResourceExt};
 use std::collections::HashMap;
 use toml;
-use tracing;
+use tracing::{self, debug};
+
+use super::prometheus::PrometheusClient;
 
 // Topology labels
 const LABEL_ZONE: &str = "topology.kubernetes.io/zone";
@@ -13,10 +15,11 @@ pub async fn score_nodes<'a>(
     pod: &Pod,
     candidates: &[&'a Node],
     client: &Client,
+    prometheus: Option<&PrometheusClient>,
 ) -> Result<Option<&'a Node>> {
     // 1. Check for Quorum Proximity scheduling (Stellar Validators)
     if is_validator_pod(pod) {
-        if let Ok(Some(node)) = score_nodes_quorum_proximity(pod, candidates, client).await {
+        if let Ok(Some(node)) = score_nodes_quorum_proximity(pod, candidates, client, prometheus).await {
             return Ok(Some(node));
         }
     }
@@ -46,6 +49,7 @@ async fn score_nodes_quorum_proximity<'a>(
     pod: &Pod,
     candidates: &[&'a Node],
     client: &Client,
+    prometheus: Option<&PrometheusClient>,
 ) -> Result<Option<&'a Node>> {
     let instance_name = pod
         .metadata
@@ -63,6 +67,12 @@ async fn score_nodes_quorum_proximity<'a>(
         Err(_) => return Ok(None),
     };
 
+    // ONLY proceed if proximity_aware is enabled in the CRD
+    if !node_cr.spec.proximity_aware {
+        debug!("Proximity aware scheduling disabled for {}", instance_name);
+        return Ok(None);
+    }
+
     let quorum_set_toml = match node_cr
         .spec
         .validator_config
@@ -79,12 +89,22 @@ async fn score_nodes_quorum_proximity<'a>(
         return Ok(None);
     }
 
+    // Fetch latency metrics from Prometheus for each peer
+    let mut peer_latencies = HashMap::new();
+    if let Some(prom) = prometheus {
+        for peer_name in &peer_names {
+            if let Ok(Some(latency)) = prom.get_validator_latency(namespace, peer_name, "5m").await {
+                peer_latencies.insert(peer_name.clone(), latency);
+            }
+        }
+    }
+
     // Find where peers are currently running
     let mut peer_nodes = Vec::new();
     let all_pods: kube::Api<Pod> = kube::Api::all(client.clone());
     let all_nodes: kube::Api<Node> = kube::Api::all(client.clone());
 
-    for peer_name in peer_names {
+    for peer_name in &peer_names {
         // Find pods for this peer instance
         let lp = kube::api::ListParams::default()
             .labels(&format!("app.kubernetes.io/instance={peer_name}"));
@@ -92,7 +112,8 @@ async fn score_nodes_quorum_proximity<'a>(
             for p in pods {
                 if let Some(node_name) = p.spec.as_ref().and_then(|s| s.node_name.as_ref()) {
                     if let Ok(node) = all_nodes.get(node_name).await {
-                        peer_nodes.push(node);
+                        let latency = peer_latencies.get(peer_name).cloned().unwrap_or(100.0); // Default 100ms if no metric
+                        peer_nodes.push((node, latency));
                     }
                 }
             }
@@ -100,7 +121,6 @@ async fn score_nodes_quorum_proximity<'a>(
     }
 
     if peer_nodes.is_empty() {
-        // Fallback to topology-based if no peers found running
         return Ok(None);
     }
 
@@ -122,7 +142,7 @@ async fn score_nodes_quorum_proximity<'a>(
             .as_ref()
             .and_then(|l| l.get(LABEL_REGION));
 
-        for peer_node in &peer_nodes {
+        for (peer_node, peer_latency) in &peer_nodes {
             let peer_node_name = peer_node.name_any();
             let peer_zone = peer_node
                 .metadata
@@ -140,21 +160,22 @@ async fn score_nodes_quorum_proximity<'a>(
                 score -= 1000;
             }
 
-            // 2. Redundancy: Prefer different zones
+            // 2. Latency-based scoring
+            // If we have actual latency metrics, use them.
+            // Lower latency = higher score.
+            // We use (1000 / latency) as a base score component.
+            let latency_bonus = (1000.0 / peer_latency.max(1.0)) as i64;
+            score += latency_bonus;
+
+            // 3. Topology heuristics (still useful as fallback or secondary signal)
             if let (Some(nz), Some(pz)) = (node_zone, peer_zone) {
-                if nz != pz {
-                    score += 100;
-                } else {
-                    score -= 50; // Same zone penalty
+                if nz == pz {
+                    score += 50; // Same zone is usually lower latency
                 }
             }
-
-            // 3. Latency: Prefer same region (low latency)
             if let (Some(nr), Some(pr)) = (node_region, peer_region) {
                 if nr == pr {
-                    score += 50;
-                } else {
-                    score -= 20; // Different region penalty
+                    score += 100; // Same region is definitely lower latency
                 }
             }
         }
@@ -166,10 +187,11 @@ async fn score_nodes_quorum_proximity<'a>(
     }
 
     tracing::info!(
-        "Quorum Proximity scoring for pod {}: selected node {} with score {}",
+        "Quorum Proximity scoring for pod {}: selected node {} with score {} (using metrics: {})",
         pod.name_any(),
         best_node.map(|n| n.name_any()).unwrap_or_default(),
-        best_score
+        best_score,
+        !peer_latencies.is_empty()
     );
 
     Ok(best_node)

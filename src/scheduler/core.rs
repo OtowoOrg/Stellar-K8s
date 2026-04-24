@@ -5,18 +5,24 @@ use kube::{api::PostParams, Api, Client, ResourceExt};
 use tokio::time::{sleep, Duration};
 use tracing::{error, info, warn};
 
+use super::prometheus::PrometheusClient;
 use super::scoring;
 
 pub struct Scheduler {
     client: Client,
     scheduler_name: String,
+    prometheus: Option<PrometheusClient>,
 }
 
 impl Scheduler {
     pub fn new(client: Client, scheduler_name: String) -> Self {
+        let prometheus_url = std::env::var("PROMETHEUS_URL")
+            .unwrap_or_else(|_| "http://prometheus-k8s.monitoring.svc:9090".to_string());
+
         Self {
             client,
             scheduler_name,
+            prometheus: Some(PrometheusClient::new(prometheus_url)),
         }
     }
 
@@ -80,7 +86,7 @@ impl Scheduler {
         }
 
         // 2. Score nodes
-        let best_node = scoring::score_nodes(pod, &filtered_nodes, &self.client).await?;
+        let best_node = scoring::score_nodes(pod, &filtered_nodes, &self.client, self.prometheus.as_ref()).await?;
 
         if let Some(node) = best_node {
             info!("Binding pod {} to node {}", pod_name, node.name_any());

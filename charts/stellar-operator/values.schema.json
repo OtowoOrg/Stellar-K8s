@@ -199,6 +199,32 @@
     "resources": {
       "$ref": "#/definitions/resourceRequirements"
     },
+    "autoscaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "customWasm": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable the custom WASM metrics HorizontalPodAutoscaler"
+            },
+            "minReplicas": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Minimum replicas for the custom WASM HPA"
+            },
+            "maxReplicas": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Maximum replicas for the custom WASM HPA"
+            }
+          }
+        }
+      }
+    },
     "nodeSelector": {
       "type": "object",
       "additionalProperties": {

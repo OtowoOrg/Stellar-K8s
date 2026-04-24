@@ -75,6 +75,13 @@ resources:
     cpu: 100m
     memory: 128Mi
 
+# Custom WASM-based HPA for Soroban RPC workloads.
+autoscaling:
+  customWasm:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 10
+
 nodeSelector: {}
 
 tolerations: []

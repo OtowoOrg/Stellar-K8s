@@ -58,3 +58,22 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Compatibility aliases for Soroban RPC-oriented templates.
+*/}}
+{{- define "stellar-rpc.name" -}}
+{{- include "stellar-operator.name" . -}}
+{{- end }}
+
+{{- define "stellar-rpc.fullname" -}}
+{{- include "stellar-operator.fullname" . -}}
+{{- end }}
+
+{{- define "stellar-rpc.labels" -}}
+{{- include "stellar-operator.labels" . -}}
+{{- end }}
+
+{{- define "stellar-rpc.selectorLabels" -}}
+{{- include "stellar-operator.selectorLabels" . -}}
+{{- end }}

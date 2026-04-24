@@ -43,7 +43,7 @@ jobs:
 
     steps:
       # ── 1. Checkout ──────────────────────────────────────────────────────────
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # ── 2. Build operator ────────────────────────────────────────────────────
       - name: Install Rust toolchain
@@ -142,7 +142,7 @@ jobs:
       # ── 8. Upload results (always, so failures are inspectable) ──────────────
       - name: Upload memory samples
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: soak-memory-samples
           path: /tmp/soak-memory.log

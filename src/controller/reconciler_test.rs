@@ -121,7 +121,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 resource_meta: None,
                 vpa_config: None,
                 custom_network_passphrase: None,
-            nat_traversal: None,
+                nat_traversal: None,
             },
             status: None,
         }
@@ -215,7 +215,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 resource_meta: None,
                 vpa_config: None,
                 custom_network_passphrase: None,
-            nat_traversal: None,
+                nat_traversal: None,
             },
             status: None,
         }
@@ -307,7 +307,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 resource_meta: None,
                 vpa_config: None,
                 custom_network_passphrase: None,
-            nat_traversal: None,
+                nat_traversal: None,
             },
             status: None,
         }

@@ -1,4 +1,3 @@
-
 //! State-machine fuzzer for the StellarNode reconciler.
 //!
 //! Uses proptest to generate random mutations of StellarNodeSpec and random
@@ -25,10 +24,9 @@ use stellar_k8s::crd::{
 
 // --- Helper for creating reload handles ---
 
-fn make_reload_handle() -> tracing_subscriber::reload::Handle<
-    tracing_subscriber::EnvFilter,
-    tracing_subscriber::Registry,
-> {
+fn make_reload_handle(
+) -> tracing_subscriber::reload::Handle<tracing_subscriber::EnvFilter, tracing_subscriber::Registry>
+{
     let env_filter = tracing_subscriber::EnvFilter::from_default_env();
     let (_layer, handle): (
         tracing_subscriber::reload::Layer<

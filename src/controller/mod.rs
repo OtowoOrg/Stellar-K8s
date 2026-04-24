@@ -123,9 +123,9 @@ pub use peer_discovery::{
     get_peers_from_config_map, trigger_peer_config_reload, PeerDiscoveryConfig,
     PeerDiscoveryManager, PeerInfo,
 };
-pub use reconciler::{run_controller, ControllerState, BatchSummaryReport};
 #[cfg(feature = "reconciler-fuzz")]
 pub use reconciler::reconcile_for_fuzz;
+pub use reconciler::{run_controller, BatchSummaryReport, ControllerState};
 pub use remediation::{can_remediate, check_stale_node, RemediationLevel, StaleCheckResult};
 pub use service_mesh::{
     delete_service_mesh_resources, ensure_destination_rule, ensure_peer_authentication,

@@ -58,8 +58,7 @@ fn patterns() -> &'static [(&'static str, Regex)] {
             // Stellar seed: 'S' followed by 55 base58 characters (56 total)
             (
                 "stellar_seed",
-                Regex::new(r"S[A-Za-z0-9]{54}")
-                .expect("stellar_seed regex"),
+                Regex::new(r"S[A-Za-z0-9]{54}").expect("stellar_seed regex"),
             ),
             // PEM private key block (single-line or multi-line collapsed)
             (
@@ -74,17 +73,16 @@ fn patterns() -> &'static [(&'static str, Regex)] {
                 "bearer_token",
                 Regex::new(r"(?i)bearer\s+[A-Za-z0-9\-_=+/]{20,}").expect("bearer_token regex"),
             ),
-                // Raw base64 segments that are likely secrets.
-                // We intentionally require either:
-                // - at least one '+' or '/' character, or
-                // - '=' padding at the end.
-                // This avoids false positives on Stellar StrKey public keys (G...)
-                // and other long plain alphanumeric identifiers.
-                (
-                    "base64_segment",
-                    Regex::new(r"[A-Za-z0-9+/]{20,}={1,2}")
-                    .expect("base64_segment regex"),
-                ),
+            // Raw base64 segments that are likely secrets.
+            // We intentionally require either:
+            // - at least one '+' or '/' character, or
+            // - '=' padding at the end.
+            // This avoids false positives on Stellar StrKey public keys (G...)
+            // and other long plain alphanumeric identifiers.
+            (
+                "base64_segment",
+                Regex::new(r"[A-Za-z0-9+/]{20,}={1,2}").expect("base64_segment regex"),
+            ),
             // Hex strings ≥ 64 chars (SHA-256 or larger hashes of key material)
             (
                 "hex_hash",

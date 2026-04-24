@@ -176,4 +176,10 @@ path = "src/kubectl_plugin.rs"
 name = "stellar-completions"
 path = "src/bin/completions.rs"
 
+# Byzantine Monitoring Watcher — deployed as a sidecar in multiple cloud regions
+# to detect local vs. global consensus issues (Byzantine partition detection).
+[[bin]]
+name = "stellar-watcher"
+path = "src/bin/stellar-watcher.rs"
+
 [workspace]

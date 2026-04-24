@@ -224,3 +224,84 @@ networkIsolation:
 
   # The namespace where Prometheus / monitoring tools run.
   monitoringNamespace: "monitoring"
+
+# Byzantine Monitoring Watcher configuration
+#
+# Deploys lightweight `stellar-watcher` sidecars in multiple geographic regions
+# to detect local vs. global consensus issues (Byzantine partition detection).
+#
+# Each watcher independently polls a Stellar Core node and exports Prometheus
+# metrics. A central Prometheus instance aggregates all watchers and fires an
+# alert when >20% disagree on the current ledger hash.
+#
+# Quick start:
+#   1. Enable the watcher: byzantineWatcher.enabled=true
+#   2. Configure at least 3 regions for reliable detection.
+#   3. Apply the PrometheusRule: kubectl apply -f monitoring/byzantine-alerts.yaml
+#   4. Import the Grafana dashboard: monitoring/byzantine-dashboard.json
+#
+# See docs/byzantine-monitoring.md for full setup instructions.
+byzantineWatcher:
+  # Master switch. Set to true to deploy watcher Deployments.
+  enabled: false
+
+  # Container image for the watcher binary.
+  # Defaults to the same image as the operator (stellar-watcher binary is included).
+  image:
+    repository: ""   # defaults to .Values.image.repository
+    tag: ""          # defaults to .Values.image.tag / chart appVersion
+    pullPolicy: IfNotPresent
+
+  # Default Stellar network for all watchers (can be overridden per region).
+  defaultNetwork: "mainnet"
+
+  # How often each watcher polls its Stellar Core node (seconds).
+  pollIntervalSecs: 10
+
+  # HTTP request timeout for Stellar Core polls (seconds).
+  requestTimeoutSecs: 5
+
+  # Port for the Prometheus /metrics endpoint on each watcher pod.
+  metricsPort: 9101
+
+  # Log level for watcher pods.
+  logLevel: "info"
+
+  # Resource requests/limits for each watcher pod.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 25m
+      memory: 32Mi
+
+  # List of geographic vantage points to deploy watchers in.
+  # Each entry creates one Deployment + Service.
+  #
+  # Required fields per region:
+  #   cloud:        Cloud provider label (aws / gcp / azure / on-prem)
+  #   region:       Geographic region label (us-east-1 / eu-west-1 / …)
+  #   nodeEndpoint: HTTP endpoint of the Stellar Core node to poll
+  #
+  # Optional fields per region:
+  #   network:      Override defaultNetwork for this watcher
+  #
+  # Example — 5-region setup across 3 cloud providers:
+  # regions:
+  #   - cloud: aws
+  #     region: us-east-1
+  #     nodeEndpoint: http://stellar-core.stellar-system.svc.cluster.local:11626
+  #   - cloud: aws
+  #     region: us-west-2
+  #     nodeEndpoint: http://stellar-core-usw2.stellar-system.svc.cluster.local:11626
+  #   - cloud: gcp
+  #     region: eu-west-1
+  #     nodeEndpoint: http://stellar-core-eu.stellar-system.svc.cluster.local:11626
+  #   - cloud: azure
+  #     region: ap-south-1
+  #     nodeEndpoint: http://stellar-core-ap.stellar-system.svc.cluster.local:11626
+  #   - cloud: on-prem
+  #     region: dc-frankfurt
+  #     nodeEndpoint: http://10.0.1.50:11626
+  regions: []

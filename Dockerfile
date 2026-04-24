@@ -30,12 +30,17 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
   --mount=type=cache,target=/usr/local/cargo/git \
   --mount=type=cache,target=/app/target \
-  cargo build --release --bin stellar-operator --bin kubectl-stellar
+  cargo build --release \
+    --bin stellar-operator \
+    --bin kubectl-stellar \
+    --bin stellar-sidecar \
+    --bin stellar-watcher
 
 # Strip binaries to reduce image size
 RUN strip /app/target/release/stellar-operator \
     && strip /app/target/release/kubectl-stellar \
-    && strip /app/target/release/stellar-sidecar
+    && strip /app/target/release/stellar-sidecar \
+    && strip /app/target/release/stellar-watcher
 
 # ==============================================================================
 # Stage 4: Local Binaries - Fast local packaging from host build artifacts
@@ -84,6 +89,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 COPY --from=builder /app/target/release/stellar-operator /stellar-operator
 COPY --from=builder /app/target/release/kubectl-stellar /kubectl-stellar
 COPY --from=builder /app/target/release/stellar-sidecar /stellar-sidecar
+COPY --from=builder /app/target/release/stellar-watcher /stellar-watcher
 
 # Run as non-root user (UID 65532 is the nonroot user in distroless)
 USER nonroot:nonroot

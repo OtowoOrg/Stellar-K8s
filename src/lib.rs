@@ -60,6 +60,7 @@
 //! ```
 
 pub mod backup;
+pub mod byzantine;
 pub mod carbon_aware;
 pub mod controller;
 pub mod crd;

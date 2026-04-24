@@ -133,7 +133,7 @@ walkdir = "2"
 serde = { version = "1", features = ["derive"] }
 
 [features]
-default = ["rest-api", "metrics", "admission-webhook"]
+default = ["rest-api", "metrics", "admission-webhook", "k8s-v1-30"]
 rest-api = ["axum", "tower", "tower-http"]
 metrics = ["prometheus-client", "once_cell"]
 admission-webhook = [
@@ -148,6 +148,10 @@ admission-webhook = [
 axum = ["dep:axum"]
 # Expose reconciler for state-machine fuzzing (reconcile_no_panic, event sequences)
 reconciler-fuzz = []
+
+# Kubernetes API version selection (exactly one must be enabled)
+k8s-v1-30 = ["k8s-openapi/v1_30"]
+k8s-v1-31 = ["k8s-openapi/v1_31"]
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -1,3 +1,10 @@
+// Ensure exactly one Kubernetes API version feature is enabled.
+#[cfg(not(any(feature = "k8s-v1-30", feature = "k8s-v1-31")))]
+compile_error!(
+    "Exactly one Kubernetes version feature must be enabled. \
+     Use --features k8s-v1-30 or --features k8s-v1-31"
+);
+
 use serde::Serialize;
 use std::fs;
 use std::path::Path;

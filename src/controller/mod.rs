@@ -63,6 +63,7 @@ pub mod resource_meta;
 mod archive_health;
 pub mod archive_prune;
 pub mod audit;
+pub mod audit_log;
 pub mod captive_core;
 pub mod conditions;
 pub mod cost;
@@ -152,4 +153,5 @@ pub use service_mesh::{
     delete_service_mesh_resources, ensure_destination_rule, ensure_peer_authentication,
     ensure_request_authentication, ensure_virtual_service,
 };
+pub use audit_log::{AdminAction, AuditEntry, AuditLog};
 pub use snapshot_worker::run_snapshot_worker;

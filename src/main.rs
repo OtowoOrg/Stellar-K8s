@@ -1170,6 +1170,7 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         log_reload_handle: reload_handle,
         log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
         last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        audit_log: Arc::new(stellar_k8s::controller::AuditLog::new()),
         oidc_config,
     });
 

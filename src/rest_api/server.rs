@@ -21,6 +21,7 @@ use crate::controller::ControllerState;
 use crate::{Error, Result};
 
 use super::auth;
+use super::audit_handlers;
 use super::custom_metrics;
 use super::dashboard_handlers;
 use super::handlers;
@@ -116,6 +117,9 @@ pub async fn run_server(
         .route("/api/v1/dashboard/operator/logs", get(dashboard_handlers::get_operator_logs))
         // Documentation search API
         .route("/api/v1/docs/search-index", get(handlers::get_search_index))
+        // Audit log
+        .route("/api/v1/audit-log", get(audit_handlers::list_audit_log))
+        .route("/api/v1/audit-log/search", get(audit_handlers::search_audit_log))
         // Custom metrics API
         .route(
             "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric",

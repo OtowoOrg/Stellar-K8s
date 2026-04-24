@@ -8,7 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Placeholder for upcoming features and changes
+- **Snapshot Bootstrap**: `spec.storage.snapshotRef` field on `StorageConfig` for near-instant
+  node bootstrapping from pre-computed snapshots or compressed DB backups.
+  - `volumeSnapshotName` / `volumeSnapshotNamespace`: provision PVC directly from a CSI
+    `VolumeSnapshot` (zero-copy, no init container required).
+  - `backupUrl` + `credentialsSecretRef`: inject a `snapshot-restore` init container that
+    downloads and extracts a `.tar.gz` / `.tar.zst` archive from S3 or HTTPS before
+    Stellar Core starts.
+  - `restoreImage`: override the restore container image (defaults to `amazon/aws-cli:latest`
+    for S3, `alpine:3` for HTTPS).
+- **Auto-Snapshot Worker**: background Tokio task (`snapshot_worker`) that wakes every 60 s,
+  evaluates cron schedules for all Validator nodes with `spec.snapshotSchedule`, and creates
+  CSI `VolumeSnapshot` resources automatically — decoupled from the per-node reconcile loop.
+- **Bootstrap Status Tracking**: `status.snapshotBootstrap` field on `StellarNodeStatus`
+  tracks the full lifecycle of a snapshot-based bootstrap:
+  - Phases: `Pending → Restoring → Restored → Syncing → Synced | Failed`
+  - `secondsToSync`: elapsed seconds from restore completion to first `Synced` state.
+    A value ≤ 600 satisfies the "synced within 10 minutes" acceptance criterion.
+  - Kubernetes Events emitted at key transitions (`SnapshotBootstrapSynced`,
+    `SnapshotBootstrapSlowSync`, `SnapshotBootstrapDeadlineExceeded`).
+- **CRD update**: `snapshotRef` added to `StorageConfig` schema; `snapshotBootstrap` added
+  to status schema in `config/crd/stellarnode-crd.yaml`.
+- **Sample manifests**: `config/samples/snapshot-bootstrap-csi.yaml` and
+  `config/samples/snapshot-bootstrap-backup.yaml` demonstrating both bootstrap modes.
+
+### Changed
+- `build_pvc` in `resources.rs` now resolves snapshot source with priority:
+  `spec.storage.snapshotRef.volumeSnapshotName` > `spec.restoreFromSnapshot.volumeSnapshotName`.
+- `build_pod_template` injects the `snapshot-restore` init container when
+  `spec.storage.snapshotRef.backupUrl` is set (idempotent — skips if `/data` is already populated).
+- `main.rs`: auto-snapshot worker spawned as a background task alongside the benchmark controller.
 
 ## [0.1.0] - 2024-02-25
 

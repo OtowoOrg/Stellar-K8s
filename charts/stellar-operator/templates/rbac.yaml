@@ -27,10 +27,29 @@ rules:
     resources: ["stellarnodes/finalizers"]
     verbs: ["update"]
 
+  # StellarBenchmark CRD permissions
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarbenchmarks"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarbenchmarks/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarbenchmarks/finalizers"]
+    verbs: ["update"]
+
+  # BenchmarkReport CRD permissions
+  - apiGroups: ["stellar.org"]
+    resources: ["benchmarkreports"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["stellar.org"]
+    resources: ["benchmarkreports/status"]
+    verbs: ["get", "update", "patch"]
+
   # Core resources managed by the operator
   - apiGroups: [""]
     resources: ["pods", "pods/log"]
-    verbs: ["get", "list", "watch", "patch", "update"]
+    verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]
   - apiGroups: [""]
     resources: ["pods/ephemeralcontainers"]
     verbs: ["get", "patch", "update"]
@@ -53,6 +72,13 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # NetworkPolicy — operator creates per-node isolation policies.
+  # Scoped to the watch namespace (or cluster-wide when watchNamespace is unset).
+  # The operator NEVER reads NetworkPolicies from other namespaces.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
   # Events for status reporting
@@ -88,6 +114,41 @@ roleRef:
 {{- end }}
   labels:
     {{- include "stellar-operator.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "stellar-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+
+---
+# Namespace-reader ClusterRole — grants the operator read-only access to
+# Namespace objects so the network safety check (SK8S-021) can verify the
+# stellar.org/network label on the namespace hosting a StellarNode.
+#
+# This is intentionally a separate, minimal ClusterRole so that teams running
+# the operator with namespace-scoped RBAC (watchNamespace set) can grant only
+# this narrow cluster-level permission without elevating the main Role.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-namespace-reader
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-namespace-reader
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "stellar-operator.fullname" . }}-namespace-reader
 subjects:
   - kind: ServiceAccount
     name: {{ include "stellar-operator.serviceAccountName" . }}

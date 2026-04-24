@@ -123,7 +123,7 @@ pub async fn create_green_deployment(
 
     // Update metadata
     let metadata = &mut green_deployment.metadata;
-    metadata.name = Some(format!("{}-green", node_name));
+    metadata.name = Some(format!("{node_name}-green"));
     metadata.resource_version = None; // Clear resource version for new creation
     metadata.uid = None;
 
@@ -179,7 +179,7 @@ pub async fn wait_for_green_ready(
 ) -> Result<bool> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let node_name = node.name_any();
-    let green_name = format!("{}-green", node_name);
+    let green_name = format!("{node_name}-green");
 
     let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
     let start = std::time::Instant::now();
@@ -283,7 +283,7 @@ pub async fn switch_traffic_to_green(client: &Client, node: &StellarNode) -> Res
 pub async fn cleanup_blue_deployment(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let node_name = node.name_any();
-    let blue_name = format!("{}-blue", node_name);
+    let blue_name = format!("{node_name}-blue");
 
     let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
 
@@ -315,7 +315,7 @@ pub async fn cleanup_blue_deployment(client: &Client, node: &StellarNode) -> Res
 ///
 /// True if smoke tests pass
 pub async fn run_smoke_tests(
-    client: &Client,
+    _client: &Client,
     node: &StellarNode,
     health_endpoint: &str,
 ) -> Result<bool> {

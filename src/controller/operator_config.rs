@@ -44,6 +44,11 @@ pub struct OperatorConfig {
     pub default_resources: DefaultResources,
     #[serde(default)]
     pub reconciler: ReconcilerConfig,
+    /// Optional OIDC configuration for JWT-based REST API authentication.
+    /// When present, the operator validates bearer tokens against the specified
+    /// OIDC provider instead of (or in addition to) Kubernetes RBAC.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oidc: Option<crate::rest_api::OidcConfig>,
 }
 
 /// Reconciler configuration for requeue intervals and backoff

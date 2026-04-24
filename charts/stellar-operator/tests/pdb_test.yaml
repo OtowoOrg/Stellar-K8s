@@ -84,8 +84,7 @@ tests:
           path: spec.maxUnavailable
           value: 1
     notes:
-      - WARNING: Both minAvailable and maxUnavailable are set. Kubernetes will accept both,
-        but best practice is to use only one. See documentation for guidance.
+      - "WARNING: Both minAvailable and maxUnavailable are set. Kubernetes will accept both, but best practice is to use only one. See documentation for guidance.
 
   - it: uses custom maxUnavailable value
     set:

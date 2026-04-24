@@ -73,6 +73,8 @@ mod tests {
             soroban_config: None,
             nat_traversal: None,
             custom_network_passphrase: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
         }
     }
 
@@ -312,9 +314,9 @@ mod tests {
     // -----------------------------------------------------------------------
 
     use crate::controller::resources::{
-        build_config_map_for_test, build_deployment_for_test, build_pvc_for_test,
-        build_service_for_test, build_statefulset_for_test, merge_workload_affinity,
-        owner_reference, standard_labels,
+        build_config_map_for_test, build_deployment_for_test, build_network_policy,
+        build_pvc_for_test, build_service_for_test, build_statefulset_for_test,
+        merge_workload_affinity, owner_reference, standard_labels,
     };
     use crate::crd::types::ValidatorConfig;
     use crate::crd::StellarNode;
@@ -536,6 +538,69 @@ peer-2 = "G..."
         assert!(
             component.to_lowercase().contains("horizon"),
             "component label should reflect horizon type, got: {component}"
+        );
+    }
+
+    #[test]
+    fn test_network_policy_stellar_native_egress() {
+        let mut node = make_node(NodeType::Validator);
+        let mut vc = ValidatorConfig::default();
+        vc.known_peers = Some(r#"["1.2.3.4:11625", "example.com:11625"]"#.to_string());
+        vc.quorum_set = Some(
+            r#"[VALIDATORS]
+"5.6.7.8" = "G..."
+"G..." = "G..."
+"#
+            .to_string(),
+        );
+        node.spec.validator_config = Some(vc);
+
+        let config = crate::crd::types::NetworkPolicyConfig {
+            enabled: true,
+            ..Default::default()
+        };
+
+        let netpol = build_network_policy(&node, &config);
+        let spec = netpol.spec.expect("spec must be present");
+
+        assert!(spec
+            .policy_types
+            .as_ref()
+            .unwrap()
+            .contains(&"Ingress".to_string()));
+        assert!(spec
+            .policy_types
+            .as_ref()
+            .unwrap()
+            .contains(&"Egress".to_string()));
+
+        let egress = spec.egress.expect("egress rules must be present");
+
+        // 1. DNS egress
+        let has_dns = egress.iter().any(|rule| {
+            rule.ports.as_ref().map_or(false, |ports| {
+                ports.iter().any(|p| {
+                    p.port.as_ref().map_or(false, |v| {
+                        v == &k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(53)
+                    })
+                })
+            })
+        });
+        assert!(has_dns, "must have DNS egress rule");
+
+        // 2. Peer egress
+        let has_peers = egress.iter().any(|rule| {
+            rule.to.as_ref().map_or(false, |to| {
+                to.iter().any(|p| {
+                    p.ip_block.as_ref().map_or(false, |ip| {
+                        ip.cidr == "1.2.3.4/32" || ip.cidr == "5.6.7.8/32"
+                    })
+                })
+            })
+        });
+        assert!(
+            has_peers,
+            "must have peer egress rule for IPs 1.2.3.4 and 5.6.7.8"
         );
     }
 }

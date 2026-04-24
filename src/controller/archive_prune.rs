@@ -720,10 +720,10 @@ mod tests {
         let mut checkpoints: Vec<Checkpoint> = (0..10)
             .map(|i| Checkpoint {
                 ledger_seq: 1000 - i,
-                checkpoint_hash: format!("hash{}", i),
+                checkpoint_hash: format!("hash{i}"),
                 timestamp: now - Duration::days(i as i64),
                 size_bytes: 1000,
-                path: format!("/test/{}", i),
+                path: format!("/test/{i}"),
                 is_valid: true,
             })
             .collect();
@@ -762,10 +762,10 @@ mod tests {
         let mut checkpoints: Vec<Checkpoint> = (0..10)
             .map(|i| Checkpoint {
                 ledger_seq: 1000000 - (i * 1000),
-                checkpoint_hash: format!("hash{}", i),
+                checkpoint_hash: format!("hash{i}"),
                 timestamp: now,
                 size_bytes: 1000,
-                path: format!("/test/{}", i),
+                path: format!("/test/{i}"),
                 is_valid: true,
             })
             .collect();

@@ -100,8 +100,8 @@ rustls-pki-types = "1.14.0"
 x509-parser = "0.16"
 
 # Wasm runtime for custom validation plugins
-wasmtime = { version = "24.0.6", optional = true }
-wasmtime-wasi = { version = "24.0.6", features = ["preview1"], optional = true }
+wasmtime = { version = "24.0.7", optional = true }
+wasmtime-wasi = { version = "24.0.7", features = ["preview1"], optional = true }
 
 # Additional crypto for webhook TLS
 tokio-rustls = { version = "0.26", optional = true }
@@ -175,4 +175,3 @@ name = "stellar-completions"
 path = "src/bin/completions.rs"
 
 [workspace]
-

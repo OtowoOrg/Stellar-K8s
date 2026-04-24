@@ -11,15 +11,40 @@
 set -euo pipefail
 
 OPERATOR_NAMESPACE="${OPERATOR_NAMESPACE:-stellar-system}"
-SOAK_DURATION="${SOAK_DURATION:-3600}"   # seconds (1 hour)
-SAMPLE_INTERVAL=60                        # seconds between RSS samples
-THRESHOLD_KB=5120                         # 5 MB growth limit
-NODE_COUNT=100
+SOAK_DURATION="${SOAK_DURATION:-3600}"        # seconds (1 hour)
+SAMPLE_INTERVAL=60                             # seconds between RSS samples
+THRESHOLD_KB=5120                              # 5 MB growth limit
+NODE_COUNT="${NODE_COUNT:-100}"
 TEST_NAMESPACE="${TEST_NAMESPACE:-soak-test}"
+CLEANUP_NAMESPACE_ON_EXIT="${CLEANUP_NAMESPACE_ON_EXIT:-false}"
 RESULTS_FILE="${RESULTS_FILE:-/tmp/soak-memory.log}"
 CLEANUP_DONE=false
 CLEANUP_TIMEOUT_SECONDS="${CLEANUP_TIMEOUT_SECONDS:-120}"
 RETRY_DELAY_SECONDS="${RETRY_DELAY_SECONDS:-15}"
+
+# ── Input validation ─────────────────────────────────────────────────────────
+
+if ! [[ "$NODE_COUNT" =~ ^[0-9]+$ ]] || [[ "$NODE_COUNT" -lt 1 ]]; then
+  echo "ERROR: NODE_COUNT must be an integer >= 1 (got '${NODE_COUNT}')" >&2
+  exit 1
+fi
+
+if [[ -z "$TEST_NAMESPACE" ]]; then
+  echo "ERROR: TEST_NAMESPACE must not be empty" >&2
+  exit 1
+fi
+
+# ── Startup plan ─────────────────────────────────────────────────────────────
+
+echo "=== Soak Test Configuration ==="
+echo "  Operator namespace : $OPERATOR_NAMESPACE"
+echo "  Test namespace     : $TEST_NAMESPACE"
+echo "  Node count         : $NODE_COUNT"
+echo "  Soak duration      : ${SOAK_DURATION}s"
+echo "  Memory threshold   : ${THRESHOLD_KB} kB"
+echo "  Results file       : $RESULTS_FILE"
+echo "  Cleanup on exit    : $CLEANUP_NAMESPACE_ON_EXIT"
+echo "==============================="
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -150,8 +175,19 @@ trap 'handle_exit' EXIT
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
+# Idempotent namespace creation
 kubectl create namespace "$TEST_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
+# Optional cleanup trap — only runs when CLEANUP_NAMESPACE_ON_EXIT=true
+cleanup_namespace() {
+  if [[ "$CLEANUP_NAMESPACE_ON_EXIT" == "true" ]]; then
+    echo "Cleaning up namespace $TEST_NAMESPACE..."
+    kubectl delete namespace "$TEST_NAMESPACE" --ignore-not-found --wait=false || true
+  fi
+}
+trap cleanup_namespace EXIT
+
+OPERATOR_POD=$(get_operator_pid)
 validate_positive_integer "RETRY_DELAY_SECONDS" "$RETRY_DELAY_SECONDS"
 echo "Retry delay: ${RETRY_DELAY_SECONDS}s"
 

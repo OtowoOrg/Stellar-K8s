@@ -45,10 +45,7 @@ pub async fn run_incident_report(args: IncidentReportArgs) -> Result<()> {
     let now = Utc::now();
     let (start_time, end_time) = calculate_window(&args, now)?;
 
-    println!(
-        "Gathering incident artifacts for window: {} to {}",
-        start_time, end_time
-    );
+    println!("Gathering incident artifacts for window: {start_time} to {end_time}",);
 
     let path = Path::new(&args.output);
     let file = File::create(path)?;
@@ -117,21 +114,21 @@ fn calculate_window(
 
 fn parse_duration_string(s: &str) -> Result<Duration> {
     let s = s.trim();
-    if s.ends_with('h') {
-        let h = s[..s.len() - 1]
+    if let Some(h) = s.strip_suffix('h') {
+        let hours = h
             .parse::<u64>()
             .map_err(|_| Error::ConfigError(format!("Invalid duration: {s}")))?;
-        Ok(Duration::from_secs(h * 3600))
-    } else if s.ends_with('m') {
-        let m = s[..s.len() - 1]
+        Ok(Duration::from_secs(hours * 3600))
+    } else if let Some(m) = s.strip_suffix('m') {
+        let mins = m
             .parse::<u64>()
             .map_err(|_| Error::ConfigError(format!("Invalid duration: {s}")))?;
-        Ok(Duration::from_secs(m * 60))
-    } else if s.ends_with('s') {
-        let s_val = s[..s.len() - 1]
+        Ok(Duration::from_secs(mins * 60))
+    } else if let Some(sec) = s.strip_suffix('s') {
+        let secs = sec
             .parse::<u64>()
             .map_err(|_| Error::ConfigError(format!("Invalid duration: {s}")))?;
-        Ok(Duration::from_secs(s_val))
+        Ok(Duration::from_secs(secs))
     } else {
         Err(Error::ConfigError(format!(
             "Unsupported duration format: {s} (use 'h', 'm', or 's')"
@@ -160,14 +157,11 @@ async fn gather_operator_logs<W: Write + std::io::Seek>(
 
         match pod_api.logs(&pod_name, &log_params).await {
             Ok(logs) => {
-                zip.start_file(format!("logs/operator-{}.log", pod_name), options)?;
+                zip.start_file(format!("logs/operator-{pod_name}.log"), options)?;
                 zip.write_all(logs.as_bytes())?;
             }
             Err(e) => {
-                eprintln!(
-                    "Warning: could not fetch logs for operator pod {}: {}",
-                    pod_name, e
-                );
+                eprintln!("Warning: could not fetch logs for operator pod {pod_name}: {e}");
             }
         }
     }
@@ -195,14 +189,11 @@ async fn gather_stellar_pod_logs<W: Write + std::io::Seek>(
 
         match pod_api.logs(&pod_name, &log_params).await {
             Ok(logs) => {
-                zip.start_file(format!("logs/node-{}.log", pod_name), options)?;
+                zip.start_file(format!("logs/node-{pod_name}.log"), options)?;
                 zip.write_all(logs.as_bytes())?;
             }
             Err(e) => {
-                eprintln!(
-                    "Warning: could not fetch logs for node pod {}: {}",
-                    pod_name, e
-                );
+                eprintln!("Warning: could not fetch logs for node pod {pod_name}: {e}");
             }
         }
     }

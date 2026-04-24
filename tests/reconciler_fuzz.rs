@@ -329,6 +329,7 @@ async fn reconcile_with_failing_client_never_panics_and_converges() {
         log_reload_handle: make_reload_handle(),
         log_level_expires_at: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
         last_event_received: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        oidc_config: None,
     });
     let node = make_node(
         base_validator_spec(),

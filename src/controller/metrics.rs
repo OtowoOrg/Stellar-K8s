@@ -587,7 +587,7 @@ pub enum NodePhase {
 
 impl NodePhase {
     /// Parse a phase string into a NodePhase enum value
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_phase(s: &str) -> Self {
         match s {
             "Pending" => NodePhase::Pending,
             "Creating" => NodePhase::Creating,
@@ -601,6 +601,14 @@ impl NodePhase {
             "Terminating" => NodePhase::Terminating,
             _ => NodePhase::Pending, // Default for unknown phases
         }
+    }
+}
+
+impl std::str::FromStr for NodePhase {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(NodePhase::parse_phase(s))
     }
 }
 
@@ -618,7 +626,7 @@ impl std::fmt::Display for NodePhase {
             NodePhase::Remediating => "Remediating",
             NodePhase::Terminating => "Terminating",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -650,7 +658,7 @@ pub fn set_node_sync_status(
         network: network.to_string(),
         hardware_generation: hardware_generation.to_string(),
     };
-    let phase_value = NodePhase::from_str(phase) as i64;
+    let phase_value = NodePhase::parse_phase(phase) as i64;
     NODE_SYNC_STATUS.get_or_create(&labels).set(phase_value);
 }
 

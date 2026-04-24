@@ -274,6 +274,8 @@ mod tests {
                 sidecars: None,
                 nat_traversal: None,
                 custom_network_passphrase: None,
+                cross_cloud_failover: None,
+                hitless_upgrade: None,
             },
             status: None,
         }

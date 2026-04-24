@@ -117,7 +117,7 @@ jobs:
             EXPECTED_VERSION="$CARGO_VERSION"
           fi
 
-          cargo build --locked --bin stellar-operator
+          K8S_OPENAPI_ENABLED_VERSION=1.30 cargo build --locked --bin stellar-operator
 
           BIN_VERSION=$(./target/debug/stellar-operator version | sed -n 's/^Stellar-K8s Operator v//p' | head -1)
 

@@ -43,3 +43,18 @@ reconciler:
   # Adds randomness (0.5x to 1.5x) to prevent thundering herd
   # Default: true
   enableJitter: true
+
+# OIDC authentication for the operator REST API (optional)
+# When configured, the operator validates JWT bearer tokens against the
+# specified OIDC provider and enforces role-based access control.
+# Supported providers: GitHub, Google, Okta, or any standard OIDC issuer.
+#
+# Roles embedded in the JWT (via the `rolesClaim` field):
+#   - "Reader" – read-only access to all GET endpoints
+#   - "Admin"  – full access including mutating endpoints
+#
+# oidc:
+#   issuer: "https://accounts.google.com"
+#   audience: "stellar-operator"
+#   jwksUri: "https://www.googleapis.com/oauth2/v3/certs"
+#   rolesClaim: "roles"

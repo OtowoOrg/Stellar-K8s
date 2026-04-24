@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use chrono::Utc;
-use kube::api::{Api, DeleteParams, DynamicObject, ListParams, Patch, PatchParams, PostParams};
+use kube::api::{Api, DeleteParams, DynamicObject, ListParams, PostParams};
 use kube::discovery::ApiResource;
 use kube::{Client, ResourceExt};
 use tracing::{info, instrument, warn};
@@ -86,7 +86,51 @@ pub async fn reconcile_snapshot(
     // Update last-snapshot-at and clear request annotation so we don't snapshot every reconcile
     update_snapshot_annotations(client, node, request_snapshot).await?;
 
+    // Verification check: ensure snapshots are indeed encrypted if encryption_key_ref is provided
+    if config.encryption_key_ref.is_some() {
+        verify_snapshot_encryption(client, node, &snapshot_name).await?;
+    }
+
     Ok(())
+}
+
+/// Verify that a VolumeSnapshot has been created with encryption parameters.
+async fn verify_snapshot_encryption(
+    client: &Client,
+    node: &StellarNode,
+    snapshot_name: &str,
+) -> Result<()> {
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let api_resource = volume_snapshot_api_resource();
+    let api: Api<DynamicObject> = Api::namespaced_with(client.clone(), &namespace, &api_resource);
+
+    match api.get(snapshot_name).await {
+        Ok(snapshot) => {
+            let spec = snapshot.data.get("spec").and_then(|s| s.as_object());
+            let parameters = spec
+                .and_then(|s| s.get("parameters"))
+                .and_then(|p| p.as_object());
+            let encryption_key = parameters.and_then(|p| p.get("encryptionKeyRef"));
+
+            if encryption_key.is_some() {
+                info!(
+                    "Verified VolumeSnapshot {} is configured with encryption key",
+                    snapshot_name
+                );
+                Ok(())
+            } else {
+                warn!(
+                    "VolumeSnapshot {} was created without expected encryption parameters!",
+                    snapshot_name
+                );
+                Err(Error::ConfigError(format!(
+                    "VolumeSnapshot {} missing encryptionKeyRef",
+                    snapshot_name
+                )))
+            }
+        }
+        Err(e) => Err(Error::KubeError(e)),
+    }
 }
 
 /// Returns true if the cron schedule has fired (next run time is in the past or within 1 minute of now).
@@ -152,7 +196,14 @@ async fn create_volume_snapshot(
         "source": {
             "persistentVolumeClaimName": pvc_name
         },
-        "volumeSnapshotClassName": config.volume_snapshot_class_name
+        "volumeSnapshotClassName": config.volume_snapshot_class_name,
+        "parameters": if let Some(ref key) = config.encryption_key_ref {
+            Some(serde_json::json!({
+                "encryptionKeyRef": key
+            }))
+        } else {
+            None
+        }
     });
 
     let snapshot = DynamicObject {

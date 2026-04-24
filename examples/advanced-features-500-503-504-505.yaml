@@ -1,0 +1,104 @@
+# Example: Jurisdictional Compliance + Hitless Upgrade + Predictive Scaling
+#
+# This manifest demonstrates all four new features:
+#   - Issue #500: OIDC authentication (configured in operator-config.yaml)
+#   - Issue #503: Hitless upgrade for Stellar Core peer connections
+#   - Issue #504: Jurisdictional compliance for node placement
+#   - Issue #505: Predictive auto-scaling for Horizon nodes
+#
+# ============================================================================
+# Validator with Jurisdictional Compliance + Hitless Upgrade (Issues #503, #504)
+# ============================================================================
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: eu-validator
+  namespace: stellar
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  storage:
+    storageClass: "standard"
+    size: "200Gi"
+    retentionPolicy: Retain
+  validatorConfig:
+    seedSecretRef: "eu-validator-seed"
+    enableHistoryArchive: true
+
+  # Issue #504: Jurisdictional compliance
+  # Restricts this validator to EU regions only (GDPR / financial regulation compliance)
+  placement:
+    jurisdiction:
+      code: "EU"
+      regions:
+        - "eu-west-1"
+        - "eu-central-1"
+        - "eu-north-1"
+      labelKey: "topology.kubernetes.io/region"
+      tolerations:
+        - key: "jurisdiction"
+          operator: "Equal"
+          value: "EU"
+          effect: "NoSchedule"
+
+  # Issue #503: Hitless upgrade
+  # Injects the stellar-handoff sidecar for zero-interruption peer connection handoff
+  hitlessUpgrade:
+    enabled: true
+    handoffTimeoutSeconds: 10
+    fallbackToRollingRestart: true
+    # sidecarImage: "stellar-k8s/handoff-sidecar:v0.1.0"  # optional override
+
+---
+# ============================================================================
+# Horizon with Predictive Auto-Scaling (Issue #505)
+# ============================================================================
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-predictive
+  namespace: stellar
+spec:
+  nodeType: Horizon
+  network: Mainnet
+  version: "v2.28.0"
+  replicas: 3
+
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 20
+    targetCpuUtilizationPercentage: 70
+
+    # Issue #505: Predictive scaling
+    # Uses Holt-Winters double exponential smoothing to forecast ledger volume
+    # and pre-emptively adjusts minReplicas before traffic spikes
+    predictiveScaling:
+      enabled: true
+      prometheusUrl: "http://prometheus-operated.monitoring:9090"
+      ledgerVolumeMetric: "stellar_horizon_ledger_ingestion_rate"
+      forecastWindowMinutes: 60
+      scalingFactor: 1.2
+      alpha: 0.3
+      beta: 0.1
+      tpsPerReplica: 1000.0
+
+---
+# ============================================================================
+# OIDC Configuration (Issue #500)
+# Add to operator-config.yaml or the stellar-operator-config ConfigMap:
+#
+# oidc:
+#   issuer: "https://accounts.google.com"
+#   audience: "stellar-operator"
+#   jwksUri: "https://www.googleapis.com/oauth2/v3/certs"
+#   rolesClaim: "roles"
+#
+# JWT tokens must include a "roles" claim with one of:
+#   - "Reader" – read-only access to GET endpoints
+#   - "Admin"  – full access including mutating endpoints
+#
+# Example: Compliance report endpoint (requires Reader or Admin role)
+#   GET /api/v1/compliance/report
+#   Authorization: Bearer <jwt-token>
+# ============================================================================

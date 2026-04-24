@@ -12,7 +12,10 @@
     "image": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "pullPolicy"],
+      "required": [
+        "repository",
+        "pullPolicy"
+      ],
       "properties": {
         "repository": {
           "type": "string",
@@ -21,7 +24,12 @@
         },
         "pullPolicy": {
           "type": "string",
-          "enum": ["Always", "IfNotPresent", "Never", "validation error"],
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never",
+            "validation error"
+          ],
           "description": "Image pull policy"
         },
         "tag": {
@@ -34,9 +42,13 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string" }
+          "name": {
+            "type": "string"
+          }
         }
       }
     },
@@ -56,7 +68,9 @@
         },
         "annotations": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "name": {
           "type": "string",
@@ -81,12 +95,21 @@
             "secretStoreRef": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["name", "kind"],
+              "required": [
+                "name",
+                "kind"
+              ],
               "properties": {
-                "name": { "type": "string", "minLength": 1 },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "kind": {
                   "type": "string",
-                  "enum": ["SecretStore", "ClusterSecretStore"]
+                  "enum": [
+                    "SecretStore",
+                    "ClusterSecretStore"
+                  ]
                 }
               }
             },
@@ -102,10 +125,18 @@
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["key", "value"],
+            "required": [
+              "key",
+              "value"
+            ],
             "properties": {
-              "key": { "type": "string", "minLength": 1 },
-              "value": { "type": "string" }
+              "key": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {
+                "type": "string"
+              }
             }
           }
         }
@@ -113,32 +144,53 @@
     },
     "podAnnotations": {
       "type": "object",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {
+        "type": "string"
+      }
     },
     "podSecurityContext": {
       "type": "object",
       "properties": {
-        "runAsNonRoot": { "type": "boolean" },
-        "runAsUser": { "type": "integer", "minimum": 0 },
-        "runAsGroup": { "type": "integer", "minimum": 0 },
-        "fsGroup": { "type": "integer", "minimum": 0 }
+        "runAsNonRoot": {
+          "type": "boolean"
+        },
+        "runAsUser": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runAsGroup": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fsGroup": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "securityContext": {
       "type": "object",
       "properties": {
-        "allowPrivilegeEscalation": { "type": "boolean" },
-        "readOnlyRootFilesystem": { "type": "boolean" },
+        "allowPrivilegeEscalation": {
+          "type": "boolean"
+        },
+        "readOnlyRootFilesystem": {
+          "type": "boolean"
+        },
         "capabilities": {
           "type": "object",
           "properties": {
             "drop": {
               "type": "array",
-              "items": { "type": "string" }
+              "items": {
+                "type": "string"
+              }
             },
             "add": {
               "type": "array",
-              "items": { "type": "string" }
+              "items": {
+                "type": "string"
+              }
             }
           }
         }
@@ -149,11 +201,15 @@
     },
     "nodeSelector": {
       "type": "object",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {
+        "type": "string"
+      }
     },
     "tolerations": {
       "type": "array",
-      "items": { "type": "object" }
+      "items": {
+        "type": "object"
+      }
     },
     "affinity": {
       "type": "object"
@@ -168,14 +224,24 @@
         },
         "minAvailable": {
           "oneOf": [
-            { "type": "integer", "minimum": 0 },
-            { "type": "string" }
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "string"
+            }
           ]
         },
         "maxUnavailable": {
           "oneOf": [
-            { "type": "integer", "minimum": 0 },
-            { "type": "string" }
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "string"
+            }
           ]
         }
       }
@@ -189,11 +255,19 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "repository": { "type": "string" },
-            "tag": { "type": "string" },
+            "repository": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
             "pullPolicy": {
               "type": "string",
-              "enum": ["Always", "IfNotPresent", "Never"]
+              "enum": [
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ]
             }
           }
         },
@@ -206,7 +280,14 @@
       "properties": {
         "logLevel": {
           "type": "string",
-          "enum": ["trace", "debug", "info", "warn", "error", "validation error"],
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error",
+            "validation error"
+          ],
           "description": "Operator log level (trace, debug, info, warn, error)"
         },
         "restApiEnabled": {
@@ -234,11 +315,20 @@
     "service": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "restApiPort", "metricsPort"],
+      "required": [
+        "type",
+        "restApiPort",
+        "metricsPort"
+      ],
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["ClusterIP", "NodePort", "LoadBalancer", "validation error"],
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer",
+            "validation error"
+          ],
           "description": "Kubernetes Service type"
         },
         "restApiPort": {
@@ -256,47 +346,77 @@
     "defaultResources": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["validator", "horizon", "sorobanRpc"],
+      "required": [
+        "validator",
+        "horizon",
+        "sorobanRpc"
+      ],
       "properties": {
-        "validator": { "$ref": "#/definitions/resourceRequirements" },
-        "horizon": { "$ref": "#/definitions/resourceRequirements" },
-        "sorobanRpc": { "$ref": "#/definitions/resourceRequirements" }
+        "validator": {
+          "$ref": "#/definitions/resourceRequirements"
+        },
+        "horizon": {
+          "$ref": "#/definitions/resourceRequirements"
+        },
+        "sorobanRpc": {
+          "$ref": "#/definitions/resourceRequirements"
+        }
       }
     },
     "featureFlags": {
       "type": "object",
-      "additionalProperties": false,
-      "description": "Runtime feature flags written into the stellar-operator-config ConfigMap",
+      "description": "Feature flag toggles for operator capabilities",
+      "additionalProperties": {
+        "type": "boolean"
+      },
       "properties": {
         "enableCveScanning": {
-          "type": "string",
-          "enum": ["true", "false"],
-          "description": "Enable automatic CVE patch reconciliation"
+          "type": "boolean"
         },
         "enableReadPool": {
-          "type": "string",
-          "enum": ["true", "false"],
-          "description": "Enable read-replica pool management"
+          "type": "boolean"
         },
         "enableDr": {
-          "type": "string",
-          "enum": ["true", "false"],
-          "description": "Enable disaster-recovery drill scheduling"
+          "type": "boolean"
         },
         "enablePeerDiscovery": {
-          "type": "string",
-          "enum": ["true", "false"],
-          "description": "Enable automatic peer discovery"
+          "type": "boolean"
         },
         "enableArchiveHealth": {
-          "type": "string",
-          "enum": ["true", "false"],
-          "description": "Enable history archive health checks"
+          "type": "boolean"
         },
         "enableSorobanMetrics": {
-          "type": "string",
-          "enum": ["true", "false"],
-          "description": "Enable Soroban-specific Prometheus metrics collection"
+          "type": "boolean"
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "description": "Security hardening configuration",
+      "additionalProperties": true,
+      "properties": {
+        "audit": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "podSecurityStandard": {
+          "type": "string"
+        },
+        "falco": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "admissionWebhook": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "imagePolicy": {
+          "type": "object",
+          "additionalProperties": true
         }
       }
     },
@@ -327,8 +447,12 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "requests": { "$ref": "#/definitions/resourceList" },
-        "limits": { "$ref": "#/definitions/resourceList" }
+        "requests": {
+          "$ref": "#/definitions/resourceList"
+        },
+        "limits": {
+          "$ref": "#/definitions/resourceList"
+        }
       }
     }
   }

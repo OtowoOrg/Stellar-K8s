@@ -320,6 +320,8 @@ mod tests {
             label_propagation: None,
             custom_network_passphrase: None,
             nat_traversal: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
         };
 
         let labels = get_standard_labels(&spec, "my-validator");
@@ -384,6 +386,8 @@ mod tests {
             label_propagation: None,
             custom_network_passphrase: None,
             nat_traversal: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
         };
 
         let annotations = get_standard_annotations(&spec);

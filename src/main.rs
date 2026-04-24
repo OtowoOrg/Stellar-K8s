@@ -47,6 +47,8 @@ enum Commands {
     Run(RunArgs),
     /// Run the admission webhook server
     Webhook(WebhookArgs),
+    /// Run the StellarBenchmark controller (can be co-located with the main operator)
+    Benchmark(BenchmarkArgs),
     /// Show version and build information
     Version,
     /// Show cluster information (node count) for a namespace
@@ -326,6 +328,32 @@ struct WebhookArgs {
     log_format: LogFormat,
 }
 
+/// Arguments for the `benchmark` subcommand.
+#[derive(Parser, Debug)]
+#[command(
+    about = "Run the StellarBenchmark controller",
+    long_about = "Starts the StellarBenchmark controller that watches StellarBenchmark resources\n\
+        and reconciles them by spinning up ephemeral load-generator pods, collecting metrics,\n\
+        and writing results to BenchmarkReport resources or ConfigMaps.\n\n\
+        This controller can run standalone or be co-located with the main operator process.\n\n\
+        EXAMPLES:\n  \
+        stellar-operator benchmark\n  \
+        stellar-operator benchmark --namespace stellar-system\n  \
+        stellar-operator benchmark --log-level debug"
+)]
+struct BenchmarkArgs {
+    /// Kubernetes namespace to watch for StellarBenchmark resources.
+    ///
+    /// When unset, the controller watches all namespaces.
+    /// Env: OPERATOR_NAMESPACE
+    #[arg(long, env = "OPERATOR_NAMESPACE", default_value = "default")]
+    namespace: String,
+
+    /// Minimum log level.
+    #[arg(long, env = "LOG_LEVEL", default_value = "info")]
+    log_level: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
@@ -353,6 +381,9 @@ async fn main() -> Result<(), Error> {
         }
         Commands::Webhook(webhook_args) => {
             return run_webhook(webhook_args).await;
+        }
+        Commands::Benchmark(benchmark_args) => {
+            return run_benchmark_controller_cmd(benchmark_args).await;
         }
         Commands::Simulator(cli) => {
             return run_simulator(cli).await;
@@ -789,11 +820,49 @@ async fn run_generate_runbook(args: GenerateRunbookArgs) -> Result<(), Error> {
 
     // Output to file or stdout
     if let Some(output_path) = args.output {
-        std::fs::write(&output_path, &runbook).map_err(|e| Error::IoError(e))?;
-        println!("Runbook generated successfully: {}", output_path);
+        std::fs::write(&output_path, &runbook).map_err(Error::IoError)?;
+        println!("Runbook generated successfully: {output_path}");
     } else {
-        println!("{}", runbook);
+        println!("{runbook}");
     }
+
+    Ok(())
+}
+
+/// Run the StellarBenchmark controller as a standalone process.
+async fn run_benchmark_controller_cmd(args: BenchmarkArgs) -> Result<(), Error> {
+    use stellar_k8s::controller::run_benchmark_controller;
+
+    // Minimal tracing setup for the benchmark controller.
+    let env_filter = tracing_subscriber::EnvFilter::builder()
+        .with_default_directive(
+            args.log_level
+                .parse()
+                .unwrap_or(tracing::Level::INFO.into()),
+        )
+        .from_env_lossy();
+
+    tracing_subscriber::fmt()
+        .json()
+        .with_env_filter(env_filter)
+        .init();
+
+    info!(
+        "Starting StellarBenchmark controller v{}",
+        env!("CARGO_PKG_VERSION")
+    );
+
+    let client = kube::Client::try_default()
+        .await
+        .map_err(Error::KubeError)?;
+
+    // The benchmark controller always acts as leader (it is stateless and
+    // idempotent, so multiple replicas are safe).
+    let is_leader = Arc::new(AtomicBool::new(true));
+
+    run_benchmark_controller(client, is_leader)
+        .await
+        .map_err(|e| Error::ConfigError(format!("Benchmark controller error: {e}")))?;
 
     Ok(())
 }
@@ -1053,6 +1122,7 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
 
     // Create shared controller state
     let operator_config = stellar_k8s::controller::OperatorConfig::load();
+    let oidc_config = operator_config.oidc.clone();
     let state = Arc::new(controller::ControllerState {
         client: client.clone(),
         enable_mtls: args.enable_mtls,
@@ -1071,6 +1141,7 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         log_reload_handle: reload_handle,
         log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
         last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        oidc_config,
     });
 
     // Start the peer discovery manager
@@ -1210,6 +1281,36 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
     let shutdown_namespace = args.namespace.clone();
     let shutdown_is_leader = Arc::clone(&is_leader);
     let shutdown_identity = holder_identity.clone();
+
+    // Spawn the StellarBenchmark controller as a background task so it runs
+    // alongside the main StellarNode controller in the same process.
+    {
+        let bench_client = client.clone();
+        let bench_is_leader = Arc::clone(&is_leader);
+        tokio::spawn(async move {
+            if let Err(e) =
+                controller::run_benchmark_controller(bench_client, bench_is_leader).await
+            {
+                tracing::error!("StellarBenchmark controller error: {:?}", e);
+            }
+        });
+    }
+
+    // Spawn the auto-snapshot worker.
+    // This background task periodically creates CSI VolumeSnapshots for all
+    // Validator nodes with `spec.snapshotSchedule` configured, and tracks
+    // bootstrap status for nodes started from a snapshot.
+    {
+        let snapshot_client = client.clone();
+        let snapshot_reporter = kube::runtime::events::Reporter {
+            controller: "stellar-operator-snapshot-worker".to_string(),
+            instance: None,
+        };
+        tokio::spawn(async move {
+            controller::run_snapshot_worker(snapshot_client, snapshot_reporter).await;
+        });
+        info!("Auto-snapshot worker spawned");
+    }
 
     let result = tokio::select! {
         res = controller::run_controller(state) => {

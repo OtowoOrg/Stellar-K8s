@@ -60,6 +60,8 @@ mod stellar_node_spec_validation {
             sidecars: None,
             custom_network_passphrase: None,
             nat_traversal: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
         }
     }
 
@@ -114,6 +116,8 @@ mod stellar_node_spec_validation {
             sidecars: None,
             custom_network_passphrase: None,
             nat_traversal: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
         }
     }
 
@@ -166,9 +170,12 @@ mod stellar_node_spec_validation {
             sidecars: None,
             custom_network_passphrase: None,
             nat_traversal: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
         }
     }
 
+    #[allow(dead_code)]
     fn default_resources() -> ResourceRequirements {
         ResourceRequirements {
             requests: ResourceSpec {
@@ -182,6 +189,7 @@ mod stellar_node_spec_validation {
         }
     }
 
+    #[allow(dead_code)]
     fn default_storage() -> StorageConfig {
         StorageConfig {
             storage_class: "standard".to_string(),
@@ -262,6 +270,7 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(80),
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
         });
 
         let result = spec.validate();
@@ -381,6 +390,7 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(80),
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
         });
 
         assert!(spec.validate().is_ok());
@@ -395,6 +405,7 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(80),
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
         });
 
         let result = spec.validate();
@@ -418,6 +429,7 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(80),
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
         });
 
         let result = spec.validate();
@@ -658,6 +670,7 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(70),
             custom_metrics: vec!["rpc_requests_per_second".to_string()],
             behavior: None,
+            predictive_scaling: None,
         });
 
         assert!(spec.validate().is_ok());
@@ -672,6 +685,7 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
         });
 
         let result = spec.validate();
@@ -695,6 +709,7 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(80),
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
         });
 
         let result = spec.validate();
@@ -900,6 +915,7 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(80),
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
         });
 
         assert!(spec.validate().is_ok());

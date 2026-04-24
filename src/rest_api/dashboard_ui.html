@@ -1,716 +1,481 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stellar-K8s Operator Dashboard</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #0f172a;
-            color: #e2e8f0;
-            line-height: 1.6;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 30px;
-            border-radius: 12px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-        }
-
-        h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
-
-        .subtitle {
-            opacity: 0.9;
-            font-size: 1.1em;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            background: #1e293b;
-            padding: 25px;
-            border-radius: 12px;
-            border: 1px solid #334155;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-        }
-
-        .stat-label {
-            font-size: 0.9em;
-            color: #94a3b8;
-            margin-bottom: 10px;
-        }
-
-        .stat-value {
-            font-size: 2.5em;
-            font-weight: bold;
-            color: #fff;
-        }
-
-        .stat-healthy { color: #10b981; }
-        .stat-syncing { color: #f59e0b; }
-        .stat-unhealthy { color: #ef4444; }
-
-        .nodes-section {
-            background: #1e293b;
-            padding: 30px;
-            border-radius: 12px;
-            border: 1px solid #334155;
-            margin-bottom: 30px;
-        }
-
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .section-title {
-            font-size: 1.8em;
-            font-weight: 600;
-        }
-
-        .refresh-btn {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1em;
-            transition: background 0.2s;
-        }
-
-        .refresh-btn:hover {
-            background: #5568d3;
-        }
-
-        .nodes-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .nodes-table th {
-            background: #0f172a;
-            padding: 15px;
-            text-align: left;
-            font-weight: 600;
-            border-bottom: 2px solid #334155;
-        }
-
-        .nodes-table td {
-            padding: 15px;
-            border-bottom: 1px solid #334155;
-        }
-
-        .nodes-table tr:hover {
-            background: #0f172a;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 0.85em;
-            font-weight: 600;
-        }
-
-        .badge-success { background: #10b981; color: white; }
-        .badge-warning { background: #f59e0b; color: white; }
-        .badge-error { background: #ef4444; color: white; }
-        .badge-info { background: #3b82f6; color: white; }
-
-        .action-btn {
-            background: #3b82f6;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.9em;
-            margin-right: 5px;
-            transition: background 0.2s;
-        }
-
-        .action-btn:hover {
-            background: #2563eb;
-        }
-
-        .action-btn-danger {
-            background: #ef4444;
-        }
-
-        .action-btn-danger:hover {
-            background: #dc2626;
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            z-index: 1000;
-        }
-
-        .modal-content {
-            background: #1e293b;
-            margin: 50px auto;
-            padding: 30px;
-            border-radius: 12px;
-            max-width: 800px;
-            max-height: 80vh;
-            overflow-y: auto;
-            border: 1px solid #334155;
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .close-btn {
-            background: none;
-            border: none;
-            color: #94a3b8;
-            font-size: 2em;
-            cursor: pointer;
-            line-height: 1;
-        }
-
-        .close-btn:hover {
-            color: #fff;
-        }
-
-        .logs-container {
-            background: #0f172a;
-            padding: 20px;
-            border-radius: 8px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-            white-space: pre-wrap;
-            max-height: 500px;
-            overflow-y: auto;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            font-size: 1.2em;
-            color: #94a3b8;
-        }
-
-        .error-message {
-            background: #7f1d1d;
-            color: #fecaca;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-        }
-
-        .conditions-list {
-            list-style: none;
-        }
-
-        .condition-item {
-            background: #0f172a;
-            padding: 15px;
-            margin-bottom: 10px;
-            border-radius: 8px;
-            border-left: 4px solid #334155;
-        }
-
-        .condition-item.success { border-left-color: #10b981; }
-        .condition-item.warning { border-left-color: #f59e0b; }
-        .condition-item.error { border-left-color: #ef4444; }
-
-        .condition-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-        }
-
-        .condition-type {
-            font-weight: 600;
-            font-size: 1.1em;
-        }
-
-        .condition-message {
-            color: #94a3b8;
-            font-size: 0.9em;
-        }
-
-        /* Search UI Styles */
-        .search-container {
-            margin-bottom: 30px;
-            position: relative;
-        }
-
-        .search-input {
-            width: 100%;
-            padding: 15px 20px;
-            border-radius: 12px;
-            background: #1e293b;
-            border: 1px solid #334155;
-            color: #fff;
-            font-size: 1.1em;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-            transition: border-color 0.2s, box-shadow 0.2s;
-        }
-
-        .search-input:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
-        }
-
-        .search-results {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            right: 0;
-            background: #1e293b;
-            border-radius: 0 0 12px 12px;
-            border: 1px solid #334155;
-            border-top: none;
-            z-index: 1001;
-            max-height: 400px;
-            overflow-y: auto;
-            display: none;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-        }
-
-        .search-result-item {
-            padding: 15px 20px;
-            border-bottom: 1px solid #334155;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .search-result-item:last-child {
-            border-bottom: none;
-        }
-
-        .search-result-item:hover {
-            background: #334155;
-        }
-
-        .result-title {
-            font-weight: 600;
-            color: #667eea;
-            margin-bottom: 5px;
-        }
-
-        .result-snippet {
-            font-size: 0.9em;
-            color: #94a3b8;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .highlight {
-            background: rgba(245, 158, 11, 0.3);
-            color: #fbbf24;
-            padding: 2px 4px;
-            border-radius: 4px;
-            font-weight: 600;
-        }
-
-        /* Documentation Modal Styles */
-        .doc-content {
-            padding: 20px;
-            color: #e2e8f0;
-            font-size: 1.1em;
-            line-height: 1.7;
-        }
-
-        .doc-content h1, .doc-content h2, .doc-content h3 {
-            margin: 25px 0 15px 0;
-            color: #fff;
-        }
-
-        .doc-content code {
-            background: #0f172a;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            color: #ec4899;
-        }
-
-        .doc-content pre {
-            background: #0f172a;
-            padding: 20px;
-            border-radius: 8px;
-            overflow-x: auto;
-            margin: 20px 0;
-        }
-
-        .doc-content pre code {
-            background: none;
-            padding: 0;
-            color: #e2e8f0;
-        }
-    </style>
-    <!-- Include Lunr.js and Marked for documentation portal -->
-    <script src="https://cdn.jsdelivr.net/npm/lunr@2.3.9/lunr.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stellar-K8s Operator Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f172a; --surface: #1e293b; --border: #334155;
+      --text: #e2e8f0; --muted: #94a3b8;
+      --accent: #667eea; --accent2: #764ba2;
+      --green: #10b981; --yellow: #f59e0b; --red: #ef4444; --blue: #3b82f6;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           background: var(--bg); color: var(--text); line-height: 1.5; }
+    #root { display: flex; flex-direction: column; min-height: 100vh; }
+    button { cursor: pointer; border: none; font-family: inherit; }
+    a { color: var(--accent); text-decoration: none; }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>⭐ Stellar-K8s Operator Dashboard</h1>
-            <div class="subtitle">Real-time monitoring and management of Stellar nodes</div>
-        </header>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
 
-        <div class="search-container">
-            <input type="text" id="searchInput" class="search-input" placeholder="Search documentation (e.g., 'mTLS rotation', 'S3 backup config')..." autocomplete="off">
-            <div id="searchResults" class="search-results"></div>
-        </div>
+/* ── helpers ── */
+const API = window.location.origin;
+const get = (url) => fetch(API + url).then(r => r.json());
+const post = (url, body) => fetch(API + url, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body)
+}).then(r => r.json());
 
-        <div class="stats-grid" id="statsGrid">
-            <div class="stat-card">
-                <div class="stat-label">Total Nodes</div>
-                <div class="stat-value" id="totalNodes">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Healthy</div>
-                <div class="stat-value stat-healthy" id="healthyNodes">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Syncing</div>
-                <div class="stat-value stat-syncing" id="syncingNodes">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Unhealthy</div>
-                <div class="stat-value stat-unhealthy" id="unhealthyNodes">-</div>
-            </div>
-        </div>
+function useInterval(fn, ms) {
+  const ref = useRef(fn);
+  useEffect(() => { ref.current = fn; }, [fn]);
+  useEffect(() => {
+    const id = setInterval(() => ref.current(), ms);
+    return () => clearInterval(id);
+  }, [ms]);
+}
 
-        <div class="nodes-section">
-            <div class="section-header">
-                <h2 class="section-title">Managed Nodes</h2>
-                <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh</button>
-            </div>
-            <div id="nodesContent">
-                <div class="loading">Loading nodes...</div>
-            </div>
-        </div>
+/* ── design tokens ── */
+const css = {
+  card: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 },
+  badge: (color) => ({
+    display: 'inline-block', padding: '3px 10px', borderRadius: 12,
+    fontSize: 12, fontWeight: 700, background: color, color: '#fff'
+  }),
+  btn: (color = 'var(--accent)') => ({
+    background: color, color: '#fff', padding: '6px 14px',
+    borderRadius: 8, fontSize: 13, fontWeight: 600,
+    transition: 'opacity .15s'
+  }),
+  mono: { fontFamily: "'Courier New', monospace", fontSize: 13 },
+};
+
+const phaseColor = (p) => ({
+  Ready: 'var(--green)', Running: 'var(--green)',
+  Syncing: 'var(--yellow)', Creating: 'var(--blue)', Pending: 'var(--blue)',
+  Failed: 'var(--red)', Degraded: 'var(--red)', Unknown: 'var(--muted)',
+}[p] || 'var(--muted)');
+
+/* ── Stat Card ── */
+function StatCard({ label, value, color }) {
+  return (
+    <div style={{ ...css.card, flex: 1, minWidth: 160 }}>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 36, fontWeight: 800, color: color || 'var(--text)' }}>{value ?? '—'}</div>
     </div>
+  );
+}
 
-    <!-- Logs Modal -->
-    <div id="logsModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="logsTitle">Node Logs</h2>
-                <button class="close-btn" onclick="closeModal('logsModal')">&times;</button>
-            </div>
-            <div class="logs-container" id="logsContent">Loading...</div>
-        </div>
+/* ── Toast ── */
+function Toast({ msg, type, onClose }) {
+  useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, []);
+  const bg = type === 'error' ? 'var(--red)' : type === 'warn' ? 'var(--yellow)' : 'var(--green)';
+  return (
+    <div style={{
+      position: 'fixed', bottom: 24, right: 24, background: bg, color: '#fff',
+      padding: '12px 20px', borderRadius: 10, zIndex: 9999, maxWidth: 360,
+      boxShadow: '0 4px 20px rgba(0,0,0,.4)', fontSize: 14
+    }}>
+      {msg}
+      <button onClick={onClose} style={{ background: 'none', color: '#fff', marginLeft: 12, fontSize: 16 }}>×</button>
     </div>
+  );
+}
 
-    <!-- Conditions Modal -->
-    <div id="conditionsModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="conditionsTitle">Node Conditions</h2>
-                <button class="close-btn" onclick="closeModal('conditionsModal')">&times;</button>
-            </div>
-            <ul class="conditions-list" id="conditionsContent"></ul>
+/* ── Modal ── */
+function Modal({ title, onClose, children, wide }) {
+  return (
+    <div onClick={e => e.target === e.currentTarget && onClose()}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)',
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+        padding: '40px 16px', zIndex: 1000, overflowY: 'auto'
+      }}>
+      <div style={{
+        ...css.card, width: '100%', maxWidth: wide ? 960 : 720,
+        position: 'relative'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 700 }}>{title}</h2>
+          <button onClick={onClose} style={{ background: 'none', color: 'var(--muted)', fontSize: 24, lineHeight: 1 }}>×</button>
         </div>
+        {children}
+      </div>
     </div>
+  );
+}
 
-    <!-- Documentation Modal -->
-    <div id="docModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="docTitle">Documentation</h2>
-                <button class="close-btn" onclick="closeModal('docModal')">&times;</button>
+/* ── Log Viewer ── */
+function LogViewer({ lines, loading, error }) {
+  const ref = useRef();
+  useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [lines]);
+  return (
+    <div ref={ref} style={{
+      ...css.mono, background: 'var(--bg)', padding: 16, borderRadius: 8,
+      maxHeight: 480, overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all'
+    }}>
+      {loading && <span style={{ color: 'var(--muted)' }}>Loading logs…</span>}
+      {error && <span style={{ color: 'var(--red)' }}>{error}</span>}
+      {!loading && !error && (lines?.length
+        ? lines.map((l, i) => <div key={i} style={{ color: l.includes('ERROR') ? 'var(--red)' : l.includes('WARN') ? 'var(--yellow)' : 'var(--text)' }}>{l}</div>)
+        : <span style={{ color: 'var(--muted)' }}>No log lines available.</span>
+      )}
+    </div>
+  );
+}
+
+/* ── Conditions Panel ── */
+function ConditionsPanel({ conditions }) {
+  if (!conditions?.length) return <p style={{ color: 'var(--muted)' }}>No conditions reported.</p>;
+  const severityColor = (s) => ({ success: 'var(--green)', warning: 'var(--yellow)', error: 'var(--red)', info: 'var(--blue)' }[s] || 'var(--muted)');
+  return (
+    <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {conditions.map((c, i) => (
+        <li key={i} style={{
+          background: 'var(--bg)', padding: 14, borderRadius: 8,
+          borderLeft: `4px solid ${severityColor(c.severity)}`
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <strong>{c.conditionType}</strong>
+            <span style={css.badge(severityColor(c.severity))}>{c.status}</span>
+          </div>
+          {c.message && <div style={{ color: 'var(--muted)', fontSize: 13 }}>{c.message}</div>}
+          {c.lastTransitionTime && (
+            <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>
+              {new Date(c.lastTransitionTime).toLocaleString()}
             </div>
-            <div id="docContent" class="doc-content"></div>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/* ── Node Detail Modal ── */
+function NodeDetailModal({ node, onClose, onToast }) {
+  const [tab, setTab] = useState('conditions');
+  const [conditions, setConditions] = useState(null);
+  const [logs, setLogs] = useState(null);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState(null);
+  const [actionLoading, setActionLoading] = useState(null);
+
+  useEffect(() => {
+    get(`/api/v1/dashboard/nodes/${node.namespace}/${node.name}/conditions`)
+      .then(d => setConditions(d.conditions))
+      .catch(() => setConditions([]));
+  }, [node]);
+
+  const loadLogs = useCallback(() => {
+    setLogsLoading(true); setLogsError(null);
+    get(`/api/v1/dashboard/nodes/${node.namespace}/${node.name}/logs`)
+      .then(d => { setLogs(d.logs ? d.logs.split('\n') : []); setLogsLoading(false); })
+      .catch(e => { setLogsError(e.message); setLogsLoading(false); });
+  }, [node]);
+
+  useEffect(() => { if (tab === 'logs') loadLogs(); }, [tab]);
+
+  const doAction = async (action) => {
+    if (!confirm(`Run "${action}" on ${node.namespace}/${node.name}?`)) return;
+    setActionLoading(action);
+    try {
+      const r = await post(`/api/v1/dashboard/nodes/${node.namespace}/${node.name}/actions`, { action });
+      onToast(r.success ? r.message : (r.message || 'Action failed'), r.success ? 'ok' : 'error');
+    } catch (e) {
+      onToast(e.message, 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const tabs = ['conditions', 'logs', 'actions'];
+  const tabStyle = (t) => ({
+    padding: '8px 18px', borderRadius: '8px 8px 0 0', fontWeight: 600, fontSize: 14,
+    background: tab === t ? 'var(--bg)' : 'transparent',
+    color: tab === t ? 'var(--text)' : 'var(--muted)',
+    border: tab === t ? '1px solid var(--border)' : '1px solid transparent',
+    borderBottom: tab === t ? '1px solid var(--bg)' : '1px solid var(--border)',
+    marginBottom: -1,
+  });
+
+  return (
+    <Modal title={`${node.namespace} / ${node.name}`} onClose={onClose} wide>
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 20 }}>
+        {tabs.map(t => <button key={t} style={tabStyle(t)} onClick={() => setTab(t)}>{t.charAt(0).toUpperCase() + t.slice(1)}</button>)}
+      </div>
+
+      {tab === 'conditions' && (
+        conditions ? <ConditionsPanel conditions={conditions} /> : <p style={{ color: 'var(--muted)' }}>Loading…</p>
+      )}
+
+      {tab === 'logs' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+            <button style={css.btn()} onClick={loadLogs}>↺ Refresh</button>
+          </div>
+          <LogViewer lines={logs} loading={logsLoading} error={logsError} />
         </div>
+      )}
+
+      {tab === 'actions' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {[
+            { action: 'restart', label: '🔄 Restart Pods', color: 'var(--yellow)', desc: 'Delete all managed pods — Kubernetes will recreate them.' },
+            { action: 'maintenance_mode', label: '🔧 Toggle Maintenance Mode', color: 'var(--blue)', desc: 'Flip the maintenanceMode flag on the StellarNode spec.' },
+            { action: 'prune', label: '🗑 Prune Archives', color: 'var(--accent2)', desc: 'Request history archive pruning via annotation.' },
+            { action: 'snapshot', label: '📸 Snapshot', color: 'var(--accent)', desc: 'Request a manual CSI VolumeSnapshot.' },
+            { action: 'suspend', label: '⏸ Suspend', color: 'var(--muted)', desc: 'Set suspended: true — stops reconciliation.' },
+            { action: 'resume', label: '▶ Resume', color: 'var(--green)', desc: 'Set suspended: false — resumes reconciliation.' },
+          ].map(({ action, label, color, desc }) => (
+            <div key={action} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+              background: 'var(--bg)', padding: '14px 18px', borderRadius: 8 }}>
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 2 }}>{label}</div>
+                <div style={{ fontSize: 13, color: 'var(--muted)' }}>{desc}</div>
+              </div>
+              <button
+                style={{ ...css.btn(color), minWidth: 90, opacity: actionLoading === action ? 0.6 : 1 }}
+                disabled={!!actionLoading}
+                onClick={() => doAction(action)}
+              >
+                {actionLoading === action ? '…' : 'Run'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/* ── Operator Logs Modal ── */
+function OperatorLogsModal({ onClose }) {
+  const [lines, setLines] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(() => {
+    setLoading(true); setError(null);
+    get('/api/v1/dashboard/operator/logs')
+      .then(d => { setLines(d.logs); setLoading(false); })
+      .catch(e => { setError(e.message); setLoading(false); });
+  }, []);
+
+  useEffect(() => { load(); }, []);
+
+  return (
+    <Modal title="Operator Logs" onClose={onClose} wide>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+        <button style={css.btn()} onClick={load}>↺ Refresh</button>
+      </div>
+      <LogViewer lines={lines} loading={loading} error={error} />
+    </Modal>
+  );
+}
+
+/* ── Nodes Table ── */
+function NodesTable({ nodes, onSelect }) {
+  if (!nodes) return <p style={{ color: 'var(--muted)', padding: 20 }}>Loading nodes…</p>;
+  if (!nodes.length) return <p style={{ color: 'var(--muted)', padding: 20 }}>No StellarNode resources found.</p>;
+
+  const th = { padding: '12px 16px', textAlign: 'left', fontWeight: 600, fontSize: 13,
+    color: 'var(--muted)', borderBottom: '2px solid var(--border)', background: 'var(--bg)' };
+  const td = { padding: '14px 16px', borderBottom: '1px solid var(--border)', fontSize: 14 };
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            {['Name', 'Namespace', 'Type', 'Network', 'Phase', 'Replicas', ''].map(h => (
+              <th key={h} style={th}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {nodes.map(n => (
+            <tr key={`${n.namespace}/${n.name}`}
+              style={{ cursor: 'pointer', transition: 'background .1s' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,.03)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <td style={td}><strong>{n.name}</strong></td>
+              <td style={{ ...td, color: 'var(--muted)' }}>{n.namespace}</td>
+              <td style={td}><span style={css.badge('var(--blue)')}>{n.nodeType}</span></td>
+              <td style={td}>{n.network}</td>
+              <td style={td}><span style={css.badge(phaseColor(n.phase))}>{n.phase}</span></td>
+              <td style={td}>{n.readyReplicas}/{n.replicas}</td>
+              <td style={td}>
+                <button style={css.btn()} onClick={() => onSelect(n)}>Details →</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
+  );
+}
 
-    <script>
-        const API_BASE = window.location.origin;
-        let searchIndex = null;
-        let docData = [];
+/* ── Fleet Health Bar ── */
+function FleetHealthBar({ healthy, syncing, unhealthy, total }) {
+  if (!total) return null;
+  const pct = (n) => `${Math.round((n / total) * 100)}%`;
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', height: 10, borderRadius: 6, overflow: 'hidden', gap: 2 }}>
+        <div style={{ width: pct(healthy), background: 'var(--green)', transition: 'width .4s' }} title={`${healthy} healthy`} />
+        <div style={{ width: pct(syncing), background: 'var(--yellow)', transition: 'width .4s' }} title={`${syncing} syncing`} />
+        <div style={{ width: pct(unhealthy), background: 'var(--red)', transition: 'width .4s' }} title={`${unhealthy} unhealthy`} />
+      </div>
+      <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
+        <span>🟢 {healthy} healthy</span>
+        <span>🟡 {syncing} syncing</span>
+        <span>🔴 {unhealthy} unhealthy</span>
+      </div>
+    </div>
+  );
+}
 
-        // Initialize documentation search
-        async function initSearch() {
-            try {
-                const response = await fetch(`${API_BASE}/api/v1/docs/search-index`);
-                docData = await response.json();
-                
-                searchIndex = lunr(function () {
-                    this.ref('path');
-                    this.field('title', { boost: 10 });
-                    this.field('content');
+/* ── Breakdown Pills ── */
+function BreakdownPills({ label, data }) {
+  return (
+    <div style={{ ...css.card, flex: 1, minWidth: 200 }}>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>{label}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {Object.entries(data).filter(([, v]) => v > 0).map(([k, v]) => (
+          <span key={k} style={{ ...css.badge('var(--accent)'), fontSize: 13 }}>{k}: {v}</span>
+        ))}
+        {Object.values(data).every(v => v === 0) && <span style={{ color: 'var(--muted)' }}>—</span>}
+      </div>
+    </div>
+  );
+}
 
-                    docData.forEach(function (doc) {
-                        this.add(doc);
-                    }, this);
-                });
+/* ── App ── */
+function App() {
+  const [overview, setOverview] = useState(null);
+  const [nodes, setNodes] = useState(null);
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [showOperatorLogs, setShowOperatorLogs] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-                console.log('Search index initialized with', docData.length, 'documents');
-            } catch (error) {
-                console.error('Failed to initialize search:', error);
-            }
-        }
+  const showToast = (msg, type = 'ok') => setToast({ msg, type });
 
-        const searchInput = document.getElementById('searchInput');
-        const searchResults = document.getElementById('searchResults');
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [ov, nl] = await Promise.all([
+        get('/api/v1/dashboard/overview'),
+        get('/api/v1/nodes'),
+      ]);
+      setOverview(ov);
+      setNodes(nl.items);
+      setLastRefresh(new Date());
+    } catch (e) {
+      showToast('Failed to load dashboard: ' + e.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-        searchInput.addEventListener('input', (e) => {
-            const query = e.target.value;
-            if (query.length < 2) {
-                searchResults.style.display = 'none';
-                return;
-            }
+  useEffect(() => { refresh(); }, []);
+  useInterval(refresh, 30000);
 
-            if (!searchIndex) return;
+  return (
+    <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 20px' }}>
+      {/* Header */}
+      <div style={{
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        borderRadius: 14, padding: '28px 32px', marginBottom: 28,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        flexWrap: 'wrap', gap: 16
+      }}>
+        <div>
+          <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4 }}>⭐ Stellar-K8s Dashboard</h1>
+          <div style={{ opacity: .85, fontSize: 14 }}>
+            Fleet health · CRD status · Reconciliation logs
+            {lastRefresh && <span style={{ marginLeft: 12, opacity: .7 }}>
+              Last updated {lastRefresh.toLocaleTimeString()}
+            </span>}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button style={css.btn('rgba(255,255,255,.2)')} onClick={() => setShowOperatorLogs(true)}>
+            📋 Operator Logs
+          </button>
+          <button style={{ ...css.btn('rgba(255,255,255,.2)'), opacity: loading ? .6 : 1 }}
+            onClick={refresh} disabled={loading}>
+            {loading ? '…' : '↺ Refresh'}
+          </button>
+        </div>
+      </div>
 
-            const results = searchIndex.search(query);
-            renderSearchResults(results, query);
-        });
+      {/* Stats row */}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
+        <StatCard label="Total Nodes" value={overview?.totalNodes} />
+        <StatCard label="Healthy" value={overview?.healthyNodes} color="var(--green)" />
+        <StatCard label="Syncing" value={overview?.syncingNodes} color="var(--yellow)" />
+        <StatCard label="Unhealthy" value={overview?.unhealthyNodes} color="var(--red)" />
+      </div>
 
-        function renderSearchResults(results, query) {
-            if (results.length === 0) {
-                searchResults.innerHTML = '<div class="search-result-item">No results found</div>';
-                searchResults.style.display = 'block';
-                return;
-            }
+      {/* Fleet health bar */}
+      {overview && (
+        <div style={{ ...css.card, marginBottom: 20 }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Fleet Health</div>
+          <FleetHealthBar
+            healthy={overview.healthyNodes}
+            syncing={overview.syncingNodes}
+            unhealthy={overview.unhealthyNodes}
+            total={overview.totalNodes}
+          />
+        </div>
+      )}
 
-            const html = results.slice(0, 10).map(result => {
-                const doc = docData.find(d => d.path === result.ref);
-                const snippet = getSnippet(doc.content, query);
-                return `
-                    <div class="search-result-item" onclick="showDoc('${doc.path}')">
-                        <div class="result-title">${highlight(doc.title, query)}</div>
-                        <div class="result-snippet">${highlight(snippet, query)}</div>
-                    </div>
-                `;
-            }).join('');
+      {/* Breakdowns */}
+      {overview && (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
+          <BreakdownPills label="By Node Type" data={overview.nodesByType} />
+          <BreakdownPills label="By Network" data={overview.nodesByNetwork} />
+        </div>
+      )}
 
-            searchResults.innerHTML = html;
-            searchResults.style.display = 'block';
-        }
+      {/* Nodes table */}
+      <div style={{ ...css.card }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 700 }}>Managed StellarNodes</h2>
+          <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+            {nodes ? `${nodes.length} resource${nodes.length !== 1 ? 's' : ''}` : ''}
+          </span>
+        </div>
+        <NodesTable nodes={nodes} onSelect={setSelectedNode} />
+      </div>
 
-        function getSnippet(content, query) {
-            const index = content.toLowerCase().indexOf(query.toLowerCase());
-            if (index === -1) return content.substring(0, 100) + '...';
-            
-            const start = Math.max(0, index - 40);
-            const end = Math.min(content.length, index + query.length + 60);
-            return (start > 0 ? '...' : '') + content.substring(start, end) + (end < content.length ? '...' : '');
-        }
+      {/* Modals */}
+      {selectedNode && (
+        <NodeDetailModal
+          node={selectedNode}
+          onClose={() => setSelectedNode(null)}
+          onToast={showToast}
+        />
+      )}
+      {showOperatorLogs && <OperatorLogsModal onClose={() => setShowOperatorLogs(false)} />}
+      {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+    </div>
+  );
+}
 
-        function highlight(text, query) {
-            const regex = new RegExp(`(${query})`, 'gi');
-            return text.replace(regex, '<span class="highlight">$1</span>');
-        }
-
-        function showDoc(path) {
-            const doc = docData.find(d => d.path === path);
-            if (!doc) return;
-
-            searchResults.style.display = 'none';
-            searchInput.value = '';
-
-            document.getElementById('docModal').style.display = 'block';
-            document.getElementById('docTitle').textContent = doc.title;
-            document.getElementById('docContent').innerHTML = marked.parse(doc.content);
-        }
-
-        // Close search results when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.search-container')) {
-                searchResults.style.display = 'none';
-            }
-        });
-
-        async function loadDashboard() {
-            try {
-                // Load overview stats
-                const overview = await fetch(`${API_BASE}/api/v1/dashboard/overview`).then(r => r.json());
-                document.getElementById('totalNodes').textContent = overview.totalNodes;
-                document.getElementById('healthyNodes').textContent = overview.healthyNodes;
-                document.getElementById('syncingNodes').textContent = overview.syncingNodes;
-                document.getElementById('unhealthyNodes').textContent = overview.unhealthyNodes;
-
-                // Load nodes list
-                const nodes = await fetch(`${API_BASE}/api/v1/nodes`).then(r => r.json());
-                renderNodesTable(nodes.items);
-            } catch (error) {
-                console.error('Failed to load dashboard:', error);
-                document.getElementById('nodesContent').innerHTML =
-                    `<div class="error-message">Failed to load dashboard: ${error.message}</div>`;
-            }
-        }
-
-        function renderNodesTable(nodes) {
-            if (nodes.length === 0) {
-                document.getElementById('nodesContent').innerHTML =
-                    '<div class="loading">No nodes found</div>';
-                return;
-            }
-
-            const table = `
-                <table class="nodes-table">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Namespace</th>
-                            <th>Type</th>
-                            <th>Network</th>
-                            <th>Status</th>
-                            <th>Replicas</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${nodes.map(node => `
-                            <tr>
-                                <td><strong>${node.name}</strong></td>
-                                <td>${node.namespace}</td>
-                                <td><span class="badge badge-info">${node.nodeType}</span></td>
-                                <td>${node.network}</td>
-                                <td>${getStatusBadge(node.phase)}</td>
-                                <td>${node.readyReplicas}/${node.replicas}</td>
-                                <td>
-                                    <button class="action-btn" onclick="showLogs('${node.namespace}', '${node.name}')">📋 Logs</button>
-                                    <button class="action-btn" onclick="showConditions('${node.namespace}', '${node.name}')">📊 Status</button>
-                                    <button class="action-btn" onclick="executeAction('${node.namespace}', '${node.name}', 'snapshot')">📸 Snapshot</button>
-                                    <button class="action-btn action-btn-danger" onclick="executeAction('${node.namespace}', '${node.name}', 'restart')">🔄 Restart</button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-            document.getElementById('nodesContent').innerHTML = table;
-        }
-
-        function getStatusBadge(phase) {
-            const badges = {
-                'Ready': '<span class="badge badge-success">Ready</span>',
-                'Syncing': '<span class="badge badge-warning">Syncing</span>',
-                'Creating': '<span class="badge badge-info">Creating</span>',
-                'Failed': '<span class="badge badge-error">Failed</span>',
-                'Unknown': '<span class="badge badge-warning">Unknown</span>'
-            };
-            return badges[phase] || `<span class="badge badge-info">${phase}</span>`;
-        }
-
-        async function showLogs(namespace, name) {
-            document.getElementById('logsModal').style.display = 'block';
-            document.getElementById('logsTitle').textContent = `Logs: ${namespace}/${name}`;
-            document.getElementById('logsContent').textContent = 'Loading logs...';
-
-            try {
-                const logs = await fetch(`${API_BASE}/api/v1/dashboard/nodes/${namespace}/${name}/logs`).then(r => r.json());
-                document.getElementById('logsContent').textContent = logs.logs || 'No logs available';
-            } catch (error) {
-                document.getElementById('logsContent').textContent = `Error loading logs: ${error.message}`;
-            }
-        }
-
-        async function showConditions(namespace, name) {
-            document.getElementById('conditionsModal').style.display = 'block';
-            document.getElementById('conditionsTitle').textContent = `Conditions: ${namespace}/${name}`;
-            document.getElementById('conditionsContent').innerHTML = '<div class="loading">Loading...</div>';
-
-            try {
-                const data = await fetch(`${API_BASE}/api/v1/dashboard/nodes/${namespace}/${name}/conditions`).then(r => r.json());
-                const html = data.conditions.map(c => `
-                    <li class="condition-item ${c.severity}">
-                        <div class="condition-header">
-                            <span class="condition-type">${c.conditionType}</span>
-                            <span class="badge badge-${c.severity}">${c.status}</span>
-                        </div>
-                        ${c.message ? `<div class="condition-message">${c.message}</div>` : ''}
-                        ${c.lastTransitionTime ? `<div class="condition-message">Last updated: ${new Date(c.lastTransitionTime).toLocaleString()}</div>` : ''}
-                    </li>
-                `).join('');
-                document.getElementById('conditionsContent').innerHTML = html || '<div class="loading">No conditions available</div>';
-            } catch (error) {
-                document.getElementById('conditionsContent').innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
-            }
-        }
-
-        async function executeAction(namespace, name, action) {
-            if (!confirm(`Are you sure you want to ${action} ${namespace}/${name}?`)) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`${API_BASE}/api/v1/dashboard/nodes/${namespace}/${name}/actions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    alert(`Success: ${result.message}`);
-                    loadDashboard();
-                } else {
-                    alert(`Failed: ${result.message || 'Unknown error'}`);
-                }
-            } catch (error) {
-                alert(`Error: ${error.message}`);
-            }
-        }
-
-        function closeModal(modalId) {
-            document.getElementById(modalId).style.display = 'none';
-        }
-
-        // Close modal when clicking outside
-        window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) {
-                event.target.style.display = 'none';
-            }
-        }
-
-        // Load dashboard on page load
-        loadDashboard();
-        initSearch();
-
-        // Auto-refresh every 30 seconds
-        setInterval(loadDashboard, 30000);
-    </script>
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
 </body>
 </html>

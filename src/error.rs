@@ -91,6 +91,10 @@ pub enum Error {
     /// Zip archive error
     #[error("[SK8S-020] Zip error: {0}")]
     ZipError(#[from] zip::result::ZipError),
+
+    /// Network isolation safety violation — cross-network nodes detected in the same namespace
+    #[error("[SK8S-021] {0}")]
+    NetworkSafetyViolation(#[from] crate::controller::network_isolation::NetworkSafetyViolation),
 }
 
 /// Result type alias for operator operations
@@ -136,6 +140,7 @@ impl Error {
             Error::SqlxError(e) => format!("[SK8S-018] SQL error: {e}"),
             Error::KubeconfigError(e) => format!("[SK8S-019] Kubeconfig error: {e}"),
             Error::ZipError(e) => format!("[SK8S-020] Zip error: {e}"),
+            Error::NetworkSafetyViolation(v) => format!("[SK8S-021] Network safety violation: {v}"),
         }
     }
 }

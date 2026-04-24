@@ -17,7 +17,7 @@ use crate::crd::{NodeType, StellarNetwork, StellarNode};
 use super::dashboard_dto::{
     ConditionDisplay, DashboardOverview, MetricsSummary, NetworkBreakdown, NodeAction,
     NodeActionRequest, NodeActionResponse, NodeConditionsResponse, NodeLogsResponse,
-    NodeTypeBreakdown,
+    NodeTypeBreakdown, OperatorLogsResponse,
 };
 use super::dto::ErrorResponse;
 
@@ -262,6 +262,8 @@ pub async fn execute_node_action(
         NodeAction::Snapshot => trigger_snapshot(&api, &node).await,
         NodeAction::Suspend => suspend_node(&api, &node).await,
         NodeAction::Resume => resume_node(&api, &node).await,
+        NodeAction::MaintenanceMode => toggle_maintenance_mode(&api, &node).await,
+        NodeAction::Prune => trigger_prune(&api, &node).await,
     };
 
     match result {
@@ -372,6 +374,54 @@ async fn resume_node(api: &Api<StellarNode>, node: &StellarNode) -> Result<Strin
     Ok(format!("Node {name} resumed"))
 }
 
+/// Toggle maintenance mode on a node
+async fn toggle_maintenance_mode(
+    api: &Api<StellarNode>,
+    node: &StellarNode,
+) -> Result<String, kube::Error> {
+    let name = node.name_any();
+    let current = node.spec.maintenance_mode;
+    let next = !current;
+
+    let patch = serde_json::json!({
+        "spec": {
+            "maintenanceMode": next
+        }
+    });
+
+    api.patch(
+        &name,
+        &PatchParams::apply("stellar-dashboard"),
+        &Patch::Merge(&patch),
+    )
+    .await?;
+
+    let state = if next { "enabled" } else { "disabled" };
+    Ok(format!("Maintenance mode {state} for node {name}"))
+}
+
+/// Trigger archive pruning via annotation
+async fn trigger_prune(api: &Api<StellarNode>, node: &StellarNode) -> Result<String, kube::Error> {
+    let name = node.name_any();
+
+    let patch = serde_json::json!({
+        "metadata": {
+            "annotations": {
+                "stellar.org/request-prune": chrono::Utc::now().to_rfc3339()
+            }
+        }
+    });
+
+    api.patch(
+        &name,
+        &PatchParams::apply("stellar-dashboard"),
+        &Patch::Merge(&patch),
+    )
+    .await?;
+
+    Ok(format!("Archive prune requested for node {name}"))
+}
+
 /// Get metrics summary for a node
 #[instrument(skip(state), fields(node_name = %name, namespace = %namespace, reconcile_id = "-"))]
 pub async fn get_node_metrics(
@@ -405,6 +455,61 @@ pub async fn get_node_metrics(
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse::new("get_failed", &e.to_string())),
+            ))
+        }
+    }
+}
+
+/// Get operator pod logs (the operator itself, identified by HOSTNAME env var)
+#[instrument(skip(state), fields(node_name = "-", namespace = %state.operator_namespace, reconcile_id = "-"))]
+pub async fn get_operator_logs(
+    State(state): State<Arc<ControllerState>>,
+) -> Result<Json<OperatorLogsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let namespace = &state.operator_namespace;
+    let pod_api: Api<Pod> = Api::namespaced(state.client.clone(), namespace);
+
+    // Identify the operator pod by the well-known label set by the Helm chart
+    let lp = kube::api::ListParams::default().labels("app.kubernetes.io/name=stellar-operator");
+
+    match pod_api.list(&lp).await {
+        Ok(pods) if !pods.items.is_empty() => {
+            let pod = &pods.items[0];
+            let pod_name = pod.name_any();
+
+            let log_params = LogParams {
+                tail_lines: Some(200),
+                ..Default::default()
+            };
+
+            match pod_api.logs(&pod_name, &log_params).await {
+                Ok(raw) => {
+                    let lines: Vec<String> = raw.lines().map(str::to_owned).collect();
+                    Ok(Json(OperatorLogsResponse {
+                        logs: lines,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    }))
+                }
+                Err(e) => {
+                    error!("Failed to fetch operator logs from pod {pod_name}: {e:?}");
+                    Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse::new("logs_failed", &e.to_string())),
+                    ))
+                }
+            }
+        }
+        Ok(_) => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::new(
+                "no_operator_pod",
+                "No operator pod found with label app.kubernetes.io/name=stellar-operator",
+            )),
+        )),
+        Err(e) => {
+            error!("Failed to list operator pods: {e:?}");
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new("list_pods_failed", &e.to_string())),
             ))
         }
     }

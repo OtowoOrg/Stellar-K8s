@@ -1004,7 +1004,8 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
 
     if otel_enabled {
         let otel_layer = stellar_k8s::telemetry::init_telemetry(&registry);
-        registry.with(otel_layer).init();
+        let trace_id_layer = stellar_k8s::telemetry::trace_id_layer();
+        registry.with(otel_layer).with(trace_id_layer).init();
     } else {
         registry.init();
     }

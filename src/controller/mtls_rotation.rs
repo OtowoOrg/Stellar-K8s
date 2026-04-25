@@ -57,25 +57,13 @@ pub struct CertificateEntry {
 }
 
 /// Dual-key rotation state stored in Secret annotations
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct RotationState {
     pub current_cert_index: u32,
     pub previous_cert_index: Option<u32>,
     pub rotation_in_progress: bool,
     pub last_rotation_time: Option<i64>,
     pub grace_period_end: Option<i64>,
-}
-
-impl Default for RotationState {
-    fn default() -> Self {
-        Self {
-            current_cert_index: 0,
-            previous_cert_index: None,
-            rotation_in_progress: false,
-            last_rotation_time: None,
-            grace_period_end: None,
-        }
-    }
 }
 
 /// Start a dual-key rotation: generate new certificate and store both old and new
@@ -363,15 +351,19 @@ mod tests {
 
     #[test]
     fn test_grace_period_not_expired() {
-        let mut state = RotationState::default();
-        state.grace_period_end = Some(chrono::Utc::now().timestamp() + 300);
+        let state = RotationState {
+            grace_period_end: Some(chrono::Utc::now().timestamp() + 300),
+            ..Default::default()
+        };
         assert!(!is_grace_period_expired(&state));
     }
 
     #[test]
     fn test_grace_period_expired() {
-        let mut state = RotationState::default();
-        state.grace_period_end = Some(chrono::Utc::now().timestamp() - 1);
+        let state = RotationState {
+            grace_period_end: Some(chrono::Utc::now().timestamp() - 1),
+            ..Default::default()
+        };
         assert!(is_grace_period_expired(&state));
     }
 

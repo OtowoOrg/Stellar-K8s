@@ -107,13 +107,15 @@ impl StorageMigrationController {
         &self,
         config: StorageMigrationConfig,
     ) -> Result<StorageMigrationState> {
-        let mut state = StorageMigrationState::default();
-        state.start_time = Some(
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64,
-        );
+        let mut state = StorageMigrationState {
+            start_time: Some(
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64,
+            ),
+            ..Default::default()
+        };
 
         info!(
             "Starting storage migration from {} to {} for PVC {}",

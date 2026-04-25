@@ -108,8 +108,8 @@ mod resources;
 mod resources_test;
 pub mod service_mesh;
 mod snapshot;
-pub mod storage_migration;
 pub mod snapshot_worker;
+pub mod storage_migration;
 pub mod traffic;
 #[cfg(test)]
 mod traffic_test;

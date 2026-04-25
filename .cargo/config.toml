@@ -1,0 +1,3 @@
+[env]
+# Required by k8s-openapi build script when dependency graph disables default features.
+K8S_OPENAPI_ENABLED_VERSION = "1.30"

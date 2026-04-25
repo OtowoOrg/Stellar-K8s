@@ -9,14 +9,14 @@ use std::time::Duration;
 use k8s_openapi::api::core::v1::Pod;
 use kube::{
     api::{Api, ListParams, Patch, PatchParams},
-    runtime::events::{Recorder, Reporter, EventType},
-    Client, ResourceExt,
+    runtime::events::{EventType, Recorder, Reporter},
+    Client, Resource, ResourceExt,
 };
-use tracing::{debug, error, info, warn, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
-use crate::crd::{StellarNode, NodeType, QuorumOptimizationMode};
-use crate::error::{Error, Result};
 use super::analyzer::{QuorumAnalyzer, QuorumSetRecommendation};
+use crate::crd::{NodeType, QuorumOptimizationMode, StellarNode};
+use crate::error::{Error, Result};
 
 /// QuorumOptimizer manages the lifecycle of quorum set optimization for Stellar validators.
 pub struct QuorumOptimizer {
@@ -28,7 +28,7 @@ pub struct QuorumOptimizer {
 impl QuorumOptimizer {
     pub fn new(client: Client, reporter: Reporter) -> Self {
         // Initialize with a default timeout and window size for measurements
-        let analyzer = QuorumAnalyzer::new(Duration::from_secs(10), 50);
+        let analyzer = QuorumAnalyzer::new(Duration::from_secs(10), 50, 3);
         Self {
             client,
             reporter,
@@ -58,7 +58,12 @@ impl QuorumOptimizer {
 
         for node in node_list.items {
             if node.spec.node_type == NodeType::Validator {
-                if let Some(config) = node.spec.validator_config.as_ref().and_then(|c| c.quorum_optimization.as_ref()) {
+                if let Some(config) = node
+                    .spec
+                    .validator_config
+                    .as_ref()
+                    .and_then(|c| c.quorum_optimization.as_ref())
+                {
                     if config.enabled {
                         self.optimize_node(&node, config).await?;
                     }
@@ -71,22 +76,37 @@ impl QuorumOptimizer {
 
     /// Analyze and optimize a single node's quorum set
     #[instrument(skip(self, node, config), fields(node = %node.name_any()))]
-    async fn optimize_node(&self, node: &StellarNode, config: &crate::crd::types::QuorumOptimizationConfig) -> Result<()> {
+    async fn optimize_node(
+        &self,
+        node: &StellarNode,
+        config: &crate::crd::types::QuorumOptimizationConfig,
+    ) -> Result<()> {
         let name = node.name_any();
         let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
 
         // Get pod IPs for this validator
         let pod_api: Api<Pod> = Api::namespaced(self.client.clone(), &namespace);
-        let label_selector = format!("app.kubernetes.io/instance={},stellar.org/node-type=validator", name);
-        let pods = pod_api.list(&ListParams::default().labels(&label_selector)).await.map_err(Error::KubeError)?;
+        let label_selector = format!(
+            "app.kubernetes.io/instance={},stellar.org/node-type=validator",
+            name
+        );
+        let pods = pod_api
+            .list(&ListParams::default().labels(&label_selector))
+            .await
+            .map_err(Error::KubeError)?;
 
-        let pod_ips: Vec<String> = pods.items.iter()
+        let pod_ips: Vec<String> = pods
+            .items
+            .iter()
             .filter_map(|p| p.status.as_ref().and_then(|s| s.pod_ip.as_ref()))
             .cloned()
             .collect();
 
         if pod_ips.is_empty() {
-            debug!("No running pods found for validator {}, skipping optimization", name);
+            debug!(
+                "No running pods found for validator {}, skipping optimization",
+                name
+            );
             return Ok(());
         }
 
@@ -95,8 +115,11 @@ impl QuorumOptimizer {
         match analyzer.analyze_quorum(pod_ips).await {
             Ok(result) => {
                 if let Some(recommendation) = result.recommendation {
-                    info!("Quorum optimization recommended for {}: {}", name, recommendation.message);
-                    
+                    info!(
+                        "Quorum optimization recommended for {}: {}",
+                        name, recommendation.message
+                    );
+
                     match config.mode {
                         QuorumOptimizationMode::Auto => {
                             self.apply_recommendation(node, recommendation).await?;
@@ -118,7 +141,11 @@ impl QuorumOptimizer {
     }
 
     /// Apply the recommendation by patching the CRD
-    async fn apply_recommendation(&self, node: &StellarNode, recommendation: QuorumSetRecommendation) -> Result<()> {
+    async fn apply_recommendation(
+        &self,
+        node: &StellarNode,
+        recommendation: QuorumSetRecommendation,
+    ) -> Result<()> {
         let name = node.name_any();
         let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
         let nodes: Api<StellarNode> = Api::namespaced(self.client.clone(), &namespace);
@@ -141,38 +168,63 @@ impl QuorumOptimizer {
             }
         });
 
-        nodes.patch(
-            &name,
-            &PatchParams::apply("stellar-operator"),
-            &Patch::Merge(&patch),
-        ).await.map_err(Error::KubeError)?;
+        nodes
+            .patch(
+                &name,
+                &PatchParams::apply("stellar-operator"),
+                &Patch::Merge(&patch),
+            )
+            .await
+            .map_err(Error::KubeError)?;
 
-        self.emit_optimization_event(node, "QuorumOptimizationApplied", &recommendation.message).await?;
+        self.emit_optimization_event(node, "QuorumOptimizationApplied", &recommendation.message)
+            .await?;
 
         Ok(())
     }
 
     /// Suggest the recommendation by emitting an event and updating status
-    async fn suggest_recommendation(&self, node: &StellarNode, recommendation: QuorumSetRecommendation) -> Result<()> {
-        info!("Suggesting quorum optimization for {}: {}", node.name_any(), recommendation.message);
-        
-        self.emit_optimization_event(node, "QuorumOptimizationSuggested", &recommendation.message).await?;
-        
+    async fn suggest_recommendation(
+        &self,
+        node: &StellarNode,
+        recommendation: QuorumSetRecommendation,
+    ) -> Result<()> {
+        info!(
+            "Suggesting quorum optimization for {}: {}",
+            node.name_any(),
+            recommendation.message
+        );
+
+        self.emit_optimization_event(node, "QuorumOptimizationSuggested", &recommendation.message)
+            .await?;
+
         // We could also update the status with the recommendation, but for now events are enough.
         Ok(())
     }
 
     /// Emit a Kubernetes event for the optimization action
-    async fn emit_optimization_event(&self, node: &StellarNode, reason: &str, message: &str) -> Result<()> {
-        let recorder = Recorder::new(self.client.clone(), self.reporter.clone(), node.object_ref(&()));
-        
-        recorder.publish(kube::runtime::events::Event {
-            type_: EventType::Normal,
-            reason: reason.into(),
-            note: Some(message.to_string()),
-            action: "QuorumOptimization".into(),
-            secondary: None,
-        }).await.map_err(Error::KubeError)?;
+    async fn emit_optimization_event(
+        &self,
+        node: &StellarNode,
+        reason: &str,
+        message: &str,
+    ) -> Result<()> {
+        let recorder = Recorder::new(
+            self.client.clone(),
+            self.reporter.clone(),
+            node.object_ref(&()),
+        );
+
+        recorder
+            .publish(kube::runtime::events::Event {
+                type_: EventType::Normal,
+                reason: reason.into(),
+                note: Some(message.to_string()),
+                action: "QuorumOptimization".into(),
+                secondary: None,
+            })
+            .await
+            .map_err(Error::KubeError)?;
 
         Ok(())
     }

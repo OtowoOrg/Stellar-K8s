@@ -100,6 +100,86 @@ Total number of discovered peers:
 3
 ```
 
+## ExternalDNS Integration
+
+The Stellar-K8s operator integrates with [ExternalDNS](https://github.com/kubernetes-sigs/external-dns) to automate the management of DNS A and SRV records for Stellar peers. This ensures that the network remains discoverable even as pods are rescheduled and their public IP or LoadBalancer addresses change.
+
+### How it Works
+
+When `externalDns` is configured for a `StellarNode`, the operator:
+1.  Adds `external-dns.alpha.kubernetes.io/hostname` to the Service (for Validators) or Ingress (for Horizon/Soroban).
+2.  Automatically generates a `_stellar-peering._tcp` SRV record for each validator.
+3.  Sets a low TTL (default 300s, configurable) to ensure rapid convergence during pod restarts.
+
+### Configuration
+
+Add the `externalDns` block to your `validatorConfig` (for Validators) or `ingress` (for Horizon/Soroban):
+
+```yaml
+spec:
+  validatorConfig:
+    externalDns:
+      hostname: "validator-1.example.com"
+      ttl: 60
+      provider: "aws"
+```
+
+For Validators, this will generate two records:
+-   `A` record for `validator-1.example.com`
+-   `SRV` record for `_stellar-peering._tcp.validator-1.example.com`
+
+### Cloud Provider Setup
+
+#### AWS Route53
+
+To use ExternalDNS with AWS Route53, ensure:
+1.  ExternalDNS is installed in your cluster with the `aws` provider.
+2.  The node's IAM role (or service account via IRSA) has permissions to manage Route53 records.
+3.  The `txtOwnerId` matches your ExternalDNS configuration.
+
+**IAM Policy Example:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets"
+      ],
+      "Resource": [
+        "arn:aws:route53:::hostedzone/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "route53:ListHostedZones",
+        "route53:ListResourceRecordSets"
+      ],
+      "Resource": [
+        "*"
+      ]
+    }
+  ]
+}
+```
+
+#### Google Cloud DNS
+
+To use ExternalDNS with Google Cloud DNS, ensure:
+1.  ExternalDNS is installed with the `google` provider.
+2.  The Google Cloud project has the Cloud DNS API enabled.
+3.  The service account has the `roles/dns.admin` role.
+
+**Workload Identity Setup:**
+```bash
+gcloud iam service-accounts add-iam-policy-binding \
+  --role roles/iam.workloadIdentityUser \
+  --member "serviceAccount:PROJECT_ID.svc.id.goog[external-dns/external-dns]" \
+  EXTERNAL_DNS_SA_NAME@PROJECT_ID.iam.gserviceaccount.com
+```
+
 ## How It Works
 
 ### 1. Peer Discovery

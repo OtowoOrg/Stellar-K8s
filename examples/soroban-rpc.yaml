@@ -11,9 +11,14 @@ spec:
   # 'SorobanRpc' provides smart contract execution environment.
   nodeType: SorobanRpc
 
-  network: Testnet
+  network: testnet
 
   version: "21.1.0"
+
+  # Required rollout availability and spreading constraints.
+  maxUnavailable: 1
+  minAvailable: 1
+  topologySpreadConstraints: []
 
   # Soroban-specific settings including Captive Core.
   sorobanConfig:

@@ -52,8 +52,8 @@ pub mod read_replica;
 pub mod schema_utils;
 pub mod seed_secret;
 pub mod service_mesh;
-mod stellar_node;
 pub mod stellar_benchmark;
+mod stellar_node;
 pub mod types;
 
 #[cfg(test)]
@@ -65,14 +65,14 @@ pub use service_mesh::{
     CircuitBreakerConfig, IstioMeshConfig, LinkerdMeshConfig, MtlsMode, RetryConfig,
     ServiceMeshConfig,
 };
+pub use stellar_benchmark::{
+    BenchmarkConfig, BenchmarkMetrics, BenchmarkPhase, BenchmarkReport, BenchmarkReportSpec,
+    BenchmarkReportStatus, BenchmarkResourceRequirements, BenchmarkSummary,
+    EnvVar as BenchmarkEnvVar, PodResult, ResultStorage, StellarBenchmark, StellarBenchmarkSpec,
+    StellarBenchmarkStatus, Toleration as BenchmarkToleration,
+};
 pub use stellar_node::{
     BGPStatus, SnapshotBootstrapStatus, SpecValidationError, StellarNode, StellarNodeSpec,
     StellarNodeStatus,
-};
-pub use stellar_benchmark::{
-    BenchmarkConfig, BenchmarkMetrics, BenchmarkPhase, BenchmarkReport, BenchmarkReportSpec,
-    BenchmarkReportStatus, BenchmarkResourceRequirements, BenchmarkSummary, EnvVar as BenchmarkEnvVar,
-    PodResult, ResultStorage, StellarBenchmark, StellarBenchmarkSpec, StellarBenchmarkStatus,
-    Toleration as BenchmarkToleration,
 };
 pub use types::*;

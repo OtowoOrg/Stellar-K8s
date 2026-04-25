@@ -17,7 +17,7 @@ impl BloatDetector {
 
     /// Estimate bloat percentage for a specific table
     pub async fn estimate_table_bloat(&self, table_name: &str) -> Result<f64> {
-        // Standard bloat estimation query for Postgres
+        // Standard bloat estimation query for Postgres including system tables check
         let query = r#"
             SELECT
               current_database(), schemaname, relname,
@@ -47,6 +47,23 @@ impl BloatDetector {
 
         let bloat: f64 = row.try_get("tbloat")?;
         Ok(bloat)
+    }
+
+    /// Check for active ledger writes by querying the ingest_history table
+    /// Returns true if ingestion has been silent for at least 5 minutes
+    pub async fn is_system_quiet(&self) -> Result<bool> {
+        // Horizon specific check for last ledger close time
+        let query = "SELECT last_modified FROM history_ledgers ORDER BY sequence DESC LIMIT 1";
+        let row: Option<PgRow> = sqlx::query(query).fetch_optional(&self.pool).await?;
+
+        if let Some(r) = row {
+            let last_modified: chrono::DateTime<chrono::Utc> = r.try_get(0)?;
+            let quiet_threshold = chrono::Duration::minutes(5);
+            Ok(chrono::Utc::now() - last_modified > quiet_threshold)
+        } else {
+            // If no ledgers, assume quiet
+            Ok(true)
+        }
     }
 
     /// List bloated tables exceeding a threshold

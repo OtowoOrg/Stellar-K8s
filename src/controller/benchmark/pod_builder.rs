@@ -14,8 +14,8 @@
 use std::collections::BTreeMap;
 
 use k8s_openapi::api::core::v1::{
-    Container, EnvVar as K8sEnvVar, Pod, PodSpec,
-    ResourceRequirements as K8sResourceRequirements, SecretEnvSource,
+    Container, EnvVar as K8sEnvVar, Pod, PodSpec, ResourceRequirements as K8sResourceRequirements,
+    SecretEnvSource,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, OwnerReference};
@@ -141,10 +141,7 @@ fn owner_reference(benchmark: &StellarBenchmark) -> OwnerReference {
 
 fn pod_labels(benchmark_name: &str) -> BTreeMap<String, String> {
     BTreeMap::from([
-        (
-            BENCHMARK_POD_LABEL.to_string(),
-            benchmark_name.to_string(),
-        ),
+        (BENCHMARK_POD_LABEL.to_string(), benchmark_name.to_string()),
         (
             "app.kubernetes.io/component".to_string(),
             LOAD_GENERATOR_COMPONENT.to_string(),
@@ -171,10 +168,7 @@ fn build_env(spec: &StellarBenchmarkSpec, index: u32) -> Vec<K8sEnvVar> {
         K8sEnvVar {
             name: "TARGET_TPS".to_string(),
             // Each pod handles its share of the total TPS.
-            value: Some(
-                (spec.target_tps / spec.concurrency.max(1))
-                    .to_string(),
-            ),
+            value: Some((spec.target_tps / spec.concurrency.max(1)).to_string()),
             ..Default::default()
         },
         K8sEnvVar {
@@ -214,16 +208,14 @@ pub fn build_load_generator_pod_with_secret(benchmark: &StellarBenchmark, index:
     if let Some(secret_name) = &benchmark.spec.secret_ref {
         if let Some(spec) = pod.spec.as_mut() {
             if let Some(container) = spec.containers.first_mut() {
-                container.env_from = Some(vec![
-                    k8s_openapi::api::core::v1::EnvFromSource {
-                        secret_ref: Some(SecretEnvSource {
-                            name: Some(secret_name.clone()),
-                            optional: Some(false),
-                        }),
-                        config_map_ref: None,
-                        prefix: None,
-                    },
-                ]);
+                container.env_from = Some(vec![k8s_openapi::api::core::v1::EnvFromSource {
+                    secret_ref: Some(SecretEnvSource {
+                        name: Some(secret_name.clone()),
+                        optional: Some(false),
+                    }),
+                    config_map_ref: None,
+                    prefix: None,
+                }]);
             }
         }
     }

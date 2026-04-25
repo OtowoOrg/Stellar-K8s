@@ -1,0 +1,68 @@
+# Example: Dynamic Sync-State Resource Scaling
+#
+# This manifest demonstrates how to configure a Stellar Core validator that
+# automatically boosts CPU/memory during the catch-up phase and scales back
+# once the node is fully synced — without restarting the pod.
+#
+# Prerequisites:
+#   - Kubernetes 1.27+ with InPlacePodVerticalScaling feature gate enabled
+#   - Stellar-K8s operator >= 0.2.0
+#
+# See docs/sync-state-scaling.md for full documentation.
+---
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-sync-scaling
+  namespace: stellar
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+
+  storage:
+    storageClass: "fast-nvme"
+    size: "500Gi"
+    retentionPolicy: Retain
+
+  validatorConfig:
+    seedSecretRef: "validator-seed"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+
+  # Base resources (used as fallback if syncStateScaling is disabled or
+  # the cluster does not support in-place scaling).
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  # --- Dynamic sync-state resource scaling ---
+  #
+  # The operator polls stellar-core's /info endpoint every 30 seconds.
+  # While the node reports "Catching up", the catching_up profile is applied.
+  # Once it reports "Synced!", the synced profile is applied.
+  # Both transitions are done in-place (no pod restart).
+  syncStateScaling:
+    enabled: true
+
+    # Boost profile: maximise throughput during historical ledger replay.
+    catchingUp:
+      cpuRequest: "4"
+      memoryRequest: "8Gi"
+      cpuLimit: "8"
+      memoryLimit: "16Gi"
+
+    # Steady-state profile: minimal resources for consensus participation.
+    synced:
+      cpuRequest: "500m"
+      memoryRequest: "2Gi"
+      cpuLimit: "2"
+      memoryLimit: "4Gi"
+
+    # Poll the /info endpoint every 30 seconds (default).
+    pollIntervalSecs: 30

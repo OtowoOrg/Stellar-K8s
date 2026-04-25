@@ -19,10 +19,11 @@
 //! 6. Update StellarNode status with current state
 //! 7. Schedule requeue for periodic health checks
 
+use futures::future::BoxFuture;
+use futures::FutureExt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
 use k8s_openapi::api::policy::v1::PodDisruptionBudget;
 
 use futures::StreamExt;
@@ -34,7 +35,7 @@ use kube::{
     runtime::{
         controller::{Action, Controller},
         events::{Event as K8sRecorderEvent, EventType, Recorder, Reporter},
-        finalizer::{finalizer, Event as FinalizerEvent},
+        finalizer::finalizer,
         watcher::Config,
     },
     Resource, ResourceExt,
@@ -47,6 +48,7 @@ use crate::crd::{
     StellarNodeStatus,
 };
 use crate::error::{Error, Result};
+#[cfg(feature = "metrics")]
 use crate::infra;
 
 use super::archive_health::{
@@ -54,6 +56,8 @@ use super::archive_health::{
     check_history_archive_health, ArchiveHealthResult, ArchiveIntegrityCheckResult,
     ARCHIVE_LAG_THRESHOLD,
 };
+use super::audit_sink::{AuditSink, NoopAuditSink, S3AuditSink};
+use super::audit_worker::AuditWorker;
 use super::conditions;
 use super::cross_cloud_failover;
 use super::cve_reconciler;
@@ -74,12 +78,112 @@ use super::pss;
 use super::remediation;
 use super::resources;
 use super::service_mesh;
+use super::sync_scale;
+use super::sync_state_monitor;
 use super::vpa as vpa_controller;
 use super::vsl;
+use chrono::Utc;
 
 // Constants
 #[allow(dead_code)]
 const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-health-retries";
+
+/// Summary report for a batch of reconciliation results.
+///
+/// Tracks the number of successful and failed reconciliations
+/// within a reporting window and provides a formatted summary log.
+#[derive(Debug, Default)]
+pub struct BatchSummaryReport {
+    /// Number of successful reconciliations in this batch
+    pub successes: u64,
+    /// Number of failed reconciliations in this batch
+    pub failures: u64,
+    /// Names of successfully reconciled objects in this batch
+    pub reconciled_objects: Vec<String>,
+    /// Failure details: (object name, error description)
+    pub failure_details: Vec<(String, String)>,
+    /// Total events seen (successes + failures)
+    pub total: u64,
+    /// Emit a summary every N events (batch window size)
+    batch_size: u64,
+}
+
+impl BatchSummaryReport {
+    /// Create a new report that emits a summary every `batch_size` events.
+    pub fn new(batch_size: u64) -> Self {
+        Self {
+            batch_size: batch_size.max(1),
+            ..Default::default()
+        }
+    }
+
+    /// Record a successful reconciliation.
+    pub fn record_success(&mut self, object_name: String) {
+        self.successes += 1;
+        self.total += 1;
+        self.reconciled_objects.push(object_name);
+        if self.total.is_multiple_of(self.batch_size) {
+            self.emit_summary();
+        }
+    }
+
+    /// Record a failed reconciliation.
+    pub fn record_failure(&mut self, object_name: String, error: String) {
+        self.failures += 1;
+        self.total += 1;
+        self.failure_details.push((object_name, error));
+        if self.total.is_multiple_of(self.batch_size) {
+            self.emit_summary();
+        }
+    }
+
+    /// Emit the end-of-batch summary log.
+    pub fn emit_summary(&self) {
+        info!(
+            total = self.total,
+            successes = self.successes,
+            failures = self.failures,
+            "=== Reconciliation batch summary ==="
+        );
+        if !self.reconciled_objects.is_empty() {
+            info!(
+                objects = ?self.reconciled_objects,
+                "Reconciled objects in this batch"
+            );
+        }
+        if !self.failure_details.is_empty() {
+            for (name, err) in &self.failure_details {
+                warn!(object = %name, error = %err, "Reconciliation failure in batch");
+            }
+        }
+    }
+
+    /// Emit a final summary regardless of batch window position.
+    /// Call this when the controller shuts down.
+    pub fn emit_final_summary(&self) {
+        if self.total == 0 {
+            info!("=== End-of-run summary: no reconciliation events processed ===");
+            return;
+        }
+        let success_rate = (self.successes as f64 / self.total as f64) * 100.0;
+        info!(
+            total = self.total,
+            successes = self.successes,
+            failures = self.failures,
+            success_rate_pct = format!("{:.1}", success_rate),
+            "=== End-of-run reconciliation summary ==="
+        );
+        if !self.failure_details.is_empty() {
+            warn!(
+                failure_count = self.failures,
+                "Failures encountered during this run:"
+            );
+            for (name, err) in &self.failure_details {
+                warn!(object = %name, error = %err, "  Failed reconciliation");
+            }
+        }
+    }
+}
 
 /// Shared state for the controller
 ///
@@ -95,6 +199,12 @@ pub struct ControllerState {
     pub watch_namespace: Option<String>,
     pub mtls_config: Option<crate::MtlsConfig>,
     pub dry_run: bool,
+    /// Requeue interval in seconds for retriable reconciliation errors.
+    pub retry_budget_retriable_secs: u64,
+    /// Requeue interval in seconds for non-retriable reconciliation errors.
+    pub retry_budget_nonretriable_secs: u64,
+    /// Maximum HTTP retry attempts for SCP and quorum queries.
+    pub retry_budget_max_attempts: u32,
     pub is_leader: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Identifies this operator when publishing Kubernetes Events via [`Recorder`].
     pub event_reporter: Reporter,
@@ -111,6 +221,15 @@ pub struct ControllerState {
         std::sync::Arc<tokio::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>>,
     /// Timestamp of the last event received from the K8s watch stream
     pub last_event_received: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// Background job registry for the monitoring dashboard.
+    pub job_registry: std::sync::Arc<super::background_jobs::JobRegistry>,
+    /// In-memory audit log for admin activity.
+    pub audit_log: std::sync::Arc<super::audit_log::AuditLog>,
+    /// Optional OIDC configuration for JWT-based authentication on the REST API.
+    /// When `Some`, the OIDC middleware is active; when `None`, the operator falls
+    /// back to Kubernetes RBAC token validation.
+    #[cfg(feature = "rest-api")]
+    pub oidc_config: Option<crate::rest_api::OidcConfig>,
 }
 
 impl ControllerState {
@@ -158,6 +277,9 @@ impl ControllerState {
 ///         watch_namespace: None,
 ///         mtls_config: None,
 ///         dry_run: false,
+///         retry_budget_retriable_secs: 15,
+///         retry_budget_nonretriable_secs: 60,
+///         retry_budget_max_attempts: 3,
 ///         is_leader: Arc::new(AtomicBool::new(true)),
 ///         event_reporter: kube::runtime::events::Reporter {
 ///             controller: "stellar-operator".to_string(),
@@ -169,6 +291,7 @@ impl ControllerState {
 ///         log_reload_handle: reload_handle,
 ///         log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
 ///         last_event_received: Arc::new(AtomicU64::new(0)),
+///         oidc_config: None,
 ///     });
 ///     run_controller(state).await?;
 ///     Ok(())
@@ -217,7 +340,7 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
     });
 
     // Start Quorum Optimizer in the background
-    let quorum_optimizer = Arc::new(quorum::QuorumOptimizer::new(
+    let quorum_optimizer = Arc::new(super::quorum::QuorumOptimizer::new(
         client.clone(),
         state.event_reporter.clone(),
     ));
@@ -226,6 +349,22 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
             error!("Quorum Optimizer stopped with error: {}", e);
         }
     });
+
+    // Start Audit Worker if enabled
+    if state.operator_config.audit.enabled {
+        let sink: Arc<dyn AuditSink> = if let Some(s3_config) = &state.operator_config.audit.s3 {
+            Arc::new(S3AuditSink::new(s3_config.clone()).await)
+        } else {
+            Arc::new(NoopAuditSink)
+        };
+
+        let audit_worker = AuditWorker::new(client.clone(), sink);
+        tokio::spawn(async move {
+            if let Err(e) = audit_worker.run().await {
+                error!("Audit Worker stopped with error: {}", e);
+            }
+        });
+    }
 
     Controller::new(stellar_nodes, Config::default())
         // Watch owned resources for changes
@@ -270,21 +409,38 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
             Config::default(),
         )
         .shutdown_on_signal()
-        .run(reconcile, error_policy, state.clone())
-        .inspect({
+        .run(|obj, ctx| reconcile(obj, ctx), error_policy, state.clone())
+        .fold(BatchSummaryReport::new(50), {
             let state = state.clone();
-            move |_| {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-                state
-                    .last_event_received
-                    .store(now, std::sync::atomic::Ordering::Relaxed);
+            move |mut report, res| {
+                let state = state.clone();
+                async move {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    state
+                        .last_event_received
+                        .store(now, std::sync::atomic::Ordering::Relaxed);
+
+                    match res {
+                        Ok(obj) => {
+                            let name = format!("{:?}", obj);
+                            info!("Reconciled: {:?}", obj);
+                            report.record_success(name);
+                        }
+                        Err(e) => {
+                            let err_str = format!("{:?}", e);
+                            error!("Reconcile error: {:?}", e);
+                            report.record_failure("unknown".to_string(), err_str);
+                        }
+                    }
+                    report
+                }
             }
         })
-        .for_each(|_res| async {})
-        .await;
+        .await
+        .emit_final_summary();
 
     Ok(())
 }
@@ -457,94 +613,128 @@ where
     }
 }
 
-/// The main reconciliation function
+/// The core reconciliation state machine for StellarNode resources.
 ///
-/// This function is called whenever:
-/// - A StellarNode is created, updated, or deleted
-/// - An owned resource (Deployment, Service, PVC) changes
-/// - The requeue timer expires
-async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<Action> {
-    let node_name = obj.name_any();
-    let namespace = obj.namespace().unwrap_or_else(|| "default".to_string());
-    let reconcile_id = ctx.next_reconcile_id();
+/// This function is triggered by the kube-rs runtime whenever a StellarNode is
+/// created, updated, or deleted, or when a child resource (like a Pod or Service)
+/// changes state.
+///
+/// # Design Philosophy: "Declarative Convergence"
+/// The reconciler does not perform imperative "actions". Instead, it:
+/// 1. **Observes** the current cluster state.
+/// 2. **Computes** the delta between Spec and Status.
+/// 3. **Applies** patches to drive the cluster toward the desired state.
+///
+/// # Critical Sections
+/// - **Finalizer Handling**: Ensures that data volumes (PVCs) are preserved or cleaned up
+///   according to the `retentionPolicy` before the CRD is deleted.
+/// - **Leader Election**: Only the leading operator instance executes the full logic
+///   to prevent conflicting patches.
+/// - **Network Safety**: Verifies that Mainnet and Testnet nodes are never co-located
+///   in a way that risks ledger corruption.
+///
+/// # Error Handling
+/// Returns a `Result<Action, Error>`. Retriable errors (like K8s API timeouts)
+/// return an `Action::requeue` to retry with exponential backoff.
+fn reconcile(
+    obj: Arc<StellarNode>,
+    ctx: Arc<ControllerState>,
+) -> BoxFuture<'static, Result<Action>> {
+    async move {
+        let node_name = obj.name_any();
+        let namespace = obj.namespace().unwrap_or_else(|| "default".to_string());
 
-    let node_name_for_span = node_name.clone();
-    let namespace_for_span = namespace.clone();
-    let resource_version = obj
-        .metadata
-        .resource_version
-        .clone()
-        .unwrap_or_else(|| "unknown".to_string());
+        #[cfg(feature = "metrics")]
+        let reconcile_start = std::time::Instant::now();
 
-    // Attach per-reconcile structured fields so every log event during reconciliation
-    // can be correlated in JSON logs (node_name/namespace/reconcile_id/resource_version).
-    let _reconcile_span = info_span!(
-        "reconcile_attempt",
-        node_name = %node_name_for_span,
-        namespace = %namespace_for_span,
-        reconcile_id = %reconcile_id,
-        resource_version = %resource_version
-    );
-    let _reconcile_enter = _reconcile_span.enter();
-
-    #[cfg(feature = "metrics")]
-    let reconcile_start = std::time::Instant::now();
-
-    if !ctx.is_leader.load(std::sync::atomic::Ordering::Relaxed) {
-        debug!("Not the leader, skipping reconciliation");
-        return Ok(Action::requeue(Duration::from_secs(5)));
-    }
-
-    let res = {
-        let client = ctx.client.clone();
-        let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
-
-        info!(
-            "Reconciling StellarNode {}/{} (type: {:?})",
-            namespace, node_name, obj.spec.node_type
-        );
-
-        // Use kube-rs built-in finalizer helper for clean lifecycle management
-        finalizer(&api, STELLAR_NODE_FINALIZER, obj, |event| async {
-            match event {
-                FinalizerEvent::Apply(node) => apply_stellar_node(&client, &node, &ctx).await,
-                FinalizerEvent::Cleanup(node) => cleanup_stellar_node(&client, &node, &ctx).await,
-            }
-        })
-        .await
-        .map_err(Error::from)
-    };
-
-    #[cfg(feature = "metrics")]
-    {
-        let seconds = reconcile_start.elapsed().as_secs_f64();
-        metrics::observe_reconcile_duration_seconds("stellarnode", seconds);
-        if let Err(err) = &res {
-            // Keep the label cardinality low: a few broad error kinds.
-            let kind = match err {
-                Error::KubeError(_) => "kube",
-                Error::ValidationError(_) => "validation",
-                Error::ConfigError(_) => "config",
-                _ => "unknown",
-            };
-            metrics::inc_reconcile_error("stellarnode", kind);
-            metrics::inc_operator_reconcile_error("stellarnode", kind);
-        } else {
-            // Record successful reconciliation timestamp
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-            ctx.last_reconcile_success
-                .store(now, std::sync::atomic::Ordering::Relaxed);
+        if !ctx.is_leader.load(std::sync::atomic::Ordering::Relaxed) {
+            debug!("Not the leader, skipping reconciliation");
+            return Ok(Action::requeue(Duration::from_secs(5)));
         }
-    }
 
-    res
+        let res = {
+            let client = ctx.client.clone();
+            let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+
+            info!(
+                "Reconciling StellarNode {}/{} (type: {:?})",
+                namespace, node_name, obj.spec.node_type
+            );
+
+            // Manual finalizer logic to avoid HRTB Send issues with the helper closure
+            if obj.metadata.deletion_timestamp.is_some() {
+                if obj.finalizers().iter().any(|f| f == STELLAR_NODE_FINALIZER) {
+                    cleanup_stellar_node(&client, &obj, &ctx).await?;
+
+                    let patch = serde_json::json!({
+                        "metadata": {
+                            "finalizers": obj.finalizers().iter().filter(|f| f != &STELLAR_NODE_FINALIZER).collect::<Vec<_>>()
+                        }
+                    });
+                    api.patch(&node_name, &PatchParams::default(), &Patch::Merge(patch)).await?;
+                }
+                Ok(Action::await_change())
+            } else {
+                if !obj.finalizers().iter().any(|f| f == STELLAR_NODE_FINALIZER) {
+                    let mut finalizers = obj.finalizers().to_vec();
+                    finalizers.push(STELLAR_NODE_FINALIZER.to_string());
+                    let patch = serde_json::json!({
+                        "metadata": {
+                            "finalizers": finalizers
+                        }
+                    });
+                    api.patch(&node_name, &PatchParams::default(), &Patch::Merge(patch)).await?;
+                }
+                apply_stellar_node(&client, &obj, &ctx).await
+            }
+        };
+
+        #[cfg(feature = "metrics")]
+        {
+            let seconds = reconcile_start.elapsed().as_secs_f64();
+            metrics::observe_reconcile_duration_seconds("stellarnode", seconds);
+            if let Err(err) = &res {
+                // Keep the label cardinality low: a few broad error kinds.
+                let kind = match err {
+                    Error::KubeError(_) => "kube",
+                    Error::ValidationError(_) => "validation",
+                    Error::ConfigError(_) => "config",
+                    _ => "unknown",
+                };
+                metrics::inc_reconcile_error("stellarnode", kind);
+                metrics::inc_operator_reconcile_error("stellarnode", kind);
+            } else {
+                // Record successful reconciliation timestamp
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                ctx.last_reconcile_success
+                    .store(now, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+
+        res
+    }
+    .boxed()
 }
 
 /// Apply/create/update the StellarNode resources
-#[instrument(skip(client, node, ctx), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[instrument(
+    skip(client, node, ctx),
+    fields(
+        // OTel semantic conventions
+        k8s_resource_kind  = "StellarNode",
+        k8s_resource_name  = %node.name_any(),
+        k8s_namespace_name = ?node.namespace(),
+        stellar_node_type  = %node.spec.node_type,
+        stellar_network    = ?node.spec.network,
+        stellar_version    = %node.spec.version,
+        // Legacy fields
+        name      = %node.name_any(),
+        namespace = ?node.namespace(),
+    )
+)]
 pub(crate) async fn apply_stellar_node(
     client: &Client,
     node: &StellarNode,
@@ -600,7 +790,10 @@ pub(crate) async fn apply_stellar_node(
     // Ensures no Mainnet node shares a namespace with a Testnet node (or vice versa).
     if let Err(e) = super::network_isolation::check_network_safety(client, node).await {
         let msg = e.to_string();
-        warn!("Network safety check failed for {}/{}: {}", namespace, name, msg);
+        warn!(
+            "Network safety check failed for {}/{}: {}",
+            namespace, name, msg
+        );
         emit_event(
             client,
             &ctx.event_reporter,
@@ -1047,6 +1240,11 @@ pub(crate) async fn apply_stellar_node(
     apply_or_emit(ctx, node, ActionType::Update, "mTLS certificates", async {
         mtls::ensure_ca(client, &namespace).await?;
         mtls::ensure_node_cert(client, node).await?;
+        // If cert-manager is configured, also create the Certificate CR so
+        // cert-manager takes over issuance and rotation going forward.
+        if let Some(cm_cfg) = &node.spec.cert_manager {
+            mtls::ensure_cert_manager_certificate(client, node, cm_cfg).await?;
+        }
         Ok(())
     })
     .await?;
@@ -1151,16 +1349,18 @@ pub(crate) async fn apply_stellar_node(
                         }
 
                         if is_canary_active {
-                            // 2. Monitor Canary: we are in the middle of a rollout
+                            // 2. Monitor Canary: manage both deployments and sync ingress weights
                             resources::ensure_canary_deployment(client, node, ctx.enable_mtls, ctx.dry_run).await?;
                             resources::ensure_canary_service(client, node, ctx.enable_mtls, ctx.dry_run).await?;
 
                             let mut stable_node = node.clone();
-                            // Recover the stable version from the existing deployment if possible
                             if let Some(cv) = &current_version {
                                 stable_node.spec.version = cv.clone();
                             }
                             resources::ensure_deployment(client, &stable_node, ctx.enable_mtls, &propagated_labels, ctx.dry_run).await?;
+
+                            // Sync ingress traffic weights (Nginx annotations + Istio VirtualService)
+                            resources::ensure_ingress(client, node, ctx.dry_run).await?;
 
                             // Check if the canary interval has elapsed
                             if let Some(status) = &node.status {
@@ -1170,66 +1370,120 @@ pub(crate) async fn apply_stellar_node(
                                         let elapsed_secs = now.signed_duration_since(start_time).num_seconds();
 
                                         if elapsed_secs >= cfg.check_interval_seconds as i64 {
-                                            // 3. Evaluate Canary: interval elapsed, check health
+                                            // 3. Evaluate: check pod health + HTTP error rate
                                             info!(
-                                                "Canary check interval elapsed ({} >= {}). Evaluating canary health.",
+                                                "Canary check interval elapsed ({} >= {}s). Evaluating.",
                                                 elapsed_secs, cfg.check_interval_seconds
                                             );
 
                                             let canary_health = check_canary_health(client, node).await?;
-
                                             let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+
                                             if canary_health.healthy {
-                                                // 4a. Promote Canary
-                                                info!("Canary {}/{} is healthy. Promoting to stable.", namespace, name);
-                                                resources::ensure_deployment(client, node, ctx.enable_mtls, &propagated_labels, ctx.dry_run).await?;
-                                                resources::delete_canary_resources(client, node, ctx.dry_run).await?;
+                                                let consecutive = status.canary_consecutive_healthy + 1;
+                                                let current_weight = status.canary_weight.unwrap_or(cfg.weight);
+                                                let next_weight = if cfg.step_weight > 0 {
+                                                    (current_weight + cfg.step_weight).min(cfg.max_weight)
+                                                } else {
+                                                    current_weight
+                                                };
 
-                                                let patch = serde_json::json!({
-                                                    "status": {
-                                                        "canaryVersion": null,
-                                                        "canaryStartTime": null,
-                                                        "phase": "Running"
-                                                    }
-                                                });
-                                                api.patch_status(
-                                                    &name,
-                                                    &PatchParams::apply("stellar-operator"),
-                                                    &Patch::Merge(&patch),
-                                                ).await?;
+                                                if consecutive >= cfg.success_threshold
+                                                    && next_weight >= cfg.max_weight
+                                                {
+                                                    // 4a. Promote — enough healthy checks at max weight
+                                                    info!(
+                                                        "Canary {}/{} healthy ({}/{} checks). Promoting.",
+                                                        namespace, name, consecutive, cfg.success_threshold
+                                                    );
+                                                    resources::ensure_deployment(client, node, ctx.enable_mtls, &propagated_labels, ctx.dry_run).await?;
+                                                    resources::delete_canary_resources(client, node, ctx.dry_run).await?;
+
+                                                    let recorder = recorder_for(client, &ctx.event_reporter, node);
+                                                    let _ = publish_object_event(
+                                                        &recorder,
+                                                        EventType::Normal,
+                                                        "CanaryPromoted",
+                                                        "Canary",
+                                                        &format!(
+                                                            "Canary version {} promoted to stable after {} healthy checks",
+                                                            node.spec.version, consecutive
+                                                        ),
+                                                    ).await;
+
+                                                    let patch = serde_json::json!({
+                                                        "status": {
+                                                            "canaryVersion": null,
+                                                            "canaryStartTime": null,
+                                                            "canaryWeight": null,
+                                                            "canaryErrorRate": null,
+                                                            "canaryConsecutiveHealthy": 0,
+                                                            "phase": "Running"
+                                                        }
+                                                    });
+                                                    api.patch_status(&name, &PatchParams::apply("stellar-operator"), &Patch::Merge(&patch)).await?;
+                                                } else {
+                                                    // Step up weight, reset interval timer
+                                                    info!(
+                                                        "Canary {}/{} healthy (check {}/{}). Weight {} -> {}.",
+                                                        namespace, name, consecutive, cfg.success_threshold,
+                                                        current_weight, next_weight
+                                                    );
+                                                    let patch = serde_json::json!({
+                                                        "status": {
+                                                            "canaryWeight": next_weight,
+                                                            "canaryConsecutiveHealthy": consecutive,
+                                                            "canaryStartTime": Utc::now().to_rfc3339()
+                                                        }
+                                                    });
+                                                    api.patch_status(&name, &PatchParams::apply("stellar-operator"), &Patch::Merge(&patch)).await?;
+                                                }
                                             } else {
-                                                // 4b. Rollback Canary
-                                                warn!("Canary {}/{} is unhealthy. Rolling back.", namespace, name);
+                                                // 4b. Rollback — error rate spiked or pod unhealthy
+                                                warn!(
+                                                    "Canary {}/{} unhealthy. Rolling back. Reason: {}",
+                                                    namespace, name, canary_health.message
+                                                );
                                                 resources::delete_canary_resources(client, node, ctx.dry_run).await?;
 
-                                                // Clean up canary status, emitting failure message
-                                                let message = format!("Canary rollback triggered due to failed health check: {}", canary_health.message);
+                                                let message = format!(
+                                                    "Canary rollback triggered: {}",
+                                                    canary_health.message
+                                                );
+
+                                                let recorder = recorder_for(client, &ctx.event_reporter, node);
+                                                let _ = publish_object_event(
+                                                    &recorder,
+                                                    EventType::Warning,
+                                                    "CanaryRolledBack",
+                                                    "Canary",
+                                                    &message,
+                                                ).await;
+
                                                 let patch = serde_json::json!({
                                                     "status": {
                                                         "canaryVersion": null,
                                                         "canaryStartTime": null,
+                                                        "canaryWeight": null,
+                                                        "canaryErrorRate": null,
+                                                        "canaryConsecutiveHealthy": 0,
                                                         "phase": "Failed",
                                                         "message": message
                                                     }
                                                 });
-                                                api.patch_status(
-                                                    &name,
-                                                    &PatchParams::apply("stellar-operator"),
-                                                    &Patch::Merge(&patch),
-                                                ).await?;
+                                                api.patch_status(&name, &PatchParams::apply("stellar-operator"), &Patch::Merge(&patch)).await?;
 
-                                                // Create a k8s event for the rollback
                                                 let _ = remediation::emit_remediation_event(
                                                     client,
                                                     &ctx.event_reporter,
                                                     node,
-                                                    remediation::RemediationLevel::Restart, // Not exactly a restart but conceptually similar action
+                                                    remediation::RemediationLevel::Restart,
                                                     &message,
                                                 ).await;
                                             }
                                         } else {
                                             debug!(
-                                                "Canary interval not yet elapsed: {} < {} seconds",
+                                                "Canary interval not yet elapsed: {} < {}s",
                                                 elapsed_secs, cfg.check_interval_seconds
                                             );
                                         }
@@ -1434,6 +1688,19 @@ pub(crate) async fn apply_stellar_node(
     )
     .await?;
 
+    // 6.5. Gas Autoscaling (Soroban RPC only)
+    if !ctx.dry_run && node.spec.node_type == NodeType::SorobanRpc {
+        if let Some(autoscaling) = &node.spec.autoscaling {
+            if let Some(gas_cfg) = &autoscaling.gas_autoscaling {
+                crate::controller::gas_autoscaling::ensure_gas_autoscaler_running(
+                    client.clone(),
+                    node,
+                    gas_cfg,
+                );
+            }
+        }
+    }
+
     // 6a. CSI VolumeSnapshot schedule (Validator only)
     if node.spec.node_type == NodeType::Validator {
         if let Some(ref snapshot_config) = node.spec.snapshot_schedule {
@@ -1461,6 +1728,7 @@ pub(crate) async fn apply_stellar_node(
                     .num_seconds();
                 if age < 15 {
                     info!("Skipping health polling for {}/{}, DB trigger recently updated status {}s ago", namespace, name, age);
+                    #[cfg(feature = "metrics")]
                     crate::controller::metrics::inc_api_polls_avoided(&namespace, &name);
                     skipped_poll = true;
                     // Assume node is healthy, use the reactively set ledger sequence
@@ -1481,6 +1749,57 @@ pub(crate) async fn apply_stellar_node(
         namespace, name, health_result.healthy, health_result.synced, health_result.message
     );
 
+    // 7a. Sync-state-driven resource scaling (Validator only)
+    //
+    // Queries the stellar-core /info endpoint to determine whether the node is
+    // "Catching up" or "Synced!" and applies the matching resource profile via
+    // an in-place pod patch (no pod restart required).
+    if let Some(scaling_config) = &node.spec.sync_state_scaling {
+        if scaling_config.enabled && node.spec.node_type == NodeType::Validator {
+            let sync_state = sync_state_monitor::resolve_node_sync_state(client, node).await;
+
+            info!("Sync state for {}/{}: {}", namespace, name, sync_state);
+
+            // Persist the observed sync state to the CRD status.
+            {
+                let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+                let profile_label = sync_state.to_string();
+                let patch = serde_json::json!({
+                    "status": {
+                        "syncState": sync_state,
+                        "syncScalingActiveProfile": profile_label,
+                    }
+                });
+                if let Err(e) = api
+                    .patch_status(
+                        &name,
+                        &PatchParams::apply("stellar-operator"),
+                        &Patch::Merge(&patch),
+                    )
+                    .await
+                {
+                    warn!(
+                        "Failed to patch syncState status for {}/{}: {}",
+                        namespace, name, e
+                    );
+                }
+            }
+
+            apply_or_emit(
+                ctx,
+                node,
+                ActionType::Update,
+                "Sync-state resource scaling",
+                async {
+                    sync_scale::reconcile_sync_scaling(client, node, scaling_config, &sync_state)
+                        .await?;
+                    Ok(())
+                },
+            )
+            .await?;
+        }
+    }
+
     // 7b. CVE scanning and automated patching
     if let Some(cve_config) = &node.spec.cve_handling {
         apply_or_emit(ctx, node, ActionType::Update, "CVE Handling", async {
@@ -1488,6 +1807,34 @@ pub(crate) async fn apply_stellar_node(
             Ok(())
         })
         .await?;
+    }
+
+    // 7c. History archive pruning (for validators with archives)
+    if node.spec.node_type == NodeType::Validator {
+        if let Some(pruning_policy) = &node.spec.pruning_policy {
+            if pruning_policy.enabled {
+                apply_or_emit(ctx, node, ActionType::Update, "Archive Pruning", async {
+                    match super::pruning_reconciler::reconcile_pruning(client, node).await {
+                        Ok(Some(result)) => {
+                            info!(
+                                "Archive pruning completed for {}/{}: {} deleted, {} retained",
+                                namespace, name, result.deleted_count, result.retained_count
+                            );
+                            super::pruning_reconciler::update_pruning_status(client, node, &result)
+                                .await?;
+                        }
+                        Ok(None) => {
+                            debug!("Pruning not scheduled to run for {}/{}", namespace, name);
+                        }
+                        Err(e) => {
+                            warn!("Archive pruning failed for {}/{}: {}", namespace, name, e);
+                        }
+                    }
+                    Ok(())
+                })
+                .await?;
+            }
+        }
     }
 
     // 6. Trigger peer configuration reload for validators if healthy
@@ -1502,7 +1849,7 @@ pub(crate) async fn apply_stellar_node(
 
     // 6.5. Quorum analysis for validators
     if node.spec.node_type == NodeType::Validator && health_result.healthy {
-        if let Err(e) = perform_quorum_analysis(client, node).await {
+        if let Err(e) = perform_quorum_analysis(client, node, ctx.retry_budget_max_attempts).await {
             warn!("Quorum analysis failed for {}/{}: {}", namespace, name, e);
             // Don't fail reconciliation on quorum analysis errors
         }
@@ -2208,14 +2555,112 @@ async fn check_canary_health(
     client: &Client,
     node: &StellarNode,
 ) -> Result<health::HealthCheckResult> {
-    let _namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let name = format!("{}-canary", node.name_any());
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let canary_name = format!("{}-canary", node.name_any());
 
     // Create a temporary node with the canary name to use the existing health check logic
     let mut canary_node = node.clone();
-    canary_node.metadata.name = Some(name);
+    canary_node.metadata.name = Some(canary_name.clone());
 
-    health::check_node_health(client, &canary_node, None).await
+    // 1. Basic pod readiness check
+    let readiness = health::check_node_health(client, &canary_node, None).await?;
+    if !readiness.healthy {
+        return Ok(readiness);
+    }
+
+    // 2. HTTP error rate check against the canary service
+    let max_error_rate = node
+        .spec
+        .strategy
+        .canary()
+        .map(|c| c.max_error_rate)
+        .unwrap_or(0.05);
+
+    match measure_canary_error_rate(client, node, &namespace).await {
+        Ok(error_rate) => {
+            if error_rate > max_error_rate {
+                return Ok(health::HealthCheckResult::unhealthy(format!(
+                    "Canary error rate {:.1}% exceeds threshold {:.1}%",
+                    error_rate * 100.0,
+                    max_error_rate * 100.0,
+                )));
+            }
+            Ok(health::HealthCheckResult::synced(readiness.ledger_sequence))
+        }
+        Err(e) => {
+            // If we can't measure error rate, fall back to readiness only
+            warn!(
+                "Could not measure canary error rate for {}/{}: {}. Falling back to readiness.",
+                namespace,
+                node.name_any(),
+                e
+            );
+            Ok(readiness)
+        }
+    }
+}
+
+/// Measure the 4xx/5xx error rate on the canary service by sampling its /metrics or /health.
+///
+/// Queries the canary pod directly and counts non-2xx responses over a short window.
+/// Returns a value in [0.0, 1.0].
+async fn measure_canary_error_rate(
+    client: &Client,
+    node: &StellarNode,
+    namespace: &str,
+) -> Result<f64> {
+    use k8s_openapi::api::core::v1::Pod;
+    use std::time::Duration;
+
+    let canary_name = format!("{}-canary", node.name_any());
+    let pod_api: Api<Pod> = Api::namespaced(client.clone(), namespace);
+    let lp = kube::api::ListParams::default()
+        .labels(&format!("app.kubernetes.io/instance={canary_name}"));
+
+    let pods = pod_api.list(&lp).await.map_err(Error::KubeError)?;
+    let pod = pods.items.iter().find(|p| {
+        p.status
+            .as_ref()
+            .and_then(|s| s.conditions.as_ref())
+            .map(|conds| {
+                conds
+                    .iter()
+                    .any(|c| c.type_ == "Ready" && c.status == "True")
+            })
+            .unwrap_or(false)
+    });
+
+    let pod_ip = match pod.and_then(|p| p.status.as_ref()?.pod_ip.as_deref()) {
+        Some(ip) => ip.to_string(),
+        None => return Err(Error::ConfigError("No ready canary pod found".to_string())),
+    };
+
+    // Probe the Horizon /health endpoint multiple times to estimate error rate
+    let http_client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| Error::ConfigError(format!("HTTP client error: {e}")))?;
+
+    let url = format!("http://{pod_ip}:8000/health");
+    let sample_count = 5u32;
+    let mut errors = 0u32;
+
+    for _ in 0..sample_count {
+        match http_client.get(&url).send().await {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                if status >= 400 {
+                    errors += 1;
+                }
+            }
+            Err(_) => {
+                errors += 1;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
+    Ok(errors as f64 / sample_count as f64)
 }
 
 /// Update status for suspended nodes
@@ -2914,17 +3359,20 @@ async fn run_archive_checkpoint_verification(
     };
 
     // Update metrics
-    let node_type = format!("{:?}", node.spec.node_type);
-    let network = format!("{:?}", node.spec.network);
-    let hardware = hardware_generation_for_metrics(client, node).await;
-    metrics::set_archive_integrity_status(
-        &namespace,
-        &name,
-        &node_type,
-        &network,
-        &hardware,
-        all_healthy,
-    );
+    #[cfg(feature = "metrics")]
+    {
+        let node_type = format!("{:?}", node.spec.node_type);
+        let network = format!("{:?}", node.spec.network);
+        let hardware = hardware_generation_for_metrics(client, node).await;
+        metrics::set_archive_integrity_status(
+            &namespace,
+            &name,
+            &node_type,
+            &network,
+            &hardware,
+            all_healthy,
+        );
+    }
 
     // Update status conditions
     let mut status = node.status.clone().unwrap_or_default();
@@ -3147,15 +3595,11 @@ pub(crate) fn error_policy(
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(0);
 
-    // Calculate backoff based on error type and retry count
+    // Apply operator retry budget based on error retriability.
     let retry_duration = if error.is_retriable() {
-        // Use exponential backoff for retriable errors
-        ctx.operator_config
-            .reconciler
-            .calculate_backoff(retry_count)
+        Duration::from_secs(ctx.retry_budget_retriable_secs)
     } else {
-        // Use fixed interval for non-retriable errors
-        Duration::from_secs(ctx.operator_config.reconciler.requeue_interval)
+        Duration::from_secs(ctx.retry_budget_nonretriable_secs)
     };
 
     debug!(
@@ -3171,7 +3615,11 @@ pub(crate) fn error_policy(
 
 /// Perform quorum analysis for validator nodes
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-async fn perform_quorum_analysis(client: &Client, node: &StellarNode) -> Result<()> {
+async fn perform_quorum_analysis(
+    client: &Client,
+    node: &StellarNode,
+    max_attempts: u32,
+) -> Result<()> {
     use super::quorum::QuorumAnalyzer;
 
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
@@ -3197,7 +3645,7 @@ async fn perform_quorum_analysis(client: &Client, node: &StellarNode) -> Result<
     }
 
     // Create analyzer and run analysis with timeout
-    let mut analyzer = QuorumAnalyzer::new(Duration::from_secs(10), 100);
+    let mut analyzer = QuorumAnalyzer::new(Duration::from_secs(10), 100, max_attempts);
 
     let analysis_future = analyzer.analyze_quorum(pod_ips);
     let result = tokio::time::timeout(Duration::from_secs(30), analysis_future)

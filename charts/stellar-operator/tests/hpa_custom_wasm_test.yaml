@@ -1,0 +1,45 @@
+suite: hpa-custom-wasm
+templates:
+  - templates/hpa-custom-wasm.yaml
+
+tests:
+  - it: does not render when disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders custom wasm hpa when enabled
+    set:
+      autoscaling.customWasm.enabled: true
+      autoscaling.customWasm.minReplicas: 2
+      autoscaling.customWasm.maxReplicas: 10
+    asserts:
+      - isKind:
+          of: HorizontalPodAutoscaler
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-stellar-operator
+      - equal:
+          path: spec.scaleTargetRef.apiVersion
+          value: apps/v1
+      - equal:
+          path: spec.scaleTargetRef.kind
+          value: Deployment
+      - equal:
+          path: spec.minReplicas
+          value: 2
+      - equal:
+          path: spec.maxReplicas
+          value: 10
+      - equal:
+          path: spec.metrics[0].type
+          value: Pods
+      - equal:
+          path: spec.metrics[0].pods.metric.name
+          value: soroban_wasm_execution_latency_milliseconds
+      - equal:
+          path: spec.metrics[0].pods.target.type
+          value: AverageValue
+      - equal:
+          path: spec.metrics[0].pods.target.averageValue
+          value: "500"

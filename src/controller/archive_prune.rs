@@ -388,7 +388,7 @@ pub fn identify_deletable_checkpoints(
 
     // Sort checkpoints by ledger sequence (newest first)
     let mut sorted: Vec<Checkpoint> = checkpoints.to_vec();
-    sorted.sort_by(|a, b| b.ledger_seq.cmp(&a.ledger_seq));
+    sorted.sort_by_key(|b| std::cmp::Reverse(b.ledger_seq));
 
     // Always retain the most recent N checkpoints (safety buffer)
     let min_retain = min_checkpoints.max(MIN_CHECKPOINTS_TO_RETAIN) as usize;

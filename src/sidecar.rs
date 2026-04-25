@@ -38,6 +38,14 @@ async fn main() -> Result<()> {
         warn!("Failed to analyze previous logs: {}", e);
     }
 
+    // Start eBPF monitoring task
+    let events_clone = events.clone();
+    let pod_name_clone = pod_name.clone();
+    let namespace_clone = namespace.clone();
+    tokio::spawn(async move {
+        monitor_ebpf_metrics(events_clone, pod_name_clone, namespace_clone).await;
+    });
+
     loop {
         info!("Watching logs for container: {}", container_name);
 
@@ -202,5 +210,98 @@ async fn report_recommendation(
     };
     events.create(&PostParams::default(), &event).await?;
 
+    Ok(())
+}
+
+async fn monitor_ebpf_metrics(events: Api<Event>, pod_name: String, namespace: String) {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap_or_default();
+
+    info!("Starting eBPF metrics monitor task");
+
+    let mut last_retransmits = 0.0;
+
+    loop {
+        if let Ok(resp) = client.get("http://localhost:9435/metrics").send().await {
+            if let Ok(text) = resp.text().await {
+                let mut current_latency = 0.0;
+                let mut current_retransmits = 0.0;
+
+                for line in text.lines() {
+                    if line.starts_with("ebpf_write_latency_seconds_sum") {
+                        if let Some(val_str) = line.split_whitespace().last() {
+                            if let Ok(val) = val_str.parse::<f64>() {
+                                current_latency = val;
+                            }
+                        }
+                    } else if line.starts_with("ebpf_tcp_retransmits_total") {
+                        if let Some(val_str) = line.split_whitespace().last() {
+                            if let Ok(val) = val_str.parse::<f64>() {
+                                current_retransmits = val;
+                            }
+                        }
+                    }
+                }
+
+                // Example thresholds:
+                if current_latency > 10.0 {
+                    let _ = report_performance_degradation(
+                        &events,
+                        &pod_name,
+                        &namespace,
+                        "High write() latency to ledger DB detected via eBPF. Possible slow disk IO.",
+                    )
+                    .await;
+                }
+
+                let retransmits_delta = current_retransmits - last_retransmits;
+                if last_retransmits > 0.0 && retransmits_delta > 100.0 {
+                    let _ = report_performance_degradation(
+                        &events,
+                        &pod_name,
+                        &namespace,
+                        "High TCP retransmits detected via eBPF. Possible network jitter or peer connection drops.",
+                    )
+                    .await;
+                }
+
+                if current_retransmits > 0.0 {
+                    last_retransmits = current_retransmits;
+                }
+            }
+        }
+        sleep(Duration::from_secs(15)).await;
+    }
+}
+
+async fn report_performance_degradation(
+    events: &Api<Event>,
+    pod_name: &str,
+    namespace: &str,
+    message: &str,
+) -> Result<()> {
+    let now = chrono::Utc::now();
+    let event = Event {
+        metadata: ObjectMeta {
+            generate_name: Some(format!("{pod_name}-perf-")),
+            namespace: Some(namespace.to_string()),
+            ..ObjectMeta::default()
+        },
+        involved_object: ObjectReference {
+            kind: Some("Pod".to_string()),
+            name: Some(pod_name.to_string()),
+            namespace: Some(namespace.to_string()),
+            ..ObjectReference::default()
+        },
+        reason: Some("PerformanceDegradation".to_string()),
+        message: Some(message.to_string()),
+        type_: Some("Warning".to_string()),
+        first_timestamp: Some(k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(now)),
+        last_timestamp: Some(k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(now)),
+        ..Event::default()
+    };
+    events.create(&PostParams::default(), &event).await?;
     Ok(())
 }

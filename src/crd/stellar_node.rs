@@ -10,12 +10,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::types::{
-    AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
-    DisasterRecoveryStatus, ExternalDatabaseConfig, ForensicSnapshotConfig, GlobalDiscoveryConfig,
-    HistoryMode, HorizonConfig, IngressConfig, LabelPropagationConfig, LoadBalancerConfig,
-    ManagedDatabaseConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig, PlacementConfig,
-    PodAntiAffinityStrength, ResourceRequirements, RestoreFromSnapshotConfig, RetentionPolicy,
-    RolloutStrategy, SnapshotScheduleConfig, SorobanConfig, StellarNetwork, StorageConfig,
+    AutoscalingConfig, CertManagerConfig, Condition, CoreSyncState, CrossClusterConfig,
+    DisasterRecoveryConfig, DisasterRecoveryStatus, ExternalDatabaseConfig, ForensicSnapshotConfig,
+    GasAutoscalingConfig, GlobalDiscoveryConfig, HistoryMode, HorizonConfig, IngressConfig,
+    LabelPropagationConfig, LoadBalancerConfig, LogShipperConfig, ManagedDatabaseConfig,
+    NetworkPolicyConfig, NodeType, OciSnapshotConfig, PlacementConfig, PodAntiAffinityStrength,
+    ProbeConfig, ResourceRequirements, RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy,
+    SnapshotScheduleConfig, SorobanConfig, StellarNetwork, StorageConfig, SyncStateScalingConfig,
     ValidatorConfig, VpaConfig,
 };
 
@@ -57,21 +58,32 @@ impl SpecValidationError {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct StellarNodeSpec {
+    /// The role of this node in the network (Validator, Horizon, SorobanRPC).
     pub node_type: NodeType,
+
+    /// The network this node connects to (Public, Testnet, or Futurenet).
     pub network: StellarNetwork,
+
+    /// Custom network passphrase (required if network is 'Custom').
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_network_passphrase: Option<String>,
+
+    /// Version of the Stellar software to run (e.g., "v21.0.0").
     pub version: String,
 
+    /// How the node should handle history archives (Full, Fast, or Minimal).
     #[serde(default)]
     pub history_mode: HistoryMode,
 
+    /// Resource limits and requests for the node container.
     #[serde(default)]
     pub resources: ResourceRequirements,
 
+    /// Storage configuration, including PVC size and StorageClass.
     #[serde(default)]
     pub storage: StorageConfig,
 
+    /// Configuration specific to Validator nodes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validator_config: Option<ValidatorConfig>,
 
@@ -79,9 +91,11 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_pool_endpoint: Option<String>,
 
+    /// Configuration specific to Horizon nodes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub horizon_config: Option<HorizonConfig>,
 
+    /// Configuration specific to Soroban RPC nodes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub soroban_config: Option<SorobanConfig>,
 
@@ -114,6 +128,20 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vpa_config: Option<VpaConfig>,
 
+    /// Durable log-to-S3 sidecar configuration.
+    /// When set and `enabled: true`, a `stellar-log-shipper` sidecar is injected
+    /// into every managed pod to stream compressed logs directly to S3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_shipper: Option<LogShipperConfig>,
+    /// Dynamic resource scaling based on Stellar Core sync state.
+    ///
+    /// When enabled, the operator boosts CPU/memory while the node is catching up
+    /// on historical ledgers, then scales back once it reaches `Synced` state.
+    /// Uses in-place pod resource updates (requires Kubernetes 1.27+ with
+    /// `InPlacePodVerticalScaling` feature gate).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sync_state_scaling: Option<SyncStateScalingConfig>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ingress: Option<IngressConfig>,
 
@@ -136,11 +164,19 @@ pub struct StellarNodeSpec {
     #[serde(default)]
     pub maintenance_mode: bool,
 
+    /// Optimize pod placement based on network latency to quorum peers
+    #[serde(default)]
+    pub proximity_aware: bool,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_policy: Option<NetworkPolicyConfig>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dr_config: Option<DisasterRecoveryConfig>,
+
+    /// Multi-region ledger replication configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replication_config: Option<super::types::ReplicationConfig>,
 
     /// When not `Disabled`, the operator adds default pod anti-affinity so pods with the same
     /// `stellar-network` label (and same component) are not co-located on one node.
@@ -188,6 +224,27 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_mesh: Option<super::service_mesh::ServiceMeshConfig>,
 
+    /// cert-manager integration for automatic mTLS certificate issuance and rotation.
+    ///
+    /// When set, the operator creates a cert-manager `Certificate` resource for this node
+    /// instead of issuing a self-signed certificate internally. cert-manager handles
+    /// renewal automatically; the operator watches the resulting Secret and triggers a
+    /// rolling restart when the certificate is rotated.
+    ///
+    /// Requires cert-manager v1.x to be installed in the cluster.
+    ///
+    /// # Example
+    /// ```yaml
+    /// certManager:
+    ///   issuerRef:
+    ///     name: letsencrypt-prod
+    ///     kind: ClusterIssuer
+    ///   duration: "2160h"
+    ///   renewBefore: "720h"
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cert_manager: Option<CertManagerConfig>,
+
     /// Forensic snapshot: set `metadata.annotations["stellar.org/request-forensic-snapshot"]="true"`
     /// to trigger a one-shot capture (PCAP, optional core dump) uploaded to S3.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -223,11 +280,74 @@ pub struct StellarNodeSpec {
     #[schemars(with = "Option<Vec<serde_json::Value>>")]
     pub sidecars: Option<Vec<k8s_openapi::api::core::v1::Container>>,
 
+    /// Optional overrides for the liveness, readiness, and startup probes on the main container.
+    ///
+    /// When set, the specified fields replace the operator's built-in probe defaults.
+    /// Unset fields continue to use the operator defaults.
+    ///
+    /// # Example
+    /// ```yaml
+    /// probes:
+    ///   liveness:
+    ///     initialDelaySeconds: 60
+    ///     periodSeconds: 15
+    ///     failureThreshold: 5
+    ///   readiness:
+    ///     initialDelaySeconds: 20
+    ///     periodSeconds: 10
+    /// ```
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probes: Option<ProbeConfig>,
     /// Cross-cloud failover configuration for Horizon clusters.
     /// Enables seamless traffic failover between cloud providers (AWS, GCP, Azure)
     /// during major provider outages.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cross_cloud_failover: Option<crate::crd::CrossCloudFailoverConfig>,
+
+    /// Hitless upgrade configuration for zero-interruption Stellar Core upgrades.
+    ///
+    /// When enabled, the operator injects a handoff sidecar that transfers open
+    /// peer TCP socket file descriptors to the new container via `SCM_RIGHTS`,
+    /// avoiding peer re-discovery during version upgrades.
+    ///
+    /// Only applicable to `Validator` nodes.
+    ///
+    /// See `docs/hitless-upgrade.md` for the full design and feasibility study.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hitless_upgrade: Option<super::types::HitlessUpgradeConfig>,
+
+    /// Proactive Failure Detection using eBPF.
+    ///
+    /// When enabled, an `ebpf-exporter` sidecar is injected into the Validator Pod
+    /// to monitor silent failures like slow disk IO and network jitter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ebpf_config: Option<super::types::EbpfConfig>,
+
+    /// Automated secret rotation for database credentials.
+    ///
+    /// When enabled, the operator automatically rotates PostgreSQL passwords
+    /// on a configurable schedule, updating both the database and Kubernetes
+    /// secrets without downtime.
+    ///
+    /// Requires database configuration (either `database` or `managed_database`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_rotation: Option<crate::backup::SecretRotationConfig>,
+
+    /// Automated backup verification via temporary clusters.
+    ///
+    /// When enabled, the operator periodically spins up temporary clusters,
+    /// restores backups, and verifies data integrity to ensure backups are
+    /// recoverable.
+    ///
+    /// Requires backup configuration and sufficient cluster resources.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_verification: Option<crate::backup::BackupVerificationConfig>,
+
+    /// History archive pruning policy for automated retention management.
+    /// Enables safe deletion of old checkpoints based on retention policies.
+    /// Only applicable to `Validator` nodes with history archives enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pruning_policy: Option<super::types::PruningPolicy>,
 }
 
 fn default_replicas() -> i32 {
@@ -262,8 +382,10 @@ impl Default for StellarNodeSpec {
             cross_cluster: None,
             strategy: Default::default(),
             maintenance_mode: false,
+            proximity_aware: false,
             network_policy: None,
             dr_config: None,
+            replication_config: None,
             pod_anti_affinity: Default::default(),
             placement: Default::default(),
             topology_spread_constraints: None,
@@ -280,7 +402,16 @@ impl Default for StellarNodeSpec {
             resource_meta: None,
             custom_network_passphrase: None,
             sidecars: None,
+            cert_manager: None,
+            probes: None,
             cross_cloud_failover: None,
+            hitless_upgrade: None,
+            ebpf_config: None,
+            secret_rotation: None,
+            backup_verification: None,
+            log_shipper: None,
+            sync_state_scaling: None,
+            pruning_policy: None,
         }
     }
 }
@@ -379,12 +510,38 @@ impl StellarNodeSpec {
                     "Set spec.storage.snapshotRef.volumeSnapshotName for CSI snapshot restore, or spec.storage.snapshotRef.backupUrl for compressed backup restore.",
                 ));
             }
-            if has_backup && snap_ref.backup_url.as_deref().map(|u| u.is_empty()).unwrap_or(false) {
+            if has_backup
+                && snap_ref
+                    .backup_url
+                    .as_deref()
+                    .map(|u| u.is_empty())
+                    .unwrap_or(false)
+            {
                 errors.push(SpecValidationError::new(
                     "spec.storage.snapshotRef.backupUrl",
                     "backupUrl must not be empty when set",
                     "Provide a valid S3 or HTTPS URL for the compressed backup archive.",
                 ));
+            }
+        }
+
+        // 2c. Replication validation
+        if let Some(ref repl_cfg) = self.replication_config {
+            if repl_cfg.enabled {
+                if self.managed_database.is_none() {
+                    errors.push(SpecValidationError::new(
+                        "spec.replicationConfig",
+                        "Replication requires a managed database (spec.managedDatabase)",
+                        "Configure a managed database using spec.managedDatabase to enable multi-region replication via CloudNativePG.",
+                    ));
+                }
+                if repl_cfg.remote_cluster_id.is_empty() {
+                    errors.push(SpecValidationError::new(
+                        "spec.replicationConfig.remoteClusterId",
+                        "remoteClusterId must not be empty when replication is enabled",
+                        "Provide the identifier of the secondary/remote cluster in spec.replicationConfig.remoteClusterId.",
+                    ));
+                }
             }
         }
 
@@ -537,6 +694,15 @@ impl StellarNodeSpec {
                             "Set spec.autoscaling.maxReplicas to be greater than or equal to minReplicas.",
                         ));
                     }
+                    if let Some(ref gas) = autoscaling.gas_autoscaling {
+                        if gas.enabled {
+                            errors.push(SpecValidationError::new(
+                                "spec.autoscaling.gasAutoscaling",
+                                "gasAutoscaling is only supported for SorobanRPC nodes",
+                                "Remove spec.autoscaling.gasAutoscaling or set enabled: false for Horizon nodes; gas-based autoscaling is only supported for SorobanRpc.",
+                            ));
+                        }
+                    }
                 }
                 if let Some(ingress) = &self.ingress {
                     validate_ingress(ingress, &mut errors);
@@ -572,6 +738,9 @@ impl StellarNodeSpec {
                             "autoscaling.maxReplicas must be >= minReplicas",
                             "Set spec.autoscaling.maxReplicas to be greater than or equal to minReplicas.",
                         ));
+                    }
+                    if let Some(ref gas) = autoscaling.gas_autoscaling {
+                        validate_gas_autoscaling(gas, &mut errors);
                     }
                 }
                 if let Some(ingress) = &self.ingress {
@@ -614,6 +783,17 @@ impl StellarNodeSpec {
             }
         }
 
+        // 5. Probe override validation
+        if let Some(ref probe_config) = self.probes {
+            for msg in probe_config.validate() {
+                errors.push(SpecValidationError::new(
+                    "spec.probes",
+                    msg,
+                    "Ensure all probe fields are positive integers (initialDelaySeconds >= 0, others >= 1).",
+                ));
+            }
+        }
+
         if errors.is_empty() {
             Ok(())
         } else {
@@ -638,6 +818,34 @@ impl StellarNodeSpec {
         self.storage.retention_policy == RetentionPolicy::Delete
     }
 }
+
+fn validate_gas_autoscaling(gas: &GasAutoscalingConfig, errors: &mut Vec<SpecValidationError>) {
+    if !gas.enabled {
+        return;
+    }
+    if gas.min_replicas > gas.max_replicas {
+        errors.push(SpecValidationError::new(
+            "spec.autoscaling.gasAutoscaling.minReplicas",
+            "gasAutoscaling.minReplicas must be <= maxReplicas",
+            "Set spec.autoscaling.gasAutoscaling.minReplicas to a value less than or equal to maxReplicas.",
+        ));
+    }
+    if gas.ewma_alpha <= 0.0 || gas.ewma_alpha >= 1.0 {
+        errors.push(SpecValidationError::new(
+            "spec.autoscaling.gasAutoscaling.ewmaAlpha",
+            "gasAutoscaling.ewmaAlpha must be in range (0.0, 1.0) exclusive",
+            "Set spec.autoscaling.gasAutoscaling.ewmaAlpha to a value strictly between 0.0 and 1.0 (e.g. 0.3).",
+        ));
+    }
+    if gas.scale_up_threshold <= gas.scale_down_threshold {
+        errors.push(SpecValidationError::new(
+            "spec.autoscaling.gasAutoscaling.scaleUpThreshold",
+            "gasAutoscaling.scaleUpThreshold must be greater than scaleDownThreshold",
+            "Set spec.autoscaling.gasAutoscaling.scaleUpThreshold to a value strictly greater than scaleDownThreshold.",
+        ));
+    }
+}
+
 #[allow(dead_code)]
 fn validate_ingress(ingress: &IngressConfig, errors: &mut Vec<SpecValidationError>) {
     if ingress.hosts.is_empty() {
@@ -1079,6 +1287,18 @@ pub struct StellarNodeStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub canary_start_time: Option<String>,
 
+    /// Current traffic weight routed to the canary (0–100)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canary_weight: Option<i32>,
+
+    /// Observed 4xx/5xx error rate on the canary in the last analysis window (0.0–1.0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canary_error_rate: Option<f64>,
+
+    /// Number of consecutive successful health checks for the current canary
+    #[serde(default)]
+    pub canary_consecutive_healthy: i32,
+
     /// Version of the database schema after last successful migration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_migrated_version: Option<String>,
@@ -1112,6 +1332,20 @@ pub struct StellarNodeStatus {
     /// Cross-cloud failover status (Horizon/SorobanRpc nodes only)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cross_cloud_failover_status: Option<crate::crd::CrossCloudFailoverStatus>,
+
+    /// Current observed sync state of the Stellar Core node.
+    /// One of: `CatchingUp`, `Synced`, `Unknown`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sync_state: Option<CoreSyncState>,
+
+    /// Whether sync-state-driven resource scaling is currently active and which
+    /// profile is applied (`CatchingUp` or `Synced`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sync_scaling_active_profile: Option<String>,
+
+    /// Status of the history archive pruning process.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pruning_status: Option<super::types::PruningStatus>,
 }
 
 /// BGP advertisement status information
@@ -1331,6 +1565,7 @@ mod tests {
                 canary: Some(CanaryConfig {
                     weight: 10,
                     check_interval_seconds: 300,
+                    ..Default::default()
                 }),
             },
             ..Default::default()
@@ -1357,6 +1592,7 @@ mod tests {
                 canary: Some(CanaryConfig {
                     weight: 20,
                     check_interval_seconds: 300,
+                    ..Default::default()
                 }),
             },
             ..Default::default()

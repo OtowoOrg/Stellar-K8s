@@ -624,7 +624,10 @@ fn validate_spec_builtin(object: &serde_json::Value) -> Option<ServerValidationR
         Err(e) => {
             return Some(ServerValidationResult {
                 allowed: false,
-                message: Some(format!("Invalid StellarNode manifest: {e}")),
+                message: Some(format!(
+                    "Invalid StellarNode manifest: {e}\n\
+                     Hint: Ensure the manifest matches the StellarNode CRD schema (apiVersion: stellar.org/v1alpha1, kind: StellarNode)."
+                )),
                 warnings: vec![],
                 plugin_results: vec![],
                 total_execution_time_ms: 0,
@@ -653,9 +656,10 @@ fn validate_spec_builtin(object: &serde_json::Value) -> Option<ServerValidationR
     }
 
     let errors = node.spec.validate().err()?;
+    // Format each error as: [spec.field] Message — Hint: how_to_fix
     let message = errors
         .iter()
-        .map(|e| format!("{}: {}", e.field, e.message))
+        .map(|e| format!("[{}] {} — Hint: {}", e.field, e.message, e.how_to_fix))
         .collect::<Vec<_>>()
         .join("; ");
     Some(ServerValidationResult {

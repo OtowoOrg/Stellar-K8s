@@ -32,6 +32,7 @@ Stellar-K8s follows the **Operator Pattern**, extending Kubernetes with a `Stell
 1.  **CRD Source of Truth**: You define your node requirements (Network, Type, Resources) in a `StellarNode` manifest.
 2.  **Reconciliation Loop**: The Rust-based controller watches for changes and drives the cluster state to match your desired specification.
 3.  **Stateful Management**: Automatically handles complex lifecycle events for Validators (StatefulSets) and RPC nodes (Deployments), including persistent storage and configuration.
+4.  **Modular & Extensible**: The operator binary is structured into dedicated subcommand modules for improved maintainability and clear separation of concerns (CLI, logic, telemetry).
 
 ---
 

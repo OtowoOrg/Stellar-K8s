@@ -132,7 +132,7 @@ pub async fn reconcile_cross_cloud_failover(
 
             // Verify database sync before failover
             if let Some(db_sync) = &config.database_sync {
-                let sync_ok = verify_database_sync(client, node, db_sync, &secondary).await?;
+                let sync_ok = verify_database_sync(client, node, db_sync, secondary).await?;
                 if !sync_ok {
                     warn!(
                         "Database sync verification failed for {}. Aborting failover.",
@@ -147,7 +147,7 @@ pub async fn reconcile_cross_cloud_failover(
 
             // Perform GLB/DNS update
             if let Some(glb_config) = &config.global_load_balancer {
-                update_global_load_balancer(client, node, glb_config, &secondary).await?;
+                update_global_load_balancer(client, node, glb_config, secondary).await?;
             }
 
             status.failover_active = true;
@@ -502,7 +502,9 @@ async fn update_external_dns(
 }
 
 /// Cloud health status
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema, PartialEq, Eq,
+)]
 pub struct CloudHealthStatus {
     pub cloud_provider: String,
     pub region: Option<String>,

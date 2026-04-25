@@ -346,3 +346,32 @@ pub async fn livez(State(state): State<Arc<ControllerState>>) -> (StatusCode, Js
         )
     }
 }
+
+/// Compliance report endpoint
+///
+/// Returns a fleet-wide report of the physical location constraints for all
+/// StellarNode resources, suitable for regulatory audits.
+///
+/// `GET /api/v1/compliance/report`
+#[instrument(
+    skip(state),
+    fields(node_name = "-", namespace = "-", reconcile_id = "-")
+)]
+pub async fn compliance_report(
+    State(state): State<Arc<ControllerState>>,
+) -> Result<Json<Vec<crate::controller::ComplianceReportEntry>>, (StatusCode, Json<ErrorResponse>)>
+{
+    match crate::controller::compliance_report(state.client.clone()).await {
+        Ok(report) => Ok(Json(report)),
+        Err(e) => {
+            error!("Failed to generate compliance report: {}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(
+                    "compliance_report_error",
+                    &format!("Failed to generate compliance report: {e}"),
+                )),
+            ))
+        }
+    }
+}

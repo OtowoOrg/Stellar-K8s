@@ -36,6 +36,16 @@ spec:
           env:
             - name: STELLAR_OPERATOR_CONFIG
               value: /etc/stellar-operator/config.yaml
+            {{- if .Values.otel.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: "stellar-operator"
+            - name: OTEL_TRACES_SAMPLER
+              value: "parentbased_traceidratio"
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: {{ .Values.otel.samplingRatio | quote }}
+            {{- end }}
           volumeMounts:
             - name: operator-config
               mountPath: /etc/stellar-operator

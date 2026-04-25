@@ -20,11 +20,13 @@ use tracing::info;
 use crate::controller::ControllerState;
 use crate::{Error, Result};
 
+use super::audit_handlers;
 use super::auth;
 use super::custom_metrics;
 use super::dashboard_handlers;
 use super::handlers;
-use super::scp_topology;
+use super::health_summary;
+use super::job_handlers;
 
 /// Build a rustls ServerConfig from PEM data (cert, key, CA for client verification).
 /// Used for initial server setup and after certificate rotation to reload without restart.
@@ -97,6 +99,10 @@ pub async fn run_server(
         .route("/leader", get(handlers::leader_status))
         .route("/api/v1/nodes", get(handlers::list_nodes))
         .route("/api/v1/nodes/:namespace/:name", get(handlers::get_node))
+        // Health summary API (Issue #552)
+        .route("/v1/health/summary", get(health_summary::get_health_summary))
+        .route("/v1/health/nodes", get(health_summary::get_node_health_status))
+        .route("/v1/health/incidents", get(health_summary::get_health_incidents))
         // Log level dynamic control
         .route(
             "/config/log-level",
@@ -104,6 +110,8 @@ pub async fn run_server(
                 .post(handlers::set_log_level)
                 .route_layer(middleware::from_fn_with_state(state.clone(), auth::k8s_rbac_auth)),
         )
+        // Compliance report (OIDC-protected when OIDC is configured)
+        .route("/api/v1/compliance/report", get(handlers::compliance_report))
         // Dashboard routes
         .route("/", get(dashboard_ui))
         .route("/api/v1/dashboard/overview", get(dashboard_handlers::dashboard_overview))
@@ -118,6 +126,12 @@ pub async fn run_server(
         .route("/api/v1/quorum/topology/stream", get(scp_topology::topology_ws))
         // Documentation search API
         .route("/api/v1/docs/search-index", get(handlers::get_search_index))
+        // Background job monitoring dashboard
+        .route("/api/v1/jobs", get(job_handlers::list_jobs))
+        .route("/api/v1/jobs/stats", get(job_handlers::job_stats))
+        // Audit log
+        .route("/api/v1/audit-log", get(audit_handlers::list_audit_log))
+        .route("/api/v1/audit-log/search", get(audit_handlers::search_audit_log))
         // Custom metrics API
         .route(
             "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric",

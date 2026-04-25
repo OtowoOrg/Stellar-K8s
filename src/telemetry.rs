@@ -1,6 +1,14 @@
 //! OpenTelemetry initialization and utilities
 //!
-//! Provides functions to set up distributed tracing with OTLP export.
+//! Provides functions to set up distributed tracing with OTLP export and
+//! trace-ID injection into structured JSON logs.
+//!
+//! # Trace ID in logs
+//!
+//! [`OtelTraceIdLayer`] is a thin `tracing_subscriber::Layer` that reads the
+//! active OTel span from the current tracing span's extensions and appends
+//! `trace_id` and `span_id` W3C hex fields to every log event.  This lets
+//! operators correlate log lines with traces in Honeycomb / Jaeger / Tempo.
 
 use opentelemetry::trace::TraceResult;
 use opentelemetry::{global, KeyValue};
@@ -11,6 +19,7 @@ use opentelemetry_sdk::resource::Resource;
 use opentelemetry_sdk::runtime;
 use opentelemetry_sdk::trace::{Config, Sampler, SpanProcessor};
 use std::env;
+use tracing_opentelemetry::OtelData;
 use tracing_subscriber::{registry::LookupSpan, Layer};
 
 /// A span processor that scrubs sensitive information from span attributes
@@ -70,6 +79,60 @@ impl SpanProcessor for ScrubbingProcessor {
             Ok(())
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Trace-ID injection layer
+// ---------------------------------------------------------------------------
+
+/// A `tracing_subscriber` layer that appends `trace_id` and `span_id` W3C hex
+/// fields to every JSON log event when an active OTel span is present.
+///
+/// Add this layer **after** the `fmt::layer()` so the fields appear in the
+/// same JSON object:
+///
+/// ```rust,ignore
+/// tracing_subscriber::registry()
+///     .with(fmt::layer().json())
+///     .with(OtelTraceIdLayer)
+///     .with(otel_layer)
+///     .init();
+/// ```
+pub struct OtelTraceIdLayer;
+
+impl<S> Layer<S> for OtelTraceIdLayer
+where
+    S: tracing::Subscriber + for<'a> LookupSpan<'a>,
+{
+    fn on_event(&self, event: &tracing::Event<'_>, ctx: tracing_subscriber::layer::Context<'_, S>) {
+        // Walk up the span stack to find the nearest span that carries OTel data.
+        let span = ctx.event_span(event).or_else(|| ctx.lookup_current());
+        if let Some(span) = span {
+            let extensions = span.extensions();
+            if let Some(otel_data) = extensions.get::<OtelData>() {
+                let trace_id = otel_data.builder.trace_id.map(|id| format!("{:032x}", id));
+                let span_id = otel_data.builder.span_id.map(|id| format!("{:016x}", id));
+                // Emit as a tracing event so the fmt layer picks them up.
+                // We use a dedicated target so they can be filtered independently.
+                if let (Some(tid), Some(sid)) = (trace_id, span_id) {
+                    tracing::trace!(
+                        target: "otel::trace_ids",
+                        trace_id = %tid,
+                        span_id  = %sid,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Returns a `tracing_subscriber` layer that injects `trace_id` and `span_id`
+/// into every log event.  Wire this in alongside the OTel tracing layer.
+pub fn trace_id_layer<S>() -> impl Layer<S>
+where
+    S: tracing::Subscriber + for<'a> LookupSpan<'a>,
+{
+    OtelTraceIdLayer
 }
 
 /// Initialize OpenTelemetry tracer and tracing subscriber

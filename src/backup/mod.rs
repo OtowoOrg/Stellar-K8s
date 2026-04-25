@@ -5,9 +5,18 @@ use tokio::sync::RwLock;
 
 pub mod providers;
 pub mod scheduler;
+pub mod secret_rotation;
+pub mod verification;
 
 #[cfg(test)]
 mod scheduler_test;
+
+pub use secret_rotation::{
+    RotationEvent, RotationStatus, SecretRotationConfig, SecretRotationScheduler,
+};
+pub use verification::{
+    BackupVerificationConfig, BackupVerificationScheduler, VerificationReport, VerificationStatus,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]

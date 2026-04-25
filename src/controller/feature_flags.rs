@@ -111,9 +111,12 @@ pub fn new_shared() -> SharedFeatureFlags {
 
 /// Watch the `stellar-operator-config` ConfigMap in `namespace` and update
 /// `flags` whenever it changes. Runs until the task is cancelled.
-///
-/// This function is intended to be spawned as a background `tokio::task`.
-pub async fn watch_feature_flags(client: Client, namespace: String, flags: SharedFeatureFlags) {
+pub async fn watch_feature_flags(
+    client: Client,
+    namespace: String,
+    flags: SharedFeatureFlags,
+    audit_sink: Option<Arc<dyn crate::controller::audit_sink::AuditSink>>,
+) {
     let api: Api<ConfigMap> = Api::namespaced(client, &namespace);
 
     let watcher_config =
@@ -136,14 +139,44 @@ pub async fn watch_feature_flags(client: Client, namespace: String, flags: Share
                 let mut current = flags.write().await;
                 if *current != new_flags {
                     log_flag_changes(&current, &new_flags, cm.name_any().as_str());
+
+                    if let Some(sink) = &audit_sink {
+                        use crate::controller::audit_log::{AdminAction, AuditEntry};
+                        let actor = extract_actor(&cm);
+                        let entry = AuditEntry::new(
+                            AdminAction::ConfigUpdate,
+                            actor,
+                            FEATURE_FLAGS_CONFIGMAP,
+                            namespace.clone(),
+                            Some("Feature flags updated in ConfigMap"),
+                        )
+                        .with_diff(serde_json::to_value(&data).unwrap_or_default());
+
+                        let _ = sink.persist(entry).await;
+                    }
+
                     *current = new_flags;
                 }
             }
-            Ok(Event::Delete(_)) => {
+            Ok(Event::Delete(cm)) => {
                 warn!(
                     configmap = FEATURE_FLAGS_CONFIGMAP,
                     "Feature-flags ConfigMap deleted; reverting to defaults"
                 );
+
+                if let Some(sink) = &audit_sink {
+                    use crate::controller::audit_log::{AdminAction, AuditEntry};
+                    let actor = extract_actor(&cm);
+                    let entry = AuditEntry::new(
+                        AdminAction::ConfigDelete,
+                        actor,
+                        FEATURE_FLAGS_CONFIGMAP,
+                        namespace.clone(),
+                        Some("Feature flags ConfigMap deleted"),
+                    );
+                    let _ = sink.persist(entry).await;
+                }
+
                 let mut current = flags.write().await;
                 *current = FeatureFlags::default();
             }
@@ -157,6 +190,19 @@ pub async fn watch_feature_flags(client: Client, namespace: String, flags: Share
             }
         }
     }
+}
+
+fn extract_actor(cm: &ConfigMap) -> String {
+    if let Some(managed) = &cm.metadata.managed_fields {
+        for field in managed.iter().rev() {
+            if let Some(manager) = &field.manager {
+                if manager != "stellar-operator" && manager != "kube-controller-manager" {
+                    return manager.clone();
+                }
+            }
+        }
+    }
+    "system:unknown".to_string()
 }
 
 /// Log each flag that changed at INFO level.

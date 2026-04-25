@@ -12,17 +12,20 @@ pub struct ScpClient {
     http_client: Client,
     #[allow(dead_code)]
     timeout: Duration,
+    /// Maximum number of HTTP retry attempts
+    max_attempts: u32,
 }
 
 impl ScpClient {
     /// Create a new SCP client with the specified timeout
-    pub fn new(timeout: Duration) -> Self {
+    pub fn new(timeout: Duration, max_attempts: u32) -> Self {
         Self {
             http_client: Client::builder()
                 .timeout(timeout)
                 .build()
                 .expect("Failed to build HTTP client"),
             timeout,
+            max_attempts,
         }
     }
 
@@ -33,7 +36,7 @@ impl ScpClient {
         let url = format!("http://{pod_ip}:11626/scp?limit=1");
         debug!("Querying SCP state from {url}");
 
-        let response = self.retry_request(&url, 3).await?;
+        let response = self.retry_request(&url, self.max_attempts).await?;
         let json: Value = response.json().await?;
 
         // Parse the SCP state from the response
@@ -111,7 +114,7 @@ impl ScpClient {
 
         debug!("Querying quorum info from {url}");
 
-        let response = self.retry_request(&url, 3).await?;
+        let response = self.retry_request(&url, self.max_attempts).await?;
         let json: Value = response.json().await?;
 
         // Extract the qset field
@@ -128,7 +131,7 @@ impl ScpClient {
         let url = format!("http://{pod_ip}:11626/peers");
         debug!("Querying peers from {url}");
 
-        let response = self.retry_request(&url, 3).await?;
+        let response = self.retry_request(&url, self.max_attempts).await?;
         let json: Value = response.json().await?;
 
         // Parse peers array
@@ -207,7 +210,7 @@ mod tests {
 
     #[test]
     fn test_scp_client_creation() {
-        let client = ScpClient::new(Duration::from_secs(10));
+        let client = ScpClient::new(Duration::from_secs(10), 3);
         assert_eq!(client.timeout, Duration::from_secs(10));
     }
 }

@@ -107,6 +107,8 @@ mod resources_test;
 pub mod service_mesh;
 mod snapshot;
 pub mod snapshot_worker;
+pub mod pruning_worker;
+pub mod pruning_reconciler;
 pub mod traffic;
 #[cfg(test)]
 mod traffic_test;
@@ -163,3 +165,4 @@ pub use webhook_delivery::{
 };
 pub use audit_log::{AdminAction, AuditEntry, AuditLog};
 pub use snapshot_worker::run_snapshot_worker;
+pub use pruning_reconciler::{reconcile_pruning, update_pruning_status};

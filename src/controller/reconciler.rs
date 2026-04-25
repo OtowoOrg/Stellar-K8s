@@ -1681,6 +1681,37 @@ pub(crate) async fn apply_stellar_node(
         .await?;
     }
 
+    // 7c. History archive pruning (for validators with archives)
+    if node.spec.node_type == NodeType::Validator {
+        if let Some(pruning_policy) = &node.spec.pruning_policy {
+            if pruning_policy.enabled {
+                apply_or_emit(ctx, node, ActionType::Update, "Archive Pruning", async {
+                    match super::pruning_reconciler::reconcile_pruning(client, node).await {
+                        Ok(Some(result)) => {
+                            info!(
+                                "Archive pruning completed for {}/{}: {} deleted, {} retained",
+                                namespace, name, result.deleted_count, result.retained_count
+                            );
+                            super::pruning_reconciler::update_pruning_status(client, node, &result)
+                                .await?;
+                        }
+                        Ok(None) => {
+                            debug!("Pruning not scheduled to run for {}/{}", namespace, name);
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Archive pruning failed for {}/{}: {}",
+                                namespace, name, e
+                            );
+                        }
+                    }
+                    Ok(())
+                })
+                .await?;
+            }
+        }
+    }
+
     // 6. Trigger peer configuration reload for validators if healthy
     if node.spec.node_type == NodeType::Validator && health_result.healthy {
         if let Err(e) = peer_discovery::trigger_peer_config_reload(client, node).await {

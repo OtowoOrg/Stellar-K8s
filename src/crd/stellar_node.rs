@@ -317,6 +317,7 @@ impl Default for StellarNodeSpec {
             probes: None,
             cross_cloud_failover: None,
             hitless_upgrade: None,
+            pruning_policy: None,
         }
     }
 }
@@ -1467,3 +1468,9 @@ mod tests {
         assert_eq!(spec.container_image(), "stellar/horizon:v2.10.0");
     }
 }
+
+    /// History archive pruning policy for automated retention management.
+    /// Enables safe deletion of old checkpoints based on retention policies.
+    /// Only applicable to `Validator` nodes with history archives enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pruning_policy: Option<super::types::PruningPolicy>,

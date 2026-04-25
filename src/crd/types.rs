@@ -2233,3 +2233,159 @@ pub struct CrossCloudFailoverStatus {
     /// Timestamp of the last failover attempt (may have been blocked)
     pub last_failover_attempt: Option<String>,
 }
+
+// ============================================================================
+// History Archive Pruning Policy
+// ============================================================================
+
+/// Retention policy for history archive pruning
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PruningPolicy {
+    /// Enable automatic pruning of history archives
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Retention period in days. Checkpoints older than this will be deleted.
+    /// Mutually exclusive with retention_ledgers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_days: Option<u32>,
+
+    /// Retention period in ledgers. Checkpoints older than this will be deleted.
+    /// Mutually exclusive with retention_days.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_ledgers: Option<u32>,
+
+    /// Minimum number of checkpoints to always retain, regardless of age.
+    /// Provides a safety buffer to ensure recent history is always available.
+    /// Must be at least 10 (hardcoded minimum for safety).
+    #[serde(default = "default_min_checkpoints")]
+    pub min_checkpoints: u32,
+
+    /// Maximum age of checkpoints to consider for deletion (in days).
+    /// Checkpoints newer than this will never be deleted, even if they exceed retention.
+    /// Provides additional safety against accidentally deleting recent checkpoints.
+    #[serde(default = "default_max_age_days")]
+    pub max_age_days: u32,
+
+    /// Number of concurrent deletion operations.
+    /// Higher values speed up pruning but may hit API rate limits.
+    #[serde(default = "default_pruning_concurrency")]
+    pub concurrency: usize,
+
+    /// Cron expression for scheduled pruning (e.g., "0 2 * * *" for daily at 2 AM).
+    /// If unset, pruning is only triggered manually via annotation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
+
+    /// Whether to automatically execute deletions or only report what would be deleted.
+    /// When false (default), only dry-run analysis is performed.
+    #[serde(default)]
+    pub auto_delete: bool,
+
+    /// Skip confirmation prompt when auto_delete is true.
+    /// Only applicable when auto_delete is enabled.
+    #[serde(default)]
+    pub skip_confirmation: bool,
+}
+
+fn default_min_checkpoints() -> u32 {
+    50
+}
+
+fn default_max_age_days() -> u32 {
+    7
+}
+
+fn default_pruning_concurrency() -> usize {
+    10
+}
+
+impl Default for PruningPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            retention_days: None,
+            retention_ledgers: None,
+            min_checkpoints: default_min_checkpoints(),
+            max_age_days: default_max_age_days(),
+            concurrency: default_pruning_concurrency(),
+            schedule: None,
+            auto_delete: false,
+            skip_confirmation: false,
+        }
+    }
+}
+
+impl PruningPolicy {
+    /// Validate the pruning policy configuration
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.enabled {
+            return Ok(());
+        }
+
+        // Ensure exactly one retention policy is specified
+        match (self.retention_days, self.retention_ledgers) {
+            (None, None) => {
+                return Err(
+                    "Must specify either retention_days or retention_ledgers".to_string(),
+                );
+            }
+            (Some(_), Some(_)) => {
+                return Err(
+                    "Cannot specify both retention_days and retention_ledgers".to_string(),
+                );
+            }
+            _ => {}
+        }
+
+        // Validate min_checkpoints
+        if self.min_checkpoints < 10 {
+            return Err(format!(
+                "min_checkpoints must be at least 10, got {}",
+                self.min_checkpoints
+            ));
+        }
+
+        // Validate max_age_days
+        if self.max_age_days == 0 {
+            return Err("max_age_days must be greater than 0".to_string());
+        }
+
+        // Validate concurrency
+        if self.concurrency == 0 {
+            return Err("concurrency must be greater than 0".to_string());
+        }
+
+        Ok(())
+    }
+}
+
+/// Status of the last pruning operation
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PruningStatus {
+    /// Timestamp of the last pruning operation
+    pub last_run_time: Option<String>,
+
+    /// Status of the last pruning operation (Pending, Running, Success, Failed)
+    pub last_run_status: Option<String>,
+
+    /// Total checkpoints found in the last scan
+    pub total_checkpoints: Option<u32>,
+
+    /// Checkpoints deleted in the last operation
+    pub deleted_count: Option<u32>,
+
+    /// Checkpoints retained in the last operation
+    pub retained_count: Option<u32>,
+
+    /// Total bytes freed in the last operation
+    pub bytes_freed: Option<u64>,
+
+    /// Human-readable message about the last operation
+    pub message: Option<String>,
+
+    /// Whether the last operation was a dry-run
+    pub dry_run: Option<bool>,
+}

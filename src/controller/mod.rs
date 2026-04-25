@@ -57,6 +57,7 @@ pub mod jurisdiction;
 pub mod label_propagation;
 pub mod maintenance;
 pub mod canary;
+pub mod horizon_scaler;
 pub mod network_isolation;
 pub mod predictive_scaling;
 pub mod pss;

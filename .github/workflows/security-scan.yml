@@ -23,10 +23,10 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
     
-    - name: Cargo Audit
-      uses: actions-rs/audit-check@v1
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Run cargo audit
+      run: |
+        cargo install cargo-audit --locked
+        cargo audit
 
   trivy-vuln-scan:
     name: Trivy Vulnerability Scanner (Code/FS/Dep/Containers)

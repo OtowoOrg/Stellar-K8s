@@ -69,21 +69,32 @@ impl SpecValidationError {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct StellarNodeSpec {
+    /// The role of this node in the network (Validator, Horizon, SorobanRPC).
     pub node_type: NodeType,
+
+    /// The network this node connects to (Public, Testnet, or Futurenet).
     pub network: StellarNetwork,
+
+    /// Custom network passphrase (required if network is 'Custom').
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_network_passphrase: Option<String>,
+
+    /// Version of the Stellar software to run (e.g., "v21.0.0").
     pub version: String,
 
+    /// How the node should handle history archives (Full, Fast, or Minimal).
     #[serde(default)]
     pub history_mode: HistoryMode,
 
+    /// Resource limits and requests for the node container.
     #[serde(default)]
     pub resources: ResourceRequirements,
 
+    /// Storage configuration, including PVC size and StorageClass.
     #[serde(default)]
     pub storage: StorageConfig,
 
+    /// Configuration specific to Validator nodes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validator_config: Option<ValidatorConfig>,
 
@@ -91,9 +102,11 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_pool_endpoint: Option<String>,
 
+    /// Configuration specific to Horizon nodes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub horizon_config: Option<HorizonConfig>,
 
+    /// Configuration specific to Soroban RPC nodes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub soroban_config: Option<SorobanConfig>,
 

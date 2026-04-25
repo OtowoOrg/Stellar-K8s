@@ -612,12 +612,30 @@ where
     }
 }
 
-/// The main reconciliation function
+/// The core reconciliation state machine for StellarNode resources.
 ///
-/// This function is called whenever:
-/// - A StellarNode is created, updated, or deleted
-/// - An owned resource (Deployment, Service, PVC) changes
-/// - The requeue timer expires
+/// This function is triggered by the kube-rs runtime whenever a StellarNode is
+/// created, updated, or deleted, or when a child resource (like a Pod or Service)
+/// changes state.
+///
+/// # Design Philosophy: "Declarative Convergence"
+/// The reconciler does not perform imperative "actions". Instead, it:
+/// 1. **Observes** the current cluster state.
+/// 2. **Computes** the delta between Spec and Status.
+/// 3. **Applies** patches to drive the cluster toward the desired state.
+///
+/// # Critical Sections
+/// - **Finalizer Handling**: Ensures that data volumes (PVCs) are preserved or cleaned up
+///   according to the `retentionPolicy` before the CRD is deleted.
+/// - **Leader Election**: Only the leading operator instance executes the full logic
+///   to prevent conflicting patches.
+/// - **Network Safety**: Verifies that Mainnet and Testnet nodes are never co-located
+///   in a way that risks ledger corruption.
+///
+/// # Error Handling
+/// Returns a `Result<Action, Error>`. Retriable errors (like K8s API timeouts) 
+/// return an `Action::requeue` to retry with exponential backoff.
+#[instrument(skip(obj, ctx), fields(name = obj.metadata.name, namespace = obj.metadata.namespace))]
 async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<Action> {
     let node_name = obj.name_any();
     let namespace = obj.namespace().unwrap_or_else(|| "default".to_string());

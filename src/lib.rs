@@ -38,6 +38,10 @@
 //! - [`search`] - Search and discovery utilities
 //! - [`carbon_aware`] - Carbon-aware scheduling
 //! - [`runbook`] - Troubleshooting runbook generation
+//! - [`incident`] - Incident report generation
+//! - [`byzantine`] - Byzantine fault detection and analysis
+//! - [`log_scrub`] - PII and sensitive data scrubbing for logs
+//! - [`version_check`] - Background version checking against GitHub
 //!
 //! # Example: Creating a Validator Node
 //!

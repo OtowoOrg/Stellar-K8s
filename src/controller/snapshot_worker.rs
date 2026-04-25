@@ -63,7 +63,10 @@ pub const BOOTSTRAP_STARTED_AT_ANNOTATION: &str = "stellar.org/snapshot-bootstra
 /// tokio::spawn(run_snapshot_worker(client.clone(), reporter.clone()));
 /// ```
 pub async fn run_snapshot_worker(client: Client, reporter: Reporter) {
-    info!("Auto-snapshot worker started (poll interval: {}s)", POLL_INTERVAL_SECS);
+    info!(
+        "Auto-snapshot worker started (poll interval: {}s)",
+        POLL_INTERVAL_SECS
+    );
 
     loop {
         if let Err(e) = tick(&client, &reporter).await {
@@ -97,8 +100,8 @@ async fn tick(client: &Client, reporter: &Reporter) -> Result<()> {
         }
 
         // --- Bootstrap tracking: monitor nodes started from a snapshot ---
-        let is_bootstrap_node = node.spec.storage.snapshot_ref.is_some()
-            || node.spec.restore_from_snapshot.is_some();
+        let is_bootstrap_node =
+            node.spec.storage.snapshot_ref.is_some() || node.spec.restore_from_snapshot.is_some();
 
         if is_bootstrap_node {
             if let Err(e) = reconcile_bootstrap_status(client, reporter, &node).await {
@@ -183,11 +186,13 @@ async fn reconcile_bootstrap_status(
             if updated.phase != "Synced" {
                 updated.phase = "Synced".to_string();
                 updated.synced_at = Some(now_str.clone());
-                updated.message = Some("Node reached Synced state after snapshot bootstrap".to_string());
+                updated.message =
+                    Some("Node reached Synced state after snapshot bootstrap".to_string());
 
                 // Calculate time-to-sync
                 if let Some(ref restore_done_str) = updated.restore_completed_at {
-                    if let Ok(restore_done) = chrono::DateTime::parse_from_rfc3339(restore_done_str) {
+                    if let Ok(restore_done) = chrono::DateTime::parse_from_rfc3339(restore_done_str)
+                    {
                         let elapsed = now
                             .signed_duration_since(restore_done.with_timezone(&Utc))
                             .num_seconds()
@@ -275,8 +280,11 @@ async fn reconcile_bootstrap_status(
             // Node is not healthy yet — still restoring or starting
             if updated.phase.is_empty() || updated.phase == "Pending" {
                 updated.phase = "Restoring".to_string();
-                updated.restore_started_at.get_or_insert_with(|| now_str.clone());
-                updated.message = Some("Waiting for snapshot restore init container to complete".to_string());
+                updated
+                    .restore_started_at
+                    .get_or_insert_with(|| now_str.clone());
+                updated.message =
+                    Some("Waiting for snapshot restore init container to complete".to_string());
             }
         }
         Err(e) => {
@@ -286,7 +294,9 @@ async fn reconcile_bootstrap_status(
             );
             if updated.phase.is_empty() {
                 updated.phase = "Pending".to_string();
-                updated.restore_started_at.get_or_insert_with(|| now_str.clone());
+                updated
+                    .restore_started_at
+                    .get_or_insert_with(|| now_str.clone());
                 updated.message = Some("Waiting for pod to start".to_string());
             }
         }

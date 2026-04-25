@@ -203,7 +203,6 @@ mod tests {
                 node_type: NodeType::SorobanRpc,
                 network: StellarNetwork::Testnet,
                 version: "v21.0.0".to_string(),
-                history_mode: Default::default(),
                 resources: crate::crd::ResourceRequirements {
                     requests: crate::crd::ResourceSpec {
                         cpu: "500m".to_string(),
@@ -217,12 +216,8 @@ mod tests {
                 storage: crate::crd::StorageConfig {
                     storage_class: "standard".to_string(),
                     size: "100Gi".to_string(),
-                    retention_policy: Default::default(),
-                    annotations: None,
                     ..Default::default()
                 },
-                validator_config: None,
-                horizon_config: None,
                 soroban_config: Some(SorobanConfig {
                     stellar_core_url: "http://core:11626".to_string(),
                     #[allow(deprecated)]
@@ -263,9 +258,12 @@ mod tests {
                 vpa_config: None,
                 read_pool_endpoint: None,
                 sidecars: None,
+                cert_manager: None,
                 nat_traversal: None,
                 custom_network_passphrase: None,
                 cross_cloud_failover: None,
+                hitless_upgrade: None,
+                ..Default::default()
             },
             status: None,
         }

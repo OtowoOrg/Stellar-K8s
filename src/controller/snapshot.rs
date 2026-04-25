@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use chrono::Utc;
-use kube::api::{Api, DeleteParams, DynamicObject, ListParams, PostParams};
+use kube::api::{Api, DeleteParams, DynamicObject, ListParams, Patch, PatchParams, PostParams};
 use kube::discovery::ApiResource;
 use kube::{Client, ResourceExt};
 use tracing::{info, instrument, warn};
@@ -107,7 +107,9 @@ async fn verify_snapshot_encryption(
     match api.get(snapshot_name).await {
         Ok(snapshot) => {
             let spec = snapshot.data.get("spec").and_then(|s| s.as_object());
-            let parameters = spec.and_then(|s| s.get("parameters")).and_then(|p| p.as_object());
+            let parameters = spec
+                .and_then(|s| s.get("parameters"))
+                .and_then(|p| p.as_object());
             let encryption_key = parameters.and_then(|p| p.get("encryptionKeyRef"));
 
             if encryption_key.is_some() {
@@ -195,13 +197,11 @@ async fn create_volume_snapshot(
             "persistentVolumeClaimName": pvc_name
         },
         "volumeSnapshotClassName": config.volume_snapshot_class_name,
-        "parameters": if let Some(ref key) = config.encryption_key_ref {
-            Some(serde_json::json!({
+        "parameters": config.encryption_key_ref.as_ref().map(|key| {
+            serde_json::json!({
                 "encryptionKeyRef": key
-            }))
-        } else {
-            None
-        }
+            })
+        })
     });
 
     let snapshot = DynamicObject {

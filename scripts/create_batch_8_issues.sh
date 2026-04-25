@@ -1,16 +1,52 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="OtowoOrg/Stellar-K8s"
+# shellcheck source=lib/repo.sh
+# shellcheck source=lib/common.sh
+source "$(dirname "$0")/lib/repo.sh"
+source "$(dirname "$0")/lib/common.sh"
+
+show_help() {
+  cat <<EOF
+Usage: $(basename "$0") [-h|--help]
+
+Creates GitHub issues for Stellar-K8s Wave (Batch 8, 10 x 200 pts).
+
+Prerequisites:
+  - gh CLI installed and authenticated (gh auth login)
+  - Network access to api.github.com
+
+Optional environment variables:
+  REPO                Target repository (default: OtowoOrg/Stellar-K8s)
+  DRY_RUN             Set to 1 to print commands without executing
+  MAX_RETRIES         Number of retry attempts on API failure (default: 10)
+  RETRY_DELAY_SECONDS Seconds to wait between retries (default: 15)
+
+Example:
+  REPO=myorg/my-fork DRY_RUN=1 $(basename "$0")
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) show_help; exit 0 ;;
+  esac
+done
+
+EXPECTED_ISSUE_COUNT=10
+ACTUAL_ISSUE_COUNT=$(grep -c '^gh issue create' "$0")
+if [ "$ACTUAL_ISSUE_COUNT" -ne "$EXPECTED_ISSUE_COUNT" ]; then
+  echo "ERROR: Expected $EXPECTED_ISSUE_COUNT issue create calls, found $ACTUAL_ISSUE_COUNT. Update EXPECTED_ISSUE_COUNT or fix the script." >&2
+  exit 1
+fi
 
 echo "Creating Batch 8 (10 x 200 pts) issues..."
 
 # ─── ISSUE 1 ───────────────────────────────────────────────────────────────────
-gh issue create \
-  --repo "$REPO" \
-  --title "Add comprehensive unit tests for the main reconciler loop" \
-  --label "stellar-wave,testing,reliability" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue_with_retry \
+  "Add comprehensive unit tests for the main reconciler loop" \
+  "stellar-wave,testing,reliability" \
+  "### 🔴 Difficulty: High (200 Points)
 
 \`src/controller/reconciler.rs\` is the heart of the operator at ~60KB. It has no dedicated test file. This is the highest-risk untested path in the entire codebase.
 
@@ -29,14 +65,11 @@ gh issue create \
 - [kube-rs mock client](https://docs.rs/kube/latest/kube/client/struct.Client.html)
 "
 
-echo "✓ Issue 1 created"
-
 # ─── ISSUE 2 ───────────────────────────────────────────────────────────────────
-gh issue create \
-  --repo "$REPO" \
-  --title "Add unit tests for the automated remediation module" \
-  --label "stellar-wave,testing,reliability,security" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue_with_retry \
+  "Add unit tests for the automated remediation module" \
+  "stellar-wave,testing,reliability,security" \
+  "### 🔴 Difficulty: High (200 Points)
 
 \`src/controller/remediation.rs\` handles automated incident response for Stellar nodes (restarts, failovers, etc). It has no test coverage — a regression here would cause silent failures during incidents.
 
@@ -52,14 +85,11 @@ gh issue create \
 - [\`src/controller/remediation.rs\`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/remediation.rs)
 "
 
-echo "✓ Issue 2 created"
-
 # ─── ISSUE 3 ───────────────────────────────────────────────────────────────────
-gh issue create \
-  --repo "$REPO" \
-  --title "Add unit tests for the scheduler scoring algorithm" \
-  --label "stellar-wave,testing,performance" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue_with_retry \
+  "Add unit tests for the scheduler scoring algorithm" \
+  "stellar-wave,testing,performance" \
+  "### 🔴 Difficulty: High (200 Points)
 
 The latency-aware scheduler (\`src/scheduler/scoring.rs\`) selects nodes based on a scoring function. This logic needs thorough unit tests to ensure placement decisions are correct.
 
@@ -76,14 +106,11 @@ The latency-aware scheduler (\`src/scheduler/scoring.rs\`) selects nodes based o
 - [\`src/scheduler/core.rs\`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/scheduler/core.rs)
 "
 
-echo "✓ Issue 3 created"
-
 # ─── ISSUE 4 ───────────────────────────────────────────────────────────────────
-gh issue create \
-  --repo "$REPO" \
-  --title "Add unit tests for the Wasm admission webhook validation logic" \
-  --label "stellar-wave,testing,security" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue_with_retry \
+  "Add unit tests for the Wasm admission webhook validation logic" \
+  "stellar-wave,testing,security" \
+  "### 🔴 Difficulty: High (200 Points)
 
 The Wasm-powered admission webhook (\`src/webhook/\`) validates \`StellarNode\` manifests at admission time. Bugs here mean invalid resources can enter the cluster silently.
 
@@ -99,14 +126,11 @@ The Wasm-powered admission webhook (\`src/webhook/\`) validates \`StellarNode\` 
 - [\`src/webhook/\`](https://github.com/OtowoOrg/Stellar-K8s/tree/main/src/webhook)
 "
 
-echo "✓ Issue 4 created"
-
 # ─── ISSUE 5 ───────────────────────────────────────────────────────────────────
-gh issue create \
-  --repo "$REPO" \
-  --title "Add integration tests for the backup scheduler and restore flow" \
-  --label "stellar-wave,testing,reliability" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue_with_retry \
+  "Add integration tests for the backup scheduler and restore flow" \
+  "stellar-wave,testing,reliability" \
+  "### 🔴 Difficulty: High (200 Points)
 
 \`src/backup/\` implements backup scheduling and restore logic for Stellar node data. There are no tests verifying these flows work end-to-end correctly.
 
@@ -123,14 +147,11 @@ gh issue create \
 - [\`src/backup/\`](https://github.com/OtowoOrg/Stellar-K8s/tree/main/src/backup)
 "
 
-echo "✓ Issue 5 created"
-
 # ─── ISSUE 6 ───────────────────────────────────────────────────────────────────
-gh issue create \
-  --repo "$REPO" \
-  --title "Add unit tests for the cross-cluster controller" \
-  --label "stellar-wave,testing,reliability,kubernetes" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue_with_retry \
+  "Add unit tests for the cross-cluster controller" \
+  "stellar-wave,testing,reliability,kubernetes" \
+  "### 🔴 Difficulty: High (200 Points)
 
 \`src/controller/cross_cluster.rs\` manages multi-cluster state synchronization at ~15KB. This module is entirely untested.
 
@@ -147,14 +168,11 @@ gh issue create \
 - [\`examples/cross-cluster-direct-ip.yaml\`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/examples/cross-cluster-direct-ip.yaml)
 "
 
-echo "✓ Issue 6 created"
-
 # ─── ISSUE 7 ───────────────────────────────────────────────────────────────────
-gh issue create \
-  --repo "$REPO" \
-  --title "Add unit tests for the captive core configuration manager" \
-  --label "stellar-wave,testing,reliability" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue_with_retry \
+  "Add unit tests for the captive core configuration manager" \
+  "stellar-wave,testing,reliability" \
+  "### 🔴 Difficulty: High (200 Points)
 
 \`src/controller/captive_core.rs\` manages Stellar captive core configuration at ~15KB. Captive core is required for Soroban RPC nodes and has no test coverage.
 
@@ -170,14 +188,11 @@ gh issue create \
 - [\`src/controller/captive_core.rs\`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/captive_core.rs)
 "
 
-echo "✓ Issue 7 created"
-
 # ─── ISSUE 8 ───────────────────────────────────────────────────────────────────
-gh issue create \
-  --repo "$REPO" \
-  --title "Add unit tests for the traffic shaping / rate-limiting controller" \
-  --label "stellar-wave,testing,performance,reliability" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue_with_retry \
+  "Add unit tests for the traffic shaping / rate-limiting controller" \
+  "stellar-wave,testing,performance,reliability" \
+  "### 🔴 Difficulty: High (200 Points)
 
 \`src/controller/traffic.rs\` controls traffic policies for Stellar nodes. Without tests, regressions in traffic shaping could silently degrade network performance.
 
@@ -193,14 +208,11 @@ gh issue create \
 - [\`src/controller/traffic.rs\`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/traffic.rs)
 "
 
-echo "✓ Issue 8 created"
-
 # ─── ISSUE 9 ───────────────────────────────────────────────────────────────────
-gh issue create \
-  --repo "$REPO" \
-  --title "Add unit tests for the archive health checker" \
-  --label "stellar-wave,testing,reliability,observability" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue_with_retry \
+  "Add unit tests for the archive health checker" \
+  "stellar-wave,testing,reliability,observability" \
+  "### 🔴 Difficulty: High (200 Points)
 
 \`src/controller/archive_health.rs\` checks the health of Stellar history archives (~8KB). Archive health is critical for validators syncing new nodes. It has zero test coverage.
 
@@ -216,14 +228,11 @@ gh issue create \
 - [\`src/controller/archive_health.rs\`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/archive_health.rs)
 "
 
-echo "✓ Issue 9 created"
-
 # ─── ISSUE 10 ──────────────────────────────────────────────────────────────────
-gh issue create \
-  --repo "$REPO" \
-  --title "Implement automated end-to-end test: deploy Horizon node and verify REST API responds" \
-  --label "stellar-wave,testing,kubernetes" \
-  --body "### 🔴 Difficulty: High (200 Points)
+create_issue_with_retry \
+  "Implement automated end-to-end test: deploy Horizon node and verify REST API responds" \
+  "stellar-wave,testing,kubernetes" \
+  "### 🔴 Difficulty: High (200 Points)
 
 Extend the e2e test suite (\`tests/e2e_kind.rs\`) with a full Horizon node lifecycle test. This validates the most common production use case.
 
@@ -241,7 +250,7 @@ Extend the e2e test suite (\`tests/e2e_kind.rs\`) with a full Horizon node lifec
 - [\`examples/horizon-with-health-check.yaml\`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/examples/horizon-with-health-check.yaml)
 "
 
-echo "✓ Issue 10 created"
-
 echo ""
 echo "🎉 All 10 Batch 8 (200 pts) issues created!"
+
+print_skip_summary

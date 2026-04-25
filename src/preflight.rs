@@ -7,9 +7,17 @@ use kube::{
     api::{Api, ListParams},
     client::Client,
 };
+use serde::Deserialize;
+use std::process::Command;
+use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 use crate::error::{Error, Result};
+
+/// Labels required by issue automation before opening new issues.
+pub const REQUIRED_GH_LABELS: &[&str] = &["ci", "security", "stellar-wave"];
+
+const GH_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Severity of a preflight check result
 #[derive(Debug, Clone, PartialEq)]
@@ -47,6 +55,155 @@ impl CheckResult {
             message: msg.into(),
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct GhLabel {
+    name: String,
+}
+
+/// Fast-fail preflight for GitHub CLI auth and label readiness.
+///
+/// This check is intentionally independent of Kubernetes connectivity so
+/// issue-automation failures are caught early and explained clearly.
+pub fn run_gh_label_preflight(repo: Option<&str>) -> Result<()> {
+    let Some(repo) = repo.map(str::trim).filter(|r| !r.is_empty()) else {
+        return Ok(());
+    };
+
+    let deadline = Instant::now() + GH_PREFLIGHT_TIMEOUT;
+
+    check_gh_auth(deadline)?;
+
+    ensure_required_labels(repo, REQUIRED_GH_LABELS, deadline)?;
+
+    Ok(())
+}
+
+fn check_gh_auth(deadline: Instant) -> Result<()> {
+    if Instant::now() >= deadline {
+        return Err(Error::ConfigError(format!(
+            "GitHub preflight timed out after {}s while checking auth",
+            GH_PREFLIGHT_TIMEOUT.as_secs()
+        )));
+    }
+
+    let output = Command::new("gh")
+        .args(["auth", "status"])
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Error::ConfigError(
+                    "GitHub CLI ('gh') was not found in PATH. Install from https://cli.github.com/"
+                        .to_string(),
+                )
+            } else {
+                Error::ConfigError(format!("failed to run `gh auth status`: {e}"))
+            }
+        })?;
+
+    if Instant::now() >= deadline {
+        return Err(Error::ConfigError(format!(
+            "GitHub preflight timed out after {}s while checking auth",
+            GH_PREFLIGHT_TIMEOUT.as_secs()
+        )));
+    }
+
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(Error::ConfigError(format!(
+            "GitHub auth preflight failed: {detail}. Run `gh auth login` and retry."
+        )));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_lowercase();
+    if stdout.contains("not logged in") || stdout.contains("no token") {
+        return Err(Error::ConfigError(
+            "GitHub auth preflight failed: no active gh session found. Run `gh auth login` and retry.".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn ensure_required_labels(repo: &str, required: &[&str], deadline: Instant) -> Result<()> {
+    if required.is_empty() {
+        return Ok(());
+    }
+
+    if Instant::now() >= deadline {
+        return Err(Error::ConfigError(format!(
+            "GitHub preflight timed out after {}s while checking labels",
+            GH_PREFLIGHT_TIMEOUT.as_secs()
+        )));
+    }
+
+    let output = Command::new("gh")
+        .args([
+            "label", "list", "--repo", repo, "--json", "name", "--limit", "200",
+        ])
+        .output()
+        .map_err(|e| Error::ConfigError(format!("failed to run `gh label list`: {e}")))?;
+
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(Error::ConfigError(format!(
+            "GitHub label preflight failed for {repo}: {detail}"
+        )));
+    }
+
+    let existing_labels = parse_label_names(&output.stdout)?;
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|label| !existing_labels.iter().any(|l| l == label))
+        .collect();
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    let mut unresolved = Vec::new();
+    for label in missing {
+        if Instant::now() >= deadline {
+            return Err(Error::ConfigError(format!(
+                "GitHub preflight timed out after {}s while creating missing labels",
+                GH_PREFLIGHT_TIMEOUT.as_secs()
+            )));
+        }
+
+        let status = Command::new("gh")
+            .args([
+                "label", "create", label, "--repo", repo, "--color", "ededed",
+            ])
+            .status()
+            .map_err(|e| {
+                Error::ConfigError(format!("failed to run `gh label create {label}`: {e}"))
+            })?;
+
+        if !status.success() {
+            unresolved.push(label.to_string());
+        }
+    }
+
+    if unresolved.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::ConfigError(format!(
+            "GitHub label preflight failed for {repo}. Missing labels that could not be created: {}",
+            unresolved.join(", ")
+        )))
+    }
+}
+
+fn parse_label_names(json_bytes: &[u8]) -> Result<Vec<String>> {
+    let parsed: Vec<GhLabel> = serde_json::from_slice(json_bytes)
+        .map_err(|e| Error::ConfigError(format!("failed to parse label JSON: {e}")))?;
+    Ok(parsed
+        .into_iter()
+        .map(|l| l.name)
+        .filter(|n| !n.is_empty())
+        .collect())
 }
 
 /// Run all preflight checks and return the results.
@@ -228,5 +385,30 @@ async fn check_leader_election_lease(client: &Client, namespace: &str) -> CheckR
                  ensure the operator ServiceAccount has 'coordination.k8s.io' RBAC permissions ({e})"
             ),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_label_names_typical() {
+        let json = br#"[{"name":"ci"},{"name":"security"}]"#;
+        let labels = parse_label_names(json).expect("json should parse");
+        assert_eq!(labels, vec!["ci".to_string(), "security".to_string()]);
+    }
+
+    #[test]
+    fn parse_label_names_empty() {
+        let json = br#"[]"#;
+        let labels = parse_label_names(json).expect("json should parse");
+        assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn parse_label_names_invalid_json() {
+        let err = parse_label_names(b"not-json").expect_err("must fail for invalid json");
+        assert!(err.to_string().contains("failed to parse label JSON"));
     }
 }

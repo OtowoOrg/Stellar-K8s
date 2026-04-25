@@ -9,9 +9,13 @@ use std::process;
 
 use clap::{Parser, Subcommand};
 use k8s_openapi::api::core::v1::Pod;
-use kube::{api::Api, Client, ResourceExt};
+use kube::{
+    api::{Api, Patch, PatchParams},
+    Client, ResourceExt,
+};
 
 use stellar_k8s::controller::check_node_health;
+use stellar_k8s::crd::types::ReplicationRole;
 use stellar_k8s::crd::StellarNode;
 use stellar_k8s::error::{Error, Result};
 
@@ -27,7 +31,18 @@ fn get_node_phase(node: &StellarNode) -> String {
 
 #[derive(Parser)]
 #[command(name = "kubectl-stellar")]
-#[command(about = "A kubectl plugin for managing Stellar nodes", long_about = None)]
+#[command(about = "A kubectl plugin for managing Stellar nodes")]
+#[command(long_about = "\
+\x1b[1;36m  ✦ Stellar-K8s kubectl Plugin\x1b[0m\n\
+\x1b[1;35m  Cloud-Native Stellar Infrastructure on Kubernetes\x1b[0m\n\
+\x1b[90m  Built with Rust 🦀 · Powered by kube-rs · Apache 2.0\x1b[0m\n\n\
+Manage StellarNode resources from the command line.\n\n\
+EXAMPLES:\n  \
+kubectl stellar list\n  \
+kubectl stellar status my-validator\n  \
+kubectl stellar logs my-validator -f\n  \
+kubectl stellar list --dry-run\n  \
+kubectl stellar status --dry-run")]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
@@ -40,6 +55,13 @@ struct Cli {
     /// Output format (table, json, yaml)
     #[arg(short, long, global = true, default_value = "table")]
     output: String,
+
+    /// Simulate the command without making any state-changing API calls.
+    ///
+    /// Prints a summary of actions that would be taken without executing them.
+    /// Safe to run against production clusters.
+    #[arg(long, global = true)]
+    dry_run: bool,
 }
 
 #[derive(Subcommand)]
@@ -125,7 +147,51 @@ enum Commands {
     },
     /// Generate an incident report for a specific time window
     IncidentReport(stellar_k8s::incident::IncidentReportArgs),
+    /// Trigger a failover to a secondary cluster
+    Failover {
+        /// Name of the StellarNode to failover
+        node_name: String,
+        /// Force failover even if the node is already active
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// Execute a read-only SQL query against the node's internal database
+    Sql {
+        /// Name of the StellarNode
+        node_name: String,
+        /// SQL query to execute
+        query: String,
+    },
+    /// Inspect compliance audit trails
+    Audit {
+        #[command(subcommand)]
+        command: AuditCommands,
+    },
 }
+
+#[derive(Debug, Subcommand)]
+pub enum AuditCommands {
+    /// List recent audit entries
+    List {
+        /// Number of entries to show
+        #[arg(short, long, default_value = "50")]
+        limit: usize,
+        /// Filter by resource name
+        #[arg(short, long)]
+        resource: Option<String>,
+        /// Filter by actor
+        #[arg(short, long)]
+        actor: Option<String>,
+    },
+    /// Show detailed diff for a specific audit entry
+    Show {
+        /// Audit entry ID
+        id: String,
+    },
+}
+
+mod audit_report;
+mod sql;
 
 #[tokio::main]
 async fn main() {
@@ -138,6 +204,53 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> Result<()> {
+    // Emit a dry-run notice for any command that would mutate cluster state.
+    if cli.dry_run {
+        let action = match &cli.command {
+            Commands::List { .. }
+            | Commands::Status { .. }
+            | Commands::SyncStatus { .. }
+            | Commands::Events { .. }
+            | Commands::Version
+            | Commands::Explain { .. }
+            | Commands::Search { .. }
+            | Commands::Completions { .. } => None,
+            Commands::Logs { node_name, .. } => Some(format!(
+                "Stream logs from StellarNode '{node_name}' (read-only, no cluster mutation)"
+            )),
+            Commands::Debug {
+                node_name,
+                ephemeral,
+                ..
+            } => {
+                if *ephemeral {
+                    Some(format!(
+                        "Attach ephemeral debug container to StellarNode '{node_name}'"
+                    ))
+                } else {
+                    Some(format!("Exec into pod for StellarNode '{node_name}'"))
+                }
+            }
+            Commands::IncidentReport(_) => {
+                Some("Generate incident report (read-only, no cluster mutation)".to_string())
+            }
+            Commands::Failover { node_name, .. } => {
+                Some(format!("Trigger failover for StellarNode '{node_name}'"))
+            }
+            Commands::Sql { node_name, .. } => Some(format!(
+                "Execute SQL query against StellarNode '{node_name}' (read-only)"
+            )),
+            Commands::Audit { .. } => {
+                Some("Inspect compliance audit trails (read-only)".to_string())
+            }
+        };
+        if let Some(desc) = action {
+            println!("[dry-run] Would: {desc}");
+            println!("[dry-run] No state-changing API calls were made.");
+            return Ok(());
+        }
+    }
+
     match cli.command {
         Commands::Version => {
             let operator_version = match Client::try_default().await {
@@ -267,6 +380,43 @@ async fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
         Commands::IncidentReport(args) => stellar_k8s::incident::run_incident_report(args).await,
+        Commands::Failover { node_name, force } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
+            failover(client, &node_name, force).await
+        }
+        Commands::Sql { node_name, query } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
+            let namespace = cli.namespace.as_deref().unwrap_or("default");
+            let output_format = match cli.output.to_lowercase().as_str() {
+                "json" => sql::OutputFormat::Json,
+                "csv" => sql::OutputFormat::Csv,
+                _ => sql::OutputFormat::Table,
+            };
+
+            let executor = sql::SqlExecutor::new(client, namespace.to_string());
+            executor.execute(&node_name, &query, output_format).await
+        }
+        Commands::Audit { command } => {
+            let bucket = std::env::var("STELLAR_AUDIT_BUCKET").map_err(|_| {
+                Error::ConfigError(
+                    "STELLAR_AUDIT_BUCKET environment variable must be set to access audit logs"
+                        .to_string(),
+                )
+            })?;
+            let prefix =
+                std::env::var("STELLAR_AUDIT_PREFIX").unwrap_or_else(|_| "audit-logs/".to_string());
+
+            let reporter = audit_report::AuditReporter::new(bucket, prefix).await;
+
+            match command {
+                AuditCommands::List {
+                    limit,
+                    resource,
+                    actor,
+                } => reporter.list(limit, resource, actor).await,
+                AuditCommands::Show { id } => reporter.show(&id).await,
+            }
+        }
     }
 }
 
@@ -787,6 +937,44 @@ async fn debug(
     Ok(())
 }
 
+async fn failover(client: Client, node_name: &str, force: bool) -> Result<()> {
+    let api: Api<StellarNode> = Api::default_namespaced(client);
+    let mut node = api.get(node_name).await.map_err(Error::KubeError)?;
+
+    let has_repl_cfg = node.spec.replication_config.is_some();
+    if !has_repl_cfg {
+        return Err(Error::ValidationError(format!(
+            "Node '{node_name}' does not have replicationConfig configured"
+        )));
+    }
+
+    let repl_cfg = node.spec.replication_config.as_mut().unwrap();
+
+    if !repl_cfg.enabled {
+        return Err(Error::ValidationError(format!(
+            "Replication is not enabled for node '{node_name}'"
+        )));
+    }
+
+    if repl_cfg.role == ReplicationRole::Active && !force {
+        println!("Node '{node_name}' is already in Active role. Use --force to re-apply.");
+        return Ok(());
+    }
+
+    println!("Triggering failover for StellarNode '{node_name}'...");
+    repl_cfg.role = ReplicationRole::Active;
+
+    let patch = Patch::Merge(&node);
+    api.patch(node_name, &PatchParams::default(), &patch)
+        .await
+        .map_err(Error::KubeError)?;
+
+    println!("Successfully updated node '{node_name}' role to Active.");
+    println!("The operator will now reconfigure the database and history archives for primary operation.");
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -856,21 +1044,16 @@ mod tests {
                 resource_meta: None,
                 read_pool_endpoint: None,
                 sidecars: None,
+                cert_manager: None,
                 history_mode: Default::default(),
                 custom_network_passphrase: None,
                 nat_traversal: None,
+                ..Default::default()
             },
             status: Some(StellarNodeStatus {
                 #[allow(deprecated)]
                 phase: "Ready".to_string(), // Keep for backward compatibility, but not used
                 conditions: vec![ready_condition],
-                observed_generation: None,
-                message: None,
-                dr_status: None,
-                ledger_sequence: None,
-                endpoint: None,
-                external_ip: None,
-                bgp_status: None,
                 ready_replicas: 1,
                 replicas: 1,
                 canary_ready_replicas: 0,
@@ -883,6 +1066,7 @@ mod tests {
                 vault_observed_secret_version: None,
                 forensic_snapshot_phase: None,
                 label_propagation_status: None,
+                ..Default::default()
             }),
         }
     }

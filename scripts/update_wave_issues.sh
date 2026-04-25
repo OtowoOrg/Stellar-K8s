@@ -1,5 +1,8 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=lib/repo.sh
+source "$(dirname "$0")/lib/repo.sh"
 
 # Update Stellar Wave Issues with Points, Criteria, and Resources
 # Updates issues #2 through #11
@@ -7,7 +10,7 @@ set -e
 echo "Updating Stellar Wave issues..."
 
 # Issue 2: Unit Tests (Trivial - 100 Points)
-gh issue edit 2 \
+gh issue edit 2 --repo "$REPO" \
   --title "Add unit tests for StellarNodeSpec validation" \
   --body "### 🟢 Difficulty: Trivial (100 Points)
 
@@ -19,12 +22,12 @@ The \`StellarNodeSpec::validate()\` function currently checks for missing config
 
 ### 📚 Resources
 - [Rust Testing Guide](https://doc.rust-lang.org/book/ch11-01-writing-tests.html)
-- [Stellar-K8s CRD Definition](https://github.com/stellar/stellar-k8s/blob/main/src/crd/stellar_node.rs)
+- [Stellar-K8s CRD Definition](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/crd/stellar_node.rs)
 "
 
 # Issue 3: Ready Replicas Status (Trivial - 100 Points)
 # REPLACING "Display Trait" with meaningful logic fix
-gh issue edit 3 \
+gh issue edit 3 --repo "$REPO" \
   --title "Implement correct readyReplicas status reporting" \
   --body "### 🟢 Difficulty: Trivial (100 Points)
 
@@ -41,7 +44,7 @@ Currently, the operator reports \`replicas\` from the spec, but does not report 
 "
 
 # Issue 4: Cargo Audit (Trivial - 100 Points)
-gh issue edit 4 \
+gh issue edit 4 --repo "$REPO" \
   --title "Add GitHub Action for Cargo Audit" \
   --body "### 🟢 Difficulty: Trivial (100 Points)
 
@@ -58,7 +61,7 @@ We need to ensure our dependencies are secure. Add a step to the CI pipeline to 
 "
 
 # Issue 5: Ledger Sequence Metrics (Medium - 150 Points)
-gh issue edit 5 \
+gh issue edit 5 --repo "$REPO" \
   --title "Expose Ledger Sequence in Prometheus Metrics" \
   --body "### 🟡 Difficulty: Medium (150 Points)
 
@@ -75,7 +78,7 @@ The operator exposes basic metrics, but we need to track the \`ledger_sequence\`
 "
 
 # Issue 6: Retention Policy (Medium - 150 Points)
-gh issue edit 6 \
+gh issue edit 6 --repo "$REPO" \
   --title "Add retentionPolicy support for specific Storage Classes" \
   --body "### 🟡 Difficulty: Medium (150 Points)
 
@@ -91,7 +94,7 @@ Extend the \`StorageConfig\` struct to allow specifying a custom \`volumeBinding
 "
 
 # Issue 7: Suspended State (Medium - 150 Points)
-gh issue edit 7 \
+gh issue edit 7 --repo "$REPO" \
   --title "Implement Suspended State correctly for Validators" \
   --body "### 🟡 Difficulty: Medium (150 Points)
 
@@ -107,7 +110,7 @@ Currently, setting \`suspended: true\` scales replicas to 0. For Validators (Sta
 "
 
 # Issue 8: Grafana Dashboard (Medium - 150 Points)
-gh issue edit 8 \
+gh issue edit 8 --repo "$REPO" \
   --title "Create a Grafana Dashboard JSON for Stellar Nodes" \
   --body "### 🟡 Difficulty: Medium (150 Points)
 
@@ -123,7 +126,7 @@ Create a standard Grafana dashboard visualization for the metrics exported by th
 "
 
 # Issue 9: Soroban Config (High - 200 Points)
-gh issue edit 9 \
+gh issue edit 9 --repo "$REPO" \
   --title "Implement Soroban Captive Core Configuration Generator" \
   --body "### 🔴 Difficulty: High (200 Points)
 
@@ -140,7 +143,7 @@ Soroban RPC needs a Captive Core config. Instead of passing a raw string, we sho
 "
 
 # Issue 10: History Archive Check (High - 200 Points)
-gh issue edit 10 \
+gh issue edit 10 --repo "$REPO" \
   --title "Add Automated History Archive Health Check with Retry" \
   --body "### 🔴 Difficulty: High (200 Points)
 
@@ -157,7 +160,7 @@ Before starting a validator, the operator should verify that the configured \`hi
 "
 
 # Issue 11: Leader Election (High - 200 Points)
-gh issue edit 11 \
+gh issue edit 11 --repo "$REPO" \
   --title "Implement Leader Election for High Availability Operator" \
   --body "### 🔴 Difficulty: High (200 Points)
 

@@ -155,7 +155,7 @@ pub async fn check_history_archive_health(
     let mut healthy = Vec::new();
     let mut unhealthy = Vec::new();
 
-    for (url, result) in urls.iter().zip(results.into_iter()) {
+    for (url, result) in urls.iter().zip(results) {
         match result {
             Ok(()) => healthy.push(url.clone()),
             Err(e) => unhealthy.push((url.clone(), e.to_string())),

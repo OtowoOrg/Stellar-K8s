@@ -8,7 +8,7 @@ use crate::crd::StellarNode;
 use crate::error::Result;
 use chrono::{Local, NaiveTime};
 use sqlx::PgPool;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub struct MaintenanceController {
     coordinator: MaintenanceCoordinator,
@@ -43,6 +43,15 @@ impl MaintenanceController {
         let config = node.spec.db_maintenance_config.as_ref().unwrap();
         let detector = BloatDetector::new(pool.clone());
 
+        // Check for active ledger writes to avoid interference
+        if !detector.is_system_quiet().await? {
+            debug!(
+                "Skipping maintenance for node {} due to active ledger writes",
+                node.metadata.name.as_ref().unwrap()
+            );
+            return Ok(());
+        }
+
         let bloated_tables = detector
             .get_bloated_tables(config.bloat_threshold_percent)
             .await?;
@@ -66,10 +75,25 @@ impl MaintenanceController {
         }
 
         for table in bloated_tables {
-            info!("Running VACUUM FULL on table {table}");
-            sqlx::query(&format!("VACUUM FULL {table}"))
+            info!("Running VACUUM ANALYZE on table {table}");
+            sqlx::query(&format!("VACUUM ANALYZE {table}"))
                 .execute(&pool)
                 .await?;
+
+            // Trigger REPACK if bloat is extremely high (e.g., > 60%)
+            let bloat = detector.estimate_table_bloat(&table).await?;
+            if bloat > 60.0 {
+                info!("High bloat detected ({bloat}%), triggering pg_repack on {table}");
+                // Note: pg_repack must be installed in the database
+                sqlx::query(&format!("SELECT pg_repack.repack_table($1)"))
+                    .bind(&table)
+                    .execute(&pool)
+                    .await
+                    .map_err(|e| {
+                        warn!("pg_repack failed for {table} (ensure extension is installed): {e}");
+                        e
+                    })?;
+            }
 
             if config.auto_reindex {
                 info!("Reindexing table {table}");

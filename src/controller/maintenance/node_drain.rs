@@ -8,22 +8,20 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::{Node, Pod};
-use k8s_openapi::api::policy::v1::Eviction;
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use kube::{
-    api::{Api, ListParams, PostParams},
+    api::{Api, EvictParams, ListParams},
     runtime::{
+        events::{EventType, Recorder, Reporter},
         watcher::{self, Config},
-        events::{Reporter, EventType, Recorder},
     },
     Client, Resource, ResourceExt,
 };
 use serde::Deserialize;
-use tracing::{debug, error, info, warn, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
-use crate::crd::{StellarNode, NodeType};
-use crate::error::{Error, Result};
 use crate::controller::health::check_node_health;
+use crate::crd::{NodeType, StellarNode};
+use crate::error::{Error, Result};
 
 /// NodeDrainOrchestrator manages the lifecycle of Stellar Core pods during node drains.
 pub struct NodeDrainOrchestrator {
@@ -56,21 +54,15 @@ impl NodeDrainOrchestrator {
         let mut stream = watcher::watcher(nodes, wc).boxed();
         while let Some(event) = stream.next().await {
             match event {
-                Ok(watcher::Event::Applied(node)) => {
+                Ok(watcher::Event::Apply(node)) | Ok(watcher::Event::InitApply(node)) => {
                     if self.is_node_cordoned(&node) {
                         self.handle_cordoned_node(node).await?;
                     }
                 }
-                Ok(watcher::Event::Deleted(node)) => {
+                Ok(watcher::Event::Delete(node)) => {
                     debug!("Node {} deleted, skipping", node.name_any());
                 }
-                Ok(watcher::Event::Restarted(nodes)) => {
-                    for node in nodes {
-                        if self.is_node_cordoned(&node) {
-                            self.handle_cordoned_node(node).await?;
-                        }
-                    }
-                }
+                Ok(watcher::Event::Init) | Ok(watcher::Event::InitDone) => {}
                 Err(e) => error!("Node watcher error: {}", e),
             }
         }
@@ -79,14 +71,19 @@ impl NodeDrainOrchestrator {
 
     /// Check if a node is cordoned (SchedulingDisabled)
     fn is_node_cordoned(&self, node: &Node) -> bool {
-        node.spec.as_ref().map_or(false, |spec| spec.unschedulable.unwrap_or(false))
+        node.spec
+            .as_ref()
+            .is_some_and(|spec| spec.unschedulable.unwrap_or(false))
     }
 
     /// Handle a cordoned node by migrating Stellar pods gracefully
     #[instrument(skip(self, node), fields(node = %node.name_any()))]
     async fn handle_cordoned_node(&self, node: Node) -> Result<()> {
         let node_name = node.name_any();
-        info!("Node {} is cordoned, checking for Stellar Core pods", node_name);
+        info!(
+            "Node {} is cordoned, checking for Stellar Core pods",
+            node_name
+        );
 
         let pods: Api<Pod> = Api::all(self.client.clone());
         let lp = ListParams::default().fields(&format!("spec.nodeName={}", node_name));
@@ -105,54 +102,66 @@ impl NodeDrainOrchestrator {
     fn is_stellar_pod(&self, pod: &Pod) -> bool {
         pod.labels()
             .get("app.kubernetes.io/managed-by")
-            .map_or(false, |m| m == "stellar-operator")
+            .is_some_and(|m| m == "stellar-operator")
     }
 
     /// Manage the graceful migration of a single pod
-    async fn manage_pod_migration(&self, pod: Pod, node: &Node) -> Result<()> {
+    async fn manage_pod_migration(&self, pod: Pod, _node: &Node) -> Result<()> {
         let pod_name = pod.name_any();
         let namespace = pod.namespace().unwrap_or_else(|| "default".to_string());
-        let recorder = Recorder::new(self.client.clone(), self.reporter.clone(), pod.object_ref(&()));
+        let recorder = Recorder::new(
+            self.client.clone(),
+            self.reporter.clone(),
+            pod.object_ref(&()),
+        );
 
-        info!("Managing migration for pod {}/{} on cordoned node", namespace, pod_name);
+        info!(
+            "Managing migration for pod {}/{} on cordoned node",
+            namespace, pod_name
+        );
 
         // 1. Wait until the node has 'Caught up' on a peer before exiting
         if !self.is_pod_caught_up(&pod).await? {
             info!("Pod {} is not caught up yet, waiting...", pod_name);
-            recorder.publish(kube::runtime::events::Event {
-                type_: EventType::Normal,
-                reason: "MigrationWaiting".into(),
-                note: Some(format!("Waiting for pod {} to catch up before migration", pod_name)),
-                action: "Migrating".into(),
-                secondary: None,
-            }).await.map_err(Error::KubeError)?;
-            
+            recorder
+                .publish(kube::runtime::events::Event {
+                    type_: EventType::Normal,
+                    reason: "MigrationWaiting".into(),
+                    note: Some(format!(
+                        "Waiting for pod {} to catch up before migration",
+                        pod_name
+                    )),
+                    action: "Migrating".into(),
+                    secondary: None,
+                })
+                .await
+                .map_err(Error::KubeError)?;
+
             return Ok(());
         }
 
         info!("Pod {} is caught up, proceeding with eviction", pod_name);
 
         // 2. Coordinate with PDBs (Kubernetes Eviction API handles this)
-        let eviction = Eviction {
-            metadata: ObjectMeta {
-                name: Some(pod_name.clone()),
-                namespace: Some(namespace.clone()),
-                ..Default::default()
-            },
-            delete_options: None,
-        };
+        let evict_params = EvictParams::default();
 
         let pod_api: Api<Pod> = Api::namespaced(self.client.clone(), &namespace);
-        match pod_api.evict(&pod_name, &PostParams::default(), &eviction).await {
+        match pod_api.evict(&pod_name, &evict_params).await {
             Ok(_) => {
                 info!("Successfully triggered eviction for pod {}", pod_name);
-                recorder.publish(kube::runtime::events::Event {
-                    type_: EventType::Normal,
-                    reason: "MigrationStarted".into(),
-                    note: Some(format!("Gracefully migrating pod {} from cordoned node", pod_name)),
-                    action: "Migrating".into(),
-                    secondary: None,
-                }).await.map_err(Error::KubeError)?;
+                recorder
+                    .publish(kube::runtime::events::Event {
+                        type_: EventType::Normal,
+                        reason: "MigrationStarted".into(),
+                        note: Some(format!(
+                            "Gracefully migrating pod {} from cordoned node",
+                            pod_name
+                        )),
+                        action: "Migrating".into(),
+                        secondary: None,
+                    })
+                    .await
+                    .map_err(Error::KubeError)?;
             }
             Err(e) => {
                 warn!("Failed to evict pod {}: {}. Will retry.", pod_name, e);
@@ -184,7 +193,12 @@ impl NodeDrainOrchestrator {
                     Ok(resp) => {
                         if let Ok(info) = resp.json::<StellarCoreInfo>().await {
                             let caught_up = info.info.state == "Synced!";
-                            debug!("Validator pod {} state: {}, caught_up: {}", pod.name_any(), info.info.state, caught_up);
+                            debug!(
+                                "Validator pod {} state: {}, caught_up: {}",
+                                pod.name_any(),
+                                info.info.state,
+                                caught_up
+                            );
                             Ok(caught_up)
                         } else {
                             debug!("Failed to parse info from validator pod {}", pod.name_any());
@@ -201,7 +215,8 @@ impl NodeDrainOrchestrator {
                 // For Horizon and Soroban, we fetch the StellarNode and use its status or health check
                 let node_name = pod.labels().get("app.kubernetes.io/instance");
                 if let Some(name) = node_name {
-                    let stellar_nodes: Api<StellarNode> = Api::namespaced(self.client.clone(), &namespace);
+                    let stellar_nodes: Api<StellarNode> =
+                        Api::namespaced(self.client.clone(), &namespace);
                     if let Ok(node) = stellar_nodes.get(name).await {
                         // Use existing health check logic
                         match check_node_health(&self.client, &node, None).await {
@@ -223,13 +238,13 @@ impl NodeDrainOrchestrator {
     }
 
     fn get_node_type(&self, pod: &Pod) -> Option<NodeType> {
-        pod.labels().get("stellar.org/node-type").and_then(|t| {
-            match t.as_str() {
+        pod.labels()
+            .get("stellar.org/node-type")
+            .and_then(|t| match t.as_str() {
                 "validator" => Some(NodeType::Validator),
                 "horizon" => Some(NodeType::Horizon),
                 "soroban-rpc" => Some(NodeType::SorobanRpc),
                 _ => None,
-            }
-        })
+            })
     }
 }

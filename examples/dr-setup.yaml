@@ -9,8 +9,13 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
+
+  # Required rollout availability and spreading constraints.
+  maxUnavailable: 0
+  minAvailable: 1
+  topologySpreadConstraints: []
 
   storage:
     storageClass: "ssd-premium"
@@ -23,16 +28,16 @@ spec:
   drConfig:
     # Enable DR features (cross-cluster sync and health monitoring).
     enabled: true
-    # This node is the 'Primary' source of truth.
-    role: Primary
+    # This node is the 'primary' source of truth.
+    role: primary
     # Identifier for the peer cluster performing standby duties.
     peerClusterId: "secondary-region-1"
-    # 'Consensus' strategy uses SCP to keep the standby in sync.
-    syncStrategy: Consensus
-    
+    # 'consensus' strategy uses SCP to keep the standby in sync.
+    syncStrategy: consensus
+
     # Automated health checks for the peer cluster connectivity.
     healthCheckInterval: 30
-    
+
     # Automated DR drill scheduling (ensures failover works without data loss).
     drillSchedule:
       # Cron expression: every Sunday at 02:00 AM.

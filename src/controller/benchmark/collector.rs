@@ -90,9 +90,7 @@ pub async fn scrape_ledger_close_time_ms(target_endpoint: &str) -> Option<f64> {
         if line.starts_with('#') {
             continue;
         }
-        if line.contains("ledger_close_duration_seconds")
-            || line.contains("ledger_close_time_ms")
-        {
+        if line.contains("ledger_close_duration_seconds") || line.contains("ledger_close_time_ms") {
             // Extract the numeric value after the last space.
             if let Some(value_str) = line.split_whitespace().last() {
                 if let Ok(seconds) = value_str.parse::<f64>() {
@@ -349,10 +347,7 @@ pub async fn write_benchmark_configmap(
         data: Some(BTreeMap::from([
             ("report.json".to_string(), report_json),
             ("summary".to_string(), summary),
-            (
-                "completed_at".to_string(),
-                report_spec.completed_at.clone(),
-            ),
+            ("completed_at".to_string(), report_spec.completed_at.clone()),
         ])),
         ..Default::default()
     };
@@ -381,14 +376,8 @@ pub async fn store_results(
             write_benchmark_report(client, namespace, benchmark_name, benchmark, report_spec).await
         }
         ResultStorage::ConfigMap => {
-            write_benchmark_configmap(
-                client,
-                namespace,
-                benchmark_name,
-                benchmark,
-                &report_spec,
-            )
-            .await
+            write_benchmark_configmap(client, namespace, benchmark_name, benchmark, &report_spec)
+                .await
         }
     }
 }

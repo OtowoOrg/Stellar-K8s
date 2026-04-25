@@ -1,32 +1,46 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="OtowoOrg/Stellar-K8s"
+# shellcheck source=lib/repo.sh
+# shellcheck source=lib/common.sh
+source "$(dirname "$0")/lib/repo.sh"
+source "$(dirname "$0")/lib/common.sh"
+
+show_help() {
+  cat <<EOF
+Usage: $(basename "$0") [-h|--help]
+
+Creates GitHub issues for Stellar-K8s Wave (Batch 11, 5 x 150 pts).
+
+Prerequisites:
+  - gh CLI installed and authenticated (gh auth login)
+  - Network access to api.github.com
+
+Optional environment variables:
+  REPO                Target repository (default: OtowoOrg/Stellar-K8s)
+  DRY_RUN             Set to 1 to print commands without executing
+  MAX_RETRIES         Number of retry attempts on API failure (default: 10)
+  RETRY_DELAY_SECONDS Seconds to wait between retries (default: 15)
+
+Example:
+  REPO=myorg/my-fork DRY_RUN=1 $(basename "$0")
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) show_help; exit 0 ;;
+  esac
+done
+
+EXPECTED_ISSUE_COUNT=5
+ACTUAL_ISSUE_COUNT=$(grep -c '^create_issue_with_retry' "$0")
+if [ "$ACTUAL_ISSUE_COUNT" -ne "$EXPECTED_ISSUE_COUNT" ]; then
+  echo "ERROR: Expected $EXPECTED_ISSUE_COUNT issue create calls, found $ACTUAL_ISSUE_COUNT. Update EXPECTED_ISSUE_COUNT or fix the script." >&2
+  exit 1
+fi
 
 echo "Creating Batch 11 (5 x 150 pts) issues with auto-retry..."
-
-function create_issue_with_retry() {
-  local title="$1"
-  local label="$2"
-  local body="$3"
-  
-  local max_retries=10
-  local count=0
-  
-  while [ $count -lt $max_retries ]; do
-    if gh issue create --repo "$REPO" --title "$title" --label "$label" --body "$body"; then
-      echo "✓ Issue created: $title"
-      return 0
-    else
-      count=$((count + 1))
-      echo "API failed, retrying ($count/$max_retries) in 15 seconds..."
-      sleep 15
-    fi
-  done
-  
-  echo "Failed to create issue after $max_retries attempts: $title"
-  exit 1
-}
 
 # ─── ISSUE 1 (150 pts) ────────────────────────────────────────────────────────
 create_issue_with_retry \
@@ -133,3 +147,5 @@ The \`kubectl-stellar\` plugin is currently minimal. We need debugging commands 
 
 echo ""
 echo "🎉 Batch 11 (5 x 150 pts) issues created successfully!"
+
+print_skip_summary

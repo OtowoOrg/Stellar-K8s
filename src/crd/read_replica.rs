@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::types::ResourceRequirements;
 
 /// Configuration for read-only replica pools
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadReplicaConfig {
     /// Number of read-only replicas

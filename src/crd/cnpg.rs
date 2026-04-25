@@ -20,6 +20,10 @@ pub struct ClusterSpec {
     pub backup: Option<BackupConfiguration>,
     pub bootstrap: Option<BootstrapConfiguration>,
     pub monitoring: Option<MonitoringConfiguration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_clusters: Option<Vec<ExternalCluster>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replica: Option<ReplicaConfiguration>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -83,7 +87,10 @@ pub struct SecretKeySelector {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BootstrapConfiguration {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub initdb: Option<InitDbConfiguration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<RecoveryConfiguration>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -94,6 +101,12 @@ pub struct InitDbConfiguration {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryConfiguration {
+    pub source: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SecretSelector {
     pub name: String,
 }
@@ -101,6 +114,21 @@ pub struct SecretSelector {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 pub struct MonitoringConfiguration {
     pub enable_pod_monitor: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalCluster {
+    pub name: String,
+    pub connection_parameters: BTreeMap<String, String>,
+    pub password: SecretKeySelector,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplicaConfiguration {
+    pub enabled: bool,
+    pub source: String,
 }
 
 /// CloudNativePG Pooler Custom Resource

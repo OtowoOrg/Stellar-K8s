@@ -43,9 +43,9 @@ audit: ## Security audit
 
 test: ## Run tests
 	@echo "→ Running tests..."
-	@$(CARGO) test --workspace --all-features --tests --lib --bins --verbose
+	@$(CARGO) test --workspace --features "rest-api,metrics,admission-webhook,k8s-v1-30,reconciler-fuzz" --tests --lib --bins --verbose
 	@echo "→ Running doc tests..."
-	@$(CARGO) test --doc --workspace
+	@$(CARGO) test --doc --workspace --features "rest-api,metrics,admission-webhook,k8s-v1-30"
 
 build: ## Build release
 	@echo "→ Building release..."

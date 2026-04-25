@@ -12,9 +12,14 @@ spec:
   nodeType: Validator
 
   # 'Testnet' uses the SDF Test Network passphrase and default archives.
-  network: Testnet
+  network: testnet
 
   version: "v21.0.0"
+
+  # Required rollout availability and spreading constraints.
+  maxUnavailable: 0
+  minAvailable: 1
+  topologySpreadConstraints: []
 
   # Balanced resources for a Testnet workload.
   resources:

@@ -1,5 +1,9 @@
 # kubectl-stellar Plugin
 
+<p align="center">
+  <img src="../assets/logo.png" alt="Stellar-K8s Logo" width="120" />
+</p>
+
 A kubectl plugin for managing StellarNode resources in Kubernetes clusters.
 
 ## Installation
@@ -18,7 +22,28 @@ chmod +x ~/.local/bin/kubectl-stellar
 kubectl krew install stellar
 ```
 
-## Usage
+## Global Flags
+
+| Flag | Description |
+|------|-------------|
+| `-n, --namespace` | Kubernetes namespace (defaults to current context) |
+| `-o, --output` | Output format: `table` (default), `json`, `yaml` |
+| `--dry-run` | Simulate the command without making any state-changing API calls |
+
+### --dry-run
+
+Use `--dry-run` to preview what a command would do without executing it. Safe to run against production clusters.
+
+```bash
+# Preview what 'debug' would do without exec-ing into the pod
+kubectl stellar debug my-validator --dry-run
+
+# All read-only commands (list, status, events) pass through normally
+kubectl stellar list --dry-run
+kubectl stellar status --dry-run
+```
+
+
 
 ### List StellarNode Resources
 

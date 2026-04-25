@@ -40,10 +40,10 @@ use std::collections::BTreeMap;
 
 use k8s_openapi::api::core::v1::Namespace;
 use kube::api::{Api, ListParams};
-use kube::Client;
+use kube::{Client, ResourceExt};
 use tracing::{info, warn};
 
-use crate::crd::{StellarNode, StellarNetwork};
+use crate::crd::{StellarNetwork, StellarNode};
 use crate::error::{Error, Result};
 
 // ---------------------------------------------------------------------------
@@ -111,7 +111,8 @@ impl std::error::Error for NetworkSafetyViolation {}
 pub async fn check_network_safety(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let node_name = node.name_any();
-    let node_network = network_label_value(&node.spec.network, &node.spec.custom_network_passphrase);
+    let node_network =
+        network_label_value(&node.spec.network, &node.spec.custom_network_passphrase);
 
     let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
     let nodes = api
@@ -125,10 +126,8 @@ pub async fn check_network_safety(client: &Client, node: &StellarNode) -> Result
             continue;
         }
 
-        let peer_network = network_label_value(
-            &peer.spec.network,
-            &peer.spec.custom_network_passphrase,
-        );
+        let peer_network =
+            network_label_value(&peer.spec.network, &peer.spec.custom_network_passphrase);
 
         if peer_network != node_network {
             let msg = format!(
@@ -195,10 +194,7 @@ async fn check_namespace_label(
         Err(e) => return Err(Error::KubeError(e)),
     };
 
-    let labels: &BTreeMap<String, String> = &ns
-        .metadata
-        .labels
-        .unwrap_or_default();
+    let labels: &BTreeMap<String, String> = &ns.metadata.labels.unwrap_or_default();
 
     match labels.get(NAMESPACE_NETWORK_LABEL) {
         None => {
@@ -229,10 +225,7 @@ async fn check_namespace_label(
 ///
 /// This is the value written to the `stellar-network` pod label and the
 /// `stellar.org/network` namespace label.
-pub fn network_label_value(
-    network: &StellarNetwork,
-    custom_passphrase: &Option<String>,
-) -> String {
+pub fn network_label_value(network: &StellarNetwork, custom_passphrase: &Option<String>) -> String {
     network.scheduling_label_value(custom_passphrase)
 }
 

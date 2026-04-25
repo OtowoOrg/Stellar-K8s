@@ -1,10 +1,49 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=lib/repo.sh
+source "$(dirname "$0")/lib/repo.sh"
+
 # Stellar-K8s Wave Issue Creation Script - BATCH 5
 # 3 High (200 pts), 4 Medium (150 pts), 3 Trivial (100 pts)
 
+show_help() {
+  cat <<EOF
+Usage: $(basename "$0") [-h|--help]
+
+Creates GitHub issues for Stellar-K8s Wave (Batch 5, mixed difficulty).
+
+Prerequisites:
+  - gh CLI installed and authenticated (gh auth login)
+  - Network access to api.github.com
+
+Optional environment variables:
+  REPO                Target repository (default: OtowoOrg/Stellar-K8s)
+  DRY_RUN             Set to 1 to print commands without executing
+  MAX_RETRIES         Number of retry attempts on API failure (default: 10)
+  RETRY_DELAY_SECONDS Seconds to wait between retries (default: 15)
+
+Example:
+  REPO=myorg/my-fork DRY_RUN=1 $(basename "$0")
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) show_help; exit 0 ;;
+  esac
+done
+
+EXPECTED_ISSUE_COUNT=10
+ACTUAL_ISSUE_COUNT=$(grep -c '^gh issue create' "$0")
+if [ "$ACTUAL_ISSUE_COUNT" -ne "$EXPECTED_ISSUE_COUNT" ]; then
+  echo "ERROR: Expected $EXPECTED_ISSUE_COUNT issue create calls, found $ACTUAL_ISSUE_COUNT. Update EXPECTED_ISSUE_COUNT or fix the script." >&2
+  exit 1
+fi
+
 # Helper to create label if not exists
 create_label() {
-  gh label create "$1" --color "$2" --description "$3" || true
+  gh label create --repo "$REPO" "$1" --color "$2" --description "$3" || true
 }
 
 echo "Ensuring labels exist..."
@@ -26,7 +65,7 @@ echo "Creating Batch 5 (Advanced) issues..."
 # --- HIGH (200 pts) ---
 
 # 43. Automated VSL (Validator Selection List) updates (High - 200 pts)
-gh issue create \
+gh issue create --repo "$REPO" \
   --title "Implement Automated VSL (Validator Selection List) management" \
   --body "### 🔴 Difficulty: High (200 Points)
 
@@ -43,7 +82,7 @@ Validators need periodic updates to their quorum sets (VSL). This task involves 
 " --label "stellar-wave,architecture,automation" || echo "Failed to create issue 43"
 
 # 44. Decentralized History Archive Backups (High - 200 pts)
-gh issue create \
+gh issue create --repo "$REPO" \
   --title "Automated History Archive backups to Decentralized Storage" \
   --body "### 🔴 Difficulty: High (200 Points)
 
@@ -59,7 +98,7 @@ Integrate with decentralized storage providers (Arweave, IPFS, or Filecoin) to c
 " --label "stellar-wave,reliability,architecture" || echo "Failed to create issue 44"
 
 # 45. RPC Auto-Scaler based on Network Load (High - 200 pts)
-gh issue create \
+gh issue create --repo "$REPO" \
   --title "Implement RPC Auto-Scaler based on Stellar Network Load" \
   --body "### 🔴 Difficulty: High (200 Points)
 
@@ -78,7 +117,7 @@ Standard HPA uses CPU/Memory. This task implements a horizontal auto-scaler that
 # --- MEDIUM (150 pts) ---
 
 # 46. Full vs Recent History Presets (Medium - 150 pts)
-gh issue create \
+gh issue create --repo "$REPO" \
   --title "Support 'Full' vs 'Recent' History node presets" \
   --body "### 🟡 Difficulty: Medium (150 Points)
 
@@ -94,7 +133,7 @@ Users should be able to toggle between a 'Full History' node and a 'Recent Histo
 " --label "stellar-wave,kubernetes,feature" || echo "Failed to create issue 46"
 
 # 47. kubectl-stellar Plugin (Medium - 150 pts)
-gh issue create \
+gh issue create --repo "$REPO" \
   --title "Develop 'kubectl-stellar' CLI plugin" \
   --body "### 🟡 Difficulty: Medium (150 Points)
 
@@ -110,7 +149,7 @@ Create a dedicated Rust-based kubectl plugin (\`kubectl-stellar\`) to allow user
 " --label "stellar-wave,rust,feature" || echo "Failed to create issue 47"
 
 # 48. PodDisruptionBudgets (PDB) Generation (Medium - 150 pts)
-gh issue create \
+gh issue create --repo "$REPO" \
   --title "Automate PodDisruptionBudgets (PDB) generation" \
   --body "### 🟡 Difficulty: Medium (150 Points)
 
@@ -125,7 +164,7 @@ To prevent unintentional downtime during node maintenance or cluster autoscaling
 " --label "stellar-wave,reliability,kubernetes" || echo "Failed to create issue 48"
 
 # 49. E2E Integration Test Suite (Medium - 150 pts)
-gh issue create \
+gh issue create --repo "$REPO" \
   --title "Implement E2E Integration Test Suite with KinD" \
   --body "### 🟡 Difficulty: Medium (150 Points)
 
@@ -143,7 +182,7 @@ We need automated end-to-end tests that spin up a local Kubernetes cluster (KinD
 # --- TRIVIAL (100 pts) ---
 
 # 50. Resource Billing Tags (Trivial - 100 pts)
-gh issue create \
+gh issue create --repo "$REPO" \
   --title "Implement Resource Billing/Cost Allocation tags" \
   --body "### 🟢 Difficulty: Trivial (100 Points)
 
@@ -158,7 +197,7 @@ Add a way for users to specify arbitrary labels/annotations that should be appli
 " --label "stellar-wave,good-first-issue,kubernetes" || echo "Failed to create issue 50"
 
 # 51. Reconciler 'Dry Run' mode (Trivial - 100 pts)
-gh issue create \
+gh issue create --repo "$REPO" \
   --title "Implement Reconciler 'Dry Run' mode" \
   --body "### 🟢 Difficulty: Trivial (100 Points)
 
@@ -173,7 +212,7 @@ Allow the reconciler to run in a 'Dry Run' mode where it only calculates what ch
 " --label "stellar-wave,good-first-issue,logic" || echo "Failed to create issue 51"
 
 # 52. Comprehensive rustdoc Coverage (Trivial - 100 pts)
-gh issue create \
+gh issue create --repo "$REPO" \
   --title "Exhaustive rustdoc coverage for public modules" \
   --body "### 🟢 Difficulty: Trivial (100 Points)
 

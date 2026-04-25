@@ -41,15 +41,12 @@ use tracing::{debug, error, info, instrument, warn};
 use crate::controller::benchmark::collector::{
     collect_pod_results, scrape_ledger_close_time_ms, store_results,
 };
-use crate::controller::benchmark::pod_builder::{
-    build_load_generator_pod_with_secret, pod_name,
-};
+use crate::controller::benchmark::pod_builder::{build_load_generator_pod_with_secret, pod_name};
 use crate::controller::conditions::{
     set_condition, CONDITION_STATUS_FALSE, CONDITION_STATUS_TRUE, CONDITION_TYPE_READY,
 };
 use crate::crd::stellar_benchmark::{
-    BenchmarkPhase, BenchmarkReportSpec, BenchmarkSummary, StellarBenchmark,
-    StellarBenchmarkStatus,
+    BenchmarkPhase, BenchmarkReportSpec, BenchmarkSummary, StellarBenchmark, StellarBenchmarkStatus,
 };
 use crate::error::{Error, Result};
 
@@ -123,10 +120,7 @@ async fn reconcile(
     benchmark: Arc<StellarBenchmark>,
     ctx: Arc<BenchmarkControllerState>,
 ) -> Result<Action> {
-    if !ctx
-        .is_leader
-        .load(std::sync::atomic::Ordering::Relaxed)
-    {
+    if !ctx.is_leader.load(std::sync::atomic::Ordering::Relaxed) {
         return Ok(Action::requeue(Duration::from_secs(5)));
     }
 
@@ -145,12 +139,8 @@ async fn reconcile(
     info!(benchmark = %name, phase = %phase, "Reconciling StellarBenchmark");
 
     match phase {
-        BenchmarkPhase::Pending => {
-            handle_pending(client, &benchmark, &namespace, &name).await
-        }
-        BenchmarkPhase::Running => {
-            handle_running(client, &benchmark, &namespace, &name).await
-        }
+        BenchmarkPhase::Pending => handle_pending(client, &benchmark, &namespace, &name).await,
+        BenchmarkPhase::Running => handle_running(client, &benchmark, &namespace, &name).await,
         BenchmarkPhase::Collecting => {
             handle_collecting(client, &benchmark, &namespace, &name).await
         }
@@ -229,10 +219,7 @@ async fn handle_pending(
         name,
         StellarBenchmarkStatus {
             phase: BenchmarkPhase::Running,
-            message: Some(format!(
-                "Running {} load-generator pod(s)",
-                pod_names.len()
-            )),
+            message: Some(format!("Running {} load-generator pod(s)", pod_names.len())),
             started_at: Some(started_at),
             pod_names,
             conditions,
@@ -376,8 +363,7 @@ async fn handle_collecting(
         .unwrap_or_else(|| Utc::now().to_rfc3339());
 
     // 1. Collect per-pod results.
-    let pod_results =
-        collect_pod_results(client, benchmark, &status.pod_names).await?;
+    let pod_results = collect_pod_results(client, benchmark, &status.pod_names).await?;
 
     // 2. Scrape ledger close time from the target endpoint.
     let avg_ledger_close_ms = scrape_ledger_close_time_ms(&benchmark.spec.target_endpoint)
@@ -407,37 +393,36 @@ async fn handle_collecting(
     report_spec.metrics.p50_api_latency_ms = p50;
 
     // 4. Store the report.
-    let report_ref = match store_results(client, namespace, name, benchmark, report_spec.clone())
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            error!(benchmark = %name, error = %e, "Failed to store benchmark report");
-            let mut conditions = status.conditions.clone();
-            set_condition(
-                &mut conditions,
-                CONDITION_TYPE_READY,
-                CONDITION_STATUS_FALSE,
-                "ReportStoreFailed",
-                &format!("Failed to store report: {e}"),
-            );
-            patch_status(
-                client,
-                namespace,
-                name,
-                StellarBenchmarkStatus {
-                    phase: BenchmarkPhase::Failed,
-                    message: Some(format!("Failed to store report: {e}")),
-                    started_at: status.started_at.clone(),
-                    pod_names: status.pod_names.clone(),
-                    conditions,
-                    ..Default::default()
-                },
-            )
-            .await?;
-            return Ok(Action::requeue(Duration::from_secs(60)));
-        }
-    };
+    let report_ref =
+        match store_results(client, namespace, name, benchmark, report_spec.clone()).await {
+            Ok(r) => r,
+            Err(e) => {
+                error!(benchmark = %name, error = %e, "Failed to store benchmark report");
+                let mut conditions = status.conditions.clone();
+                set_condition(
+                    &mut conditions,
+                    CONDITION_TYPE_READY,
+                    CONDITION_STATUS_FALSE,
+                    "ReportStoreFailed",
+                    &format!("Failed to store report: {e}"),
+                );
+                patch_status(
+                    client,
+                    namespace,
+                    name,
+                    StellarBenchmarkStatus {
+                        phase: BenchmarkPhase::Failed,
+                        message: Some(format!("Failed to store report: {e}")),
+                        started_at: status.started_at.clone(),
+                        pod_names: status.pod_names.clone(),
+                        conditions,
+                        ..Default::default()
+                    },
+                )
+                .await?;
+                return Ok(Action::requeue(Duration::from_secs(60)));
+            }
+        };
 
     // 5. Build inline summary for the StellarBenchmark status.
     let m = &report_spec.metrics;

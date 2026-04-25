@@ -88,7 +88,7 @@ fn base_validator_spec() -> StellarNodeSpec {
             kms_config: None,
             vl_source: None,
             hsm_config: None,
-                    ..Default::default()
+            ..Default::default()
         }),
         horizon_config: None,
         soroban_config: None,

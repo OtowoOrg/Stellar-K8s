@@ -12,9 +12,9 @@ mod tests {
     use super::super::reconciler::*;
     use crate::controller::{AuditLog, JobRegistry};
     use crate::crd::{
-        CaptiveCoreConfig, Condition, HorizonConfig, NodeType,
-        ResourceRequirements, ResourceSpec, SorobanConfig, StellarNetwork, StellarNode,
-        StellarNodeSpec, StorageConfig, ValidatorConfig,
+        CaptiveCoreConfig, Condition, HorizonConfig, NodeType, ResourceRequirements, ResourceSpec,
+        SorobanConfig, StellarNetwork, StellarNode, StellarNodeSpec, StorageConfig,
+        ValidatorConfig,
     };
     use crate::error::Error;
     use kube::api::ObjectMeta;

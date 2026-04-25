@@ -3203,7 +3203,10 @@ fn extract_peers_from_config(node: &StellarNode) -> Vec<String> {
     peers
 }
 
-pub(crate) fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> NetworkPolicy {
+pub(crate) fn build_network_policy(
+    node: &StellarNode,
+    config: &NetworkPolicyConfig,
+) -> NetworkPolicy {
     let labels = standard_labels(node);
     let name = resource_name(node, "netpol");
 

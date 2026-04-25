@@ -215,8 +215,8 @@ mod tests {
     fn test_estimate_monthly_cost_positive() {
         use crate::crd::StellarNode;
         use crate::crd::{
-            HorizonConfig, NodeType, ResourceRequirements, ResourceSpec,
-            StellarNetwork, StellarNodeSpec, StorageConfig,
+            HorizonConfig, NodeType, ResourceRequirements, ResourceSpec, StellarNetwork,
+            StellarNodeSpec, StorageConfig,
         };
         use kube::api::ObjectMeta;
 

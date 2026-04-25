@@ -610,12 +610,23 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
 
     // Attach per-reconcile structured fields so every log event during reconciliation
     // can be correlated in JSON logs (node_name/namespace/reconcile_id/resource_version).
+    // OTel semantic conventions: https://opentelemetry.io/docs/specs/semconv/
     let _reconcile_span = info_span!(
         "reconcile_attempt",
-        node_name = %node_name_for_span,
-        namespace = %namespace_for_span,
-        reconcile_id = %reconcile_id,
-        resource_version = %resource_version
+        // OTel resource / k8s semantic conventions
+        "k8s.resource.kind"       = "StellarNode",
+        "k8s.resource.name"       = %node_name_for_span,
+        "k8s.namespace.name"      = %namespace_for_span,
+        "k8s.resource.version"    = %resource_version,
+        // Operator-specific fields
+        "stellar.reconcile_id"    = %reconcile_id,
+        "stellar.node_type"       = %obj.spec.node_type,
+        "stellar.network"         = ?obj.spec.network,
+        // Legacy fields kept for backward compat with existing log queries
+        node_name                 = %node_name_for_span,
+        namespace                 = %namespace_for_span,
+        reconcile_id              = %reconcile_id,
+        resource_version          = %resource_version,
     );
     let _reconcile_enter = _reconcile_span.enter();
 
@@ -676,7 +687,21 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
 }
 
 /// Apply/create/update the StellarNode resources
-#[instrument(skip(client, node, ctx), fields(name = %node.name_any(), namespace = node.namespace()))]
+#[instrument(
+    skip(client, node, ctx),
+    fields(
+        // OTel semantic conventions
+        "k8s.resource.kind"  = "StellarNode",
+        "k8s.resource.name"  = %node.name_any(),
+        "k8s.namespace.name" = ?node.namespace(),
+        "stellar.node_type"  = %node.spec.node_type,
+        "stellar.network"    = ?node.spec.network,
+        "stellar.version"    = %node.spec.version,
+        // Legacy fields
+        name      = %node.name_any(),
+        namespace = ?node.namespace(),
+    )
+)]
 pub(crate) async fn apply_stellar_node(
     client: &Client,
     node: &StellarNode,

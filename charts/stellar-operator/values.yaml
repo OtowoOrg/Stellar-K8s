@@ -312,3 +312,56 @@ byzantineWatcher:
   #     region: dc-frankfurt
   #     nodeEndpoint: http://10.0.1.50:11626
   regions: []
+
+# OpenTelemetry configuration
+# Controls OTLP trace export from the operator and the bundled OTel Collector.
+otel:
+  # Set to true to enable OTLP trace export from the operator.
+  # When enabled, OTEL_EXPORTER_OTLP_ENDPOINT is injected into the operator pod.
+  enabled: false
+
+  # OTLP gRPC endpoint for the operator to send spans to.
+  # Typically points to the in-cluster OTel Collector service.
+  # Example: "http://stellar-operator-otel-collector:4317"
+  endpoint: "http://stellar-operator-otel-collector:4317"
+
+  # Sampling ratio (0.0–1.0). 1.0 = always sample, 0.1 = 10% of traces.
+  samplingRatio: "1.0"
+
+  # OTel Collector sidecar/deployment bundled with the Helm chart.
+  collector:
+    # Deploy the OTel Collector alongside the operator.
+    enabled: false
+
+    image:
+      repository: otel/opentelemetry-collector-contrib
+      tag: "0.99.0"
+      pullPolicy: IfNotPresent
+
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+    # Collector pipeline configuration.
+    # Exporters: configure at least one of honeycomb, jaeger, or otlp (Tempo).
+    config:
+      # Honeycomb — set apiKey via a Secret reference (see otel.collector.honeycombSecretRef)
+      honeycomb:
+        enabled: false
+        endpoint: "https://api.honeycomb.io:443"
+        # Name of a pre-existing Secret with key HONEYCOMB_API_KEY
+        apiKeySecretRef: ""
+
+      # Jaeger (OTLP receiver on Jaeger ≥ 1.35)
+      jaeger:
+        enabled: false
+        endpoint: "http://jaeger-collector:4317"
+
+      # Grafana Tempo (OTLP gRPC)
+      tempo:
+        enabled: false
+        endpoint: "http://tempo:4317"

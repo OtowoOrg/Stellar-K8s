@@ -1325,6 +1325,76 @@ pub enum DRSyncStrategy {
     ArchiveSync,
 }
 
+/// Configuration for multi-region ledger replication
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplicationConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Replication mode (currently only asynchronous supported)
+    pub mode: ReplicationMode,
+    /// Role of this cluster in the replication setup (Active/Passive)
+    pub role: ReplicationRole,
+    /// Identifier of the remote cluster
+    pub remote_cluster_id: String,
+    /// Networking configuration for cross-cluster connectivity
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub networking: Option<ReplicationNetworkingConfig>,
+}
+
+/// Replication mode for ledger data
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ReplicationMode {
+    Asynchronous,
+}
+
+/// Role of a cluster in a replication configuration
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ReplicationRole {
+    Active,
+    Passive,
+}
+
+/// Cross-cluster networking configuration for replication
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplicationNetworkingConfig {
+    /// VPN-based cross-cluster connectivity
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vpn: Option<VpnConfig>,
+    /// VPC Peering or Cloud Interconnect/DirectConnect based connectivity
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peering: Option<PeeringConfig>,
+}
+
+/// VPN configuration for cross-cluster replication
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct VpnConfig {
+    /// Public IP or DNS of the remote VPN gateway
+    pub remote_gateway: String,
+    /// Pre-shared key secret reference
+    pub psk_secret_ref: String,
+    /// Local CIDR range to advertise
+    pub local_cidr: String,
+    /// Remote CIDR range to expect
+    pub remote_cidr: String,
+}
+
+/// VPC Peering configuration for cross-cluster replication
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PeeringConfig {
+    /// ID of the remote VPC/VNet
+    pub peer_vpc_id: String,
+    /// ID of the peer cloud account/project
+    pub peer_project_id: String,
+    /// Region of the peer VPC
+    pub peer_region: String,
+}
+
 /// Status of the Disaster Recovery setup
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

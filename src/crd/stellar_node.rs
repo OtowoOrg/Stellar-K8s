@@ -146,6 +146,10 @@ pub struct StellarNodeSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dr_config: Option<DisasterRecoveryConfig>,
 
+    /// Multi-region ledger replication configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replication_config: Option<super::types::ReplicationConfig>,
+
     /// When not `Disabled`, the operator adds default pod anti-affinity so pods with the same
     /// `stellar-network` label (and same component) are not co-located on one node.
     #[serde(default)]
@@ -427,6 +431,26 @@ impl StellarNodeSpec {
                     "backupUrl must not be empty when set",
                     "Provide a valid S3 or HTTPS URL for the compressed backup archive.",
                 ));
+            }
+        }
+
+        // 2c. Replication validation
+        if let Some(ref repl_cfg) = self.replication_config {
+            if repl_cfg.enabled {
+                if self.managed_database.is_none() {
+                    errors.push(SpecValidationError::new(
+                        "spec.replicationConfig",
+                        "Replication requires a managed database (spec.managedDatabase)",
+                        "Configure a managed database using spec.managedDatabase to enable multi-region replication via CloudNativePG.",
+                    ));
+                }
+                if repl_cfg.remote_cluster_id.is_empty() {
+                    errors.push(SpecValidationError::new(
+                        "spec.replicationConfig.remoteClusterId",
+                        "remoteClusterId must not be empty when replication is enabled",
+                        "Provide the identifier of the secondary/remote cluster in spec.replicationConfig.remoteClusterId.",
+                    ));
+                }
             }
         }
 

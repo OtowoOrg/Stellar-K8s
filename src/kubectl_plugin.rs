@@ -9,9 +9,13 @@ use std::process;
 
 use clap::{Parser, Subcommand};
 use k8s_openapi::api::core::v1::Pod;
-use kube::{api::Api, Client, ResourceExt};
+use kube::{
+    api::{Api, Patch, PatchParams},
+    Client, ResourceExt,
+};
 
 use stellar_k8s::controller::check_node_health;
+use stellar_k8s::crd::types::ReplicationRole;
 use stellar_k8s::crd::StellarNode;
 use stellar_k8s::error::{Error, Result};
 
@@ -143,6 +147,14 @@ enum Commands {
     },
     /// Generate an incident report for a specific time window
     IncidentReport(stellar_k8s::incident::IncidentReportArgs),
+    /// Trigger a failover to a secondary cluster
+    Failover {
+        /// Name of the StellarNode to failover
+        node_name: String,
+        /// Force failover even if the node is already active
+        #[arg(short, long)]
+        force: bool,
+    },
 }
 
 #[tokio::main]
@@ -185,6 +197,9 @@ async fn run(cli: Cli) -> Result<()> {
             }
             Commands::IncidentReport(_) => {
                 Some("Generate incident report (read-only, no cluster mutation)".to_string())
+            }
+            Commands::Failover { node_name, .. } => {
+                Some(format!("Trigger failover for StellarNode '{node_name}'"))
             }
         };
         if let Some(desc) = action {
@@ -323,6 +338,10 @@ async fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
         Commands::IncidentReport(args) => stellar_k8s::incident::run_incident_report(args).await,
+        Commands::Failover { node_name, force } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
+            failover(client, &node_name, force).await
+        }
     }
 }
 
@@ -839,6 +858,44 @@ async fn debug(
             )));
         }
     }
+
+    Ok(())
+}
+
+async fn failover(client: Client, node_name: &str, force: bool) -> Result<()> {
+    let api: Api<StellarNode> = Api::default_namespaced(client);
+    let mut node = api.get(node_name).await.map_err(Error::KubeError)?;
+
+    let has_repl_cfg = node.spec.replication_config.is_some();
+    if !has_repl_cfg {
+        return Err(Error::ValidationError(format!(
+            "Node '{node_name}' does not have replicationConfig configured"
+        )));
+    }
+
+    let repl_cfg = node.spec.replication_config.as_mut().unwrap();
+
+    if !repl_cfg.enabled {
+        return Err(Error::ValidationError(format!(
+            "Replication is not enabled for node '{node_name}'"
+        )));
+    }
+
+    if repl_cfg.role == ReplicationRole::Active && !force {
+        println!("Node '{node_name}' is already in Active role. Use --force to re-apply.");
+        return Ok(());
+    }
+
+    println!("Triggering failover for StellarNode '{node_name}'...");
+    repl_cfg.role = ReplicationRole::Active;
+
+    let patch = Patch::Merge(&node);
+    api.patch(node_name, &PatchParams::default(), &patch)
+        .await
+        .map_err(Error::KubeError)?;
+
+    println!("Successfully updated node '{node_name}' role to Active.");
+    println!("The operator will now reconfigure the database and history archives for primary operation.");
 
     Ok(())
 }

@@ -472,7 +472,7 @@ async fn run_leader_election(
     let leases: Api<Lease> = Api::namespaced(client, namespace);
 
     loop {
-        match try_acquire_or_renew(&leases, identity).await {
+        match try_acquire_or_renew(&leases, &namespace, identity).await {
             Ok(true) => {
                 if !is_leader.load(Ordering::Relaxed) {
                     info!("Acquired leadership: {}", LEASE_NAME);
@@ -496,7 +496,7 @@ async fn run_leader_election(
     }
 }
 
-async fn try_acquire_or_renew(leases: &Api<Lease>, identity: &str) -> Result<bool, kube::Error> {
+async fn try_acquire_or_renew(leases: &Api<Lease>, namespace: &str, identity: &str) -> Result<bool, kube::Error> {
     let now = Utc::now();
 
     match leases.get(LEASE_NAME).await {

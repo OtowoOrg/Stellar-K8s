@@ -1983,6 +1983,156 @@ fn build_pod_template(
     }
     // ==========================================================================
 
+    // ==========================================================================
+    // Inject log-shipper sidecar when spec.logShipper.enabled == true
+    // ==========================================================================
+    if let Some(ls) = &node.spec.log_shipper {
+        if ls.enabled {
+            // Shared emptyDir volume for log files written by the main container.
+            pod_spec
+                .volumes
+                .get_or_insert_with(Vec::new)
+                .push(Volume {
+                    name: "stellar-logs".to_string(),
+                    empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource::default()),
+                    ..Default::default()
+                });
+
+            // Mount the shared log volume into the main container.
+            if let Some(main) = pod_spec.containers.first_mut() {
+                main.volume_mounts
+                    .get_or_insert_with(Vec::new)
+                    .push(VolumeMount {
+                        name: "stellar-logs".to_string(),
+                        mount_path: "/var/log/stellar".to_string(),
+                        ..Default::default()
+                    });
+            }
+
+            // Build env vars for the sidecar.
+            let mut env = vec![
+                EnvVar {
+                    name: "S3_BUCKET".to_string(),
+                    value: Some(ls.s3_bucket.clone()),
+                    ..Default::default()
+                },
+                EnvVar {
+                    name: "S3_PREFIX".to_string(),
+                    value: Some(
+                        ls.s3_prefix
+                            .clone()
+                            .unwrap_or_else(|| "stellar-logs".to_string()),
+                    ),
+                    ..Default::default()
+                },
+                EnvVar {
+                    name: "S3_REGION".to_string(),
+                    value: Some(
+                        ls.s3_region
+                            .clone()
+                            .unwrap_or_else(|| "us-east-1".to_string()),
+                    ),
+                    ..Default::default()
+                },
+                EnvVar {
+                    name: "BATCH_SIZE_LINES".to_string(),
+                    value: Some(ls.batch_size_lines.to_string()),
+                    ..Default::default()
+                },
+                EnvVar {
+                    name: "FLUSH_INTERVAL_SECS".to_string(),
+                    value: Some(ls.flush_interval_secs.to_string()),
+                    ..Default::default()
+                },
+                // Kubernetes downward API: inject the pod name as NODE_NAME.
+                EnvVar {
+                    name: "NODE_NAME".to_string(),
+                    value_from: Some(EnvVarSource {
+                        field_ref: Some(k8s_openapi::api::core::v1::ObjectFieldSelector {
+                            field_path: "metadata.name".to_string(),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            ];
+
+            // Inject AWS credentials from a Secret if specified.
+            if let Some(secret_ref) = &ls.credentials_secret_ref {
+                for key in &["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"] {
+                    env.push(EnvVar {
+                        name: key.to_string(),
+                        value_from: Some(EnvVarSource {
+                            secret_key_ref: Some(SecretKeySelector {
+                                name: Some(secret_ref.clone()),
+                                key: key.to_string(),
+                                optional: Some(false),
+                            }),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    });
+                }
+            }
+
+            let sidecar_image = ls.image.clone().unwrap_or_else(|| {
+                format!(
+                    "ghcr.io/stellar/stellar-k8s:{}",
+                    env!("CARGO_PKG_VERSION")
+                )
+            });
+
+            pod_spec.containers.push(Container {
+                name: "stellar-log-shipper".to_string(),
+                image: Some(sidecar_image),
+                command: Some(vec!["/stellar-log-shipper".to_string()]),
+                env: Some(env),
+                volume_mounts: Some(vec![VolumeMount {
+                    name: "stellar-logs".to_string(),
+                    mount_path: "/var/log/stellar".to_string(),
+                    read_only: Some(true),
+                    ..Default::default()
+                }]),
+                resources: Some(K8sResources {
+                    requests: Some(
+                        [
+                            ("cpu".to_string(), Quantity("50m".to_string())),
+                            ("memory".to_string(), Quantity("32Mi".to_string())),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                    limits: Some(
+                        [
+                            ("cpu".to_string(), Quantity("200m".to_string())),
+                            ("memory".to_string(), Quantity("128Mi".to_string())),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                    ..Default::default()
+                }),
+                security_context: Some(SecurityContext {
+                    allow_privilege_escalation: Some(false),
+                    read_only_root_filesystem: Some(true),
+                    run_as_non_root: Some(true),
+                    capabilities: Some(Capabilities {
+                        drop: Some(vec!["ALL".to_string()]),
+                        add: None,
+                    }),
+                    seccomp_profile: Some(SeccompProfile {
+                        type_: "RuntimeDefault".to_string(),
+                        localhost_profile: None,
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+        }
+    }
+    // ==========================================================================
+
     let mut apparmor_annotations = BTreeMap::new();
     if let Some(containers) = &pod_spec.init_containers {
         for container in containers {

@@ -468,6 +468,71 @@ pub struct VpaConfig {
     pub container_policies: Vec<VpaContainerPolicy>,
 }
 
+/// Configuration for the durable log-to-S3 sidecar.
+///
+/// When set, the operator injects a `stellar-log-shipper` sidecar into every
+/// managed pod.  The sidecar tails `/var/log/stellar/`, batches lines into
+/// gzip-compressed chunks, and uploads them to S3 on a rolling schedule.
+///
+/// # Example
+/// ```yaml
+/// logShipper:
+///   enabled: true
+///   s3Bucket: "my-stellar-logs"
+///   s3Prefix: "validators/mainnet"
+///   credentialsSecretRef: "aws-log-shipper-creds"
+///   batchSizeLines: 5000
+///   flushIntervalSecs: 60
+///   retentionDays: 90
+/// ```
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LogShipperConfig {
+    /// Enable the log-shipper sidecar.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// S3 bucket name for log archives.
+    pub s3_bucket: String,
+
+    /// Optional key prefix inside the bucket (e.g. `"validators/mainnet"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_prefix: Option<String>,
+
+    /// AWS region for the S3 bucket (e.g. `"us-east-1"`).
+    /// Falls back to `AWS_DEFAULT_REGION` env var if omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_region: Option<String>,
+
+    /// Name of a Kubernetes Secret in the same namespace containing
+    /// `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+    /// Omit when using IRSA / instance profiles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credentials_secret_ref: Option<String>,
+
+    /// Flush a new gzip batch after this many log lines (default: 5000).
+    #[serde(default = "default_batch_size_lines")]
+    pub batch_size_lines: u32,
+
+    /// Flush a new gzip batch after this many seconds even if
+    /// `batch_size_lines` has not been reached (default: 60).
+    #[serde(default = "default_flush_interval_secs")]
+    pub flush_interval_secs: u64,
+
+    /// Delete S3 objects older than this many days (0 = keep forever).
+    /// Implemented via S3 lifecycle rules applied at startup.
+    #[serde(default)]
+    pub retention_days: u32,
+
+    /// Container image for the log-shipper sidecar.
+    /// Defaults to the same image as the operator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+}
+
+fn default_batch_size_lines() -> u32 { 5000 }
+fn default_flush_interval_secs() -> u64 { 60 }
+
 /// Forensic snapshot bundle upload (S3-compatible via AWS CLI in ephemeral capture).
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

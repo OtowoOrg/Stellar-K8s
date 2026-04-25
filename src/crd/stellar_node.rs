@@ -13,10 +13,10 @@ use super::types::{
     AutoscalingConfig, Condition, CrossClusterConfig, DisasterRecoveryConfig,
     DisasterRecoveryStatus, ExternalDatabaseConfig, ForensicSnapshotConfig, GlobalDiscoveryConfig,
     HistoryMode, HorizonConfig, IngressConfig, LabelPropagationConfig, LoadBalancerConfig,
-    ManagedDatabaseConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig, PlacementConfig,
-    PodAntiAffinityStrength, ProbeConfig, ResourceRequirements, RestoreFromSnapshotConfig,
-    RetentionPolicy, RolloutStrategy, SnapshotScheduleConfig, SorobanConfig, StellarNetwork,
-    StorageConfig, ValidatorConfig, VpaConfig,
+    LogShipperConfig, ManagedDatabaseConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig,
+    PlacementConfig, PodAntiAffinityStrength, ProbeConfig, ResourceRequirements,
+    RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy, SnapshotScheduleConfig,
+    SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig, VpaConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`
@@ -113,6 +113,12 @@ pub struct StellarNodeSpec {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vpa_config: Option<VpaConfig>,
+
+    /// Durable log-to-S3 sidecar configuration.
+    /// When set and `enabled: true`, a `stellar-log-shipper` sidecar is injected
+    /// into every managed pod to stream compressed logs directly to S3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_shipper: Option<LogShipperConfig>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ingress: Option<IngressConfig>,

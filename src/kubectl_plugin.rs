@@ -167,6 +167,12 @@ enum Commands {
         #[command(subcommand)]
         command: AuditCommands,
     },
+    /// Show a high-level aggregate summary of all managed StellarNodes and their health
+    Summary {
+        /// Show all namespaces
+        #[arg(short = 'A', long)]
+        all_namespaces: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -214,7 +220,8 @@ async fn run(cli: Cli) -> Result<()> {
             | Commands::Version
             | Commands::Explain { .. }
             | Commands::Search { .. }
-            | Commands::Completions { .. } => None,
+            | Commands::Completions { .. }
+            | Commands::Summary { .. } => None,
             Commands::Logs { node_name, .. } => Some(format!(
                 "Stream logs from StellarNode '{node_name}' (read-only, no cluster mutation)"
             )),
@@ -416,6 +423,16 @@ async fn run(cli: Cli) -> Result<()> {
                 } => reporter.list(limit, resource, actor).await,
                 AuditCommands::Show { id } => reporter.show(&id).await,
             }
+        }
+        Commands::Summary { all_namespaces } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
+            summary(
+                &client,
+                all_namespaces,
+                cli.namespace.as_deref(),
+                &cli.output,
+            )
+            .await
         }
     }
 }
@@ -975,6 +992,134 @@ async fn failover(client: Client, node_name: &str, force: bool) -> Result<()> {
     Ok(())
 }
 
+/// Aggregate counts used by the summary command
+#[derive(Debug, Default)]
+pub struct SummaryStats {
+    pub total: usize,
+    pub healthy: usize,
+    pub synced: usize,
+    pub degraded: usize,
+    pub pending: usize,
+    pub by_type: std::collections::HashMap<String, usize>,
+    pub by_network: std::collections::HashMap<String, usize>,
+}
+
+/// Show a high-level aggregate summary of all managed StellarNodes
+async fn summary(
+    client: &Client,
+    all_namespaces: bool,
+    namespace: Option<&str>,
+    output: &str,
+) -> Result<()> {
+    let nodes = if all_namespaces {
+        let api: Api<StellarNode> = Api::all(client.clone());
+        api.list(&Default::default())
+            .await
+            .map_err(Error::KubeError)?
+            .items
+    } else {
+        let ns = namespace.unwrap_or("default");
+        let api: Api<StellarNode> = Api::namespaced(client.clone(), ns);
+        api.list(&Default::default())
+            .await
+            .map_err(Error::KubeError)?
+            .items
+    };
+
+    let mut stats = SummaryStats::default();
+    stats.total = nodes.len();
+
+    for node in &nodes {
+        let health = check_node_health(client, node, None).await?;
+        if health.healthy {
+            stats.healthy += 1;
+        }
+        if health.synced {
+            stats.synced += 1;
+        }
+        let phase = get_node_phase(node);
+        if phase == "Degraded" || phase == "Failed" {
+            stats.degraded += 1;
+        } else if phase == "Pending" || phase == "Creating" {
+            stats.pending += 1;
+        }
+        *stats
+            .by_type
+            .entry(format!("{:?}", node.spec.node_type))
+            .or_insert(0) += 1;
+        *stats
+            .by_network
+            .entry(format!("{:?}", node.spec.network))
+            .or_insert(0) += 1;
+    }
+
+    match output {
+        "json" => {
+            let mut by_type: Vec<_> = stats.by_type.iter().collect();
+            by_type.sort_by_key(|(k, _)| k.as_str());
+            let mut by_network: Vec<_> = stats.by_network.iter().collect();
+            by_network.sort_by_key(|(k, _)| k.as_str());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "total": stats.total,
+                    "healthy": stats.healthy,
+                    "synced": stats.synced,
+                    "degraded": stats.degraded,
+                    "pending": stats.pending,
+                    "by_type": by_type.into_iter().collect::<std::collections::HashMap<_,_>>(),
+                    "by_network": by_network.into_iter().collect::<std::collections::HashMap<_,_>>(),
+                }))
+                .map_err(|e| Error::ConfigError(format!("JSON serialization error: {e}")))?
+            );
+        }
+        "yaml" => {
+            let mut by_type: Vec<_> = stats.by_type.iter().collect();
+            by_type.sort_by_key(|(k, _)| k.as_str());
+            let mut by_network: Vec<_> = stats.by_network.iter().collect();
+            by_network.sort_by_key(|(k, _)| k.as_str());
+            println!(
+                "{}",
+                serde_yaml::to_string(&serde_json::json!({
+                    "total": stats.total,
+                    "healthy": stats.healthy,
+                    "synced": stats.synced,
+                    "degraded": stats.degraded,
+                    "pending": stats.pending,
+                    "by_type": by_type.into_iter().collect::<std::collections::HashMap<_,_>>(),
+                    "by_network": by_network.into_iter().collect::<std::collections::HashMap<_,_>>(),
+                }))
+                .map_err(|e| Error::ConfigError(format!("YAML serialization error: {e}")))?
+            );
+        }
+        _ => {
+            println!("StellarNode Summary");
+            println!("{}", "=".repeat(40));
+            println!("  Total nodes : {}", stats.total);
+            println!("  Healthy     : {}", stats.healthy);
+            println!("  Synced      : {}", stats.synced);
+            println!("  Degraded    : {}", stats.degraded);
+            println!("  Pending     : {}", stats.pending);
+            println!();
+            println!("By Type:");
+            let mut by_type: Vec<_> = stats.by_type.iter().collect();
+            by_type.sort_by_key(|(k, _)| k.as_str());
+            for (t, count) in &by_type {
+                println!("  {t:<15} : {count}");
+            }
+            println!();
+            println!("By Network:");
+            let mut by_network: Vec<_> = stats.by_network.iter().collect();
+            by_network.sort_by_key(|(k, _)| k.as_str());
+            for (n, count) in &by_network {
+                println!("  {n:<15} : {count}");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1161,5 +1306,76 @@ mod tests {
             selector,
             "involvedObject.kind=StellarNode,involvedObject.name=validator-a"
         );
+    }
+
+    // --- Summary stats aggregation tests ---
+
+    fn make_stats_from_nodes(nodes: &[StellarNode]) -> SummaryStats {
+        let mut stats = SummaryStats::default();
+        stats.total = nodes.len();
+        for node in nodes {
+            let phase = get_node_phase(node);
+            if phase == "Degraded" || phase == "Failed" {
+                stats.degraded += 1;
+            } else if phase == "Pending" || phase == "Creating" {
+                stats.pending += 1;
+            }
+            *stats
+                .by_type
+                .entry(format!("{:?}", node.spec.node_type))
+                .or_insert(0) += 1;
+            *stats
+                .by_network
+                .entry(format!("{:?}", node.spec.network))
+                .or_insert(0) += 1;
+        }
+        stats
+    }
+
+    #[test]
+    fn test_summary_stats_empty() {
+        let stats = make_stats_from_nodes(&[]);
+        assert_eq!(stats.total, 0);
+        assert_eq!(stats.healthy, 0);
+        assert_eq!(stats.synced, 0);
+        assert_eq!(stats.degraded, 0);
+        assert!(stats.by_type.is_empty());
+        assert!(stats.by_network.is_empty());
+    }
+
+    #[test]
+    fn test_summary_stats_counts_by_type() {
+        let nodes = vec![
+            create_test_node("v1", "default", NodeType::Validator),
+            create_test_node("v2", "default", NodeType::Validator),
+            create_test_node("h1", "default", NodeType::Horizon),
+        ];
+        let stats = make_stats_from_nodes(&nodes);
+        assert_eq!(stats.total, 3);
+        assert_eq!(stats.by_type["Validator"], 2);
+        assert_eq!(stats.by_type["Horizon"], 1);
+    }
+
+    #[test]
+    fn test_summary_stats_ready_nodes_not_degraded() {
+        let nodes = vec![create_test_node("v1", "default", NodeType::Validator)];
+        let stats = make_stats_from_nodes(&nodes);
+        // Ready nodes should not be counted as degraded or pending
+        assert_eq!(stats.degraded, 0);
+        assert_eq!(stats.pending, 0);
+    }
+
+    #[test]
+    fn test_summary_stats_by_network() {
+        use stellar_k8s::crd::StellarNetwork;
+        let mut node = create_test_node("v1", "default", NodeType::Validator);
+        node.spec.network = StellarNetwork::Mainnet;
+        let nodes = vec![
+            node,
+            create_test_node("v2", "default", NodeType::Validator), // Testnet
+        ];
+        let stats = make_stats_from_nodes(&nodes);
+        assert_eq!(stats.by_network["Mainnet"], 1);
+        assert_eq!(stats.by_network["Testnet"], 1);
     }
 }

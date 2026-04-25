@@ -129,6 +129,48 @@ kubectl stellar status -o json
 kubectl stellar status -o yaml
 ```
 
+### Summary
+
+Show a high-level aggregate view of all managed StellarNodes and their health:
+
+```bash
+kubectl stellar summary
+```
+
+Includes across all namespaces:
+
+```bash
+kubectl stellar summary -A
+```
+
+Output in JSON or YAML format:
+
+```bash
+kubectl stellar summary -o json
+kubectl stellar summary -o yaml
+```
+
+Example table output:
+
+```
+StellarNode Summary
+========================================
+  Total nodes : 5
+  Healthy     : 4
+  Synced      : 3
+  Degraded    : 1
+  Pending     : 0
+
+By Type:
+  Horizon         : 2
+  SorobanRpc      : 1
+  Validator       : 2
+
+By Network:
+  Mainnet         : 3
+  Testnet         : 2
+```
+
 ### Explain Stellar Error Codes
 
 Explain a Stellar error code (e.g., `tx_bad_auth`, `op_no_destination`):

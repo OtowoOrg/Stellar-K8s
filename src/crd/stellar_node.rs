@@ -13,6 +13,10 @@ use super::types::{
     AutoscalingConfig, Condition, CoreSyncState, CrossClusterConfig, DisasterRecoveryConfig,
     DisasterRecoveryStatus, ExternalDatabaseConfig, ForensicSnapshotConfig, GlobalDiscoveryConfig,
     HistoryMode, HorizonConfig, IngressConfig, LabelPropagationConfig, LoadBalancerConfig,
+    LogShipperConfig, ManagedDatabaseConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig,
+    PlacementConfig, PodAntiAffinityStrength, ProbeConfig, ResourceRequirements,
+    RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy, SnapshotScheduleConfig,
+    SorobanConfig, StellarNetwork, StorageConfig, ValidatorConfig, VpaConfig,
     ManagedDatabaseConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig, PlacementConfig,
     PodAntiAffinityStrength, ProbeConfig, ResourceRequirements, RestoreFromSnapshotConfig,
     RetentionPolicy, RolloutStrategy, SnapshotScheduleConfig, SorobanConfig, StellarNetwork,
@@ -122,6 +126,11 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vpa_config: Option<VpaConfig>,
 
+    /// Durable log-to-S3 sidecar configuration.
+    /// When set and `enabled: true`, a `stellar-log-shipper` sidecar is injected
+    /// into every managed pod to stream compressed logs directly to S3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_shipper: Option<LogShipperConfig>,
     /// Dynamic resource scaling based on Stellar Core sync state.
     ///
     /// When enabled, the operator boosts CPU/memory while the node is catching up

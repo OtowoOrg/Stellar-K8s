@@ -76,6 +76,15 @@ pub static ARCHIVE_INTEGRITY_STATUS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI6
 pub static ARCHIVE_LEDGER_LAG: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
+/// Gauge tracking whether the ZK manifest signature is valid (1 = valid, 0 = invalid or absent).
+pub static ZK_ARCHIVE_SIGNATURE_VALID: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking the number of checkpoint gaps detected in the ZK manifest hash chain.
+/// A value > 0 means the archive is incomplete.
+pub static ZK_ARCHIVE_CHAIN_GAPS_TOTAL: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
 /// Gauge tracking the node sync status (0=Pending, 1=Creating, 2=Running, 3=Syncing, 4=Ready, etc.)
 /// Uses phase enum values: Pending=0, Creating=1, Running=2, Syncing=3, Ready=4, Failed=5, Degraded=6, Suspended=7
 pub static NODE_SYNC_STATUS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
@@ -317,6 +326,17 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_archive_integrity_status",
         "Integrity status of the history archive (1 = healthy, 0 = corrupted)",
         ARCHIVE_INTEGRITY_STATUS.clone(),
+    );
+
+    registry.register(
+        "stellar_zk_archive_signature_valid",
+        "Whether the ZK archive manifest signature is valid (1 = valid, 0 = invalid or missing)",
+        ZK_ARCHIVE_SIGNATURE_VALID.clone(),
+    );
+    registry.register(
+        "stellar_zk_archive_chain_gaps_total",
+        "Number of checkpoint gaps detected in the ZK archive hash chain (0 = complete)",
+        ZK_ARCHIVE_CHAIN_GAPS_TOTAL.clone(),
     );
 
     // Register reactive update metrics (from HEAD)
@@ -1070,6 +1090,48 @@ pub fn set_ready_status(ready: bool) {
     OPERATOR_READY_STATUS.set(if ready { 1 } else { 0 });
 }
 
+/// Set the ZK archive signature validity gauge for a node (1 = valid, 0 = invalid/missing).
+pub fn set_zk_archive_signature_valid(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    hardware_generation: &str,
+    valid: bool,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
+    };
+    ZK_ARCHIVE_SIGNATURE_VALID
+        .get_or_create(&labels)
+        .set(if valid { 1 } else { 0 });
+}
+
+/// Set the ZK archive chain gaps gauge for a node (0 = no gaps, > 0 = incomplete archive).
+pub fn set_zk_archive_chain_gaps(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    hardware_generation: &str,
+    gap_count: usize,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
+    };
+    ZK_ARCHIVE_CHAIN_GAPS_TOTAL
+        .get_or_create(&labels)
+        .set(gap_count as i64);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1215,6 +1277,13 @@ mod tests {
     fn test_soroban_host_function_calls() {
         inc_host_function_call("default", "soroban-1", "testnet", "contract123");
         // Function should not panic
+    }
+
+    #[test]
+    fn test_zk_metric_helpers() {
+        set_zk_archive_signature_valid("stellar", "my-validator", "Validator", "Testnet", "", true);
+        set_zk_archive_chain_gaps("stellar", "my-validator", "Validator", "Testnet", "", 0);
+        set_zk_archive_chain_gaps("stellar", "my-validator", "Validator", "Testnet", "", 2);
     }
 
     #[test]

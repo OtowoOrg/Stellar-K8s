@@ -60,6 +60,7 @@ pub mod resource_meta;
 
 mod archive_health;
 pub mod archive_prune;
+pub mod zk_archive_verifier;
 pub mod audit;
 pub mod captive_core;
 pub mod conditions;
@@ -112,6 +113,7 @@ pub use archive_health::{
     calculate_backoff, check_archive_integrity, check_history_archive_health, ArchiveHealthResult,
     ArchiveIntegrityResult, ARCHIVE_LAG_THRESHOLD,
 };
+pub use zk_archive_verifier::{run_zk_verification, ZkVerificationResult};
 pub use blue_green::{
     cleanup_blue_deployment, create_green_deployment, rollback_to_blue, run_smoke_tests,
     switch_traffic_to_green, wait_for_green_ready, BlueGreenConfig, BlueGreenStatus,

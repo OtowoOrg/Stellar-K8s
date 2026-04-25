@@ -149,6 +149,7 @@ featureFlags:
   enablePeerDiscovery: true
   enableArchiveHealth: true
   enableSorobanMetrics: false
+  enableScpTopology: false
 
 security:
   audit:

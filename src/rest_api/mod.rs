@@ -51,6 +51,7 @@ mod dashboard_dto;
 mod dashboard_handlers;
 mod dto;
 mod handlers;
+mod scp_topology;
 mod server;
 mod sustainability;
 

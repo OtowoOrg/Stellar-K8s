@@ -84,7 +84,7 @@ reqwest = { version = "0.12", features = [
 ] }
 
 # REST API (optional)
-axum = { version = "0.8.8", optional = true }
+axum = { version = "0.8.8", optional = true, features = ["ws"] }
 tower = { version = "0.4", optional = true }
 tower-http = { version = "0.5", features = ["trace"], optional = true }
 

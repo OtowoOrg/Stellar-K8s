@@ -7,6 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -360,8 +361,200 @@ function BreakdownPills({ label, data }) {
   );
 }
 
+/* ── SCP Topology View ── */
+const SCP_PHASE_COLOR = {
+  PREPARE: 'var(--blue)',
+  CONFIRM: 'var(--yellow)',
+  EXTERNALIZE: 'var(--green)',
+  UNKNOWN: 'var(--muted)',
+};
+
+function SCPTopologyView() {
+  const svgRef = useRef(null);
+  const [topo, setTopo] = useState(null);
+  const [wsStatus, setWsStatus] = useState('connecting');
+  const [wsError, setWsError] = useState(null);
+
+  // Establish WebSocket connection on mount
+  useEffect(() => {
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${window.location.host}/api/v1/quorum/topology/stream`);
+
+    ws.onopen = () => setWsStatus('connected');
+    ws.onerror = () => { setWsStatus('error'); setWsError('WebSocket connection failed'); };
+    ws.onclose = () => setWsStatus('closed');
+    ws.onmessage = (e) => {
+      try { setTopo(JSON.parse(e.data)); } catch (_) {}
+    };
+
+    return () => ws.close();
+  }, []);
+
+  // Render D3 force-directed graph whenever topology data changes
+  useEffect(() => {
+    if (!topo || !svgRef.current || !topo.nodes.length) return;
+
+    const width = svgRef.current.clientWidth || 800;
+    const height = 500;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
+    svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+    const g = svg.append('g');
+
+    // Zoom + pan
+    svg.call(d3.zoom().scaleExtent([0.3, 4]).on('zoom', (e) => g.attr('transform', e.transform)));
+
+    // Build id → index map for D3 links
+    const idIndex = {};
+    topo.nodes.forEach((n, i) => { idIndex[n.id] = i; });
+
+    const links = topo.edges
+      .filter(e => idIndex[e.source] !== undefined && idIndex[e.target] !== undefined)
+      .map(e => ({ source: idIndex[e.source], target: idIndex[e.target] }));
+
+    const nodes = topo.nodes.map((n, i) => ({ ...n, index: i }));
+
+    const sim = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links).distance(120).strength(0.6))
+      .force('charge', d3.forceManyBody().strength(-300))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collision', d3.forceCollide(40));
+
+    // Arrow marker for directed edges
+    svg.append('defs').append('marker')
+      .attr('id', 'arrow')
+      .attr('viewBox', '0 -5 10 10')
+      .attr('refX', 24).attr('refY', 0)
+      .attr('markerWidth', 6).attr('markerHeight', 6)
+      .attr('orient', 'auto')
+      .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', '#475569');
+
+    const link = g.append('g').selectAll('line').data(links).join('line')
+      .attr('stroke', '#475569').attr('stroke-width', 1.5)
+      .attr('marker-end', 'url(#arrow)');
+
+    const node = g.append('g').selectAll('g').data(nodes).join('g')
+      .call(d3.drag()
+        .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+        .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+        .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+    node.append('circle')
+      .attr('r', 20)
+      .attr('fill', d => SCP_PHASE_COLOR[d.phase] || 'var(--muted)')
+      .attr('stroke', d => d.is_critical || d.stalled ? 'var(--red)' : '#1e293b')
+      .attr('stroke-width', d => d.is_critical || d.stalled ? 3 : 1.5)
+      .attr('opacity', 0.92);
+
+    node.append('text')
+      .attr('dy', 34).attr('text-anchor', 'middle')
+      .attr('fill', 'var(--muted)').attr('font-size', 11)
+      .text(d => d.id);
+
+    node.append('text')
+      .attr('dy', 5).attr('text-anchor', 'middle')
+      .attr('fill', '#fff').attr('font-size', 9).attr('font-weight', 700)
+      .text(d => d.phase.slice(0, 3));
+
+    node.append('title').text(d =>
+      `${d.full_id}\nPhase: ${d.phase}\nThreshold: ${d.threshold}\nCritical: ${d.is_critical}\nStalled: ${d.stalled}`
+    );
+
+    sim.on('tick', () => {
+      link
+        .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+      node.attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+  }, [topo]);
+
+  const statusBadgeColor = { connected: 'var(--green)', connecting: 'var(--yellow)', error: 'var(--red)', closed: 'var(--muted)' };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 700 }}>SCP Quorum Topology</h2>
+        <span style={{ ...css.badge(statusBadgeColor[wsStatus] || 'var(--muted)') }}>
+          {wsStatus === 'connected' ? 'Live' : wsStatus}
+        </span>
+      </div>
+
+      {wsError && <div style={{ color: 'var(--red)', marginBottom: 12 }}>{wsError}</div>}
+
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+        {Object.entries({ PREPARE: 'Prepare', CONFIRM: 'Confirm', EXTERNALIZE: 'Externalize', UNKNOWN: 'Unknown' }).map(([phase, label]) => (
+          <div key={phase} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+            <div style={{ width: 14, height: 14, borderRadius: '50%', background: SCP_PHASE_COLOR[phase] }} />
+            {label}
+          </div>
+        ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <div style={{ width: 14, height: 14, borderRadius: '50%', border: '3px solid var(--red)', background: 'transparent' }} />
+          Critical / Stalled
+        </div>
+      </div>
+
+      {/* Graph canvas */}
+      <div style={{ ...css.card, padding: 0, overflow: 'hidden', minHeight: 520 }}>
+        {(!topo || !topo.nodes.length) ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 520, color: 'var(--muted)' }}>
+            {wsStatus === 'connecting' ? 'Connecting to topology stream…' : 'No validator nodes found or all queries failed.'}
+          </div>
+        ) : (
+          <svg ref={svgRef} style={{ width: '100%', height: 520 }} />
+        )}
+      </div>
+
+      {/* Stalled nodes warning */}
+      {topo?.stalled_nodes?.length > 0 && (
+        <div style={{ marginTop: 16, ...css.card, borderLeft: '4px solid var(--red)' }}>
+          <strong style={{ color: 'var(--red)' }}>Stalled nodes detected:</strong>{' '}
+          {topo.stalled_nodes.join(', ')}
+        </div>
+      )}
+
+      {/* Node detail table */}
+      {topo?.nodes?.length > 0 && (
+        <div style={{ ...css.card, marginTop: 16 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Node Details</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
+                {['Node ID', 'Phase', 'Threshold', 'Critical', 'Stalled'].map(h => (
+                  <th key={h} style={{ padding: '6px 12px', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {topo.nodes.map(n => (
+                <tr key={n.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '8px 12px', ...css.mono }}>{n.id}</td>
+                  <td style={{ padding: '8px 12px' }}>
+                    <span style={{ ...css.badge(SCP_PHASE_COLOR[n.phase] || 'var(--muted)') }}>{n.phase}</span>
+                  </td>
+                  <td style={{ padding: '8px 12px' }}>{n.threshold}</td>
+                  <td style={{ padding: '8px 12px', color: n.is_critical ? 'var(--red)' : 'var(--green)' }}>
+                    {n.is_critical ? 'Yes' : 'No'}
+                  </td>
+                  <td style={{ padding: '8px 12px', color: n.stalled ? 'var(--red)' : 'var(--green)' }}>
+                    {n.stalled ? 'Yes' : 'No'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── App ── */
 function App() {
+  const [activeTab, setActiveTab] = useState('overview');
   const [overview, setOverview] = useState(null);
   const [nodes, setNodes] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
@@ -410,56 +603,75 @@ function App() {
             </span>}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            style={{ ...css.btn(activeTab === 'overview' ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.15)') }}
+            onClick={() => setActiveTab('overview')}>
+            📊 Overview
+          </button>
+          <button
+            style={{ ...css.btn(activeTab === 'topology' ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.15)') }}
+            onClick={() => setActiveTab('topology')}>
+            🔗 SCP Topology
+          </button>
           <button style={css.btn('rgba(255,255,255,.2)')} onClick={() => setShowOperatorLogs(true)}>
             📋 Operator Logs
           </button>
-          <button style={{ ...css.btn('rgba(255,255,255,.2)'), opacity: loading ? .6 : 1 }}
-            onClick={refresh} disabled={loading}>
-            {loading ? '…' : '↺ Refresh'}
-          </button>
+          {activeTab === 'overview' && (
+            <button style={{ ...css.btn('rgba(255,255,255,.2)'), opacity: loading ? .6 : 1 }}
+              onClick={refresh} disabled={loading}>
+              {loading ? '…' : '↺ Refresh'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Stats row */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
-        <StatCard label="Total Nodes" value={overview?.totalNodes} />
-        <StatCard label="Healthy" value={overview?.healthyNodes} color="var(--green)" />
-        <StatCard label="Syncing" value={overview?.syncingNodes} color="var(--yellow)" />
-        <StatCard label="Unhealthy" value={overview?.unhealthyNodes} color="var(--red)" />
-      </div>
+      {/* Tab content */}
+      {activeTab === 'topology' ? (
+        <SCPTopologyView />
+      ) : (
+        <>
+          {/* Stats row */}
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
+            <StatCard label="Total Nodes" value={overview?.totalNodes} />
+            <StatCard label="Healthy" value={overview?.healthyNodes} color="var(--green)" />
+            <StatCard label="Syncing" value={overview?.syncingNodes} color="var(--yellow)" />
+            <StatCard label="Unhealthy" value={overview?.unhealthyNodes} color="var(--red)" />
+          </div>
 
-      {/* Fleet health bar */}
-      {overview && (
-        <div style={{ ...css.card, marginBottom: 20 }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Fleet Health</div>
-          <FleetHealthBar
-            healthy={overview.healthyNodes}
-            syncing={overview.syncingNodes}
-            unhealthy={overview.unhealthyNodes}
-            total={overview.totalNodes}
-          />
-        </div>
+          {/* Fleet health bar */}
+          {overview && (
+            <div style={{ ...css.card, marginBottom: 20 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>Fleet Health</div>
+              <FleetHealthBar
+                healthy={overview.healthyNodes}
+                syncing={overview.syncingNodes}
+                unhealthy={overview.unhealthyNodes}
+                total={overview.totalNodes}
+              />
+            </div>
+          )}
+
+          {/* Breakdowns */}
+          {overview && (
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
+              <BreakdownPills label="By Node Type" data={overview.nodesByType} />
+              <BreakdownPills label="By Network" data={overview.nodesByNetwork} />
+            </div>
+          )}
+
+          {/* Nodes table */}
+          <div style={{ ...css.card }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 700 }}>Managed StellarNodes</h2>
+              <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+                {nodes ? `${nodes.length} resource${nodes.length !== 1 ? 's' : ''}` : ''}
+              </span>
+            </div>
+            <NodesTable nodes={nodes} onSelect={setSelectedNode} />
+          </div>
+        </>
       )}
-
-      {/* Breakdowns */}
-      {overview && (
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
-          <BreakdownPills label="By Node Type" data={overview.nodesByType} />
-          <BreakdownPills label="By Network" data={overview.nodesByNetwork} />
-        </div>
-      )}
-
-      {/* Nodes table */}
-      <div style={{ ...css.card }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <h2 style={{ fontSize: 20, fontWeight: 700 }}>Managed StellarNodes</h2>
-          <span style={{ fontSize: 13, color: 'var(--muted)' }}>
-            {nodes ? `${nodes.length} resource${nodes.length !== 1 ? 's' : ''}` : ''}
-          </span>
-        </div>
-        <NodesTable nodes={nodes} onSelect={setSelectedNode} />
-      </div>
 
       {/* Modals */}
       {selectedNode && (

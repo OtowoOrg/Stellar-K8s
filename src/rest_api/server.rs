@@ -24,6 +24,7 @@ use super::auth;
 use super::custom_metrics;
 use super::dashboard_handlers;
 use super::handlers;
+use super::scp_topology;
 
 /// Build a rustls ServerConfig from PEM data (cert, key, CA for client verification).
 /// Used for initial server setup and after certificate rotation to reload without restart.
@@ -112,6 +113,9 @@ pub async fn run_server(
         .route("/api/v1/dashboard/nodes/:namespace/:name/actions", axum::routing::post(dashboard_handlers::execute_node_action))
         // Operator logs
         .route("/api/v1/dashboard/operator/logs", get(dashboard_handlers::get_operator_logs))
+        // SCP topology endpoints (REST snapshot + WebSocket stream)
+        .route("/api/v1/quorum/topology", get(scp_topology::get_topology))
+        .route("/api/v1/quorum/topology/stream", get(scp_topology::topology_ws))
         // Documentation search API
         .route("/api/v1/docs/search-index", get(handlers::get_search_index))
         // Custom metrics API

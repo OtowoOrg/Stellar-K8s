@@ -1200,9 +1200,13 @@ async fn run_operator(args: RunArgs) -> Result<(), Error> {
         let ff_flags = feature_flags.clone();
         let ff_audit_sink = if state.operator_config.audit.enabled {
             if let Some(s3_config) = &state.operator_config.audit.s3 {
-                Some(Arc::new(controller::audit_sink::S3AuditSink::new(s3_config.clone()).await) as Arc<dyn controller::audit_sink::AuditSink>)
+                Some(
+                    Arc::new(controller::audit_sink::S3AuditSink::new(s3_config.clone()).await)
+                        as Arc<dyn controller::audit_sink::AuditSink>,
+                )
             } else {
-                Some(Arc::new(controller::audit_sink::NoopAuditSink) as Arc<dyn controller::audit_sink::AuditSink>)
+                Some(Arc::new(controller::audit_sink::NoopAuditSink)
+                    as Arc<dyn controller::audit_sink::AuditSink>)
             }
         } else {
             None

@@ -3259,7 +3259,10 @@ fn extract_peers_from_config(node: &StellarNode) -> Vec<String> {
     peers
 }
 
-pub(crate) fn build_network_policy(node: &StellarNode, config: &NetworkPolicyConfig) -> NetworkPolicy {
+pub(crate) fn build_network_policy(
+    node: &StellarNode,
+    config: &NetworkPolicyConfig,
+) -> NetworkPolicy {
     let labels = standard_labels(node);
     let name = resource_name(node, "netpol");
 
@@ -3869,7 +3872,7 @@ mod ensure_pvc_tests {
                 label_propagation: None,
                 resource_meta: None,
                 sidecars: None,
-            cert_manager: None,
+                cert_manager: None,
                 nat_traversal: None,
                 custom_network_passphrase: None,
                 cross_cloud_failover: None,

@@ -518,7 +518,7 @@ mod tests {
                 label_propagation: None,
                 read_pool_endpoint: None,
                 sidecars: None,
-            cert_manager: None,
+                cert_manager: None,
                 resource_meta: None,
                 nat_traversal: None,
                 custom_network_passphrase: None,

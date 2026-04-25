@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use aws_sdk_s3::Client as S3Client;
-use serde::{Deserialize, Serialize};
 use base64::Engine;
+use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
 use crate::controller::audit_log::AuditEntry;
@@ -77,7 +77,8 @@ impl AuditSink for S3AuditSink {
             md5_base64 = Some(base64::engine::general_purpose::STANDARD.encode(hash.0));
         }
 
-        let mut request = self.client
+        let mut request = self
+            .client
             .put_object()
             .bucket(&self.bucket)
             .key(&key)

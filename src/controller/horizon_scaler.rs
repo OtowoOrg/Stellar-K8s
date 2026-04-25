@@ -3,10 +3,10 @@
 //! Scales Horizon pods based on the frequency of HTTP 429 (Too Many Requests)
 //! responses exported from Prometheus. Supports predictive scaling.
 
-use crate::error::Result;
+use crate::controller::predictive_scaling::{fit_holt_winters, HoltWintersState};
 use crate::crd::StellarNode;
-use crate::controller::predictive_scaling::{HoltWintersState, fit_holt_winters};
-use tracing::{info, debug};
+use crate::error::Result;
+use tracing::{debug, info};
 
 pub struct HorizonRateLimitScaler {
     prometheus_url: String,
@@ -21,8 +21,11 @@ impl HorizonRateLimitScaler {
     pub async fn fetch_429_rate(&self, node_name: &str) -> Result<f64> {
         // Simulated Prometheus query for 429 error rates
         // Example: rate(stellar_horizon_http_responses_total{status="429", node="..."}[5m])
-        debug!("Fetching 429 rate for node {} from {}", node_name, self.prometheus_url);
-        
+        debug!(
+            "Fetching 429 rate for node {} from {}",
+            node_name, self.prometheus_url
+        );
+
         // Return a simulated value for now
         Ok(0.5) // 0.5 requests per second hitting 429
     }
@@ -49,22 +52,31 @@ impl HorizonRateLimitScaler {
     }
 
     /// Main reconciliation logic for rate-limit based scaling
-    pub async fn reconcile_scaling(&self, node: &StellarNode, current_replicas: i32) -> Result<i32> {
+    pub async fn reconcile_scaling(
+        &self,
+        node: &StellarNode,
+        current_replicas: i32,
+    ) -> Result<i32> {
         let node_name = node.metadata.name.as_ref().unwrap();
         let rate_429 = self.fetch_429_rate(node_name).await?;
-        
+
         let threshold = 1.0; // 1 request per second hitting 429
         let mut target_replicas = self.compute_replicas(current_replicas, rate_429, threshold);
-        
+
         // If predictive scaling is enabled, adjust target
         if let Some(ref autoscaling) = node.spec.autoscaling {
             // This is just a placeholder for future integration with PredictiveScalingConfig
-            info!("Rate-limit 기반 predictive scaling evaluation for {}", node_name);
+            info!(
+                "Rate-limit 기반 predictive scaling evaluation for {}",
+                node_name
+            );
         }
 
         if target_replicas != current_replicas {
-            info!("Scaling node {} from {} to {} based on 429 rate ({})", 
-                node_name, current_replicas, target_replicas, rate_429);
+            info!(
+                "Scaling node {} from {} to {} based on 429 rate ({})",
+                node_name, current_replicas, target_replicas, rate_429
+            );
         }
 
         Ok(target_replicas)

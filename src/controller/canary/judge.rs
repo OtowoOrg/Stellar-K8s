@@ -3,8 +3,8 @@
 //! Evaluates canary health by comparing performance metrics between 'baseline'
 //! and 'canary' pods. Integrates with Kayenta for statistical analysis.
 
-use crate::error::Result;
 use crate::crd::types::CanaryConfig;
+use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -34,18 +34,34 @@ impl CanaryJudge {
 
     /// Run analysis for a canary deployment
     /// Compares 'Ledger Close Time' and 'API Error Rates'
-    pub async fn analyze(&self, config: &CanaryConfig, baseline_pods: &[String], canary_pods: &[String]) -> Result<KayentaJudgeResult> {
-        info!("Starting Kayenta canary analysis for pods: {:?} vs {:?}", baseline_pods, canary_pods);
-        
+    pub async fn analyze(
+        &self,
+        config: &CanaryConfig,
+        baseline_pods: &[String],
+        canary_pods: &[String],
+    ) -> Result<KayentaJudgeResult> {
+        info!(
+            "Starting Kayenta canary analysis for pods: {:?} vs {:?}",
+            baseline_pods, canary_pods
+        );
+
         // In a real implementation, this would involve calling the Kayenta API
         // Here we simulate the judge logic based on provided criteria
-        
+
         // Placeholder for real Kayenta API call logic
-        let simulated_score = if config.max_error_rate > 0.1 { 50.0 } else { 95.0 };
-        
+        let simulated_score = if config.max_error_rate > 0.1 {
+            50.0
+        } else {
+            95.0
+        };
+
         Ok(KayentaJudgeResult {
             score: simulated_score,
-            status: if simulated_score > 90.0 { "PASS".to_string() } else { "FAIL".to_string() },
+            status: if simulated_score > 90.0 {
+                "PASS".to_string()
+            } else {
+                "FAIL".to_string()
+            },
             metrics: vec![
                 MetricComparison {
                     name: "ledger_close_time".to_string(),
@@ -58,7 +74,7 @@ impl CanaryJudge {
                     baseline_avg: 0.01,
                     canary_avg: 0.015,
                     delta_percent: 50.0,
-                }
+                },
             ],
         })
     }

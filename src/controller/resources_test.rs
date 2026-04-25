@@ -578,13 +578,7 @@ peer-2 = "G..."
         node.spec.sidecars = Some(vec![make_sidecar("log-forwarder")]);
 
         let sts = build_statefulset_for_test(&node);
-        let containers = sts
-            .spec
-            .unwrap()
-            .template
-            .spec
-            .unwrap()
-            .containers;
+        let containers = sts.spec.unwrap().template.spec.unwrap().containers;
 
         assert!(
             containers.iter().any(|c| c.name == "log-forwarder"),
@@ -598,13 +592,7 @@ peer-2 = "G..."
         node.spec.sidecars = Some(vec![make_sidecar("metrics-proxy")]);
 
         let deploy = build_deployment_for_test(&node);
-        let containers = deploy
-            .spec
-            .unwrap()
-            .template
-            .spec
-            .unwrap()
-            .containers;
+        let containers = deploy.spec.unwrap().template.spec.unwrap().containers;
 
         assert!(
             containers.iter().any(|c| c.name == "metrics-proxy"),
@@ -622,13 +610,7 @@ peer-2 = "G..."
         ]);
 
         let sts = build_statefulset_for_test(&node);
-        let containers = sts
-            .spec
-            .unwrap()
-            .template
-            .spec
-            .unwrap()
-            .containers;
+        let containers = sts.spec.unwrap().template.spec.unwrap().containers;
 
         for name in &["log-forwarder", "metrics-proxy", "custom-proxy"] {
             assert!(
@@ -644,13 +626,7 @@ peer-2 = "G..."
         // sidecars is None by default in minimal_spec
 
         let sts = build_statefulset_for_test(&node);
-        let containers = sts
-            .spec
-            .unwrap()
-            .template
-            .spec
-            .unwrap()
-            .containers;
+        let containers = sts.spec.unwrap().template.spec.unwrap().containers;
 
         // Only the main stellar-node container should be present
         assert_eq!(
@@ -737,13 +713,7 @@ peer-2 = "G..."
         node.spec.sidecars = Some(vec![make_sidecar("log-forwarder")]);
 
         let sts = build_statefulset_for_test(&node);
-        let containers = sts
-            .spec
-            .unwrap()
-            .template
-            .spec
-            .unwrap()
-            .containers;
+        let containers = sts.spec.unwrap().template.spec.unwrap().containers;
 
         assert_ne!(
             containers[0].name, "log-forwarder",

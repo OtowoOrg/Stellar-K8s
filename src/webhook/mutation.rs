@@ -217,7 +217,10 @@ fn get_standard_labels(spec: &StellarNodeSpec, name: &str) -> BTreeMap<String, S
 }
 
 /// Get standard annotations
-fn get_standard_annotations(spec: &StellarNodeSpec, user: Option<&str>) -> BTreeMap<String, String> {
+fn get_standard_annotations(
+    spec: &StellarNodeSpec,
+    user: Option<&str>,
+) -> BTreeMap<String, String> {
     let mut annotations = BTreeMap::new();
 
     // Add version annotation
@@ -239,7 +242,10 @@ fn get_standard_annotations(spec: &StellarNodeSpec, user: Option<&str>) -> BTree
 
     // Add audit attribution if user is known
     if let Some(u) = user {
-        annotations.insert("audit.stellar.org/last-modified-by".to_string(), u.to_string());
+        annotations.insert(
+            "audit.stellar.org/last-modified-by".to_string(),
+            u.to_string(),
+        );
     }
 
     annotations

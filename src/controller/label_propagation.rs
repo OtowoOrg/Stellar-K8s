@@ -272,7 +272,7 @@ mod tests {
                 resource_meta: None,
                 placement: Default::default(),
                 sidecars: None,
-            cert_manager: None,
+                cert_manager: None,
                 nat_traversal: None,
                 custom_network_passphrase: None,
                 cross_cloud_failover: None,

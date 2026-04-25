@@ -377,13 +377,15 @@ pub async fn ensure_linkerd_resources(client: &Client, node: &StellarNode) -> Re
         .within(&namespace)
         .data(server);
 
-    let server_api: Api<DynamicObject> = Api::namespaced_with(client.clone(), &namespace, &server_api_resource);
-    server_api.patch(
-        &server_name,
-        &PatchParams::apply("stellar-operator").force(),
-        &Patch::Apply(&server_obj),
-    )
-    .await?;
+    let server_api: Api<DynamicObject> =
+        Api::namespaced_with(client.clone(), &namespace, &server_api_resource);
+    server_api
+        .patch(
+            &server_name,
+            &PatchParams::apply("stellar-operator").force(),
+            &Patch::Apply(&server_obj),
+        )
+        .await?;
 
     // 2. Create Linkerd ServerAuthorization resource
     // Enforce STRICT mTLS by requiring unauthenticated clients to be denied
@@ -435,15 +437,21 @@ pub async fn ensure_linkerd_resources(client: &Client, node: &StellarNode) -> Re
         .within(&namespace)
         .data(auth);
 
-    let auth_api: Api<DynamicObject> = Api::namespaced_with(client.clone(), &namespace, &auth_api_resource);
-    auth_api.patch(
-        &auth_name,
-        &PatchParams::apply("stellar-operator").force(),
-        &Patch::Apply(&auth_obj),
-    )
-    .await?;
+    let auth_api: Api<DynamicObject> =
+        Api::namespaced_with(client.clone(), &namespace, &auth_api_resource);
+    auth_api
+        .patch(
+            &auth_name,
+            &PatchParams::apply("stellar-operator").force(),
+            &Patch::Apply(&auth_obj),
+        )
+        .await?;
 
-    info!("Ensured Linkerd mTLS resources for node {} in namespace {}", node.name_any(), namespace);
+    info!(
+        "Ensured Linkerd mTLS resources for node {} in namespace {}",
+        node.name_any(),
+        namespace
+    );
     Ok(())
 }
 

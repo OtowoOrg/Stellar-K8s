@@ -178,8 +178,8 @@ pub enum AuditCommands {
     },
 }
 
-mod sql;
 mod audit_report;
+mod sql;
 
 #[tokio::main]
 async fn main() {
@@ -378,19 +378,24 @@ async fn run(cli: Cli) -> Result<()> {
             executor.execute(&node_name, &query, output_format).await
         }
         Commands::Audit { command } => {
-            let bucket = std::env::var("STELLAR_AUDIT_BUCKET")
-                .map_err(|_| Error::ConfigError("STELLAR_AUDIT_BUCKET environment variable must be set to access audit logs".to_string()))?;
-            let prefix = std::env::var("STELLAR_AUDIT_PREFIX").unwrap_or_else(|_| "audit-logs/".to_string());
-            
+            let bucket = std::env::var("STELLAR_AUDIT_BUCKET").map_err(|_| {
+                Error::ConfigError(
+                    "STELLAR_AUDIT_BUCKET environment variable must be set to access audit logs"
+                        .to_string(),
+                )
+            })?;
+            let prefix =
+                std::env::var("STELLAR_AUDIT_PREFIX").unwrap_or_else(|_| "audit-logs/".to_string());
+
             let reporter = audit_report::AuditReporter::new(bucket, prefix).await;
-            
+
             match command {
-                AuditCommands::List { limit, resource, actor } => {
-                    reporter.list(limit, resource, actor).await
-                }
-                AuditCommands::Show { id } => {
-                    reporter.show(&id).await
-                }
+                AuditCommands::List {
+                    limit,
+                    resource,
+                    actor,
+                } => reporter.list(limit, resource, actor).await,
+                AuditCommands::Show { id } => reporter.show(&id).await,
             }
         }
     }
@@ -982,7 +987,7 @@ mod tests {
                 resource_meta: None,
                 read_pool_endpoint: None,
                 sidecars: None,
-            cert_manager: None,
+                cert_manager: None,
                 history_mode: Default::default(),
                 custom_network_passphrase: None,
                 nat_traversal: None,

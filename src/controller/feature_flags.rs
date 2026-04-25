@@ -139,7 +139,7 @@ pub async fn watch_feature_flags(
                 let mut current = flags.write().await;
                 if *current != new_flags {
                     log_flag_changes(&current, &new_flags, cm.name_any().as_str());
-                    
+
                     if let Some(sink) = &audit_sink {
                         use crate::controller::audit_log::{AdminAction, AuditEntry};
                         let actor = extract_actor(&cm);
@@ -149,11 +149,12 @@ pub async fn watch_feature_flags(
                             FEATURE_FLAGS_CONFIGMAP,
                             namespace.clone(),
                             Some("Feature flags updated in ConfigMap"),
-                        ).with_diff(serde_json::to_value(&data).unwrap_or_default());
-                        
+                        )
+                        .with_diff(serde_json::to_value(&data).unwrap_or_default());
+
                         let _ = sink.persist(entry).await;
                     }
-                    
+
                     *current = new_flags;
                 }
             }
@@ -162,7 +163,7 @@ pub async fn watch_feature_flags(
                     configmap = FEATURE_FLAGS_CONFIGMAP,
                     "Feature-flags ConfigMap deleted; reverting to defaults"
                 );
-                
+
                 if let Some(sink) = &audit_sink {
                     use crate::controller::audit_log::{AdminAction, AuditEntry};
                     let actor = extract_actor(&cm);

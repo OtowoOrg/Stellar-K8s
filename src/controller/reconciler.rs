@@ -55,6 +55,8 @@ use super::archive_health::{
     check_history_archive_health, ArchiveHealthResult, ArchiveIntegrityCheckResult,
     ARCHIVE_LAG_THRESHOLD,
 };
+use super::audit_sink::{AuditSink, NoopAuditSink, S3AuditSink};
+use super::audit_worker::AuditWorker;
 use super::conditions;
 use super::cross_cloud_failover;
 use super::cve_reconciler;
@@ -77,8 +79,6 @@ use super::resources;
 use super::service_mesh;
 use super::vpa as vpa_controller;
 use super::vsl;
-use super::audit_worker::AuditWorker;
-use super::audit_sink::{AuditSink, S3AuditSink, NoopAuditSink};
 
 // Constants
 #[allow(dead_code)]
@@ -353,7 +353,7 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
         } else {
             Arc::new(NoopAuditSink)
         };
-        
+
         let audit_worker = AuditWorker::new(client.clone(), sink);
         tokio::spawn(async move {
             if let Err(e) = audit_worker.run().await {

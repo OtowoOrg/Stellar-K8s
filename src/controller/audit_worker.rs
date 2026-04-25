@@ -42,9 +42,11 @@ impl AuditWorker {
 
         let mut stream = watcher(api, wc).default_backoff().boxed();
 
-        while let Some(event) = stream.try_next().await.map_err(|e| {
-            crate::error::Error::InternalError(format!("Audit watcher error: {e}"))
-        })? {
+        while let Some(event) = stream
+            .try_next()
+            .await
+            .map_err(|e| crate::error::Error::InternalError(format!("Audit watcher error: {e}")))?
+        {
             match event {
                 watcher::Event::Apply(node) | watcher::Event::InitApply(node) => {
                     let name = node.name_any();
@@ -63,7 +65,8 @@ impl AuditWorker {
                                     &name,
                                     node.namespace().unwrap_or_default(),
                                     Some("StellarNode updated"),
-                                ).with_diff(serde_json::to_value(diff).unwrap_or_default());
+                                )
+                                .with_diff(serde_json::to_value(diff).unwrap_or_default());
 
                                 let _ = self.sink.persist(entry).await;
                             }
@@ -77,7 +80,8 @@ impl AuditWorker {
                             name.clone(),
                             node.namespace().unwrap_or_default(),
                             None,
-                        ).with_diff(current_val.clone());
+                        )
+                        .with_diff(current_val.clone());
 
                         let _ = self.sink.persist(entry).await;
                     }

@@ -87,6 +87,118 @@ use chrono::Utc;
 #[allow(dead_code)]
 const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-health-retries";
 
+trait ToStellarNodeArc {
+    fn to_arc(&self) -> Arc<StellarNode>;
+}
+impl ToStellarNodeArc for Arc<StellarNode> {
+    fn to_arc(&self) -> Arc<StellarNode> {
+        self.clone()
+    }
+}
+impl ToStellarNodeArc for &Arc<StellarNode> {
+    fn to_arc(&self) -> Arc<StellarNode> {
+        (*self).clone()
+    }
+}
+impl ToStellarNodeArc for StellarNode {
+    fn to_arc(&self) -> Arc<StellarNode> {
+        Arc::new(self.clone())
+    }
+}
+impl ToStellarNodeArc for &StellarNode {
+    fn to_arc(&self) -> Arc<StellarNode> {
+        Arc::new((*self).clone())
+    }
+}
+
+trait ToControllerStateArc {
+    fn to_arc_controller(&self) -> Arc<ControllerState>;
+}
+impl ToControllerStateArc for Arc<ControllerState> {
+    fn to_arc_controller(&self) -> Arc<ControllerState> {
+        self.clone()
+    }
+}
+impl ToControllerStateArc for &Arc<ControllerState> {
+    fn to_arc_controller(&self) -> Arc<ControllerState> {
+        (*self).clone()
+    }
+}
+impl ToControllerStateArc for ControllerState {
+    fn to_arc_controller(&self) -> Arc<ControllerState> {
+        Arc::new(self.clone())
+    }
+}
+impl ToControllerStateArc for &ControllerState {
+    fn to_arc_controller(&self) -> Arc<ControllerState> {
+        Arc::new((*self).clone())
+    }
+}
+
+macro_rules! emit_event {
+    ($client:expr, $reporter:expr, $node:expr, $type:expr, $reason:expr, $action:expr, $note:expr $(,)?) => {
+        emit_event_owned(
+            $client.clone(),
+            $reporter.clone(),
+            $node.to_arc(),
+            $type,
+            $reason.to_string(),
+            $action.to_string(),
+            $note.to_string(),
+        )
+    };
+}
+
+macro_rules! publish_stellar_event {
+    ($client:expr, $reporter:expr, $node:expr, $type:expr, $reason:expr, $action:expr, $note:expr $(,)?) => {
+        publish_stellar_event_owned(
+            $client.clone(),
+            $reporter.clone(),
+            $node.to_arc(),
+            $type,
+            $reason.to_string(),
+            $action.to_string(),
+            $note.to_string(),
+        )
+    };
+}
+
+macro_rules! apply_or_emit {
+    ($ctx:expr, $node:expr, $action:expr, $info:expr, async $body:block, clones: [$($clone:ident),*] $(,)?) => {
+        {
+            let ctx = $ctx.to_arc_controller();
+            let node = $node.to_arc();
+            let client_c = ctx.client.clone();
+            let ctx_c = ctx.clone();
+            let node_c = node.clone();
+            $( let $clone = $clone.clone(); )*
+            apply_or_emit_owned(ctx, node, $action, $info.to_string(), async move {
+                let client = &client_c;
+                let ctx = &ctx_c;
+                let node = &node_c;
+                $body
+            })
+        }
+    };
+    ($ctx:expr, $node:expr, $action:expr, $info:expr, async $body:block $(,)?) => {
+        apply_or_emit!($ctx, $node, $action, $info, async $body, clones: [])
+    };
+}
+
+trait ToControllerStateArc {
+    fn to_arc_controller(&self) -> Arc<ControllerState>;
+}
+impl ToControllerStateArc for Arc<ControllerState> {
+    fn to_arc_controller(&self) -> Arc<ControllerState> {
+        self.clone()
+    }
+}
+impl ToControllerStateArc for ControllerState {
+    fn to_arc_controller(&self) -> Arc<ControllerState> {
+        Arc::new(self.clone())
+    }
+}
+
 /// Summary report for a batch of reconciliation results.
 ///
 /// Tracks the number of successful and failed reconciliations
@@ -468,7 +580,7 @@ async fn publish_object_event(
         .map_err(Error::KubeError)
 }
 
-fn emit_event(
+fn emit_event_owned(
     client: Client,
     reporter: Reporter,
     node: Arc<StellarNode>,
@@ -484,7 +596,7 @@ fn emit_event(
     .boxed()
 }
 
-fn publish_stellar_event(
+fn publish_stellar_event_owned(
     client: Client,
     reporter: Reporter,
     node: Arc<StellarNode>,
@@ -493,7 +605,7 @@ fn publish_stellar_event(
     action: String,
     note: String,
 ) -> BoxFuture<'static, Result<()>> {
-    emit_event(client, reporter, node, type_, reason, action, note)
+    emit_event_owned(client, reporter, node, type_, reason, action, note)
 }
 
 /// Returns whether the primary workload (Deployment or StatefulSet) for this node already exists.
@@ -540,7 +652,7 @@ async fn emit_spec_validation_event(
     errors: &[SpecValidationError],
 ) -> Result<()> {
     let message = format_spec_validation_errors(errors);
-    publish_stellar_event(
+    publish_stellar_event!(
         client,
         reporter,
         node,
@@ -570,45 +682,41 @@ impl std::fmt::Display for ActionType {
 }
 
 /// Helper to perform an action or emit a "WouldPatch" event in dry-run mode
-async fn apply_or_emit<Fut>(
-    ctx: &ControllerState,
-    node: &StellarNode,
+fn apply_or_emit_owned<Fut>(
+    ctx: Arc<ControllerState>,
+    node: Arc<StellarNode>,
     action: ActionType,
-    resource_info: &str,
+    resource_info: String,
     fut: Fut,
-) -> Result<()>
+) -> BoxFuture<'static, Result<()>>
 where
-    Fut: std::future::Future<Output = Result<()>>,
+    Fut: std::future::Future<Output = Result<()>> + Send + 'static,
 {
-    if ctx.dry_run {
-        let reason = match action {
-            ActionType::Create => "WouldCreate",
-            ActionType::Update => "WouldUpdate",
-            ActionType::Delete => "WouldDelete",
-        };
-        let message = format!("Dry Run: Would {action} {resource_info}");
-        info!("{}", message);
-        publish_stellar_event(
-            &ctx.client,
-            &ctx.event_reporter,
-            node,
-            EventType::Normal,
-            reason,
-            "DryRun",
-            &message,
-        )
-        .await?;
-        // Enhanced logging with resource type and namespace
-        let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-        let name = node.name_any();
-        debug!(
-            "Dry Run: {} {}/{} - {}",
-            action, namespace, name, resource_info
-        );
+    async move {
+        if ctx.dry_run {
+            let reason = match action {
+                ActionType::Create => "WouldCreate",
+                ActionType::Update => "WouldUpdate",
+                ActionType::Delete => "WouldDelete",
+            };
+            let message = format!("Dry Run: Would {action} {resource_info}");
+            info!("{}", message);
+            publish_stellar_event!(
+                ctx.client,
+                ctx.event_reporter,
+                node,
+                EventType::Normal,
+                reason,
+                "DryRun",
+                message
+            )
+            .await?;
+        } else {
+            fut.await?;
+        }
         Ok(())
-    } else {
-        fut.await
     }
+    .boxed()
 }
 
 /// The core reconciliation state machine for StellarNode resources.
@@ -778,7 +886,7 @@ pub(crate) fn apply_stellar_node(
                 "Network safety check failed for {}/{}: {}",
                 namespace, name, msg
             );
-            emit_event(
+            emit_event!(
                 &client,
                 &ctx.event_reporter,
                 &node,
@@ -792,7 +900,7 @@ pub(crate) fn apply_stellar_node(
             return Err(e);
         }
 
-        let propagated_labels = LabelPropagator::new(&node).compute();
+        let propagated_labels = Arc::new(LabelPropagator::new(&node).compute());
 
         // Enforce PSS 'restricted' on the managed namespace (idempotent)
         if let Err(e) = pss::ensure_namespace_pss_labels(&client, &namespace).await {
@@ -803,22 +911,23 @@ pub(crate) fn apply_stellar_node(
         }
 
         // 1. Core infrastructure (PVC and ConfigMap) always managed by operator
-        apply_or_emit(
+        apply_or_emit!(
             &ctx,
             &node,
             ActionType::Update,
             "PVC and ConfigMap",
             async {
-                resources::ensure_pvc(&client, &node, &propagated_labels, ctx.dry_run).await?;
-                resources::ensure_config_map(&client, &node, None, ctx.enable_mtls, ctx.dry_run)
+                resources::ensure_pvc(client, node, &propagated_labels, ctx.dry_run).await?;
+                resources::ensure_config_map(client, node, None, ctx.enable_mtls, ctx.dry_run)
                     .await?;
                 Ok(())
             },
+            clones: [propagated_labels]
         )
         .await?;
 
         // 1a. Managed Database (CloudNativePG)
-        apply_or_emit(&ctx, &node, ActionType::Update, "Managed Database", async {
+        apply_or_emit!(&ctx, &node, ActionType::Update, "Managed Database", async {
             resources::ensure_cnpg_cluster(&client, &node, ctx.dry_run).await?;
             resources::ensure_cnpg_pooler(&client, &node, ctx.dry_run).await?;
             Ok(())
@@ -827,22 +936,22 @@ pub(crate) fn apply_stellar_node(
 
         // 2. Handle suspension
         if node.spec.suspended {
-            apply_or_emit(
+            apply_or_emit!(
                 &ctx,
                 &node,
                 ActionType::Update,
                 "Suspended state resources",
                 async {
-                    resources::ensure_pvc(&client, &node, &propagated_labels, ctx.dry_run).await?;
-                    resources::ensure_config_map(&client, &node, None, ctx.enable_mtls, ctx.dry_run)
+                    resources::ensure_pvc(client, node, &propagated_labels, ctx.dry_run).await?;
+                    resources::ensure_config_map(client, node, None, ctx.enable_mtls, ctx.dry_run)
                         .await?;
 
                     match node.spec.node_type {
                         NodeType::Validator => {
                             // Suspended validators don't need seed injection resolved
                             resources::ensure_statefulset(
-                                &client,
-                                &node,
+                                client,
+                                node,
                                 ctx.enable_mtls,
                                 None,
                                 &propagated_labels,
@@ -852,8 +961,8 @@ pub(crate) fn apply_stellar_node(
                         }
                         NodeType::Horizon | NodeType::SorobanRpc => {
                             resources::ensure_deployment(
-                                &client,
-                                &node,
+                                client,
+                                node,
                                 ctx.enable_mtls,
                                 &propagated_labels,
                                 ctx.dry_run,
@@ -863,8 +972,8 @@ pub(crate) fn apply_stellar_node(
                     }
 
                     resources::ensure_service(
-                        &client,
-                        &node,
+                        client,
+                        node,
                         ctx.enable_mtls,
                         &propagated_labels,
                         ctx.dry_run,
@@ -872,10 +981,11 @@ pub(crate) fn apply_stellar_node(
                     .await?;
                     Ok(())
                 },
+                clones: [propagated_labels]
             )
             .await?;
 
-            apply_or_emit(
+            apply_or_emit!(
                 &ctx,
                 &node,
                 ActionType::Update,
@@ -931,7 +1041,7 @@ pub(crate) fn apply_stellar_node(
                             namespace, name, current_version
                         );
 
-                        publish_stellar_event(
+                        publish_stellar_event!(
                             &client,
                             &ctx.event_reporter,
                             &node,
@@ -967,9 +1077,10 @@ pub(crate) fn apply_stellar_node(
                             namespace, name
                         );
 
-                        let health_result =
+                        let health_result = Arc::new(
                             check_history_archive_health(&validator_config.history_archive_urls, None)
-                                .await?;
+                                .await?,
+                        );
 
                         if !health_result.any_healthy {
                             warn!(
@@ -980,7 +1091,7 @@ pub(crate) fn apply_stellar_node(
                             );
 
                             // Emit Kubernetes Event
-                            publish_stellar_event(
+                            publish_stellar_event!(
                                 &client,
                                 &ctx.event_reporter,
                                 &node,
@@ -995,16 +1106,17 @@ pub(crate) fn apply_stellar_node(
                             .await?;
 
                             // Update status with archive health condition (observed_generation NOT updated to trigger retry)
-                            apply_or_emit(
+                            apply_or_emit!(
                                 &ctx,
                                 &node,
                                 ActionType::Update,
                                 "Status (Archive Health Failed)",
                                 async {
-                                    update_archive_health_status(&client, &node, &health_result)
+                                    update_archive_health_status(client, node, &health_result)
                                         .await?;
                                     Ok(())
                                 },
+                                clones: [health_result]
                             )
                             .await?;
 
@@ -1022,16 +1134,17 @@ pub(crate) fn apply_stellar_node(
                                 name,
                                 health_result.summary()
                             );
-                            apply_or_emit(
+                            apply_or_emit!(
                                 &ctx,
                                 &node,
                                 ActionType::Update,
                                 "Status (Archive Health Passed)",
                                 async {
-                                    update_archive_health_status(&client, &node, &health_result)
+                                    update_archive_health_status(client, node, &health_result)
                                         .await?;
                                     Ok(())
                                 },
+                                clones: [health_result]
                             )
                             .await?;
                         }
@@ -1141,7 +1254,7 @@ pub(crate) fn apply_stellar_node(
         }
 
         // Update status to Creating
-        apply_or_emit(&ctx, &node, ActionType::Update, "Status (DR)", async {
+        apply_or_emit!(&ctx, &node, ActionType::Update, "Status (DR)", async {
             update_status(
                 &client,
                 &node,
@@ -1156,7 +1269,7 @@ pub(crate) fn apply_stellar_node(
         .await?;
 
         // 1. Create/update the PersistentVolumeClaim
-        apply_or_emit(&ctx, &node, ActionType::Create, "PVC", async {
+        apply_or_emit!(&ctx, &node, ActionType::Create, "PVC", async {
             resources::ensure_pvc(&client, &node, &propagated_labels, ctx.dry_run).await?;
             Ok(())
         })
@@ -1174,7 +1287,7 @@ pub(crate) fn apply_stellar_node(
                         }
                         Err(e) => {
                             warn!("Failed to fetch VSL for {}/{}: {}", namespace, name, e);
-                            publish_stellar_event(
+                            publish_stellar_event!(
                                 &client,
                                 &ctx.event_reporter,
                                 &node,
@@ -1191,7 +1304,7 @@ pub(crate) fn apply_stellar_node(
         }
 
         // 3. Create/update the ConfigMap for node configuration
-        apply_or_emit(&ctx, &node, ActionType::Update, "ConfigMap", async {
+        apply_or_emit!(&ctx, &node, ActionType::Update, "ConfigMap", async {
             resources::ensure_config_map(
                 &client,
                 &node,
@@ -1221,7 +1334,7 @@ pub(crate) fn apply_stellar_node(
 
         if node.spec.suspended {
             info!("Node {}/{} is suspended, scaling to 0", namespace, name);
-            apply_or_emit(
+            apply_or_emit!(
                 &ctx,
                 &node,
                 ActionType::Update,
@@ -1236,7 +1349,7 @@ pub(crate) fn apply_stellar_node(
         }
 
         // 4. Ensure mTLS certificates
-        apply_or_emit(
+        apply_or_emit!(
             &ctx,
             &node,
             ActionType::Update,
@@ -1259,7 +1372,7 @@ pub(crate) fn apply_stellar_node(
             .unwrap_or(false);
 
         // 5. Create/update the Deployment/StatefulSet based on node type
-        let workload_result = apply_or_emit(
+        let workload_result = apply_or_emit!(
             &ctx,
             &node,
             ActionType::Update,
@@ -1519,7 +1632,7 @@ pub(crate) fn apply_stellar_node(
         match workload_result {
             Ok(()) => {}
             Err(workload_err) => {
-                if let Err(e) = publish_stellar_event(
+                if let Err(e) = publish_stellar_event!(
                     &client,
                     &ctx.event_reporter,
                     &node,
@@ -1577,7 +1690,7 @@ pub(crate) fn apply_stellar_node(
         }
 
         // 5.2 / 5.4: Emit LabelsPropagated event and patch labelPropagationStatus to Synced
-        if let Err(e) = publish_stellar_event(
+        if let Err(e) = publish_stellar_event!(
             &client,
             &ctx.event_reporter,
             &node,
@@ -1600,7 +1713,7 @@ pub(crate) fn apply_stellar_node(
                 .and_then(|s| s.observed_generation)
                 .unwrap_or(0);
             if current_gen > observed_gen {
-                if let Err(e) = publish_stellar_event(
+                if let Err(e) = publish_stellar_event!(
                     &client,
                     &ctx.event_reporter,
                     &node,
@@ -1636,7 +1749,7 @@ pub(crate) fn apply_stellar_node(
         }
 
         // 5a. MetalLB / LoadBalancer
-        apply_or_emit(
+        apply_or_emit!(
             &ctx,
             &node,
             ActionType::Update,
@@ -1651,7 +1764,7 @@ pub(crate) fn apply_stellar_node(
         .await?;
 
         // 5b. Read-Only Replica Pools
-        apply_or_emit(
+        apply_or_emit!(
             &ctx,
             &node,
             ActionType::Update,
@@ -1665,7 +1778,7 @@ pub(crate) fn apply_stellar_node(
         .await?;
 
         // 6. Autoscaling and Monitoring
-        apply_or_emit(
+        apply_or_emit!(
             &ctx,
             &node,
             ActionType::Update,
@@ -1793,7 +1906,7 @@ pub(crate) fn apply_stellar_node(
                     }
                 }
 
-                apply_or_emit(
+                apply_or_emit!(
                     &ctx,
                     &node,
                     ActionType::Update,
@@ -1809,7 +1922,7 @@ pub(crate) fn apply_stellar_node(
         }
 
         if let Some(cve_config) = &node.spec.cve_handling {
-            apply_or_emit(&ctx, &node, ActionType::Update, "CVE Handling", async {
+            apply_or_emit!(&ctx, &node, ActionType::Update, "CVE Handling", async {
                 cve_reconciler::reconcile_cve_patches(&client, &node, cve_config).await?;
                 Ok(())
             })
@@ -1820,7 +1933,7 @@ pub(crate) fn apply_stellar_node(
         if node.spec.node_type == NodeType::Validator {
             if let Some(pruning_policy) = &node.spec.pruning_policy {
                 if pruning_policy.enabled {
-                    apply_or_emit(&ctx, &node, ActionType::Update, "Archive Pruning", async {
+                    apply_or_emit!(&ctx, &node, ActionType::Update, "Archive Pruning", async {
                         match super::pruning_reconciler::reconcile_pruning(&client, &node).await {
                             Ok(Some(result)) => {
                                 info!(
@@ -1931,7 +2044,7 @@ pub(crate) fn apply_stellar_node(
                 }
             }
 
-            apply_or_emit(&ctx, &node, ActionType::Update, "Status (DR)", async {
+            apply_or_emit!(&ctx, &node, ActionType::Update, "Status (DR)", async {
                 update_dr_status(&client, &node, dr_status).await?;
                 Ok(())
             })
@@ -1989,7 +2102,7 @@ pub(crate) fn apply_stellar_node(
                         }
                     }
 
-                    apply_or_emit(
+                    apply_or_emit!(
                         &ctx,
                         &node,
                         ActionType::Update,
@@ -2016,7 +2129,7 @@ pub(crate) fn apply_stellar_node(
             let stale_check = remediation::check_stale_node(&node, health_result.ledger_sequence);
             if stale_check.is_stale && remediation::can_remediate(&node) {
                 if stale_check.recommended_action == remediation::RemediationLevel::Restart {
-                    apply_or_emit(
+                    apply_or_emit!(
                         &ctx,
                         &node,
                         ActionType::Update,
@@ -2046,7 +2159,7 @@ pub(crate) fn apply_stellar_node(
                     return Ok(Action::requeue(Duration::from_secs(30)));
                 }
             } else {
-                apply_or_emit(
+                apply_or_emit!(
                     &ctx,
                     &node,
                     ActionType::Update,
@@ -2100,7 +2213,7 @@ pub(crate) fn apply_stellar_node(
             ("Ready", "Node is healthy and synced".to_string())
         };
 
-        apply_or_emit(&ctx, &node, ActionType::Update, "Status (Final)", async {
+        apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Final)", async {
             update_status_with_health(&client, &node, phase, Some(&message), &health_result).await?;
 
             let ready_replicas = get_ready_replicas(&client, &node).await.unwrap_or(0);
@@ -2196,7 +2309,7 @@ pub(crate) fn apply_stellar_node(
                             "Failed to create OCI snapshot push Job for {}/{}: {}",
                             namespace, name, e
                         );
-                        publish_stellar_event(
+                        publish_stellar_event!(
                             &client,
                             &ctx.event_reporter,
                             &node,
@@ -2220,7 +2333,7 @@ pub(crate) fn apply_stellar_node(
                             "Failed to create OCI snapshot pull Job for {}/{}: {}",
                             namespace, name, e
                         );
-                        publish_stellar_event(
+                        publish_stellar_event!(
                             &client,
                             &ctx.event_reporter,
                             &node,
@@ -2238,7 +2351,7 @@ pub(crate) fn apply_stellar_node(
 
         // 12. Service Mesh Configuration (Istio/Linkerd)
         if node.spec.service_mesh.is_some() {
-            apply_or_emit(
+            apply_or_emit!(
                 &ctx,
                 &node,
                 ActionType::Update,
@@ -2320,7 +2433,7 @@ pub(crate) fn cleanup_stellar_node(
         // Delete resources in reverse order of creation
 
         // 0a. Delete Managed Database Resources
-        apply_or_emit(&ctx, &node, ActionType::Delete, "Managed Database", async {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "Managed Database", async {
             if let Err(e) = resources::delete_cnpg_resources(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete CNPG resources: {:?}", e);
             }
@@ -2329,7 +2442,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 0. Delete Alerting
-        apply_or_emit(&ctx, &node, ActionType::Delete, "Alerting", async {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "Alerting", async {
             if let Err(e) = resources::delete_alerting(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete alerting: {:?}", e);
             }
@@ -2338,7 +2451,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 0b. Delete VPA (if vpaConfig was configured)
-        apply_or_emit(&ctx, &node, ActionType::Delete, "VPA", async {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "VPA", async {
             if let Err(e) = vpa_controller::delete_vpa(&client, &node).await {
                 warn!("Failed to delete VPA: {:?}", e);
             }
@@ -2347,7 +2460,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 1. Delete HPA (if autoscaling was configured)
-        apply_or_emit(&ctx, &node, ActionType::Delete, "HPA", async {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "HPA", async {
             if let Err(e) = resources::delete_hpa(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete HPA: {:?}", e);
             }
@@ -2356,7 +2469,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 2. Delete ServiceMonitor (if autoscaling was configured)
-        apply_or_emit(&ctx, &node, ActionType::Delete, "ServiceMonitor", async {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "ServiceMonitor", async {
             if let Err(e) = resources::delete_service_monitor(&client, &node).await {
                 warn!("Failed to delete ServiceMonitor: {:?}", e);
             }
@@ -2365,7 +2478,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 3. Delete Ingress
-        apply_or_emit(&ctx, &node, ActionType::Delete, "Ingress", async {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "Ingress", async {
             if let Err(e) = resources::delete_ingress(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete Ingress: {:?}", e);
             }
@@ -2374,7 +2487,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 3a. Delete NetworkPolicy
-        apply_or_emit(&ctx, &node, ActionType::Delete, "NetworkPolicy", async {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "NetworkPolicy", async {
             if let Err(e) = resources::delete_network_policy(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete NetworkPolicy: {:?}", e);
             }
@@ -2383,7 +2496,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 3b. Delete MetalLB LoadBalancer Service
-        apply_or_emit(
+        apply_or_emit!(
             &ctx,
             &node,
             ActionType::Delete,
@@ -2401,7 +2514,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 3c. Delete Service Mesh Resources (Istio/Linkerd)
-        apply_or_emit(&ctx, &node, ActionType::Delete, "Service Mesh", async {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "Service Mesh", async {
             if let Err(e) = service_mesh::delete_service_mesh_resources(&client, &node).await {
                 warn!("Failed to delete service mesh resources: {:?}", e);
             }
@@ -2410,7 +2523,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 3d. Delete PDB
-        apply_or_emit(&ctx, &node, ActionType::Delete, "PDB", async {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "PDB", async {
             if let Err(e) = resources::delete_pdb(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete PodDisruptionBudget: {:?}", e);
             }
@@ -2419,7 +2532,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 4. Delete Service
-        apply_or_emit(&ctx, &node, ActionType::Delete, "Service", async {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "Service", async {
             if let Err(e) = resources::delete_service(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete Service: {:?}", e);
             }
@@ -2428,7 +2541,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 5. Delete Deployment/StatefulSet
-        apply_or_emit(&ctx, &node, ActionType::Delete, "Workload", async {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "Workload", async {
             if let Err(e) = resources::delete_workload(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete workload: {:?}", e);
             }
@@ -2437,7 +2550,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 6. Delete ConfigMap
-        apply_or_emit(&ctx, &node, ActionType::Delete, "ConfigMap", async {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "ConfigMap", async {
             if let Err(e) = resources::delete_config_map(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete ConfigMap: {:?}", e);
             }
@@ -2451,7 +2564,7 @@ pub(crate) fn cleanup_stellar_node(
                 "Deleting PVC for node: {}/{} (retention policy: Delete)",
                 namespace, name
             );
-            apply_or_emit(&ctx, &node, ActionType::Delete, "PVC", async {
+            apply_or_emit!(&ctx, &node, ActionType::Delete, "PVC", async {
                 if let Err(e) = resources::delete_pvc(&client, &node, ctx.dry_run).await {
                     warn!("Failed to delete PVC: {:?}", e);
                 }
@@ -3050,7 +3163,7 @@ async fn run_archive_integrity_check(
             "Archive integrity degraded for {}/{}: {}",
             namespace, name, message
         );
-        publish_stellar_event(
+        publish_stellar_event!(
             client,
             reporter,
             node,
@@ -3420,7 +3533,7 @@ async fn run_archive_checkpoint_verification(
         );
 
         // Emit Fatal Event for corruption
-        publish_stellar_event(
+        publish_stellar_event!(
             client,
             reporter,
             node,

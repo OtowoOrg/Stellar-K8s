@@ -164,8 +164,9 @@ macro_rules! publish_stellar_event {
 }
 
 macro_rules! apply_or_emit {
-    ($ctx:expr, $node:expr, $action:expr, $info:expr, $closure:expr $(,)?) => {
+    ($ctx:expr, $node:expr, $action:expr, $info:expr, clones: [$($clone:ident),*], $closure:expr $(,)?) => {
         {
+            $( let $clone = $clone.clone(); )*
             let _ctx_internal = $ctx.to_arc_controller();
             let _node_internal = $node.to_arc();
             let _client_clone = _ctx_internal.client.clone();
@@ -175,6 +176,9 @@ macro_rules! apply_or_emit {
             let _fut = $closure(_client_clone, _ctx_clone, _node_clone);
             apply_or_emit_owned(_ctx_internal, _node_internal, $action, $info.to_string(), _fut)
         }
+    };
+    ($ctx:expr, $node:expr, $action:expr, $info:expr, $closure:expr $(,)?) => {
+        apply_or_emit!($ctx, $node, $action, $info, clones: [], $closure)
     };
 }
 
@@ -896,19 +900,17 @@ pub(crate) fn apply_stellar_node(
             &ctx,
             &node,
             ActionType::Update,
-            "PVC and ConfigMap",
-            async {
-                resources::ensure_pvc(client, node, &propagated_labels, ctx.dry_run).await?;
-                resources::ensure_config_map(client, node, None, ctx.enable_mtls, ctx.dry_run)
+            "PVC and ConfigMap", clones: [propagated_labels], clones: [quorum_override], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+                resources::ensure_pvc(&client, &node, &propagated_labels, ctx.dry_run).await?;
+                resources::ensure_config_map(&client, &node, None, ctx.enable_mtls, ctx.dry_run)
                     .await?;
                 Ok(())
-            },
-            clones: [propagated_labels]
+            }
         )
         .await?;
 
         // 1a. Managed Database (CloudNativePG)
-        apply_or_emit!(&ctx, &node, ActionType::Update, "Managed Database", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Update, "Managed Database", move |)client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             resources::ensure_cnpg_cluster(&client, &node, ctx.dry_run).await?;
             resources::ensure_cnpg_pooler(&client, &node, ctx.dry_run).await?;
             Ok(())
@@ -917,34 +919,23 @@ pub(crate) fn apply_stellar_node(
 
         // 2. Handle suspension
         if node.spec.suspended {
-            apply_or_emit!(
-                &ctx,
-                &node,
-                ActionType::Update,
-                "Suspended state resources",
-                async {
-                    resources::ensure_pvc(client, node, &propagated_labels, ctx.dry_run).await?;
-                    resources::ensure_config_map(client, node, None, ctx.enable_mtls, ctx.dry_run)
+            apply_or_emit!(&ctx, &node, ActionType::Update, "Suspended state resources", clones: [propagated_labels], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+                    resources::ensure_pvc(&client, &node, &propagated_labels, ctx.dry_run).await?;
+                    resources::ensure_config_map(&client, &node, None, ctx.enable_mtls, ctx.dry_run)
                         .await?;
 
                     match node.spec.node_type {
                         NodeType::Validator => {
                             // Suspended validators don't need seed injection resolved
-                            resources::ensure_statefulset(
-                                client,
-                                node,
-                                ctx.enable_mtls,
+                            resources::ensure_statefulset(&client, &node, ctx.enable_mtls,
                                 None,
                                 &propagated_labels,
                                 ctx.dry_run,
                             )
                             .await?;
                         }
-                        NodeType::Horizon | NodeType::SorobanRpc => {
-                            resources::ensure_deployment(
-                                client,
-                                node,
-                                ctx.enable_mtls,
+                        NodeType::Horizon |) NodeType::SorobanRpc => {
+                            resources::ensure_deployment(&client, &node, ctx.enable_mtls,
                                 &propagated_labels,
                                 ctx.dry_run,
                             )
@@ -952,26 +943,17 @@ pub(crate) fn apply_stellar_node(
                         }
                     }
 
-                    resources::ensure_service(
-                        client,
-                        node,
-                        ctx.enable_mtls,
+                    resources::ensure_service(&client, &node, ctx.enable_mtls,
                         &propagated_labels,
                         ctx.dry_run,
                     )
                     .await?;
                     Ok(())
-                },
-                clones: [propagated_labels]
+                }
             )
             .await?;
 
-            apply_or_emit!(
-                &ctx,
-                &node,
-                ActionType::Update,
-                "Status (Maintenance)",
-                async {
+            apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Maintenance)", clones: [propagated_labels], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                     update_status(
                         &client,
                         &node,
@@ -983,7 +965,7 @@ pub(crate) fn apply_stellar_node(
                     .await?;
                     update_suspended_status(&client, &node).await?;
                     Ok(())
-                },
+                }
             )
             .await?;
 
@@ -1092,12 +1074,11 @@ pub(crate) fn apply_stellar_node(
                                 &node,
                                 ActionType::Update,
                                 "Status (Archive Health Failed)",
-                                async {
-                                    update_archive_health_status(client, node, &health_result)
+                                move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+                                    update_archive_health_status(&client, &node, &health_result)
                                         .await?;
                                     Ok(())
-                                },
-                                clones: [health_result]
+                                }
                             )
                             .await?;
 
@@ -1120,12 +1101,11 @@ pub(crate) fn apply_stellar_node(
                                 &node,
                                 ActionType::Update,
                                 "Status (Archive Health Passed)",
-                                async {
-                                    update_archive_health_status(client, node, &health_result)
+                                move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+                                    update_archive_health_status(&client, &node, &health_result)
                                         .await?;
                                     Ok(())
-                                },
-                                clones: [health_result]
+                                }
                             )
                             .await?;
                         }
@@ -1235,7 +1215,7 @@ pub(crate) fn apply_stellar_node(
         }
 
         // Update status to Creating
-        apply_or_emit!(&ctx, &node, ActionType::Update, "Status (DR)", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Update, "Status (DR)", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             update_status(
                 &client,
                 &node,
@@ -1250,7 +1230,7 @@ pub(crate) fn apply_stellar_node(
         .await?;
 
         // 1. Create/update the PersistentVolumeClaim
-        apply_or_emit!(&ctx, &node, ActionType::Create, "PVC", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Create, "PVC", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             resources::ensure_pvc(&client, &node, &propagated_labels, ctx.dry_run).await?;
             Ok(())
         })
@@ -1292,18 +1272,14 @@ pub(crate) fn apply_stellar_node(
             &node,
             ActionType::Update,
             "ConfigMap",
-            async {
-                resources::ensure_config_map(
-                    client,
-                    node,
-                    (*quorum_override).clone(),
+            move |))client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+                resources::ensure_config_map(&client, &node, (*quorum_override).clone(),
                     ctx.enable_mtls,
                     ctx.dry_run,
                 )
                 .await?;
                 Ok(())
-            },
-            clones: [quorum_override]
+            }
         )
         .await?;
         info!("ConfigMap ensured for {}/{}", namespace, name);
@@ -1324,15 +1300,10 @@ pub(crate) fn apply_stellar_node(
 
         if node.spec.suspended {
             info!("Node {}/{} is suspended, scaling to 0", namespace, name);
-            apply_or_emit!(
-                &ctx,
-                &node,
-                ActionType::Update,
-                "Status (Suspended)",
-                async {
+            apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Suspended)", clones: [propagated_labels], clones: [quorum_override], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                     update_suspended_status(&client, &node).await?;
                     Ok(())
-                },
+                }
             )
             .await?;
             // Continue to ensure resources exist but with 0 replicas
@@ -1344,7 +1315,7 @@ pub(crate) fn apply_stellar_node(
             &node,
             ActionType::Update,
             "mTLS certificates",
-            async {
+            move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                 mtls::ensure_ca(&client, &namespace).await?;
                 mtls::ensure_node_cert(&client, &node).await?;
                 // If cert-manager is configured, also create the Certificate CR so
@@ -1353,7 +1324,7 @@ pub(crate) fn apply_stellar_node(
                     mtls::ensure_cert_manager_certificate(&client, &node, cm_cfg).await?;
                 }
                 Ok(())
-            },
+            }
         )
         .await?;
 
@@ -1367,7 +1338,7 @@ pub(crate) fn apply_stellar_node(
             &node,
             ActionType::Update,
             "Workload (Deployment/StatefulSet)",
-            async {
+            move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                 match node.spec.node_type {
                     NodeType::Validator => {
                         // Resolve the KMS/ESO/CSI seed injection spec before building the StatefulSet.
@@ -1375,7 +1346,7 @@ pub(crate) fn apply_stellar_node(
                         // of how to wire the seed into the pod. No secret values are ever read.
                         let seed_injection = if let Some(validator_config) = &node.spec.validator_config {
                             if let Some(_source) = validator_config.resolve_seed_source() {
-                                match kms_secret::reconcile_seed_secret(client, node).await {
+                                match kms_secret::reconcile_seed_secret(&client, &node).await {
                                     Ok(spec) => Some(spec),
                                     Err(e) => {
                                         warn!(
@@ -1393,28 +1364,19 @@ pub(crate) fn apply_stellar_node(
                             None
                         };
 
-                        resources::ensure_statefulset(
-                            client,
-                            node,
-                            ctx.enable_mtls,
+                        resources::ensure_statefulset(&client, &node, ctx.enable_mtls,
                             seed_injection.as_ref(),
                             &propagated_labels,
                             ctx.dry_run,
                         )
                         .await?;
-                        kms_secret::reconcile_vault_secret_rotation(
-                            client,
-                            node,
-                            seed_injection.as_ref(),
+                        kms_secret::reconcile_vault_secret_rotation(&client, &node, seed_injection.as_ref(),
                         )
                         .await?;
-                        super::forensic_snapshot::reconcile_forensic_snapshot(client, node).await?;
+                        super::forensic_snapshot::reconcile_forensic_snapshot(&client, &node).await?;
                     }
-                    NodeType::Horizon | NodeType::SorobanRpc => {
-                        resources::ensure_deployment(
-                            client,
-                            node,
-                            ctx.enable_mtls,
+                    NodeType::Horizon |) NodeType::SorobanRpc => {
+                        resources::ensure_deployment(&client, &node, ctx.enable_mtls,
                             &propagated_labels,
                             ctx.dry_run,
                         )
@@ -1753,12 +1715,12 @@ pub(crate) fn apply_stellar_node(
             &node,
             ActionType::Update,
             "MetalLB configuration",
-            async {
+            move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                 // TODO: Load balancer and global discovery fields not yet implemented in StellarNodeSpec
                 // resources::ensure_metallb_config(&client, &node).await?;
                 // resources::ensure_load_balancer_service(&client, &node).await?;
                 Ok(())
-            },
+            }
         )
         .await?;
 
@@ -1768,11 +1730,11 @@ pub(crate) fn apply_stellar_node(
             &node,
             ActionType::Update,
             "Read-Only Replica Pool",
-            async {
+            move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                 crate::controller::read_pool::ensure_read_pool(&client, &node, ctx.enable_mtls).await?;
                 crate::controller::traffic::reconcile_traffic_routing(&client, &node).await?;
                 Ok(())
-            },
+            }
         )
         .await?;
 
@@ -1782,7 +1744,7 @@ pub(crate) fn apply_stellar_node(
             &node,
             ActionType::Update,
             "Monitoring and Scaling resources",
-            async {
+            move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                 if node.spec.autoscaling.is_some() {
                     resources::ensure_service_monitor(&client, &node).await?;
                     resources::ensure_hpa(&client, &node, ctx.dry_run).await?;
@@ -1910,18 +1872,18 @@ pub(crate) fn apply_stellar_node(
                     &node,
                     ActionType::Update,
                     "Sync-state resource scaling",
-                    async {
+                    move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                         sync_scale::reconcile_sync_scaling(&client, &node, scaling_config, &sync_state)
                             .await?;
                         Ok(())
-                    },
+                    }
                 )
                 .await?;
             }
         }
 
         if let Some(cve_config) = &node.spec.cve_handling {
-            apply_or_emit!(&ctx, &node, ActionType::Update, "CVE Handling", move |client, ctx, node| async move {
+            apply_or_emit!(&ctx, &node, ActionType::Update, "CVE Handling", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                 cve_reconciler::reconcile_cve_patches(&client, &node, cve_config).await?;
                 Ok(())
             })
@@ -1932,7 +1894,7 @@ pub(crate) fn apply_stellar_node(
         if node.spec.node_type == NodeType::Validator {
             if let Some(pruning_policy) = &node.spec.pruning_policy {
                 if pruning_policy.enabled {
-                    apply_or_emit!(&ctx, &node, ActionType::Update, "Archive Pruning", move |client, ctx, node| async move {
+                    apply_or_emit!(&ctx, &node, ActionType::Update, "Archive Pruning", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                         match super::pruning_reconciler::reconcile_pruning(&client, &node).await {
                             Ok(Some(result)) => {
                                 info!(
@@ -1976,7 +1938,7 @@ pub(crate) fn apply_stellar_node(
         }
 
         // 7. Trigger config-reload if VSL was updated and pod is ready
-        if let Some(_quorum) = quorum_override {
+        if let Some(_quorum) = &*quorum_override {
             if health_result.healthy {
                 // Get pod IP to trigger reload
                 let pod_api: Api<k8s_openapi::api::core::v1::Pod> =
@@ -2004,7 +1966,7 @@ pub(crate) fn apply_stellar_node(
         let prev_dr_failover = node
             .status
             .as_ref()
-            .and_then(|s| s.dr_status.as_ref())
+            .and_then(|)s| s.dr_status.as_ref())
             .map(|d| d.failover_active)
             .unwrap_or(false);
         if let Some(mut dr_status) = dr::reconcile_dr(&client, &node).await? {
@@ -2048,11 +2010,10 @@ pub(crate) fn apply_stellar_node(
                 &node,
                 ActionType::Update,
                 "Status (DR)",
-                async {
-                    update_dr_status(client, node, dr_status).await?;
+                move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+                    update_dr_status(&client, &node, dr_status).await?;
                     Ok(())
-                },
-                clones: [dr_status]
+                }
             )
             .await?;
         }
@@ -2113,11 +2074,10 @@ pub(crate) fn apply_stellar_node(
                         &node,
                         ActionType::Update,
                         "Status (Cross-Cloud Failover)",
-                        async {
-                            update_cross_cloud_failover_status(client, node, cc_status).await?;
+                        move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+                            update_cross_cloud_failover_status(&client, &node, cc_status).await?;
                             Ok(())
-                        },
-                        clones: [cc_status]
+                        }
                     )
                     .await?;
                 }
@@ -2141,7 +2101,7 @@ pub(crate) fn apply_stellar_node(
                         &node,
                         ActionType::Update,
                         "Remediation (Restart)",
-                        async {
+                        move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                             remediation::emit_remediation_event(
                                 &client,
                                 &ctx.event_reporter,
@@ -2160,7 +2120,7 @@ pub(crate) fn apply_stellar_node(
                             )
                             .await?;
                             Ok(())
-                        },
+                        }
                     )
                     .await?;
                     return Ok(Action::requeue(Duration::from_secs(30)));
@@ -2171,18 +2131,17 @@ pub(crate) fn apply_stellar_node(
                     &node,
                     ActionType::Update,
                     "Remediation State",
-                    async {
+                    move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                         remediation::update_remediation_state(
-                            client,
-                            node,
+                            &client,
+                            &node,
                             health_result.ledger_sequence,
                             remediation::RemediationLevel::None,
                             false,
                         )
                         .await?;
                         Ok(())
-                    },
-                    clones: [health_result]
+                    }
                 )
                 .await?;
             }
@@ -2221,7 +2180,7 @@ pub(crate) fn apply_stellar_node(
             ("Ready", "Node is healthy and synced".to_string())
         };
 
-        apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Final)", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Final)", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             update_status_with_health(&client, &node, phase, Some(&message), &health_result).await?;
 
             let ready_replicas = get_ready_replicas(&client, &node).await.unwrap_or(0);
@@ -2364,13 +2323,13 @@ pub(crate) fn apply_stellar_node(
                 &node,
                 ActionType::Update,
                 "Service Mesh (Istio/Linkerd)",
-                async {
+                move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                     service_mesh::ensure_peer_authentication(&client, &node).await?;
                     service_mesh::ensure_destination_rule(&client, &node).await?;
                     service_mesh::ensure_virtual_service(&client, &node).await?;
                     service_mesh::ensure_request_authentication(&client, &node).await?;
                     Ok(())
-                },
+                }
             )
             .await?;
         }
@@ -2441,7 +2400,7 @@ pub(crate) fn cleanup_stellar_node(
         // Delete resources in reverse order of creation
 
         // 0a. Delete Managed Database Resources
-        apply_or_emit!(&ctx, &node, ActionType::Delete, "Managed Database", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "Managed Database", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             if let Err(e) = resources::delete_cnpg_resources(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete CNPG resources: {:?}", e);
             }
@@ -2450,7 +2409,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 0. Delete Alerting
-        apply_or_emit!(&ctx, &node, ActionType::Delete, "Alerting", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "Alerting", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             if let Err(e) = resources::delete_alerting(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete alerting: {:?}", e);
             }
@@ -2459,7 +2418,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 0b. Delete VPA (if vpaConfig was configured)
-        apply_or_emit!(&ctx, &node, ActionType::Delete, "VPA", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "VPA", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             if let Err(e) = vpa_controller::delete_vpa(&client, &node).await {
                 warn!("Failed to delete VPA: {:?}", e);
             }
@@ -2468,7 +2427,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 1. Delete HPA (if autoscaling was configured)
-        apply_or_emit!(&ctx, &node, ActionType::Delete, "HPA", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "HPA", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             if let Err(e) = resources::delete_hpa(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete HPA: {:?}", e);
             }
@@ -2477,7 +2436,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 2. Delete ServiceMonitor (if autoscaling was configured)
-        apply_or_emit!(&ctx, &node, ActionType::Delete, "ServiceMonitor", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "ServiceMonitor", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             if let Err(e) = resources::delete_service_monitor(&client, &node).await {
                 warn!("Failed to delete ServiceMonitor: {:?}", e);
             }
@@ -2486,7 +2445,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 3. Delete Ingress
-        apply_or_emit!(&ctx, &node, ActionType::Delete, "Ingress", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "Ingress", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             if let Err(e) = resources::delete_ingress(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete Ingress: {:?}", e);
             }
@@ -2495,7 +2454,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 3a. Delete NetworkPolicy
-        apply_or_emit!(&ctx, &node, ActionType::Delete, "NetworkPolicy", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "NetworkPolicy", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             if let Err(e) = resources::delete_network_policy(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete NetworkPolicy: {:?}", e);
             }
@@ -2509,7 +2468,7 @@ pub(crate) fn cleanup_stellar_node(
             &node,
             ActionType::Delete,
             "MetalLB LoadBalancer",
-            async {
+            move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                 if let Err(e) = resources::delete_load_balancer_service(&client, &node).await {
                     warn!("Failed to delete MetalLB LoadBalancer service: {:?}", e);
                 }
@@ -2517,12 +2476,12 @@ pub(crate) fn cleanup_stellar_node(
                     warn!("Failed to delete MetalLB configuration: {:?}", e);
                 }
                 Ok(())
-            },
+            }
         )
         .await?;
 
         // 3c. Delete Service Mesh Resources (Istio/Linkerd)
-        apply_or_emit!(&ctx, &node, ActionType::Delete, "Service Mesh", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "Service Mesh", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             if let Err(e) = service_mesh::delete_service_mesh_resources(&client, &node).await {
                 warn!("Failed to delete service mesh resources: {:?}", e);
             }
@@ -2531,7 +2490,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 3d. Delete PDB
-        apply_or_emit!(&ctx, &node, ActionType::Delete, "PDB", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "PDB", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             if let Err(e) = resources::delete_pdb(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete PodDisruptionBudget: {:?}", e);
             }
@@ -2540,7 +2499,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 4. Delete Service
-        apply_or_emit!(&ctx, &node, ActionType::Delete, "Service", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "Service", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             if let Err(e) = resources::delete_service(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete Service: {:?}", e);
             }
@@ -2549,7 +2508,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 5. Delete Deployment/StatefulSet
-        apply_or_emit!(&ctx, &node, ActionType::Delete, "Workload", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "Workload", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             if let Err(e) = resources::delete_workload(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete workload: {:?}", e);
             }
@@ -2558,7 +2517,7 @@ pub(crate) fn cleanup_stellar_node(
         .await?;
 
         // 6. Delete ConfigMap
-        apply_or_emit!(&ctx, &node, ActionType::Delete, "ConfigMap", move |client, ctx, node| async move {
+        apply_or_emit!(&ctx, &node, ActionType::Delete, "ConfigMap", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             if let Err(e) = resources::delete_config_map(&client, &node, ctx.dry_run).await {
                 warn!("Failed to delete ConfigMap: {:?}", e);
             }
@@ -2572,7 +2531,7 @@ pub(crate) fn cleanup_stellar_node(
                 "Deleting PVC for node: {}/{} (retention policy: Delete)",
                 namespace, name
             );
-            apply_or_emit!(&ctx, &node, ActionType::Delete, "PVC", move |client, ctx, node| async move {
+            apply_or_emit!(&ctx, &node, ActionType::Delete, "PVC", move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                 if let Err(e) = resources::delete_pvc(&client, &node, ctx.dry_run).await {
                     warn!("Failed to delete PVC: {:?}", e);
                 }
@@ -2715,7 +2674,7 @@ async fn check_canary_health(
         .map(|c| c.max_error_rate)
         .unwrap_or(0.05);
 
-    match measure_canary_error_rate(client, node, &namespace).await {
+    match measure_canary_error_rate(&client, &node, &namespace).await {
         Ok(error_rate) => {
             if error_rate > max_error_rate {
                 return Ok(health::HealthCheckResult::unhealthy(format!(
@@ -3145,7 +3104,7 @@ async fn run_archive_integrity_check(
 
     // Update Prometheus metric with the maximum observed lag.
     #[cfg(feature = "metrics")]
-    let hardware_generation = hardware_generation_for_metrics(client, node).await;
+    let hardware_generation = hardware_generation_for_metrics(&client, &node).await;
     #[cfg(feature = "metrics")]
     metrics::set_archive_ledger_lag(
         &namespace,
@@ -3502,7 +3461,7 @@ async fn run_archive_checkpoint_verification(
     {
         let node_type = format!("{:?}", node.spec.node_type);
         let network = format!("{:?}", node.spec.network);
-        let hardware = hardware_generation_for_metrics(client, node).await;
+        let hardware = hardware_generation_for_metrics(&client, &node).await;
         metrics::set_archive_integrity_status(
             &namespace,
             &name,
@@ -3795,7 +3754,7 @@ async fn perform_quorum_analysis(
     #[cfg(feature = "metrics")]
     {
         let node_type = node.spec.node_type.to_string();
-        let hardware_generation = hardware_generation_for_metrics(client, node).await;
+        let hardware_generation = hardware_generation_for_metrics(&client, &node).await;
         let network = match &node.spec.network {
             crate::crd::StellarNetwork::Mainnet => "mainnet",
             crate::crd::StellarNetwork::Testnet => "testnet",
@@ -3831,7 +3790,7 @@ async fn perform_quorum_analysis(
 
     // Update status
     analyzer
-        .update_node_status(client, node, &result)
+        .update_node_status(&client, &node, &result)
         .await
         .map_err(|e| Error::ConfigError(format!("Failed to update status: {e}")))?;
 
@@ -3849,7 +3808,7 @@ async fn perform_quorum_analysis(
 
 #[cfg(feature = "metrics")]
 async fn hardware_generation_for_metrics(client: &Client, node: &StellarNode) -> String {
-    match infra::resolve_stellar_node_infra(client, node).await {
+    match infra::resolve_stellar_node_infra(&client, &node).await {
         Ok(summary) => summary.hardware_generation_label(),
         Err(err) => {
             warn!(

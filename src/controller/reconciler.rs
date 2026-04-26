@@ -900,7 +900,7 @@ pub(crate) fn apply_stellar_node(
             &ctx,
             &node,
             ActionType::Update,
-            "PVC and ConfigMap", clones: [propagated_labels], clones: [quorum_override], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+            "PVC and ConfigMap", clones: [propagated_labels], clones: [propagated_labels], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                 resources::ensure_pvc(&client, &node, &propagated_labels, ctx.dry_run).await?;
                 resources::ensure_config_map(&client, &node, None, ctx.enable_mtls, ctx.dry_run)
                     .await?;
@@ -919,7 +919,7 @@ pub(crate) fn apply_stellar_node(
 
         // 2. Handle suspension
         if node.spec.suspended {
-            apply_or_emit!(&ctx, &node, ActionType::Update, "Suspended state resources", clones: [propagated_labels], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+            apply_or_emit!(&ctx, &node, ActionType::Update, "Suspended state resources", clones: [propagated_labels], clones: [propagated_labels], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                     resources::ensure_pvc(&client, &node, &propagated_labels, ctx.dry_run).await?;
                     resources::ensure_config_map(&client, &node, None, ctx.enable_mtls, ctx.dry_run)
                         .await?;
@@ -953,7 +953,7 @@ pub(crate) fn apply_stellar_node(
             )
             .await?;
 
-            apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Maintenance)", clones: [propagated_labels], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+            apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Maintenance)", clones: [propagated_labels], clones: [propagated_labels], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                     update_status(
                         &client,
                         &node,
@@ -1272,7 +1272,8 @@ pub(crate) fn apply_stellar_node(
             &node,
             ActionType::Update,
             "ConfigMap",
-            move |))client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+            clones: [quorum_override],
+            move |)client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                 resources::ensure_config_map(&client, &node, (*quorum_override).clone(),
                     ctx.enable_mtls,
                     ctx.dry_run,
@@ -1300,7 +1301,7 @@ pub(crate) fn apply_stellar_node(
 
         if node.spec.suspended {
             info!("Node {}/{} is suspended, scaling to 0", namespace, name);
-            apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Suspended)", clones: [propagated_labels], clones: [quorum_override], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+            apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Suspended)", clones: [propagated_labels], clones: [propagated_labels], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                     update_suspended_status(&client, &node).await?;
                     Ok(())
                 }
@@ -1966,7 +1967,7 @@ pub(crate) fn apply_stellar_node(
         let prev_dr_failover = node
             .status
             .as_ref()
-            .and_then(|)s| s.dr_status.as_ref())
+            .and_then(|s| s.dr_status.as_ref())
             .map(|d| d.failover_active)
             .unwrap_or(false);
         if let Some(mut dr_status) = dr::reconcile_dr(&client, &node).await? {

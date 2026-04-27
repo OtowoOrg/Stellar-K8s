@@ -103,6 +103,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsasl2-dev
+
       - name: Verify Cargo.toml and stellar-operator version output
         run: |
           set -euo pipefail
@@ -271,10 +276,10 @@ jobs:
         with:
           shared-key: "ci-lint"
 
-      - name: Install shellcheck
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y shellcheck
+          sudo apt-get install -y shellcheck libsasl2-dev
 
       - name: Run shellcheck
         run: |
@@ -312,6 +317,11 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "ci-test"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsasl2-dev
 
       - name: Run tests (Unit and Doc)
         run: make test
@@ -379,6 +389,11 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "ci-build"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsasl2-dev
 
       - name: Build release
         run: make build

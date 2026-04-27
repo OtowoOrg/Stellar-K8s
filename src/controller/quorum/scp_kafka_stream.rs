@@ -459,8 +459,8 @@ impl ScpStreamingSidecar {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::{BallotState, NominationState};
+    use super::*;
 
     #[test]
     fn test_scp_kafka_config_defaults() {

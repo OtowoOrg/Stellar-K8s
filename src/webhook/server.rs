@@ -655,6 +655,23 @@ fn validate_spec_builtin(object: &serde_json::Value) -> Option<ServerValidationR
         });
     }
 
+    // Organizational standards: resource limits, required labels.
+    let org_errors = super::org_validator::validate_org_standards(&node);
+    if !org_errors.is_empty() {
+        let message = org_errors
+            .iter()
+            .map(|e| format!("[{}] {} — Hint: {}", e.field, e.message, e.hint))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Some(ServerValidationResult {
+            allowed: false,
+            message: Some(message),
+            warnings: vec![],
+            plugin_results: vec![],
+            total_execution_time_ms: 0,
+        });
+    }
+
     let errors = node.spec.validate().err()?;
     // Format each error as: [spec.field] Message — Hint: how_to_fix
     let message = errors

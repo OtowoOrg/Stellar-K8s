@@ -190,4 +190,11 @@ name = "stellar-watcher"
 path = "src/bin/stellar-watcher.rs"
 required-features = ["rest-api", "metrics"]
 
+# Fork Detection Sidecar — compares local ledger hash against public anchors
+# to detect potential network forks early.
+[[bin]]
+name = "stellar-fork-detector"
+path = "src/bin/stellar-fork-detector.rs"
+required-features = ["rest-api", "metrics"]
+
 [workspace]

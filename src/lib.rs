@@ -66,6 +66,7 @@
 pub mod backup;
 pub mod byzantine;
 pub mod carbon_aware;
+pub mod fork_detector;
 pub mod controller;
 pub mod crd;
 pub mod error;

@@ -56,6 +56,7 @@
 //! ```
 
 pub mod mutation;
+pub mod org_validator;
 pub mod runtime;
 pub mod server;
 pub mod types;

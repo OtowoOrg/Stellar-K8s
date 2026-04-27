@@ -88,6 +88,22 @@ tolerations: []
 
 affinity: {}
 
+# Multi-architecture support
+# Allows targeting specific CPU architectures (amd64 / arm64 / Graviton).
+# Set arch to "arm64" to schedule on ARM/Graviton nodes, "amd64" for x86.
+# Leave empty to allow scheduling on any architecture.
+arch: ""
+
+# Example — pin operator to ARM64 (Graviton) nodes:
+# arch: arm64
+# nodeSelector:
+#   kubernetes.io/arch: arm64
+# tolerations:
+#   - key: "kubernetes.io/arch"
+#     operator: "Equal"
+#     value: "arm64"
+#     effect: "NoSchedule"
+
 # PodDisruptionBudget configuration for operator deployment
 podDisruptionBudget:
   enabled: false
@@ -118,6 +134,35 @@ sidecar:
       memory: 64Mi
     requests:
       cpu: 50m
+      memory: 32Mi
+
+# Fork Detection Sidecar — compares local ledger hash against public anchors.
+# Deploy alongside each StellarNode validator pod to detect network forks early.
+forkDetector:
+  enabled: false
+  image:
+    repository: ghcr.io/stellar/stellar-k8s
+    tag: ""
+    pullPolicy: IfNotPresent
+  # Local Stellar Core endpoint (within the same pod).
+  localEndpoint: "http://localhost:11626"
+  # Public Horizon anchor endpoints (minimum 3 recommended).
+  anchors:
+    - "https://horizon.stellar.org/ledgers?order=desc&limit=1"
+    - "https://horizon.stellar.lobstr.co/ledgers?order=desc&limit=1"
+    - "https://horizon.satoshipay.io/ledgers?order=desc&limit=1"
+  # Poll interval in seconds.
+  pollIntervalSecs: 5
+  # Number of consecutive diverging ledgers before alerting.
+  divergenceThreshold: 3
+  # Prometheus metrics port.
+  metricsPort: 9102
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 25m
       memory: 32Mi
 
 # Service for REST API and metrics

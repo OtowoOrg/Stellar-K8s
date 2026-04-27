@@ -78,6 +78,7 @@ pub mod cost;
 pub mod cross_cluster;
 pub mod cve;
 pub(crate) mod cve_reconciler;
+pub mod cve_scanner;
 #[cfg(test)]
 pub(crate) mod cve_test;
 pub mod db_pool;
@@ -141,6 +142,10 @@ pub use blue_green::{
 pub use cross_cloud_failover::reconcile_cross_cloud_failover;
 pub use cross_cluster::{check_peer_latency, ensure_cross_cluster_services, PeerLatencyStatus};
 pub use cve_reconciler::reconcile_cve_patches;
+pub use cve_scanner::{
+    list_vulnerable_pods, register_cve_metrics, spawn_background_scanner, CveScannerConfig,
+    PodScanSummary,
+};
 pub use db_pool::{
     create_pool, DbPoolConfig, DEFAULT_CONNECTION_TIMEOUT_SECS, DEFAULT_MAX_CONNECTIONS,
 };

@@ -173,6 +173,11 @@ enum Commands {
         #[arg(short = 'A', long)]
         all_namespaces: bool,
     },
+    /// List pods with CVE vulnerabilities detected by the background scanner
+    Cve {
+        #[command(subcommand)]
+        command: CveCommands,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -193,6 +198,19 @@ pub enum AuditCommands {
     Show {
         /// Audit entry ID
         id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CveCommands {
+    /// List all pods with CVE vulnerabilities
+    List {
+        /// Minimum severity to show (critical, high, medium, low)
+        #[arg(short, long, default_value = "high")]
+        severity: String,
+        /// Show all namespaces
+        #[arg(short = 'A', long)]
+        all_namespaces: bool,
     },
 }
 
@@ -221,7 +239,8 @@ async fn run(cli: Cli) -> Result<()> {
             | Commands::Explain { .. }
             | Commands::Search { .. }
             | Commands::Completions { .. }
-            | Commands::Summary { .. } => None,
+            | Commands::Summary { .. }
+            | Commands::Cve { .. } => None,
             Commands::Logs { node_name, .. } => Some(format!(
                 "Stream logs from StellarNode '{node_name}' (read-only, no cluster mutation)"
             )),
@@ -433,6 +452,80 @@ async fn run(cli: Cli) -> Result<()> {
                 &cli.output,
             )
             .await
+        }
+        Commands::Cve { command } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
+            match command {
+                CveCommands::List {
+                    severity,
+                    all_namespaces,
+                } => {
+                    use stellar_k8s::controller::cve::VulnerabilitySeverity;
+                    use stellar_k8s::controller::{list_vulnerable_pods, CveScannerConfig};
+
+                    let min_severity = match severity.to_lowercase().as_str() {
+                        "critical" => VulnerabilitySeverity::Critical,
+                        "high" => VulnerabilitySeverity::High,
+                        "medium" => VulnerabilitySeverity::Medium,
+                        _ => VulnerabilitySeverity::Low,
+                    };
+
+                    let namespaces = if all_namespaces {
+                        vec![]
+                    } else {
+                        cli.namespace
+                            .as_deref()
+                            .map(|ns| vec![ns.to_string()])
+                            .unwrap_or_default()
+                    };
+
+                    let scanner_endpoint = std::env::var("TRIVY_API_ENDPOINT")
+                        .unwrap_or_else(|_| "http://trivy-api.security-scanning:8080".to_string());
+
+                    let config = CveScannerConfig {
+                        scanner_endpoint,
+                        namespaces,
+                        ..Default::default()
+                    };
+
+                    let pods = list_vulnerable_pods(&client, &config, min_severity).await?;
+
+                    if pods.is_empty() {
+                        println!("No vulnerable pods found (min severity: {}).", severity);
+                        return Ok(());
+                    }
+
+                    println!(
+                        "{:<40} {:<20} {:<50} {:>8} {:>6} {:>6} {:>6}",
+                        "NAMESPACE/POD", "IMAGE", "TAG", "CRITICAL", "HIGH", "MED", "LOW"
+                    );
+                    println!("{}", "-".repeat(140));
+
+                    for pod in &pods {
+                        let image_parts: Vec<&str> = pod.image.splitn(2, ':').collect();
+                        let (img, tag) = if image_parts.len() == 2 {
+                            (image_parts[0], image_parts[1])
+                        } else {
+                            (pod.image.as_str(), "latest")
+                        };
+
+                        let ns_pod = format!("{}/{}", pod.namespace, pod.pod_name);
+                        println!(
+                            "{:<40} {:<20} {:<50} {:>8} {:>6} {:>6} {:>6}",
+                            ns_pod,
+                            &img[img.len().saturating_sub(20)..],
+                            &tag[..tag.len().min(50)],
+                            pod.cve_count.critical,
+                            pod.cve_count.high,
+                            pod.cve_count.medium,
+                            pod.cve_count.low,
+                        );
+                    }
+
+                    println!("\nTotal: {} vulnerable pods", pods.len());
+                    Ok(())
+                }
+            }
         }
     }
 }

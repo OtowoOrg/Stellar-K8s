@@ -65,6 +65,7 @@ pub mod resource_meta;
 
 pub(crate) mod archive_health;
 pub mod archive_prune;
+pub mod zk_archive_verifier;
 pub mod audit;
 pub mod audit_log;
 pub mod audit_sink;

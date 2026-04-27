@@ -334,6 +334,60 @@ pub async fn check_archive_integrity(
     futures::future::join_all(checks).await
 }
 
+/// Run ZK manifest verification for a list of archive URLs and update Prometheus metrics.
+///
+/// For each URL, this fetches and verifies the `archive-manifest.json` if present.
+/// Archives without a manifest (plain, unencrypted) are treated as passing.
+/// The Archive Health condition should be set to `False` when any result has gaps.
+///
+/// # Arguments
+/// * `urls` - Archive URLs to check
+/// * `expected_signer_key` - Optional hex-encoded Ed25519 public key that must match the manifest
+/// * `timeout` - Per-URL HTTP timeout
+/// * `node_namespace` / `node_name` / `node_type` / `network` - Labels for Prometheus metrics
+pub async fn check_archive_zk_integrity(
+    urls: &[String],
+    expected_signer_key: Option<&str>,
+    timeout: Option<Duration>,
+    node_namespace: &str,
+    node_name: &str,
+    node_type: &str,
+    network: &str,
+) -> Vec<super::zk_archive_verifier::ZkVerificationResult> {
+    let timeout = timeout.unwrap_or(Duration::from_secs(15));
+    let results =
+        super::zk_archive_verifier::run_zk_verification(urls, expected_signer_key, timeout).await;
+
+    #[cfg(feature = "metrics")]
+    {
+        for r in &results {
+            crate::controller::metrics::set_zk_archive_signature_valid(
+                node_namespace,
+                node_name,
+                node_type,
+                network,
+                "",
+                r.signature_valid,
+            );
+            crate::controller::metrics::set_zk_archive_chain_gaps(
+                node_namespace,
+                node_name,
+                node_type,
+                network,
+                "",
+                r.gaps.len(),
+            );
+        }
+    }
+    #[cfg(not(feature = "metrics"))]
+    {
+        // suppress unused variable warnings when metrics feature is off
+        let _ = (node_namespace, node_name, node_type, network);
+    }
+
+    results
+}
+
 /// Calculate exponential backoff delay for retry attempts
 ///
 /// # Arguments

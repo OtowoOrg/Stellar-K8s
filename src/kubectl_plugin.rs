@@ -193,11 +193,17 @@ pub enum AuditCommands {
         /// Filter by actor
         #[arg(short, long)]
         actor: Option<String>,
+        /// Output as JSON (suitable for automated security tools)
+        #[arg(short, long)]
+        json: bool,
     },
     /// Show detailed diff for a specific audit entry
     Show {
         /// Audit entry ID
         id: String,
+        /// Output as JSON (suitable for automated security tools)
+        #[arg(short, long)]
+        json: bool,
     },
 }
 
@@ -439,8 +445,9 @@ async fn run(cli: Cli) -> Result<()> {
                     limit,
                     resource,
                     actor,
-                } => reporter.list(limit, resource, actor).await,
-                AuditCommands::Show { id } => reporter.show(&id).await,
+                    json,
+                } => reporter.list(limit, resource, actor, json).await,
+                AuditCommands::Show { id, json } => reporter.show(&id, json).await,
             }
         }
         Commands::Summary { all_namespaces } => {

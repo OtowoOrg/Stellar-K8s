@@ -106,7 +106,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsasl2-dev
+          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
 
       - name: Verify Cargo.toml and stellar-operator version output
         run: |
@@ -279,7 +279,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y shellcheck libsasl2-dev
+          sudo apt-get install -y shellcheck libsasl2-dev libcurl4-openssl-dev
 
       - name: Run shellcheck
         run: |
@@ -321,7 +321,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsasl2-dev
+          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
 
       - name: Run tests (Unit and Doc)
         run: make test
@@ -393,7 +393,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsasl2-dev
+          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
 
       - name: Build release
         run: make build

@@ -64,7 +64,7 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsasl2-dev
+          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
 
       # ── 3. Build release binary (AC #1) ─────────────────────────────────────
       - name: Build release binary

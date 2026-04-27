@@ -19,7 +19,7 @@ pub struct PruningWorker {
 impl PruningWorker {
     /// Create a new pruning worker with the given policy
     pub fn new(policy: PruningPolicy) -> Result<Self, Error> {
-        policy.validate().map_err(|e| Error::ConfigError(e))?;
+        policy.validate().map_err(Error::ConfigError)?;
         Ok(Self { policy })
     }
 

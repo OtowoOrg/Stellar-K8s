@@ -501,7 +501,7 @@ pub async fn execute_prune(
     let errors: Arc<tokio::sync::Mutex<Vec<String>>> =
         Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
-    let delete_stream = stream::iter(deletable.iter())
+    let delete_stream = stream::iter(deletable.into_iter())
         .map(|checkpoint| {
             let semaphore = semaphore.clone();
             let errors = errors.clone();
@@ -509,7 +509,7 @@ pub async fn execute_prune(
             async move {
                 let _permit = semaphore.acquire().await.expect("Semaphore acquired");
 
-                match delete_checkpoint(checkpoint, &location).await {
+                match delete_checkpoint(&checkpoint, &location).await {
                     Ok(_) => {
                         debug!("Deleted checkpoint: ledger {}", checkpoint.ledger_seq);
                     }
@@ -528,7 +528,7 @@ pub async fn execute_prune(
 
     let final_errors = errors.lock().await.clone();
 
-    let deleted_count = deletable.len() - final_errors.len();
+    let deleted_count = deleted_ledgers.len() - final_errors.len();
 
     info!(
         "Pruning complete: {} deleted, {} errors",
@@ -538,7 +538,7 @@ pub async fn execute_prune(
 
     Ok(PruneResult {
         total_checkpoints: 0, // Will be set by caller
-        eligible_for_deletion: deletable.len(),
+        eligible_for_deletion: deleted_ledgers.len(),
         deleted_count,
         retained_count: 0, // Will be set by caller
         bytes_freed: total_bytes,

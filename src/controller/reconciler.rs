@@ -1829,7 +1829,7 @@ pub(crate) fn apply_stellar_node(
         // Queries the stellar-core /info endpoint to determine whether the node is
         // "Catching up" or "Synced!" and applies the matching resource profile via
         // an in-place pod patch (no pod restart required).
-        if let Some(scaling_config) = &node.spec.sync_state_scaling {
+        if let Some(scaling_config) = node.spec.sync_state_scaling.clone() {
             if scaling_config.enabled && node.spec.node_type == NodeType::Validator {
                 let sync_state = sync_state_monitor::resolve_node_sync_state(&client, &node).await;
 
@@ -1866,7 +1866,7 @@ pub(crate) fn apply_stellar_node(
                     ActionType::Update,
                     "Sync-state resource scaling",
                     move |client: Client, _ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
-                        sync_scale::reconcile_sync_scaling(&client, &node, scaling_config, &sync_state)
+                        sync_scale::reconcile_sync_scaling(&client, &node, &scaling_config, &sync_state)
                             .await?;
                         Ok(())
                     }
@@ -1875,9 +1875,9 @@ pub(crate) fn apply_stellar_node(
             }
         }
 
-        if let Some(cve_config) = &node.spec.cve_handling {
+        if let Some(cve_config) = node.spec.cve_handling.clone() {
             apply_or_emit!(&ctx, &node, ActionType::Update, "CVE Handling", move |client: Client, _ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
-                cve_reconciler::reconcile_cve_patches(&client, &node, cve_config).await?;
+                cve_reconciler::reconcile_cve_patches(&client, &node, &cve_config).await?;
                 Ok(())
             })
             .await?;
@@ -2667,7 +2667,7 @@ async fn check_canary_health(
         .map(|c| c.max_error_rate)
         .unwrap_or(0.05);
 
-    match measure_canary_error_rate(&client, &node, &namespace).await {
+    match measure_canary_error_rate(client, node, &namespace).await {
         Ok(error_rate) => {
             if error_rate > max_error_rate {
                 return Ok(health::HealthCheckResult::unhealthy(format!(
@@ -3097,7 +3097,7 @@ async fn run_archive_integrity_check(
 
     // Update Prometheus metric with the maximum observed lag.
     #[cfg(feature = "metrics")]
-    let hardware_generation = hardware_generation_for_metrics(&client, &node).await;
+    let hardware_generation = hardware_generation_for_metrics(client, node).await;
     #[cfg(feature = "metrics")]
     metrics::set_archive_ledger_lag(
         &namespace,
@@ -3454,7 +3454,7 @@ async fn run_archive_checkpoint_verification(
     {
         let node_type = format!("{:?}", node.spec.node_type);
         let network = format!("{:?}", node.spec.network);
-        let hardware = hardware_generation_for_metrics(&client, &node).await;
+        let hardware = hardware_generation_for_metrics(client, node).await;
         metrics::set_archive_integrity_status(
             &namespace,
             &name,
@@ -3747,7 +3747,7 @@ async fn perform_quorum_analysis(
     #[cfg(feature = "metrics")]
     {
         let node_type = node.spec.node_type.to_string();
-        let hardware_generation = hardware_generation_for_metrics(&client, &node).await;
+        let hardware_generation = hardware_generation_for_metrics(client, node).await;
         let network = match &node.spec.network {
             crate::crd::StellarNetwork::Mainnet => "mainnet",
             crate::crd::StellarNetwork::Testnet => "testnet",
@@ -3783,7 +3783,7 @@ async fn perform_quorum_analysis(
 
     // Update status
     analyzer
-        .update_node_status(&client, &node, &result)
+        .update_node_status(client, node, &result)
         .await
         .map_err(|e| Error::ConfigError(format!("Failed to update status: {e}")))?;
 
@@ -3801,7 +3801,7 @@ async fn perform_quorum_analysis(
 
 #[cfg(feature = "metrics")]
 async fn hardware_generation_for_metrics(client: &Client, node: &StellarNode) -> String {
-    match infra::resolve_stellar_node_infra(&client, &node).await {
+    match infra::resolve_stellar_node_infra(client, node).await {
         Ok(summary) => summary.hardware_generation_label(),
         Err(err) => {
             warn!(

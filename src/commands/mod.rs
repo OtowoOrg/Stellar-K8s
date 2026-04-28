@@ -6,6 +6,7 @@
 
 pub mod benchmark;
 pub mod check_crd;
+pub mod doctor;
 pub mod info;
 pub mod operator;
 pub mod runbook;

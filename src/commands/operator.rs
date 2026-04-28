@@ -402,6 +402,37 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
         info!("Auto-snapshot worker spawned");
     }
 
+    // Start the snapshot integrity checker background worker
+    {
+        use stellar_k8s::controller::snapshot_integrity::{
+            SnapshotIntegrityChecker, SnapshotIntegrityConfig,
+        };
+
+        let integrity_client = client.clone();
+        let integrity_config = std::env::var("SNAPSHOT_INTEGRITY_CONFIG")
+            .ok()
+            .and_then(|s| serde_json::from_str::<SnapshotIntegrityConfig>(&s).ok())
+            .unwrap_or_default();
+
+        if integrity_config.enabled {
+            info!(
+                "Starting snapshot integrity checker (schedule: {})",
+                integrity_config.schedule
+            );
+            tokio::spawn(
+                async move {
+                    let checker = SnapshotIntegrityChecker::new(integrity_config, integrity_client);
+                    if let Err(e) = checker.start().await {
+                        tracing::error!("Snapshot integrity checker error: {:?}", e);
+                    }
+                }
+                .instrument(root_span.clone()),
+            );
+        } else {
+            info!("Snapshot integrity checker disabled (set SNAPSHOT_INTEGRITY_CONFIG to enable)");
+        }
+    }
+
     let result = tokio::select! {
         res = controller::run_controller(state) => {
             res

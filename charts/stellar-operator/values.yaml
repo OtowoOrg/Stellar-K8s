@@ -54,6 +54,14 @@ podAnnotations:
   prometheus.io/port: "9090"
   prometheus.io/path: "/metrics"
 
+# Custom annotations to apply to all resources (Deployment, Service, etc)
+# These annotations will be propagated to both resource metadata and pod spec template
+# Example:
+# extraAnnotations:
+#   custom.io/env: production
+#   custom.io/team: platform
+extraAnnotations: {}
+
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 65532

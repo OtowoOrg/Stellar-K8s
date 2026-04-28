@@ -101,6 +101,23 @@ Please do not delete the template sections. PRs with empty descriptions or unche
 - **Docker**: For building container images
 - **Cargo-audit**: For security scans (`cargo install cargo-audit`)
 
+### macOS Setup
+
+For macOS users, we provide an automated setup script that installs all necessary dependencies:
+
+```bash
+bash scripts/setup-mac.sh
+```
+
+This script will:
+- Install Homebrew (if not present)
+- Install Rust and update to latest stable
+- Install Docker, kubectl, kind, Helm, and GitHub CLI
+- Install cargo-audit and pre-commit
+- Verify all installations
+
+After running the script, follow the manual steps printed at the end (Docker Desktop startup, GitHub CLI authentication, etc.).
+
 ### Setup & Local Checks
 
 1. Setup development environment:

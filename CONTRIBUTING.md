@@ -1,146 +1,189 @@
 # Contributing to Stellar-K8s
 
-First off, thank you for considering contributing to Stellar-K8s! This project aims to provide a robust, cloud-native Kubernetes operator for managing Stellar infrastructure.
+Thank you for contributing to Stellar-K8s! This guide explains how to work with the project, keep your pull requests ready for review, and follow our commit and merge conventions.
 
-This document provides a clear guide on how to contribute to the project, covering everything from our developer workflow to commit structures.
+## 1. Fork and Pull Request Workflow
 
-## 1. Fork Workflow
+We use a fork-and-pull-request model. The basic flow is:
 
-We use a standard fork and pull request workflow for contributions:
-
-1. **Fork the repository** on GitHub.
-2. **Clone your fork** locally:
+1. **Fork** the repository on GitHub.
+2. **Clone** your fork locally:
    ```bash
    git clone https://github.com/YOUR_USERNAME/stellar-k8s.git
    cd stellar-k8s
    ```
-3. **Add the upstream remote** so you can keep your fork synced:
+3. **Add the upstream remote**:
    ```bash
-   git remote add upstream https://github.com/stellar/stellar-k8s.git
+   git remote add upstream https://github.com/OtowoOrg/Stellar-K8s.git
    ```
-4. **Create a new branch** for your feature or bugfix (see *Branch Naming* below).
-5. **Commit your changes**, keeping them focused and atomic.
-6. **Push to your fork** on GitHub.
-7. **Open a Pull Request** against the `main` branch of the upstream repository.
-
-   This will:
-   - Install Rust toolchain and components
-   - Install cargo-audit and cargo-watch
-   - Install pre-commit hooks for automatic code quality checks
-
-3. Run local checks before committing:
-## 2. Branch Naming
-
-Please use descriptive branch names based on the nature of your contribution. We recommend the following prefixes:
-
-   # Run pre-commit hooks manually
-   make pre-commit
-
-   # Or comprehensive pre-push check
-   make ci-local
+4. **Sync from upstream** before creating a branch:
+   ```bash
+   git fetch upstream
+   git checkout main
+   git merge upstream/main
    ```
-- `feat/` for new features (e.g., `feat/auto-mtls`)
-- `fix/` for bug fixes (e.g., `fix/panic-on-startup`)
-- `docs/` for documentation updates (e.g., `docs/update-architecture`)
-- `chore/` for maintenance tasks, refactoring, or dependency updates (e.g., `chore/bump-kube-rs`)
-- `test/` for adding or improving tests (e.g., `test/e2e-service-mesh`)
+5. **Create a new branch** for your work.
+6. **Make focused commits**.
+7. **Run local checks** before pushing.
+8. **Push your branch** to your fork.
+9. **Open a Pull Request** against the upstream `main` branch.
 
-## 3. Commit Conventions
+## 2. Branch Naming and Strategy
 
-We strictly follow [Conventional Commits](https://www.conventionalcommits.org/). This allows us to automate our changelog generation and semantic versioning.
+Use clear, descriptive branch names. Recommended prefixes:
 
-Your commit messages should be formatted as follows:
-```
-<type>(<optional scope>): <description>
+- `feat/` for new features (e.g. `feat/auto-mtls`)
+- `fix/` for bug fixes (e.g. `fix/panic-on-startup`)
+- `docs/` for documentation updates (e.g. `docs/update-architecture`)
+- `chore/` for maintenance or dependency changes (e.g. `chore/bump-kube-rs`)
+- `test/` for test-related work (e.g. `test/e2e-service-mesh`)
 
-[optional body]
+### Branching Rules
 
-[optional footer(s)]
-```
+- Always branch from the latest `main`.
+- Do not work directly on `main`.
+- Keep each branch scoped to a single feature, bug fix, or documentation item.
+- Rebase or merge `main` into your branch before opening a PR if `main` has advanced.
 
-**Common types include:**
-- `feat:` A new feature
-- `fix:` A bug fix
-- `docs:` Documentation only changes
-- `chore:` Changes to the build process or auxiliary tools and libraries
-- `refactor:` A code change that neither fixes a bug nor adds a feature
-- `test:` Adding missing tests or correcting existing tests
+### Merge Strategy
 
-## 4. Developer Certificate of Origin (DCO) Sign-off
+We prefer a clean history. When your PR is approved, maintainers will typically merge it using:
 
-To comply with open-source legal standards, **all commits must include a `Signed-off-by` line indicating that you agree to the [Developer Certificate of Origin (DCO)](https://developercertificate.org/)**.
+- **Squash and merge** for feature and fix branches
+- **Rebase and merge** only when preserving a linear history is important
 
-You can automatically add this sign-off to your commits by using the `-s` or `--signoff` flag:
+If your PR contains multiple logical changes, split it into separate branches and PRs.
+
+## 3. PR Checklist
+
+Before opening a PR, confirm the following:
+
+- [ ] The code or documentation change is complete and focused.
+- [ ] The PR targets the `main` branch.
+- [ ] Your branch is up to date with `main`.
+- [ ] You have run tests locally.
+- [ ] You have run formatting and lint checks.
+- [ ] You have added or updated documentation, if needed.
+- [ ] Commit messages are clear, accurate, and follow our conventions.
+- [ ] Every commit includes a DCO sign-off.
+- [ ] The PR description is filled out completely using the template.
+- [ ] The PR includes links to any related issues or design discussions.
+
+### Required checks
+
+Run these locally before submitting:
+
 ```bash
-git commit -s -m "feat: your feature description"
+cargo fmt --all
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+make ci-local
 ```
 
-This will append the following line to your commit message:
-`Signed-off-by: Jane Doe <jane.doe@example.com>`
+If your change adds shell scripts or repository tooling, also run:
 
-**Note:** The name and email used in the sign-off must match the author of the commit. PRs with unsigned commits will fail our CI pipeline checks.
+```bash
+find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error
+```
 
-## 5. Pull Request Template Usage
+## 4. Commit Message Examples
 
-When you open a Pull Request, a template will automatically populate the description box. **You must fill out this template completely.**
+We follow [Conventional Commits](https://www.conventionalcommits.org/).
 
-The PR template includes a checklist to ensure your code:
-- Passes all CI tests (`cargo test`)
-- Is properly formatted (`cargo fmt`)
-- Passes linting (`cargo clippy`)
-- Includes a DCO sign-off
+Correct examples:
 
-Please do not delete the template sections. PRs with empty descriptions or unchecked vital requirements will be heavily delayed or closed.
+```text
+feat(cli): add support for --dry-run mode
+fix(webhook): handle nil admission review objects
+docs(contributing): clarify PR checklist and branch strategy
+test(integration): add end-to-end service mesh coverage
+chore(deps): bump kube-rs to 0.1.0
+```
 
-## 6. Development Environment
+When to use each type:
+
+- `feat:` new functionality
+- `fix:` bug fixes
+- `docs:` documentation-only changes
+- `chore:` maintenance tasks and dependency updates
+- `refactor:` code changes that do not add features or fix bugs
+- `test:` adding or updating tests
+
+Example with body and footer:
+
+```text
+fix(metrics): avoid panic when metrics registry is empty
+
+This change adds a guard around metric registration so operator startup
+continues even if no collector is present.
+
+Signed-off-by: Alice Doe <alice@example.com>
+```
+
+## 5. Developer Certificate of Origin (DCO)
+
+All commits must include a `Signed-off-by` line.
+
+Add this automatically with:
+
+```bash
+git commit -s -m "fix: your fix description"
+```
+
+The sign-off must match the commit author. Unsigned commits may fail CI and block merge.
+
+## 6. Pull Request Template
+
+A PR template is provided in `.github/PULL_REQUEST_TEMPLATE.md` and will populate the PR description when you open a PR.
+
+Fill out every section fully. Do not leave the template blank or remove required checklist items.
+
+The template ensures your change includes:
+
+- tests and validation
+- documentation updates when required
+- formatting and linting checks
+- DCO sign-off
+
+## 7. Development Environment
 
 ### Prerequisites
 
-- **Rust**: Latest stable version (1.88+)
-- **Kubernetes**: A local cluster like `kind` or `minikube`
-- **Docker**: For building container images
-- **Cargo-audit**: For security scans (`cargo install cargo-audit`)
+- Rust stable (1.88+)
+- Kubernetes local cluster (`kind`, `minikube`, etc.)
+- Docker
+- `cargo-audit`
+- `pre-commit` hooks
 
-### macOS Setup
+### Setup
 
-For macOS users, we provide an automated setup script that installs all necessary dependencies:
+Use the project make targets and scripts:
 
 ```bash
-bash scripts/setup-mac.sh
+make dev-setup
+bash scripts/setup-mac.sh  # macOS only
 ```
 
-This script will:
-- Install Homebrew (if not present)
-- Install Rust and update to latest stable
-- Install Docker, kubectl, kind, Helm, and GitHub CLI
-- Install cargo-audit and pre-commit
-- Verify all installations
+### Local checks
 
-After running the script, follow the manual steps printed at the end (Docker Desktop startup, GitHub CLI authentication, etc.).
+```bash
+cargo fmt --all
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+make quick
+make ci-local
+```
 
-### Setup & Local Checks
+## 8. Coding Standards
 
-1. Setup development environment:
-   ```bash
-   make dev-setup
-   ```
-2. Run local checks before committing:
-   ```bash
-   make quick     # Use this for a fast compilation check
-   make ci-local  # Comprehensive pre-push check mimicking CI
-   ```
+- Format Rust code with `cargo fmt`.
+- Use `cargo clippy --all-targets --all-features -- -D warnings` for linting.
+- Add or update tests for code changes.
+- Document behavior changes in code comments and docs.
+- Keep PRs small and easy to review.
 
-### Coding Standards
+## 9. Need Help?
 
-- **Formatting**: Always run `cargo fmt` before committing.
-- **Linting**: We use Clippy. Ensure `cargo clippy --all-targets --all-features -- -D warnings` passes.
-- **Shell scripts**: We lint scripts under `scripts/` with ShellCheck. Run `find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error` locally.
-- **Security**: All dependencies must be audited. We resolve all `RUSTSEC` advisories immediately.
-- **Error Handling**: Prefer the `Result<T>` type defined in `src/error.rs` using `thiserror`.
+If you're stuck, open a Draft PR or create an issue to ask for guidance.
 
-## Glossary
-
-New to Stellar-K8s? Check out the [Glossary](docs/glossary.md) for definitions of common terms like [Validator](docs/glossary.md#validator), [Reconciliation](docs/glossary.md#reconciliation), [SCP](docs/glossary.md#scp-stellar-consensus-protocol), and [Horizon](docs/glossary.md#horizon).
-
-## Need Help?
-If you're stuck, feel free to open a Draft PR or reach out in the repository's discussions/issues!
+Refer to [README.md](README.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for additional project setup and workflow information.

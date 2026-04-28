@@ -4,6 +4,10 @@ metadata:
   name: {{ include "stellar-operator.fullname" . }}
   labels:
     {{- include "stellar-operator.labels" . | nindent 4 }}
+  {{- with .Values.extraAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   type: {{ .Values.service.type }}
   ports:

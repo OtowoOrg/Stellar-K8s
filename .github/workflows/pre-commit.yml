@@ -15,6 +15,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libssl-dev \
+            libsasl2-dev \
+            pkg-config \
+            libcurl4-openssl-dev \
+            cmake
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:

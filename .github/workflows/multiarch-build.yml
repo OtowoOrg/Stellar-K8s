@@ -186,12 +186,14 @@ jobs:
     steps:
       - name: Download amd64 results
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: bench-amd64
           path: results/
 
       - name: Download arm64 results
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: bench-arm64
           path: results/
@@ -200,12 +202,23 @@ jobs:
         run: |
           echo "## Architecture Benchmark Comparison" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### AMD64 (x86_64)" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat results/bench-amd64.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          if [ -f results/bench-amd64.txt ]; then
+            echo "### AMD64 (x86_64)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat results/bench-amd64.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ AMD64 benchmark results not available" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ARM64 (Graviton / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat results/bench-arm64.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          if [ -f results/bench-arm64.txt ]; then
+            echo "### ARM64 (Graviton / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat results/bench-arm64.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ ARM64 benchmark results not available" >> $GITHUB_STEP_SUMMARY
+          fi

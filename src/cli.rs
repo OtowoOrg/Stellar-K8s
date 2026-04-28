@@ -46,6 +46,10 @@ pub struct Args {
     /// Skip the background version check against GitHub releases.
     #[arg(long, global = true, env = "STELLAR_OFFLINE")]
     pub offline: bool,
+
+    /// Print version and exit
+    #[arg(short = 'v', long, global = true)]
+    pub version: bool,
 }
 
 #[derive(Subcommand, Debug)]

@@ -33,6 +33,7 @@ RUN apt-get update -qq && \
 
 # Install cross-compilation toolchains when building for arm64 on amd64 host.
 RUN if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDPLATFORM" != "$TARGETPLATFORM" ]; then \
+      dpkg --add-architecture arm64 && \
       apt-get update -qq && \
       apt-get install -y --no-install-recommends \
         gcc-aarch64-linux-gnu \

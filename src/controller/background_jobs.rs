@@ -78,6 +78,8 @@ pub enum JobKind {
     CrossClusterCheck,
     /// Webhook delivery retry.
     WebhookDelivery,
+    /// Snapshot integrity check for S3/GCS snapshots.
+    SnapshotIntegrityCheck,
     /// Any other job not covered above.
     Other(String),
 }
@@ -306,6 +308,7 @@ impl JobRegistry {
                         JobKind::BlueGreenRollout => "blue_green_rollout",
                         JobKind::CrossClusterCheck => "cross_cluster_check",
                         JobKind::WebhookDelivery => "webhook_delivery",
+                        JobKind::SnapshotIntegrityCheck => "snapshot_integrity_check",
                         JobKind::Other(s) => s.as_str(),
                     };
                     kind_str == k

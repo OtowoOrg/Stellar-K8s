@@ -117,6 +117,14 @@ pub static PVC_SIZE_BYTES: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
 pub static PVC_EXPANSION_COUNT: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
+/// Gauge tracking snapshot integrity check status (1 = pass, 0 = fail)
+pub static SNAPSHOT_INTEGRITY_STATUS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking snapshot integrity check duration in milliseconds
+pub static SNAPSHOT_INTEGRITY_CHECK_DURATION_MS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
 /// Histogram tracking consensus latency per validator
 pub static QUORUM_CONSENSUS_LATENCY_MS: Lazy<Family<NodeLabels, Histogram>> = Lazy::new(|| {
     fn latency_histogram() -> Histogram {
@@ -468,6 +476,18 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_pvc_expansion_count",
         "Number of expansions performed on this PVC",
         PVC_EXPANSION_COUNT.clone(),
+    );
+
+    // Register snapshot integrity metrics
+    registry.register(
+        "stellar_snapshot_integrity_status",
+        "Snapshot integrity check result (1 = pass, 0 = fail)",
+        SNAPSHOT_INTEGRITY_STATUS.clone(),
+    );
+    registry.register(
+        "stellar_snapshot_integrity_check_duration_ms",
+        "Duration of snapshot integrity check in milliseconds",
+        SNAPSHOT_INTEGRITY_CHECK_DURATION_MS.clone(),
     );
 
     // Register operator build-info and leader metrics

@@ -46,8 +46,11 @@ RUN if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDPLATFORM" != "$TARGETPLATFORM" ];
     fi
 
 # Set Cargo target based on TARGETARCH and OpenSSL environment variables for cross-compilation
+# Only set these when actually cross-compiling for arm64
 ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
 ENV OPENSSL_DIR=/usr/lib/aarch64-linux-gnu
+ENV PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig
+ENV PKG_CONFIG_ALLOW_CROSS=1
 
 # Copy the recipe and build dependencies first (cached layer)
 COPY --from=planner /app/recipe.json recipe.json

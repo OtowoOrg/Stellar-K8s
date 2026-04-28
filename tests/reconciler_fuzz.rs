@@ -362,11 +362,6 @@ async fn reconcile_with_failing_client_never_panics_and_converges() {
         job_registry: std::sync::Arc::new(Default::default()),
         audit_log: std::sync::Arc::new(Default::default()),
         oidc_config: None,
-        audit_log: std::sync::Arc::new(Default::default()),
-        job_registry: std::sync::Arc::new(Default::default()),
-        retry_budget_max_attempts: 3,
-        retry_budget_retriable_secs: 15,
-        retry_budget_nonretriable_secs: 60,
     });
     let node = make_node(
         base_validator_spec(),

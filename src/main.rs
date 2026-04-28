@@ -4,6 +4,7 @@ mod commands;
 use crate::cli::{Args, Commands};
 use crate::commands::benchmark::run_benchmark_controller_cmd;
 use crate::commands::check_crd::run_check_crd;
+use crate::commands::doctor::run_doctor;
 use crate::commands::info::run_info;
 use crate::commands::operator::run_operator;
 use crate::commands::runbook::run_generate_runbook;
@@ -53,10 +54,16 @@ async fn main() -> Result<(), Error> {
             return run_operator(run_args).await;
         }
         Commands::Webhook(webhook_args) => return run_webhook(webhook_args).await,
+        Commands::Doctor(doctor_args) => return run_doctor(doctor_args).await,
         Commands::Benchmark(benchmark_args) => {
             return run_benchmark_controller_cmd(benchmark_args).await
         }
         Commands::Simulator(cli) => return run_simulator(cli).await,
+        Commands::BenchmarkCompare(compare_args) => {
+            return stellar_k8s::benchmark_compare::run_benchmark_compare(compare_args)
+                .await
+                .map_err(|e| Error::ConfigError(e.to_string()));
+        }
     };
 
     version_check::check_and_notify(offline).await;

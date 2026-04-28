@@ -138,19 +138,15 @@ impl Default for BackupSource {
 /// Verification strategy
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum VerificationStrategy {
     /// Quick verification (checksums only)
     Quick,
     /// Standard verification (checksums + sample queries)
+    #[default]
     Standard,
     /// Full verification (checksums + full table scans + benchmarks)
     Full,
-}
-
-impl Default for VerificationStrategy {
-    fn default() -> Self {
-        Self::Standard
-    }
 }
 
 /// Resource limits for verification pods

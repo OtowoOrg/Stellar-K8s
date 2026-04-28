@@ -27,6 +27,10 @@ pub enum QuorumAnalysisError {
     /// Serialization error
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
+
+    /// Kafka producer error
+    #[error("Kafka error: {0}")]
+    KafkaError(String),
 }
 
 pub type Result<T> = std::result::Result<T, QuorumAnalysisError>;

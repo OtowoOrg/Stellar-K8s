@@ -1,8 +1,8 @@
 use crate::cli::InfoArgs;
-use crate::crd::StellarNode;
-use crate::infra;
-use crate::Error;
 use kube::ResourceExt;
+use stellar_k8s::crd::StellarNode;
+use stellar_k8s::infra;
+use stellar_k8s::Error;
 
 pub async fn run_info(args: InfoArgs) -> Result<(), Error> {
     use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};

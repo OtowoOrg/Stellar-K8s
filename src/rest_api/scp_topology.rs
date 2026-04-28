@@ -147,7 +147,7 @@ async fn build_topology_snapshot(state: &Arc<ControllerState>) -> QuorumTopology
         };
     }
 
-    let client = ScpClient::new(Duration::from_secs(5));
+    let client = ScpClient::new(Duration::from_secs(5), 3);
     let mut scp_states: Vec<ScpState> = Vec::new();
 
     for ip in &pod_ips {

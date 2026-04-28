@@ -1,0 +1,146 @@
+{{- if .Values.scpAnalytics.enabled }}
+---
+# ConfigMap for SCP Kafka streaming configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-scp-kafka-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scp-analytics
+data:
+  kafka-config.yaml: |
+    bootstrapServers: {{ .Values.scpAnalytics.kafka.bootstrapServers | quote }}
+    topic: {{ .Values.scpAnalytics.kafka.topic | default "stellar-scp-messages" | quote }}
+    format: {{ .Values.scpAnalytics.kafka.format | default "avro" | quote }}
+    compression: {{ .Values.scpAnalytics.kafka.compression | default "snappy" | quote }}
+    batchSize: {{ .Values.scpAnalytics.kafka.batchSize | default 1000000 }}
+    lingerMs: {{ .Values.scpAnalytics.kafka.lingerMs | default 100 }}
+    enableDeduplication: {{ .Values.scpAnalytics.kafka.enableDeduplication | default true }}
+    pollIntervalSecs: {{ .Values.scpAnalytics.kafka.pollIntervalSecs | default 1 }}
+    {{- if .Values.scpAnalytics.kafka.schemaRegistryUrl }}
+    schemaRegistryUrl: {{ .Values.scpAnalytics.kafka.schemaRegistryUrl | quote }}
+    {{- end }}
+    {{- if .Values.scpAnalytics.kafka.sasl }}
+    sasl:
+      mechanism: {{ .Values.scpAnalytics.kafka.sasl.mechanism | quote }}
+      username: {{ .Values.scpAnalytics.kafka.sasl.username | quote }}
+      password: {{ .Values.scpAnalytics.kafka.sasl.password | quote }}
+    {{- end }}
+
+---
+# Deployment for Topology Health Consumer
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-topology-health-consumer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: topology-health-consumer
+spec:
+  replicas: {{ .Values.scpAnalytics.consumer.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "stellar-operator.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: topology-health-consumer
+  template:
+    metadata:
+      labels:
+        {{- include "stellar-operator.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: topology-health-consumer
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "stellar-operator.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: topology-health-consumer
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /usr/local/bin/stellar-operator
+            - topology-health-consumer
+            - --kafka-config=/etc/kafka/kafka-config.yaml
+          env:
+            - name: RUST_LOG
+              value: {{ .Values.scpAnalytics.consumer.logLevel | default "info" }}
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: {{ .Values.scpAnalytics.kafka.bootstrapServers | quote }}
+            - name: KAFKA_TOPIC
+              value: {{ .Values.scpAnalytics.kafka.topic | default "stellar-scp-messages" | quote }}
+            - name: CONSUMER_GROUP_ID
+              value: {{ .Values.scpAnalytics.consumer.groupId | default "topology-health-consumer" | quote }}
+          volumeMounts:
+            - name: kafka-config
+              mountPath: /etc/kafka
+              readOnly: true
+          resources:
+            {{- toYaml .Values.scpAnalytics.consumer.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: kafka-config
+          configMap:
+            name: {{ include "stellar-operator.fullname" . }}-scp-kafka-config
+
+---
+# Service for Topology Health Consumer metrics
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-topology-health-consumer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: topology-health-consumer
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9090
+      targetPort: 9090
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "stellar-operator.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: topology-health-consumer
+
+---
+# ServiceMonitor for Prometheus scraping
+{{- if .Values.prometheus.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-topology-health
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: topology-health-consumer
+spec:
+  selector:
+    matchLabels:
+      {{- include "stellar-operator.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: topology-health-consumer
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+{{- end }}
+
+{{- end }}

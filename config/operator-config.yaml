@@ -58,3 +58,29 @@ reconciler:
 #   audience: "stellar-operator"
 #   jwksUri: "https://www.googleapis.com/oauth2/v3/certs"
 #   rolesClaim: "roles"
+
+# Proactive disk scaling configuration
+# Automatically expands PVCs when disk usage exceeds threshold
+diskScaling:
+  # Enable automatic disk scaling
+  # Default: true
+  enabled: true
+
+  # Disk usage percentage that triggers expansion (0-100)
+  # When usage exceeds this threshold, the PVC will be expanded
+  # Default: 80
+  expansionThreshold: 80
+
+  # Percentage to increase disk size by (e.g., 50 = increase by 50%)
+  # Default: 50
+  expansionIncrement: 50
+
+  # Minimum time between expansions (seconds)
+  # Prevents rapid successive expansions
+  # Default: 3600 (1 hour)
+  minExpansionIntervalSecs: 3600
+
+  # Maximum number of expansions allowed per PVC
+  # Safety limit to prevent runaway costs
+  # Default: 10
+  maxExpansions: 10

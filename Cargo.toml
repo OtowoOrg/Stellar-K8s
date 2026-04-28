@@ -22,6 +22,7 @@ k8s-openapi = { version = "0.22", default-features = false, features = [
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
 futures = "0.3"
 
 # Serialization
@@ -78,6 +79,9 @@ reqwest = { version = "0.12", features = [
     "multipart",
 ] }
 
+# Kafka client for SCP analytics pipeline
+rdkafka = { version = "0.36", features = ["cmake-build", "ssl", "sasl"] }
+
 # REST API (optional)
 axum = { version = "0.8.8", optional = true, features = ["ws"] }
 tower = { version = "0.4", optional = true }
@@ -127,6 +131,8 @@ pqcrypto-kyber = "0.8.1"
 pqcrypto-traits = "0.3.5"
 comfy-table = "7.2.2"
 csv = "1.4.0"
+url = "2.5"
+urlencoding = "2.1"
 aws-sdk-s3 = "1.131.0"
 aws-config = "1.8.16"
 serde_json_diff = "0.2.0"

@@ -295,7 +295,7 @@ When adding new benchmarks:
 2. Update thresholds in the script
 3. Document expected metrics
 4. Update baseline files
-5. Add CI/CD integration if needed
+5. Add CI/CD integration if needed.
 
 ## References
 

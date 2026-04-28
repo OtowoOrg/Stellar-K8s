@@ -85,7 +85,7 @@ impl MaintenanceController {
             if bloat > 60.0 {
                 info!("High bloat detected ({bloat}%), triggering pg_repack on {table}");
                 // Note: pg_repack must be installed in the database
-                sqlx::query(&format!("SELECT pg_repack.repack_table($1)"))
+                sqlx::query("SELECT pg_repack.repack_table($1)")
                     .bind(&table)
                     .execute(&pool)
                     .await

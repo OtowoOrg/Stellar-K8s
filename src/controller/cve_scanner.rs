@@ -71,8 +71,7 @@ pub static CVE_VULNERABLE_PODS_TOTAL: Lazy<Family<CvePodLabels, Gauge<i64, Atomi
     Lazy::new(Family::default);
 
 /// Total critical alerts fired.
-pub static CVE_CRITICAL_ALERTS_TOTAL: Lazy<Counter<u64, AtomicU64>> =
-    Lazy::new(Counter::default);
+pub static CVE_CRITICAL_ALERTS_TOTAL: Lazy<Counter<u64, AtomicU64>> = Lazy::new(Counter::default);
 
 // ---------------------------------------------------------------------------
 // Scanner configuration
@@ -179,7 +178,10 @@ pub async fn run_scan_cycle(client: &Client, config: &CveScannerConfig) -> Resul
                     summaries.push(summary);
                 }
                 Err(e) => {
-                    warn!("Failed to scan image {} in pod {}/{}: {}", image, namespace, pod_name, e);
+                    warn!(
+                        "Failed to scan image {} in pod {}/{}: {}",
+                        image, namespace, pod_name, e
+                    );
                 }
             }
         }
@@ -212,7 +214,9 @@ async fn collect_pods(client: &Client, namespaces: &[String]) -> Result<Vec<Pod>
         for ns in namespaces {
             let pods_api: Api<Pod> = Api::namespaced(client.clone(), ns);
             let pods = pods_api
-                .list(&ListParams::default().labels("app.kubernetes.io/managed-by=stellar-operator"))
+                .list(
+                    &ListParams::default().labels("app.kubernetes.io/managed-by=stellar-operator"),
+                )
                 .await?;
             all_pods.extend(pods.items);
         }
@@ -343,7 +347,11 @@ async fn emit_cve_event(client: &Client, pod: &Pod, image: &str, counts: &CVECou
         image, counts.critical, counts.high, counts.medium, counts.low
     );
 
-    let event_type = if counts.critical > 0 { "Warning" } else { "Normal" };
+    let event_type = if counts.critical > 0 {
+        "Warning"
+    } else {
+        "Normal"
+    };
 
     let now = chrono::Utc::now();
     let event = Event {
@@ -359,12 +367,8 @@ async fn emit_cve_event(client: &Client, pod: &Pod, image: &str, counts: &CVECou
         },
         action: Some("CVEScan".to_string()),
         event_time: None,
-        first_timestamp: Some(k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(
-            now.into(),
-        )),
-        last_timestamp: Some(k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(
-            now.into(),
-        )),
+        first_timestamp: Some(k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(now)),
+        last_timestamp: Some(k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(now)),
         involved_object: ObjectReference {
             api_version: Some("v1".to_string()),
             kind: Some("Pod".to_string()),
@@ -391,7 +395,10 @@ async fn emit_cve_event(client: &Client, pod: &Pod, image: &str, counts: &CVECou
 
     let events_api: Api<Event> = Api::namespaced(client.clone(), &namespace);
     if let Err(e) = events_api.create(&PostParams::default(), &event).await {
-        warn!("Failed to emit CVE event for pod {}/{}: {}", namespace, pod_name, e);
+        warn!(
+            "Failed to emit CVE event for pod {}/{}: {}",
+            namespace, pod_name, e
+        );
     }
 }
 

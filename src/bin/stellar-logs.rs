@@ -363,7 +363,7 @@ async fn cmd_search(region: &str, args: &SearchArgs) -> Result<()> {
     let mut total_matches = 0usize;
 
     for key in &keys {
-        let data = s3.get_object(&args.bucket, &key).await?;
+        let data = s3.get_object(&args.bucket, key).await?;
         let text = decompress(&data)?;
         let lines: Vec<&str> = text.lines().collect();
 

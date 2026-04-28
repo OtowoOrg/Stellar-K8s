@@ -4,12 +4,12 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::MicroTime;
 use kube::api::{Api, ObjectMeta, Patch, PatchParams, PostParams};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tracing::{debug, info, info_span, warn, Instrument, Level};
+use tracing::{info, info_span, warn, Instrument, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::cli::RunArgs;
-use crate::log_scrub::ScrubLayer;
-use crate::{controller, infra, preflight, Error};
+use stellar_k8s::log_scrub::ScrubLayer;
+use stellar_k8s::{controller, preflight, Error};
 
 const LEASE_NAME: &str = "stellar-operator-leader";
 const LEASE_DURATION_SECS: i32 = 15;
@@ -61,8 +61,8 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
     let otel_enabled = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok();
 
     if otel_enabled {
-        let otel_layer = crate::telemetry::init_telemetry(&registry);
-        let trace_id_layer = crate::telemetry::trace_id_layer();
+        let otel_layer = stellar_k8s::telemetry::init_telemetry(&registry);
+        let trace_id_layer = stellar_k8s::telemetry::trace_id_layer();
         registry.with(otel_layer).with(trace_id_layer).init();
     } else {
         registry.init();
@@ -129,7 +129,7 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
             "Running in scheduler mode with name: {}",
             args.scheduler_name
         );
-        let scheduler = crate::scheduler::core::Scheduler::new(client, args.scheduler_name);
+        let scheduler = stellar_k8s::scheduler::core::Scheduler::new(client, args.scheduler_name);
         return scheduler
             .run()
             .await
@@ -284,15 +284,19 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
         let rustls_config = mtls_config
             .as_ref()
             .and_then(|cfg| {
-                crate::rest_api::build_tls_server_config(&cfg.cert_pem, &cfg.key_pem, &cfg.ca_pem)
-                    .ok()
+                stellar_k8s::rest_api::build_tls_server_config(
+                    &cfg.cert_pem,
+                    &cfg.key_pem,
+                    &cfg.ca_pem,
+                )
+                .ok()
             })
             .map(axum_server::tls_rustls::RustlsConfig::from_config);
         let server_tls = rustls_config.clone();
 
         tokio::spawn(
             async move {
-                if let Err(e) = crate::rest_api::run_server(api_state, server_tls).await {
+                if let Err(e) = stellar_k8s::rest_api::run_server(api_state, server_tls).await {
                     tracing::error!("REST API server error: {:?}", e);
                 }
             }
@@ -339,7 +343,7 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
                                         secret.data.as_ref().and_then(|d| d.get("tls.key")),
                                         secret.data.as_ref().and_then(|d| d.get("ca.crt")),
                                     ) {
-                                        match crate::rest_api::build_tls_server_config(
+                                        match stellar_k8s::rest_api::build_tls_server_config(
                                             &cert.0, &key.0, &ca.0,
                                         ) {
                                             Ok(new_config) => {
@@ -411,7 +415,7 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
         }
     };
 
-    crate::telemetry::shutdown_telemetry();
+    stellar_k8s::telemetry::shutdown_telemetry();
     result
 }
 
@@ -468,7 +472,7 @@ async fn run_leader_election(
     let leases: Api<Lease> = Api::namespaced(client, namespace);
 
     loop {
-        match try_acquire_or_renew(&leases, &namespace, identity).await {
+        match try_acquire_or_renew(&leases, namespace, identity).await {
             Ok(true) => {
                 if !is_leader.load(Ordering::Relaxed) {
                     info!("Acquired leadership: {}", LEASE_NAME);

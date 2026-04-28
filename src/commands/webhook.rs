@@ -1,6 +1,6 @@
 use crate::cli::{LogFormat, WebhookArgs};
-use crate::log_scrub::ScrubLayer;
-use crate::Error;
+use stellar_k8s::log_scrub::ScrubLayer;
+use stellar_k8s::Error;
 use tracing::{info, info_span, warn, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -13,18 +13,28 @@ pub async fn run_webhook(args: WebhookArgs) -> Result<(), Error> {
         .with_default_directive(args.log_level.parse().unwrap_or(Level::INFO.into()))
         .from_env_lossy();
 
-    let fmt_layer = match args.log_format {
-        LogFormat::Json => fmt::layer().json().with_target(true),
-        LogFormat::Pretty => fmt::layer().pretty().with_target(true),
-    };
+    let scrub_layer = ScrubLayer::new();
+
+    match args.log_format {
+        LogFormat::Json => {
+            let fmt_layer = fmt::layer().json().with_target(true);
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(scrub_layer)
+                .with(fmt_layer)
+                .init();
+        }
+        LogFormat::Pretty => {
+            let fmt_layer = fmt::layer().pretty().with_target(true);
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(scrub_layer)
+                .with(fmt_layer)
+                .init();
+        }
+    }
 
     let namespace = std::env::var("OPERATOR_NAMESPACE").unwrap_or_else(|_| "default".to_string());
-
-    tracing_subscriber::registry()
-        .with(env_filter)
-        .with(ScrubLayer::new())
-        .with(fmt_layer)
-        .init();
 
     let root_span =
         info_span!("operator", node_name = "-", namespace = %namespace, reconcile_id = "-");

@@ -53,6 +53,9 @@ pub struct OperatorConfig {
     /// Audit logging configuration
     #[serde(default)]
     pub audit: AuditConfig,
+    /// Disk scaling configuration
+    #[serde(default)]
+    pub disk_scaling: DiskScalingConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -60,6 +63,76 @@ pub struct OperatorConfig {
 pub struct AuditConfig {
     pub enabled: bool,
     pub s3: Option<crate::controller::audit_sink::S3AuditSinkConfig>,
+}
+
+/// Disk scaling configuration for proactive PVC expansion
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskScalingConfig {
+    /// Enable automatic disk scaling
+    #[serde(default = "default_disk_scaling_enabled")]
+    pub enabled: bool,
+
+    /// Disk usage percentage that triggers expansion (0-100)
+    #[serde(default = "default_expansion_threshold")]
+    pub expansion_threshold: u8,
+
+    /// Percentage to increase disk size by (e.g., 50 = increase by 50%)
+    #[serde(default = "default_expansion_increment")]
+    pub expansion_increment: u8,
+
+    /// Minimum time between expansions (seconds)
+    #[serde(default = "default_min_expansion_interval")]
+    pub min_expansion_interval_secs: u64,
+
+    /// Maximum number of expansions allowed per PVC
+    #[serde(default = "default_max_expansions")]
+    pub max_expansions: u32,
+}
+
+fn default_disk_scaling_enabled() -> bool {
+    true
+}
+
+fn default_expansion_threshold() -> u8 {
+    80
+}
+
+fn default_expansion_increment() -> u8 {
+    50
+}
+
+fn default_min_expansion_interval() -> u64 {
+    3600 // 1 hour
+}
+
+fn default_max_expansions() -> u32 {
+    10
+}
+
+impl Default for DiskScalingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_disk_scaling_enabled(),
+            expansion_threshold: default_expansion_threshold(),
+            expansion_increment: default_expansion_increment(),
+            min_expansion_interval_secs: default_min_expansion_interval(),
+            max_expansions: default_max_expansions(),
+        }
+    }
+}
+
+impl DiskScalingConfig {
+    /// Convert to DiskScalerConfig
+    pub fn to_scaler_config(&self) -> crate::controller::disk_scaler::DiskScalerConfig {
+        crate::controller::disk_scaler::DiskScalerConfig {
+            enabled: self.enabled,
+            expansion_threshold: self.expansion_threshold,
+            expansion_increment: self.expansion_increment,
+            min_expansion_interval_secs: self.min_expansion_interval_secs,
+            max_expansions: self.max_expansions,
+        }
+    }
 }
 
 /// Reconciler configuration for requeue intervals and backoff

@@ -60,6 +60,7 @@ use super::audit_worker::AuditWorker;
 use super::conditions;
 use super::cross_cloud_failover;
 use super::cve_reconciler;
+use super::disk_scaler;
 use super::dr;
 use super::dr_drill;
 use super::finalizers::STELLAR_NODE_FINALIZER;
@@ -162,7 +163,7 @@ macro_rules! apply_or_emit {
             let _client_clone = _ctx_internal.client.clone();
             let _ctx_clone = _ctx_internal.clone();
             let _node_clone = _node_internal.clone();
-            
+
             let _fut = $closure(_client_clone, _ctx_clone, _node_clone);
             apply_or_emit_owned(_ctx_internal, _node_internal, $action, $info.to_string(), _fut)
         }
@@ -171,8 +172,6 @@ macro_rules! apply_or_emit {
         apply_or_emit!($ctx, $node, $action, $info, clones: [], $closure)
     };
 }
-
-
 
 /// Summary report for a batch of reconciliation results.
 ///
@@ -943,7 +942,7 @@ pub(crate) fn apply_stellar_node(
             )
             .await?;
 
-            apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Maintenance)", clones: [propagated_labels], move |client: Client, _ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+            apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Maintenance)", clones: [], move |client: Client, _ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                     update_status(
                         &client,
                         &node,
@@ -1291,7 +1290,7 @@ pub(crate) fn apply_stellar_node(
 
         if node.spec.suspended {
             info!("Node {}/{} is suspended, scaling to 0", namespace, name);
-            apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Suspended)", clones: [propagated_labels], move |client: Client, _ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+            apply_or_emit!(&ctx, &node, ActionType::Update, "Status (Suspended)", clones: [], move |client: Client, _ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                     update_suspended_status(&client, &node).await?;
                     Ok(())
                 }
@@ -1708,7 +1707,7 @@ pub(crate) fn apply_stellar_node(
             &node,
             ActionType::Update,
             "MetalLB configuration",
-            move |client: Client, _ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+            move |_client: Client, _ctx: Arc<ControllerState>, _node: Arc<StellarNode>| async move {
                 // TODO: Load balancer and global discovery fields not yet implemented in StellarNodeSpec
                 // resources::ensure_metallb_config(&client, &node).await?;
                 // resources::ensure_load_balancer_service(&client, &node).await?;
@@ -1829,7 +1828,7 @@ pub(crate) fn apply_stellar_node(
         // Queries the stellar-core /info endpoint to determine whether the node is
         // "Catching up" or "Synced!" and applies the matching resource profile via
         // an in-place pod patch (no pod restart required).
-        if let Some(scaling_config) = &node.spec.sync_state_scaling {
+        if let Some(scaling_config) = node.spec.sync_state_scaling.clone() {
             if scaling_config.enabled && node.spec.node_type == NodeType::Validator {
                 let sync_state = sync_state_monitor::resolve_node_sync_state(&client, &node).await;
 
@@ -1860,13 +1859,14 @@ pub(crate) fn apply_stellar_node(
                     }
                 }
 
+                let scaling_config_clone = scaling_config.clone();
                 apply_or_emit!(
                     &ctx,
                     &node,
                     ActionType::Update,
                     "Sync-state resource scaling",
                     move |client: Client, _ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
-                        sync_scale::reconcile_sync_scaling(&client, &node, scaling_config, &sync_state)
+                        sync_scale::reconcile_sync_scaling(&client, &node, &scaling_config, &sync_state)
                             .await?;
                         Ok(())
                     }
@@ -1875,9 +1875,9 @@ pub(crate) fn apply_stellar_node(
             }
         }
 
-        if let Some(cve_config) = &node.spec.cve_handling {
+        if let Some(cve_config) = node.spec.cve_handling.clone() {
             apply_or_emit!(&ctx, &node, ActionType::Update, "CVE Handling", move |client: Client, _ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
-                cve_reconciler::reconcile_cve_patches(&client, &node, cve_config).await?;
+                cve_reconciler::reconcile_cve_patches(&client, &node, &cve_config).await?;
                 Ok(())
             })
             .await?;
@@ -1894,7 +1894,7 @@ pub(crate) fn apply_stellar_node(
                                     "Archive pruning completed for {}/{}: {} deleted, {} retained",
                                     namespace, name, result.deleted_count, result.retained_count
                                 );
-                                super::pruning_reconciler::update_pruning_status(&client, &node, &result)
+                                super::pruning_reconciler::update_pruning_status(&client, &node, result)
                                     .await?;
                             }
                             Ok(None) => {
@@ -2249,6 +2249,138 @@ pub(crate) fn apply_stellar_node(
                 &hardware_generation,
                 health_result.healthy,
             );
+        }
+
+        // 10d. Proactive disk scaling check
+        // Monitor PVC disk usage and automatically expand when threshold is exceeded
+        if !ctx.dry_run {
+            let disk_scaler_config = ctx.operator_config.disk_scaling.to_scaler_config();
+
+            match disk_scaler::check_and_expand(&client, &node, &disk_scaler_config, ctx.dry_run).await {
+                Ok(disk_scaler::ScalingResult::Expanded { old_size, new_size, expansion_count }) => {
+                    info!(
+                        "Expanded PVC for {}/{} from {} to {} (expansion #{})",
+                        namespace, name, old_size, new_size, expansion_count
+                    );
+
+                    publish_stellar_event!(
+                        &client,
+                        &ctx.event_reporter,
+                        &node,
+                        EventType::Normal,
+                        "DiskExpanded",
+                        "Storage",
+                        &format!(
+                            "PVC automatically expanded from {} to {} (expansion #{}) due to high disk usage",
+                            old_size, new_size, expansion_count
+                        ),
+                    )
+                    .await
+                    .ok();
+
+                    #[cfg(feature = "metrics")]
+                    {
+                        let hardware_generation = hardware_generation_for_metrics(&client, &node).await;
+                        metrics::increment_pvc_expansion_total(
+                            &namespace,
+                            &name,
+                            &node.spec.node_type.to_string(),
+                            node.spec.network_passphrase(),
+                            &hardware_generation,
+                        );
+                        metrics::set_pvc_expansion_count(
+                            &namespace,
+                            &name,
+                            &node.spec.node_type.to_string(),
+                            node.spec.network_passphrase(),
+                            &hardware_generation,
+                            expansion_count as i64,
+                        );
+                    }
+                }
+                Ok(disk_scaler::ScalingResult::RateLimited { last_expansion, .. }) => {
+                    debug!(
+                        "Disk expansion rate-limited for {}/{} (last expansion: {})",
+                        namespace, name, last_expansion
+                    );
+                }
+                Ok(disk_scaler::ScalingResult::MaxExpansionsReached { count }) => {
+                    warn!(
+                        "Maximum disk expansions ({}) reached for {}/{}",
+                        count, namespace, name
+                    );
+
+                    publish_stellar_event!(
+                        &client,
+                        &ctx.event_reporter,
+                        &node,
+                        EventType::Warning,
+                        "MaxDiskExpansionsReached",
+                        "Storage",
+                        &format!(
+                            "PVC has reached maximum expansion limit ({}). Manual intervention required.",
+                            count
+                        ),
+                    )
+                    .await
+                    .ok();
+                }
+                Ok(disk_scaler::ScalingResult::NotSupported { storage_class }) => {
+                    debug!(
+                        "Disk expansion not supported for storage class {} on {}/{}",
+                        storage_class, namespace, name
+                    );
+                }
+                Ok(disk_scaler::ScalingResult::Failed { reason }) => {
+                    warn!(
+                        "Disk expansion failed for {}/{}: {}",
+                        namespace, name, reason
+                    );
+
+                    publish_stellar_event!(
+                        &client,
+                        &ctx.event_reporter,
+                        &node,
+                        EventType::Warning,
+                        "DiskExpansionFailed",
+                        "Storage",
+                        &format!("Failed to expand PVC: {}", reason),
+                    )
+                    .await
+                    .ok();
+                }
+                Ok(disk_scaler::ScalingResult::NoActionNeeded) => {
+                    // Disk usage is below threshold, no action needed
+                }
+                Err(e) => {
+                    warn!(
+                        "Error checking disk usage for {}/{}: {}",
+                        namespace, name, e
+                    );
+                }
+            }
+
+            // Update disk usage metrics
+            #[cfg(feature = "metrics")]
+            if let Ok(Some(usage)) = disk_scaler::get_disk_usage(&client, &node).await {
+                let hardware_generation = hardware_generation_for_metrics(&client, &node).await;
+                metrics::set_pvc_disk_usage_percent(
+                    &namespace,
+                    &name,
+                    &node.spec.node_type.to_string(),
+                    node.spec.network_passphrase(),
+                    &hardware_generation,
+                    usage.usage_percent as i64,
+                );
+                metrics::set_pvc_size_bytes(
+                    &namespace,
+                    &name,
+                    &node.spec.node_type.to_string(),
+                    node.spec.network_passphrase(),
+                    &hardware_generation,
+                    usage.capacity_bytes as i64,
+                );
+            }
         }
 
         // 11. OCI snapshot push/pull Jobs
@@ -2667,7 +2799,7 @@ async fn check_canary_health(
         .map(|c| c.max_error_rate)
         .unwrap_or(0.05);
 
-    match measure_canary_error_rate(&client, &node, &namespace).await {
+    match measure_canary_error_rate(client, node, &namespace).await {
         Ok(error_rate) => {
             if error_rate > max_error_rate {
                 return Ok(health::HealthCheckResult::unhealthy(format!(
@@ -3097,7 +3229,7 @@ async fn run_archive_integrity_check(
 
     // Update Prometheus metric with the maximum observed lag.
     #[cfg(feature = "metrics")]
-    let hardware_generation = hardware_generation_for_metrics(&client, &node).await;
+    let hardware_generation = hardware_generation_for_metrics(client, node).await;
     #[cfg(feature = "metrics")]
     metrics::set_archive_ledger_lag(
         &namespace,
@@ -3454,7 +3586,7 @@ async fn run_archive_checkpoint_verification(
     {
         let node_type = format!("{:?}", node.spec.node_type);
         let network = format!("{:?}", node.spec.network);
-        let hardware = hardware_generation_for_metrics(&client, &node).await;
+        let hardware = hardware_generation_for_metrics(client, node).await;
         metrics::set_archive_integrity_status(
             &namespace,
             &name,
@@ -3747,7 +3879,7 @@ async fn perform_quorum_analysis(
     #[cfg(feature = "metrics")]
     {
         let node_type = node.spec.node_type.to_string();
-        let hardware_generation = hardware_generation_for_metrics(&client, &node).await;
+        let hardware_generation = hardware_generation_for_metrics(client, node).await;
         let network = match &node.spec.network {
             crate::crd::StellarNetwork::Mainnet => "mainnet",
             crate::crd::StellarNetwork::Testnet => "testnet",
@@ -3783,7 +3915,7 @@ async fn perform_quorum_analysis(
 
     // Update status
     analyzer
-        .update_node_status(&client, &node, &result)
+        .update_node_status(client, node, &result)
         .await
         .map_err(|e| Error::ConfigError(format!("Failed to update status: {e}")))?;
 
@@ -3801,7 +3933,7 @@ async fn perform_quorum_analysis(
 
 #[cfg(feature = "metrics")]
 async fn hardware_generation_for_metrics(client: &Client, node: &StellarNode) -> String {
-    match infra::resolve_stellar_node_infra(&client, &node).await {
+    match infra::resolve_stellar_node_infra(client, node).await {
         Ok(summary) => summary.hardware_generation_label(),
         Err(err) => {
             warn!(

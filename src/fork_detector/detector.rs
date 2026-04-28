@@ -95,9 +95,7 @@ pub async fn run_fork_detector(config: ForkDetectorConfig) -> Result<()> {
             Err(e) => {
                 warn!("Fork detection cycle error: {}", e);
                 let st = state.read().await;
-                POLL_ERRORS_TOTAL
-                    .get_or_create(&st.labels())
-                    .inc();
+                POLL_ERRORS_TOTAL.get_or_create(&st.labels()).inc();
             }
         }
         sleep(poll_interval).await;
@@ -129,10 +127,7 @@ async fn run_detection_cycle(
     let anchor_results = join_all(anchor_futs).await;
 
     let responding: Vec<&LedgerObservation> = anchor_results.iter().filter(|o| o.ok).collect();
-    let agreeing = responding
-        .iter()
-        .filter(|o| o.hash == local_hash)
-        .count();
+    let agreeing = responding.iter().filter(|o| o.hash == local_hash).count();
 
     let responding_count = responding.len();
     let sync_confidence = if responding_count == 0 {
@@ -143,7 +138,7 @@ async fn run_detection_cycle(
     };
 
     // Divergence = majority of responding anchors disagree with local hash.
-    let divergence_detected = responding_count > 0 && agreeing < (responding_count + 1) / 2;
+    let divergence_detected = responding_count > 0 && agreeing < responding_count.div_ceil(2);
 
     Ok(ForkCheckResult {
         local_sequence,
@@ -213,9 +208,7 @@ fn update_state_and_metrics(st: &mut DetectorState, result: &ForkCheckResult) {
             );
         }
         st.consecutive_diverging = 0;
-        CONSECUTIVE_DIVERGING_LEDGERS
-            .get_or_create(&labels)
-            .set(0);
+        CONSECUTIVE_DIVERGING_LEDGERS.get_or_create(&labels).set(0);
     }
 
     info!(
@@ -272,11 +265,7 @@ async fn poll_local_core(client: &Client, endpoint: &str) -> Option<LedgerObserv
 
 /// Poll a Horizon anchor endpoint for the latest ledger at or near `target_sequence`.
 /// Horizon's `/ledgers?order=desc&limit=1` returns the most recent ledger.
-async fn poll_anchor(
-    client: &Client,
-    endpoint: &str,
-    _target_sequence: u64,
-) -> LedgerObservation {
+async fn poll_anchor(client: &Client, endpoint: &str, _target_sequence: u64) -> LedgerObservation {
     // Horizon public API: GET /ledgers?order=desc&limit=1
     let url = if endpoint.contains("/ledgers") {
         endpoint.to_string()
@@ -354,9 +343,17 @@ async fn serve_metrics(state: SharedState, bind_addr: &str) -> Result<()> {
 
     let listener = tokio::net::TcpListener::bind(bind_addr)
         .await
-        .with_context(|| format!("Failed to bind fork detector metrics server to {}", bind_addr))?;
+        .with_context(|| {
+            format!(
+                "Failed to bind fork detector metrics server to {}",
+                bind_addr
+            )
+        })?;
 
-    info!("Fork detector metrics server listening on http://{}", bind_addr);
+    info!(
+        "Fork detector metrics server listening on http://{}",
+        bind_addr
+    );
 
     axum::serve(listener, app)
         .await

@@ -19,11 +19,7 @@ pub struct OrgValidationError {
 }
 
 impl OrgValidationError {
-    fn new(
-        field: impl Into<String>,
-        message: impl Into<String>,
-        hint: impl Into<String>,
-    ) -> Self {
+    fn new(field: impl Into<String>, message: impl Into<String>, hint: impl Into<String>) -> Self {
         Self {
             field: field.into(),
             message: message.into(),
@@ -41,16 +37,16 @@ struct MaxLimits {
 fn max_limits_for(node_type: &NodeType) -> MaxLimits {
     match node_type {
         NodeType::Validator => MaxLimits {
-            cpu_millicores: 8_000,   // 8 cores
-            memory_mib: 16_384,      // 16 GiB
+            cpu_millicores: 8_000, // 8 cores
+            memory_mib: 16_384,    // 16 GiB
         },
         NodeType::Horizon => MaxLimits {
             cpu_millicores: 8_000,
             memory_mib: 16_384,
         },
         NodeType::SorobanRpc => MaxLimits {
-            cpu_millicores: 16_000,  // 16 cores — Soroban is more compute-intensive
-            memory_mib: 32_768,      // 32 GiB
+            cpu_millicores: 16_000, // 16 cores — Soroban is more compute-intensive
+            memory_mib: 32_768,     // 32 GiB
         },
     }
 }
@@ -220,8 +216,8 @@ fn parse_memory_mib(s: &str) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::{NodeType, StellarNode, StellarNodeSpec};
     use crate::crd::types::{ResourceRequirements, ResourceSpec, StellarNetwork};
+    use crate::crd::{NodeType, StellarNode, StellarNodeSpec};
 
     fn make_node(
         node_type: NodeType,
@@ -265,7 +261,10 @@ mod tests {
     fn valid_node_passes() {
         let node = make_node(
             NodeType::Validator,
-            "500m", "1Gi", "2", "4Gi",
+            "500m",
+            "1Gi",
+            "2",
+            "4Gi",
             good_labels(),
         );
         let errors = validate_org_standards(&node);
@@ -291,7 +290,14 @@ mod tests {
     #[test]
     fn cpu_limit_exceeds_max_rejected() {
         // Validator max is 8000m (8 cores); 16 cores should fail.
-        let node = make_node(NodeType::Validator, "500m", "1Gi", "16", "4Gi", good_labels());
+        let node = make_node(
+            NodeType::Validator,
+            "500m",
+            "1Gi",
+            "16",
+            "4Gi",
+            good_labels(),
+        );
         let errors = validate_org_standards(&node);
         assert!(errors.iter().any(|e| e.field.contains("limits.cpu")));
     }
@@ -299,7 +305,14 @@ mod tests {
     #[test]
     fn memory_limit_exceeds_max_rejected() {
         // Validator max is 16384 MiB; 32Gi should fail.
-        let node = make_node(NodeType::Validator, "500m", "1Gi", "2", "32Gi", good_labels());
+        let node = make_node(
+            NodeType::Validator,
+            "500m",
+            "1Gi",
+            "2",
+            "32Gi",
+            good_labels(),
+        );
         let errors = validate_org_standards(&node);
         assert!(errors.iter().any(|e| e.field.contains("limits.memory")));
     }
@@ -307,7 +320,14 @@ mod tests {
     #[test]
     fn soroban_allows_higher_limits() {
         // SorobanRpc max is 16 cores / 32 GiB — 16 cores should pass.
-        let node = make_node(NodeType::SorobanRpc, "1", "2Gi", "16", "32Gi", good_labels());
+        let node = make_node(
+            NodeType::SorobanRpc,
+            "1",
+            "2Gi",
+            "16",
+            "32Gi",
+            good_labels(),
+        );
         let errors = validate_org_standards(&node);
         assert!(errors.is_empty(), "Expected no errors, got: {:?}", errors);
     }

@@ -55,6 +55,7 @@ mod handlers;
 mod health_summary;
 mod job_handlers;
 mod oidc;
+mod scp_topology;
 mod server;
 mod sustainability;
 

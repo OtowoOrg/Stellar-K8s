@@ -65,7 +65,6 @@ pub mod resource_meta;
 
 pub(crate) mod archive_health;
 pub mod archive_prune;
-pub mod zk_archive_verifier;
 pub mod audit;
 pub mod audit_log;
 pub mod audit_sink;
@@ -83,6 +82,9 @@ pub mod cve_scanner;
 pub(crate) mod cve_test;
 pub mod db_pool;
 pub mod diff;
+pub mod disk_scaler;
+#[cfg(test)]
+mod disk_scaler_test;
 pub mod dr;
 pub mod dr_drill;
 #[cfg(test)]
@@ -127,6 +129,7 @@ mod traffic_test;
 pub mod vpa;
 pub(crate) mod vsl;
 pub mod webhook_delivery;
+pub mod zk_archive_verifier;
 
 pub use archive_health::{
     calculate_backoff, check_archive_integrity, check_history_archive_health, ArchiveHealthResult,
@@ -148,6 +151,10 @@ pub use cve_scanner::{
 };
 pub use db_pool::{
     create_pool, DbPoolConfig, DEFAULT_CONNECTION_TIMEOUT_SECS, DEFAULT_MAX_CONNECTIONS,
+};
+pub use disk_scaler::{
+    check_and_expand, get_disk_usage, supports_expansion, DiskScalerConfig, DiskUsage,
+    ScalingResult, DEFAULT_EXPANSION_INCREMENT, DEFAULT_EXPANSION_THRESHOLD,
 };
 pub use feature_flags::{
     watch_feature_flags, FeatureFlags, SharedFeatureFlags, FEATURE_FLAGS_CONFIGMAP,

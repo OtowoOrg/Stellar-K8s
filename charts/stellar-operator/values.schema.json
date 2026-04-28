@@ -8,20 +8,8 @@
     },
     "image": {
       "type": "object",
-      "properties": {
-        "repository": { "type": "string" },
-        "pullPolicy": { "type": "string" },
-        "tag": { "type": "string" }
-      }
-    },
-    "imagePullSecrets": { "type": "array" },
-    "nameOverride": { "type": "string" },
-    "fullnameOverride": { "type": "string" },
       "additionalProperties": false,
-      "required": [
-        "repository",
-        "pullPolicy"
-      ],
+      "required": ["repository", "pullPolicy"],
       "properties": {
         "repository": {
           "type": "string",
@@ -30,12 +18,7 @@
         },
         "pullPolicy": {
           "type": "string",
-          "enum": [
-            "Always",
-            "IfNotPresent",
-            "Never",
-            "validation error"
-          ],
+          "enum": ["Always", "IfNotPresent", "Never"],
           "description": "Image pull policy"
         },
         "tag": {
@@ -45,18 +28,7 @@
       }
     },
     "imagePullSecrets": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          }
-        }
-      }
+      "type": "array"
     },
     "nameOverride": {
       "type": "string"
@@ -67,446 +39,117 @@
     "serviceAccount": {
       "type": "object",
       "properties": {
-        "create": { "type": "boolean" },
-        "annotations": { "type": "object" },
-        "name": { "type": "string" }
         "create": {
-          "type": "boolean",
-          "description": "Whether to create a ServiceAccount"
+          "type": "boolean"
         },
         "annotations": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
+          "type": "object"
         },
         "name": {
-          "type": "string",
-          "description": "ServiceAccount name override"
+          "type": "string"
         }
       }
     },
-    "secrets": { "type": "object" },
-    "podAnnotations": { "type": "object" },
-    "podSecurityContext": { "type": "object" },
-    "securityContext": { "type": "object" },
-    "resources": { "type": "object" },
-    "nodeSelector": { "type": "object" },
-    "tolerations": { "type": "array" },
-    "affinity": { "type": "object" },
-    "operator": { "type": "object" },
-    "sidecar": { "type": "object" },
-    "service": { "type": "object" },
-    "defaultResources": { "type": "object" },
-    "security": {
-      "type": "object",
-      "properties": {
-        "audit": { "type": "object" },
-        "podSecurityStandard": { "type": "string" },
-        "falco": { "type": "object" },
-        "networkPolicy": { "type": "object" },
-        "admissionWebhook": { "type": "object" },
-        "imagePolicy": { "type": "object" }
-        "create": {
-          "type": "boolean"
-        },
-        "useExternalSecrets": {
-          "type": "boolean"
-        },
-        "externalSecret": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "secretStoreRef": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "name",
-                "kind"
-              ],
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "SecretStore",
-                    "ClusterSecretStore"
-                  ]
-                }
-              }
-            },
-            "refreshInterval": {
-              "type": "string",
-              "pattern": "^[0-9]+(s|m|h)$",
-              "description": "Refresh interval, e.g. 1h, 30m, 60s"
-            }
-          }
-        },
-        "items": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "key",
-              "value"
-            ],
-            "properties": {
-              "key": {
-                "type": "string",
-                "minLength": 1
-              },
-              "value": {
-                "type": "string"
-              }
-            }
-          }
-        }
-      }
+    "secrets": {
+      "type": "object"
     },
     "podAnnotations": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "string"
-      }
+      "type": "object"
     },
     "podSecurityContext": {
-      "type": "object",
-      "properties": {
-        "runAsNonRoot": {
-          "type": "boolean"
-        },
-        "runAsUser": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "runAsGroup": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "fsGroup": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
+      "type": "object"
     },
     "securityContext": {
-      "type": "object",
-      "properties": {
-        "allowPrivilegeEscalation": {
-          "type": "boolean"
-        },
-        "readOnlyRootFilesystem": {
-          "type": "boolean"
-        },
-        "capabilities": {
-          "type": "object",
-          "properties": {
-            "drop": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "add": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          }
-        }
-      }
+      "type": "object"
     },
     "resources": {
-      "$ref": "#/definitions/resourceRequirements"
+      "type": "object"
     },
     "autoscaling": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "customWasm": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "description": "Enable the custom WASM metrics HorizontalPodAutoscaler"
-            },
-            "minReplicas": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "Minimum replicas for the custom WASM HPA"
-            },
-            "maxReplicas": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "Maximum replicas for the custom WASM HPA"
-            }
-          }
-        }
-      }
+      "type": "object"
     },
     "nodeSelector": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "string"
-      }
+      "type": "object"
     },
     "tolerations": {
-      "type": "array",
-      "items": {
-        "type": "object"
-      }
+      "type": "array"
     },
     "affinity": {
       "type": "object"
     },
+    "arch": {
+      "type": "string"
+    },
     "podDisruptionBudget": {
+      "type": "object"
+    },
+    "operator": {
       "type": "object",
-      "additionalProperties": false,
-      "description": "PodDisruptionBudget configuration",
       "properties": {
-        "enabled": {
+        "logLevel": {
+          "type": "string",
+          "enum": ["trace", "debug", "info", "warn", "error"]
+        },
+        "restApiEnabled": {
           "type": "boolean"
         },
-        "minAvailable": {
-          "oneOf": [
-            {
-              "type": "integer",
-              "minimum": 0
-            },
-            {
-              "type": "string"
-            }
-          ]
+        "restApiPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
         },
-        "maxUnavailable": {
-          "oneOf": [
-            {
-              "type": "integer",
-              "minimum": 0
-            },
-            {
-              "type": "string"
-            }
-          ]
+        "metricsPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "watchNamespace": {
+          "type": "string"
         }
       }
     },
     "sidecar": {
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "image": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "repository": {
-              "type": "string"
-            },
-            "tag": {
-              "type": "string"
-            },
-            "pullPolicy": {
-              "type": "string",
-              "enum": [
-                "Always",
-                "IfNotPresent",
-                "Never"
-              ]
-            }
-          }
-        },
-        "resources": {
-          "$ref": "#/definitions/resourceRequirements"
-        }
-      }
+      "type": "object"
     },
-    "operator": {
-      "properties": {
-        "logLevel": {
-          "type": "string",
-          "enum": [
-            "trace",
-            "debug",
-            "info",
-            "warn",
-            "error",
-            "validation error"
-          ],
-          "description": "Operator log level (trace, debug, info, warn, error)"
-        },
-        "restApiEnabled": {
-          "type": "boolean",
-          "description": "Enable the REST API"
-        },
-        "restApiPort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535,
-          "description": "REST API port"
-        },
-        "metricsPort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535,
-          "description": "Prometheus metrics port"
-        },
-        "watchNamespace": {
-          "type": "string",
-          "description": "Namespace to watch; empty means all namespaces"
-        }
-      }
+    "forkDetector": {
+      "type": "object"
     },
     "service": {
       "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "restApiPort",
-        "metricsPort"
-      ],
       "properties": {
         "type": {
           "type": "string",
-          "enum": [
-            "ClusterIP",
-            "NodePort",
-            "LoadBalancer",
-            "validation error"
-          ],
-          "description": "Kubernetes Service type"
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
         },
         "restApiPort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+          "type": "integer"
         },
         "metricsPort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+          "type": "integer"
         }
       }
     },
     "defaultResources": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "validator",
-        "horizon",
-        "sorobanRpc"
-      ],
-      "properties": {
-        "validator": {
-          "$ref": "#/definitions/resourceRequirements"
-        },
-        "horizon": {
-          "$ref": "#/definitions/resourceRequirements"
-        },
-        "sorobanRpc": {
-          "$ref": "#/definitions/resourceRequirements"
-        }
-      }
+      "type": "object"
     },
     "featureFlags": {
-      "type": "object",
-      "description": "Feature flag toggles for operator capabilities",
-      "additionalProperties": {
-        "type": "boolean"
-      },
-      "properties": {
-        "enableCveScanning": {
-          "type": "boolean"
-        },
-        "enableReadPool": {
-          "type": "boolean"
-        },
-        "enableDr": {
-          "type": "boolean"
-        },
-        "enablePeerDiscovery": {
-          "type": "boolean"
-        },
-        "enableArchiveHealth": {
-          "type": "boolean"
-        },
-        "enableSorobanMetrics": {
-          "type": "boolean"
-        }
-      }
+      "type": "object"
     },
     "security": {
-      "type": "object",
-      "description": "Security hardening configuration",
-      "additionalProperties": true,
-      "properties": {
-        "audit": {
-          "type": "object",
-          "additionalProperties": true
-        },
-        "podSecurityStandard": {
-          "type": "string"
-        },
-        "falco": {
-          "type": "object",
-          "additionalProperties": true
-        },
-        "networkPolicy": {
-          "type": "object",
-          "additionalProperties": true
-        },
-        "admissionWebhook": {
-          "type": "object",
-          "additionalProperties": true
-        },
-        "imagePolicy": {
-          "type": "object",
-          "additionalProperties": true
-        }
-      }
+      "type": "object"
     },
-    "security": {
-      "type": "object",
-      "additionalProperties": true,
-      "description": "Security hardening settings consumed by deployment templates and policy tooling"
+    "networkIsolation": {
+      "type": "object"
+    },
+    "byzantineWatcher": {
+      "type": "object"
+    },
+    "otel": {
+      "type": "object"
+    },
+    "scpAnalytics": {
+      "type": "object"
     }
   },
   "additionalProperties": true
-}
-  "definitions": {
-    "resourceList": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "cpu": {
-          "type": "string",
-          "pattern": "^([0-9]+(\\.[0-9]+)?m?|[0-9]+(\\.[0-9]+)?)$",
-          "description": "CPU quantity, e.g. 500m or 2"
-        },
-        "memory": {
-          "type": "string",
-          "pattern": "^[0-9]+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$",
-          "description": "Memory quantity, e.g. 128Mi or 4Gi"
-        }
-      }
-    },
-    "resourceRequirements": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "requests": {
-          "$ref": "#/definitions/resourceList"
-        },
-        "limits": {
-          "$ref": "#/definitions/resourceList"
-        }
-      }
-    }
-  }
 }

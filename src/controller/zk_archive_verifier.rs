@@ -97,7 +97,9 @@ impl ZkVerificationResult {
             chain_intact: true,
             gaps: vec![],
             checkpoints_verified: count,
-            message: format!("Verification passed: {count} checkpoints, chain intact, signature valid"),
+            message: format!(
+                "Verification passed: {count} checkpoints, chain intact, signature valid"
+            ),
         }
     }
 
@@ -109,7 +111,8 @@ impl ZkVerificationResult {
             chain_intact: true,
             gaps: vec![],
             checkpoints_verified: 0,
-            message: "No manifest present; archive is not encrypted — skipping ZK check".to_string(),
+            message: "No manifest present; archive is not encrypted — skipping ZK check"
+                .to_string(),
         }
     }
 
@@ -185,7 +188,11 @@ pub async fn verify_encrypted_archive(
 
     debug!("Fetching archive manifest from {manifest_url}");
 
-    let resp = client.get(&manifest_url).send().await.map_err(Error::HttpError)?;
+    let resp = client
+        .get(&manifest_url)
+        .send()
+        .await
+        .map_err(Error::HttpError)?;
 
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         info!("No archive-manifest.json at {manifest_url}; archive is not encrypted");
@@ -288,9 +295,7 @@ pub async fn verify_encrypted_archive(
         }
     }
 
-    info!(
-        "ZK archive verification passed for {url}: {count} checkpoints verified"
-    );
+    info!("ZK archive verification passed for {url}: {count} checkpoints verified");
     Ok(ZkVerificationResult::ok(url, count))
 }
 
@@ -365,11 +370,7 @@ fn verify_manifest_signature(manifest: &ArchiveManifest) -> std::result::Result<
 /// Decode a hex string into exactly `N` bytes.
 fn hex_to_bytes_fixed<const N: usize>(hex: &str) -> std::result::Result<[u8; N], String> {
     if hex.len() != N * 2 {
-        return Err(format!(
-            "Expected {} hex chars, got {}",
-            N * 2,
-            hex.len()
-        ));
+        return Err(format!("Expected {} hex chars, got {}", N * 2, hex.len()));
     }
     let bytes: std::result::Result<Vec<u8>, _> = (0..hex.len())
         .step_by(2)
@@ -508,11 +509,7 @@ mod tests {
         assert!(!broken.verified);
         assert!(!broken.chain_intact);
 
-        let gapped = ZkVerificationResult::gaps_found(
-            "http://example.com",
-            vec![(191, 254)],
-            4,
-        );
+        let gapped = ZkVerificationResult::gaps_found("http://example.com", vec![(191, 254)], 4);
         assert!(!gapped.verified);
         assert_eq!(gapped.gaps.len(), 1);
     }

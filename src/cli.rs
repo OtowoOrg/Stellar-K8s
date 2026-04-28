@@ -35,6 +35,7 @@ stellar-operator run --namespace stellar-system --dry-run\n  \
 stellar-operator run --dump-config\n  \
 stellar-operator webhook --bind 0.0.0.0:8443 --cert-path /tls/tls.crt --key-path /tls/tls.key\n  \
 stellar-operator info --namespace stellar-system\n  \
+stellar-operator doctor\n  \
 stellar-operator check-crd\n  \
 stellar-operator version"
 )]
@@ -61,6 +62,8 @@ pub enum Commands {
     Info(InfoArgs),
     /// Verify StellarNode CRD installation and expected version
     CheckCrd,
+    /// Verify local CLI tooling, Kubernetes context, and operator permissions
+    Doctor(DoctorArgs),
     /// Prune old history archive checkpoints
     PruneArchive(PruneArchiveArgs),
     /// Show difference between desired and live cluster state
@@ -77,6 +80,8 @@ pub enum Commands {
     },
     /// Generate an incident report for a specific time window
     IncidentReport(incident::IncidentReportArgs),
+    /// Compare performance metrics between two clusters
+    BenchmarkCompare(stellar_k8s::benchmark_compare::BenchmarkCompareArgs),
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -206,6 +211,17 @@ impl RunArgs {
 #[derive(Parser, Debug)]
 pub struct InfoArgs {
     /// Kubernetes namespace to query for StellarNode resources.
+    ///
+    /// Env: OPERATOR_NAMESPACE
+    ///
+    /// Example: --namespace stellar-system
+    #[arg(long, env = "OPERATOR_NAMESPACE", default_value = "default")]
+    pub namespace: String,
+}
+
+#[derive(Parser, Debug)]
+pub struct DoctorArgs {
+    /// Kubernetes namespace used by the operator for permission checks.
     ///
     /// Env: OPERATOR_NAMESPACE
     ///
@@ -534,6 +550,13 @@ mod cli_tests {
         let parsed = Args::try_parse_from(["stellar-operator", "check-crd"])
             .expect("check-crd subcommand should parse");
         assert!(matches!(parsed.command, Commands::CheckCrd));
+    }
+
+    #[test]
+    fn doctor_subcommand_parses() {
+        let parsed = Args::try_parse_from(["stellar-operator", "doctor"])
+            .expect("doctor subcommand should parse");
+        assert!(matches!(parsed.command, Commands::Doctor(_)));
     }
 
     fn parse_simulator_up(args: &[&str]) -> Result<SimulatorUpArgs, clap::Error> {

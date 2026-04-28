@@ -27,6 +27,7 @@ use super::dashboard_handlers;
 use super::handlers;
 use super::health_summary;
 use super::job_handlers;
+use super::scp_topology;
 
 /// Build a rustls ServerConfig from PEM data (cert, key, CA for client verification).
 /// Used for initial server setup and after certificate rotation to reload without restart.

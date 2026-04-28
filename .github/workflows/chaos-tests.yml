@@ -47,6 +47,11 @@ jobs:
         with:
           shared-key: "chaos-build"
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
+
       - name: Build operator
         run: cargo build --release --locked --bin stellar-operator
 

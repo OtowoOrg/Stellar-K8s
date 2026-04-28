@@ -1126,8 +1126,10 @@ async fn summary(
             .items
     };
 
-    let mut stats = SummaryStats::default();
-    stats.total = nodes.len();
+    let mut stats = SummaryStats {
+        total: nodes.len(),
+        ..Default::default()
+    };
 
     for node in &nodes {
         let health = check_node_health(client, node, None).await?;
@@ -1411,8 +1413,10 @@ mod tests {
     // --- Summary stats aggregation tests ---
 
     fn make_stats_from_nodes(nodes: &[StellarNode]) -> SummaryStats {
-        let mut stats = SummaryStats::default();
-        stats.total = nodes.len();
+        let mut stats = SummaryStats {
+            total: nodes.len(),
+            ..Default::default()
+        };
         for node in nodes {
             let phase = get_node_phase(node);
             if phase == "Degraded" || phase == "Failed" {

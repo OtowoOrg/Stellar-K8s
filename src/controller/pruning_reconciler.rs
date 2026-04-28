@@ -175,7 +175,7 @@ async fn process_archive(
             deletable,
             &location,
             true, // force=true (we already validated)
-            worker.policy().concurrency as usize,
+            worker.policy().concurrency,
         )
         .await?
     } else {
@@ -184,7 +184,7 @@ async fn process_archive(
             deletable,
             &location,
             false, // force=false (dry-run)
-            worker.policy().concurrency as usize,
+            worker.policy().concurrency,
         )
         .await?
     };
@@ -196,7 +196,7 @@ async fn process_archive(
 pub async fn update_pruning_status(
     client: &kube::client::Client,
     node: &StellarNode,
-    result: &PruneResult,
+    result: PruneResult,
 ) -> Result<()> {
     use kube::api::{Api, Patch, PatchParams};
     use kube::ResourceExt;

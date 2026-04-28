@@ -92,24 +92,29 @@ impl SqlExecutor {
             String::from_utf8(uri_bytes.0.clone())
                 .map_err(|e| Error::ConfigError(format!("Invalid UTF-8 in URI: {}", e)))
         } else if let Some(ext) = &node.spec.database {
-            let secret_name = &ext.secret_key_ref.name;
-            let key = &ext.secret_key_ref.key;
+            if let Some(ref skr) = ext.secret_key_ref {
+                let secret_name = &skr.name;
+                let key = &skr.key;
 
-            let secret = secret_api
-                .get(secret_name)
-                .await
-                .map_err(Error::KubeError)?;
-            let data = secret
-                .data
-                .as_ref()
-                .ok_or_else(|| Error::ConfigError(format!("Secret {} has no data", secret_name)))?;
+                let secret = secret_api
+                    .get(secret_name)
+                    .await
+                    .map_err(Error::KubeError)?;
+                let data = secret.data.as_ref().ok_or_else(|| {
+                    Error::ConfigError(format!("Secret {} has no data", secret_name))
+                })?;
 
-            let uri_bytes = data.get(key).ok_or_else(|| {
-                Error::ConfigError(format!("Secret {} missing key '{}'", secret_name, key))
-            })?;
+                let uri_bytes = data.get(key).ok_or_else(|| {
+                    Error::ConfigError(format!("Secret {} missing key '{}'", secret_name, key))
+                })?;
 
-            String::from_utf8(uri_bytes.0.clone())
-                .map_err(|e| Error::ConfigError(format!("Invalid UTF-8 in URI: {}", e)))
+                String::from_utf8(uri_bytes.0.clone())
+                    .map_err(|e| Error::ConfigError(format!("Invalid UTF-8 in URI: {}", e)))
+            } else {
+                Err(Error::ConfigError(
+                    "database.secretKeyRef is required".to_string(),
+                ))
+            }
         } else {
             Err(Error::ConfigError(
                 "No database configured for node".to_string(),

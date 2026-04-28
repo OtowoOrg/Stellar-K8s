@@ -15,7 +15,8 @@ pub use secret_rotation::{
     RotationEvent, RotationStatus, SecretRotationConfig, SecretRotationScheduler,
 };
 pub use verification::{
-    BackupVerificationConfig, BackupVerificationScheduler, VerificationReport, VerificationStatus,
+    BackupSource, BackupVerificationConfig, BackupVerificationScheduler, VerificationReport,
+    VerificationResources, VerificationStatus, VerificationStrategy,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

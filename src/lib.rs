@@ -64,12 +64,13 @@
 //! ```
 
 pub mod backup;
+pub mod benchmark_compare;
 pub mod byzantine;
 pub mod carbon_aware;
-pub mod fork_detector;
 pub mod controller;
 pub mod crd;
 pub mod error;
+pub mod fork_detector;
 pub mod incident;
 pub mod infra;
 pub mod log_scrub;

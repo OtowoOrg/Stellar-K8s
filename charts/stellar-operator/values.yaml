@@ -54,6 +54,14 @@ podAnnotations:
   prometheus.io/port: "9090"
   prometheus.io/path: "/metrics"
 
+# Custom annotations to apply to all resources (Deployment, Service, etc)
+# These annotations will be propagated to both resource metadata and pod spec template
+# Example:
+# extraAnnotations:
+#   custom.io/env: production
+#   custom.io/team: platform
+extraAnnotations: {}
+
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 65532
@@ -206,14 +214,13 @@ featureFlags:
   enablePeerDiscovery: true
   enableArchiveHealth: true
   enableSorobanMetrics: false
-  enableArchiveHealth: "false"
 
 
 security:
   audit:
     enabled: true
-    logLevel: "Audit"
-  podSecurityStandard: "restricted"
+    logLevel: Audit
+  podSecurityStandard: restricted
   falco:
     enabled: true
   networkPolicy:
@@ -410,3 +417,89 @@ otel:
       tempo:
         enabled: false
         endpoint: "http://tempo:4317"
+
+
+# SCP Analytics Pipeline Configuration
+# Real-time streaming of SCP messages to Kafka for network topology analysis
+scpAnalytics:
+  # Enable SCP analytics pipeline
+  enabled: false
+
+  # Kafka configuration
+  kafka:
+    # Kafka bootstrap servers (comma-separated)
+    bootstrapServers: "kafka:9092"
+
+    # Topic name for SCP messages
+    topic: "stellar-scp-messages"
+
+    # Serialization format: "avro", "protobuf", or "json"
+    format: "avro"
+
+    # Compression type: "snappy", "gzip", "lz4", or "zstd"
+    compression: "snappy"
+
+    # Batch size in bytes
+    batchSize: 1000000
+
+    # Linger time in milliseconds (wait before sending batch)
+    lingerMs: 100
+
+    # Enable message deduplication
+    enableDeduplication: true
+
+    # Polling interval in seconds
+    pollIntervalSecs: 1
+
+    # Schema registry URL (for Avro)
+    schemaRegistryUrl: ""
+
+    # SASL authentication (optional)
+    sasl:
+      enabled: false
+      mechanism: "PLAIN"  # PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
+      username: ""
+      password: ""
+
+  # Sidecar configuration (injected into validator pods)
+  sidecar:
+    # Enable sidecar injection
+    enabled: true
+
+    # Sidecar image (defaults to main operator image)
+    image: ""
+
+    # Resource limits for sidecar
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  # Topology Health Consumer configuration
+  consumer:
+    # Number of consumer replicas
+    replicas: 1
+
+    # Consumer group ID
+    groupId: "topology-health-consumer"
+
+    # Stall threshold in seconds
+    stallThresholdSecs: 30
+
+    # Analysis window in seconds
+    analysisWindowSecs: 60
+
+    # Log level
+    logLevel: "info"
+
+    # Resource limits
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 200m
+        memory: 256Mi

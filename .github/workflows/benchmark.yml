@@ -51,6 +51,11 @@ jobs:
         with:
           shared-key: "bench-build"
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
+
       - name: Build release
         run: cargo build --release --locked
 

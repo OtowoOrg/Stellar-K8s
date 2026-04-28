@@ -101,6 +101,22 @@ pub static QUORUM_CRITICAL_NODES: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>
 pub static QUORUM_MIN_OVERLAP: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
+/// Gauge tracking PVC disk usage percentage (0-100)
+pub static PVC_DISK_USAGE_PERCENT: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Counter tracking PVC expansion events
+pub static PVC_EXPANSION_TOTAL: Lazy<Family<NodeLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking current PVC size in bytes
+pub static PVC_SIZE_BYTES: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking PVC expansion count
+pub static PVC_EXPANSION_COUNT: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
 /// Histogram tracking consensus latency per validator
 pub static QUORUM_CONSENSUS_LATENCY_MS: Lazy<Family<NodeLabels, Histogram>> = Lazy::new(|| {
     fn latency_histogram() -> Histogram {
@@ -430,6 +446,28 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_dr_drill_time_to_recovery_ms",
         "Time to Recovery (TTR) for DR drills in milliseconds",
         DR_DRILL_TIME_TO_RECOVERY_MS.clone(),
+    );
+
+    // Register PVC disk scaling metrics
+    registry.register(
+        "stellar_pvc_disk_usage_percent",
+        "PVC disk usage percentage (0-100)",
+        PVC_DISK_USAGE_PERCENT.clone(),
+    );
+    registry.register(
+        "stellar_pvc_expansion_total",
+        "Total number of PVC expansion events",
+        PVC_EXPANSION_TOTAL.clone(),
+    );
+    registry.register(
+        "stellar_pvc_size_bytes",
+        "Current PVC size in bytes",
+        PVC_SIZE_BYTES.clone(),
+    );
+    registry.register(
+        "stellar_pvc_expansion_count",
+        "Number of expansions performed on this PVC",
+        PVC_EXPANSION_COUNT.clone(),
     );
 
     // Register operator build-info and leader metrics
@@ -1130,6 +1168,83 @@ pub fn set_zk_archive_chain_gaps(
     ZK_ARCHIVE_CHAIN_GAPS_TOTAL
         .get_or_create(&labels)
         .set(gap_count as i64);
+}
+
+/// Set PVC disk usage percentage metric
+pub fn set_pvc_disk_usage_percent(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    hardware_generation: &str,
+    usage_percent: i64,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
+    };
+    PVC_DISK_USAGE_PERCENT
+        .get_or_create(&labels)
+        .set(usage_percent);
+}
+
+/// Increment PVC expansion counter
+pub fn increment_pvc_expansion_total(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    hardware_generation: &str,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
+    };
+    PVC_EXPANSION_TOTAL.get_or_create(&labels).inc();
+}
+
+/// Set PVC size in bytes metric
+pub fn set_pvc_size_bytes(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    hardware_generation: &str,
+    size_bytes: i64,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
+    };
+    PVC_SIZE_BYTES.get_or_create(&labels).set(size_bytes);
+}
+
+/// Set PVC expansion count metric
+pub fn set_pvc_expansion_count(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    hardware_generation: &str,
+    count: i64,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
+    };
+    PVC_EXPANSION_COUNT.get_or_create(&labels).set(count);
 }
 
 #[cfg(test)]

@@ -21,7 +21,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libssl-dev \
             libsasl2-dev \
-            pkg-config
+            pkg-config \
+            libcurl4-openssl-dev \
+            cmake
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

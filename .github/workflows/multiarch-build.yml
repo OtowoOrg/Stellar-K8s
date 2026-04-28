@@ -202,7 +202,7 @@ jobs:
         run: |
           echo "## Architecture Benchmark Comparison" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           if [ -f results/bench-amd64.txt ]; then
             echo "### AMD64 (x86_64)" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
@@ -211,9 +211,9 @@ jobs:
           else
             echo "⚠️ AMD64 benchmark results not available" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           if [ -f results/bench-arm64.txt ]; then
             echo "### ARM64 (Graviton / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY

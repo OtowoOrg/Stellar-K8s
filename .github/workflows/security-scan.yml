@@ -19,10 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
-    
+
     - name: Run cargo audit
       run: |
         cargo install cargo-audit --locked
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Run Trivy vulnerability scanner FS
       uses: aquasecurity/trivy-action@master
       with:
@@ -42,7 +42,7 @@ jobs:
         format: 'sarif'
         output: 'trivy-fs-results.sarif'
         severity: 'CRITICAL,HIGH'
-    
+
     - name: Run Trivy vulnerability scanner Cargo
       uses: aquasecurity/trivy-action@master
       with:
@@ -52,12 +52,12 @@ jobs:
         output: 'trivy-cargo-results.sarif'
         severity: 'CRITICAL,HIGH'
         args: ['--scanners', 'vuln', '--vuln-type', 'library']
-    
+
     - name: Upload Trivy scan results FS
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: trivy-fs-results.sarif
-        
+
     - name: Upload Trivy cargo results
       uses: github/codeql-action/upload-sarif@v3
       with:
@@ -68,10 +68,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Build Docker image
       run: docker build -t stellar-operator:scan .
-    
+
     - name: Run Trivy on Docker image
       uses: aquasecurity/trivy-action@master
       with:
@@ -90,7 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Checkov IaC scan
       uses: bridgecrewio/checkov-action@v12
       with:
@@ -109,7 +109,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Run kube-bench
       run: |
         curl -LO \"https://github.com/aquasecurity/kube-bench/releases/download/v0.6.0/kube-bench_${{ matrix.os }}_v0.6.0_linux_amd64.tar.gz\"
@@ -123,12 +123,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Setup k6
       uses: grafana/xk6-action@v2
       with:
         version: 'v0.53.0'
-    
+
     - name: Run k6 penetration test scenarios
       run: |
         mkdir -p benchmarks/security/

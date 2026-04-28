@@ -82,8 +82,17 @@ pub enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
-    /// Generate an incident report for a specific time window
-    IncidentReport(incident::IncidentReportArgs),
+    /// Install shell completion scripts to user's home directory
+    InstallCompletion {
+        /// Shell to install completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Incident Response Toolkit
+    Incident {
+        #[command(subcommand)]
+        command: incident::IncidentCommands,
+    },
     /// Compare performance metrics between two clusters
     BenchmarkCompare(stellar_k8s::benchmark_compare::BenchmarkCompareArgs),
 }

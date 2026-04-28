@@ -293,6 +293,29 @@ stellar-operator completions zsh > ~/.zsh/completion/_stellar-operator
 stellar-operator completions fish > ~/.config/fish/completions/stellar-operator.fish
 ```
 
+### install-completion
+
+Automatically install shell completion scripts to your user's home directory.
+
+```bash
+stellar-operator install-completion <SHELL>
+```
+
+**Arguments:**
+- `<SHELL>`: The shell to install completions for (`bash`, `zsh`, `fish`, `powershell`, `elvish`)
+
+**Examples:**
+```bash
+# Install bash completion script to ~/.local/share/bash-completion/completions/
+stellar-operator install-completion bash
+
+# Install zsh completion script to ~/.zsh/completions/
+stellar-operator install-completion zsh
+
+# Install fish completion script to ~/.config/fish/completions/
+stellar-operator install-completion fish
+```
+
 ## Global Options
 
 Available for all commands:

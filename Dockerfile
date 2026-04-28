@@ -23,17 +23,30 @@ ARG TARGETPLATFORM
 ARG TARGETARCH
 ARG BUILDPLATFORM
 
+# Install system dependencies
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+      libssl-dev \
+      libsasl2-dev \
+      pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install cross-compilation toolchains when building for arm64 on amd64 host.
 RUN if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDPLATFORM" != "$TARGETPLATFORM" ]; then \
       apt-get update -qq && \
       apt-get install -y --no-install-recommends \
         gcc-aarch64-linux-gnu \
-        libc6-dev-arm64-cross && \
-      rustup target add aarch64-unknown-linux-gnu; \
+        libc6-dev-arm64-cross \
+        libssl-dev:arm64 \
+        libsasl2-dev:arm64 \
+        pkg-config:arm64 && \
+      rustup target add aarch64-unknown-linux-gnu && \
+      rm -rf /var/lib/apt/lists/*; \
     fi
 
-# Set Cargo target based on TARGETARCH.
+# Set Cargo target based on TARGETARCH and OpenSSL environment variables for cross-compilation
 ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+ENV OPENSSL_DIR=/usr/lib/aarch64-linux-gnu
 
 # Copy the recipe and build dependencies first (cached layer)
 COPY --from=planner /app/recipe.json recipe.json

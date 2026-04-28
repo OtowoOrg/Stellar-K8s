@@ -476,7 +476,7 @@ impl TopologyHealthConsumer {
             score -= 0.2;
         }
 
-        score.max(0.0).min(1.0)
+        score.clamp(0.0, 1.0)
     }
 
     /// Get the latest health metrics

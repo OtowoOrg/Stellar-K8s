@@ -1,7 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="OtowoOrg/Stellar-K8s"
+# shellcheck source=lib/repo.sh
+# shellcheck source=lib/common.sh
+source "$(dirname "$0")/lib/repo.sh"
+source "$(dirname "$0")/lib/common.sh"
+
+show_help() {
+  cat <<EOF
+Usage: $(basename "$0") [-h|--help]
+
+Creates GitHub issues for Stellar-K8s Wave (Batch 7, 20 x 200 pts).
+
+Prerequisites:
+  - gh CLI installed and authenticated (gh auth login)
+  - Network access to api.github.com
+
+Optional environment variables:
+  REPO                Target repository (default: OtowoOrg/Stellar-K8s)
+  DRY_RUN             Set to 1 to print commands without executing
+  MAX_RETRIES         Number of retry attempts on API failure (default: 10)
+  RETRY_DELAY_SECONDS Seconds to wait between retries (default: 15)
+
+Example:
+  REPO=myorg/my-fork DRY_RUN=1 $(basename "$0")
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) show_help; exit 0 ;;
+  esac
+done
+
+EXPECTED_ISSUE_COUNT=20
+ACTUAL_ISSUE_COUNT=$(grep -c '^gh issue create' "$0")
+if [ "$ACTUAL_ISSUE_COUNT" -ne "$EXPECTED_ISSUE_COUNT" ]; then
+  echo "ERROR: Expected $EXPECTED_ISSUE_COUNT issue create calls, found $ACTUAL_ISSUE_COUNT. Update EXPECTED_ISSUE_COUNT or fix the script." >&2
+  exit 1
+fi
 
 # Source shared retry/backoff and dry-run helper.
 # shellcheck source=scripts/retry_helper.sh
@@ -9,7 +46,7 @@ source "$(dirname "$0")/retry_helper.sh"
 
 echo "Ensuring required labels exist..."
 for label in "stellar-wave" "testing" "documentation" "ci" "bug" "enhancement" "good-first-issue" "security" "performance" "reliability" "kubernetes" "observability" "dx"; do
-  gh label create "$label" --repo "$REPO" --color "0075ca" 2>/dev/null || true
+  gh label create --repo "$REPO" "$label" --color "0075ca" 2>/dev/null || true
 done
 
 echo "Creating Batch 7 issues..."
@@ -336,3 +373,5 @@ echo "✓ Issue 20 created"
 
 echo ""
 echo "🎉 All 20 Batch 7 issues created successfully!"
+
+print_skip_summary

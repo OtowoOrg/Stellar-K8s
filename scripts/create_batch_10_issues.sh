@@ -1,7 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="OtowoOrg/Stellar-K8s"
+# shellcheck source=lib/repo.sh
+# shellcheck source=lib/common.sh
+source "$(dirname "$0")/lib/repo.sh"
+source "$(dirname "$0")/lib/common.sh"
+
+show_help() {
+  cat <<EOF
+Usage: $(basename "$0") [-h|--help]
+
+Creates GitHub issues for Stellar-K8s Wave (Batch 10, 8 x 200 pts + 2 x 150 pts).
+
+Prerequisites:
+  - gh CLI installed and authenticated (gh auth login)
+  - Network access to api.github.com
+
+Optional environment variables:
+  REPO                Target repository (default: OtowoOrg/Stellar-K8s)
+  DRY_RUN             Set to 1 to print commands without executing
+  MAX_RETRIES         Number of retry attempts on API failure (default: 10)
+  RETRY_DELAY_SECONDS Seconds to wait between retries (default: 15)
+
+Example:
+  REPO=myorg/my-fork DRY_RUN=1 $(basename "$0")
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) show_help; exit 0 ;;
+  esac
+done
+
+EXPECTED_ISSUE_COUNT=10
+ACTUAL_ISSUE_COUNT=$(grep -c '^create_issue_with_retry' "$0")
+if [ "$ACTUAL_ISSUE_COUNT" -ne "$EXPECTED_ISSUE_COUNT" ]; then
+  echo "ERROR: Expected $EXPECTED_ISSUE_COUNT issue create calls, found $ACTUAL_ISSUE_COUNT. Update EXPECTED_ISSUE_COUNT or fix the script." >&2
+  exit 1
+fi
 
 # Source shared retry/backoff and dry-run helper.
 # shellcheck source=scripts/retry_helper.sh
@@ -216,3 +253,5 @@ Soroban (the Stellar smart contract platform) introduces new metrics like Host F
 
 echo ""
 echo "🎉 Batch 10 (8x200, 2x150) issues created successfully!"
+
+print_skip_summary

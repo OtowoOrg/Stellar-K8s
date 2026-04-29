@@ -1,0 +1,269 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stellarbenchmarks.stellar.org
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+spec:
+  group: stellar.org
+  names:
+    categories: []
+    kind: StellarBenchmark
+    plural: stellarbenchmarks
+    shortNames:
+      - sbench
+    singular: stellarbenchmark
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Target
+          type: string
+          jsonPath: .spec.targetEndpoint
+        - name: Duration
+          type: integer
+          jsonPath: .spec.durationSeconds
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          description: >
+            StellarBenchmark triggers a performance test run against a Stellar
+            Horizon or Soroban RPC endpoint.  The operator spins up ephemeral
+            load-generator pods, collects metrics (Peak TPS, Average Ledger
+            Close Time, P99 API Latency), and writes the results to a
+            BenchmarkReport resource or a ConfigMap.
+          type: object
+          required:
+            - spec
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - targetEndpoint
+              properties:
+                targetEndpoint:
+                  description: >
+                    HTTP(S) endpoint of the Horizon or Soroban RPC node under
+                    test.  Example: http://my-horizon.stellar-system.svc.cluster.local:8000
+                  type: string
+                  minLength: 1
+                durationSeconds:
+                  description: How long (in seconds) the load-generator pods should run.
+                  type: integer
+                  format: int32
+                  minimum: 1
+                  maximum: 3600
+                  default: 60
+                targetTps:
+                  description: >
+                    Target transactions per second to attempt during the test.
+                    The load generator will ramp up to this rate and sustain it.
+                  type: integer
+                  format: int32
+                  minimum: 1
+                  default: 100
+                concurrency:
+                  description: >
+                    Number of concurrent load-generator pods to spin up.
+                    Each pod contributes targetTps / concurrency TPS.
+                  type: integer
+                  format: int32
+                  minimum: 1
+                  maximum: 50
+                  default: 1
+                networkPassphrase:
+                  description: >
+                    Stellar network passphrase used when constructing test
+                    transactions.  Defaults to the Testnet passphrase.
+                  type: string
+                  default: "Test SDF Network ; September 2015"
+                loadGeneratorImage:
+                  description: >
+                    Container image for the load-generator pods.  Must expose a
+                    /metrics endpoint (Prometheus format) and accept the
+                    environment variables TARGET_ENDPOINT, DURATION_SECONDS,
+                    TARGET_TPS, and NETWORK_PASSPHRASE.
+                  type: string
+                  default: "stellar/load-generator:latest"
+                resources:
+                  description: Resource requirements for each load-generator pod.
+                  type: object
+                  properties:
+                    cpuRequest:
+                      type: string
+                      default: "250m"
+                    memoryRequest:
+                      type: string
+                      default: "256Mi"
+                    cpuLimit:
+                      type: string
+                      default: "1"
+                    memoryLimit:
+                      type: string
+                      default: "512Mi"
+                secretRef:
+                  description: >
+                    Optional name of a Kubernetes Secret whose keys are injected
+                    as environment variables into the load-generator pods.
+                  type: string
+                  nullable: true
+                extraEnv:
+                  description: Additional environment variables for the load-generator pods.
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - name
+                      - value
+                    properties:
+                      name:
+                        type: string
+                      value:
+                        type: string
+                resultStorage:
+                  description: >
+                    Where to store the benchmark results.
+                    BenchmarkReport (default) creates a BenchmarkReport CR.
+                    ConfigMap stores results in a plain ConfigMap.
+                  type: string
+                  enum:
+                    - BenchmarkReport
+                    - ConfigMap
+                  default: BenchmarkReport
+                nodeSelector:
+                  description: Optional node selector for the load-generator pods.
+                  type: object
+                  additionalProperties:
+                    type: string
+                serviceAccountName:
+                  description: Optional service account name for the load-generator pods.
+                  type: string
+                  nullable: true
+                imagePullPolicy:
+                  description: Image pull policy for the load-generator image.
+                  type: string
+                  enum:
+                    - Always
+                    - IfNotPresent
+                    - Never
+                  default: IfNotPresent
+                tolerations:
+                  description: Tolerations for the load-generator pods.
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - key
+                    properties:
+                      key:
+                        type: string
+                      operator:
+                        type: string
+                        nullable: true
+                      value:
+                        type: string
+                        nullable: true
+                      effect:
+                        type: string
+                        nullable: true
+            status:
+              description: Current status of the StellarBenchmark run.
+              type: object
+              properties:
+                phase:
+                  description: High-level phase of the benchmark run.
+                  type: string
+                  enum:
+                    - Pending
+                    - Running
+                    - Collecting
+                    - Completed
+                    - Failed
+                message:
+                  description: Human-readable message describing the current state.
+                  type: string
+                  nullable: true
+                startedAt:
+                  description: RFC 3339 timestamp when the benchmark run started.
+                  type: string
+                  nullable: true
+                completedAt:
+                  description: RFC 3339 timestamp when the benchmark run completed.
+                  type: string
+                  nullable: true
+                reportRef:
+                  description: Name of the BenchmarkReport or ConfigMap holding the results.
+                  type: string
+                  nullable: true
+                podNames:
+                  description: Names of the load-generator pods that were created.
+                  type: array
+                  items:
+                    type: string
+                summary:
+                  description: Inline summary of key metrics.
+                  type: object
+                  nullable: true
+                  properties:
+                    peakTps:
+                      type: number
+                      format: double
+                    avgLedgerCloseMs:
+                      type: number
+                      format: double
+                    p99ApiLatencyMs:
+                      type: number
+                      format: double
+                    totalTransactions:
+                      type: integer
+                      format: int64
+                    successfulTransactions:
+                      type: integer
+                      format: int64
+                    failedTransactions:
+                      type: integer
+                      format: int64
+                    errorRatePct:
+                      type: number
+                      format: double
+                conditions:
+                  description: Kubernetes-style conditions for detailed status tracking.
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - type
+                      - status
+                      - lastTransitionTime
+                      - reason
+                      - message
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                        nullable: true

@@ -1,0 +1,37 @@
+# tests/chaos/01-operator-pod-kill.yaml
+#
+# Experiment 1: Kill the operator pod repeatedly while it's reconciling.
+#
+# What this tests:
+#   The operator pod receives SIGKILL (immediate termination, no graceful shutdown)
+#   during active reconciliation. This simulates node failures, OOM kills, or
+#   cluster autoscaling events.
+#   Kubernetes must restart the operator via the Deployment, and the operator
+#   must re-reconcile all StellarNodes from scratch with no human intervention.
+#
+# Expected outcome:
+#   - Operator pod restarts immediately after each kill.
+#   - No StellarNode resources are left in a permanently broken state.
+#   - Within 3 minutes of the last kill, all StellarNodes are Ready.
+#   - No duplicate resources or stuck finalizers.
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: operator-pod-kill
+  namespace: chaos-testing
+  labels:
+    app.kubernetes.io/part-of: stellar-chaos-suite
+    chaos/experiment: "01-operator-pod-kill"
+spec:
+  action: pod-kill                # Immediately kill pods (SIGKILL)
+  mode: one                       # Target one pod at a time
+  selector:
+    namespaces:
+      - stellar-system
+    labelSelectors:
+      app: stellar-operator
+  duration: "30s"                 # Kill repeatedly for 30 seconds
+  gracePeriod: 0                  # No graceful shutdown, immediate kill
+  scheduler:
+    cron: "@every 5s"             # Kill every 5 seconds during duration

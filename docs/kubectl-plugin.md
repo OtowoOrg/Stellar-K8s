@@ -1,5 +1,9 @@
 # kubectl-stellar Plugin
 
+<p align="center">
+  <img src="../assets/logo.png" alt="Stellar-K8s Logo" width="120" />
+</p>
+
 A kubectl plugin for managing StellarNode resources in Kubernetes clusters.
 
 ## Installation
@@ -18,7 +22,28 @@ chmod +x ~/.local/bin/kubectl-stellar
 kubectl krew install stellar
 ```
 
-## Usage
+## Global Flags
+
+| Flag | Description |
+|------|-------------|
+| `-n, --namespace` | Kubernetes namespace (defaults to current context) |
+| `-o, --output` | Output format: `table` (default), `json`, `yaml` |
+| `--dry-run` | Simulate the command without making any state-changing API calls |
+
+### --dry-run
+
+Use `--dry-run` to preview what a command would do without executing it. Safe to run against production clusters.
+
+```bash
+# Preview what 'debug' would do without exec-ing into the pod
+kubectl stellar debug my-validator --dry-run
+
+# All read-only commands (list, status, events) pass through normally
+kubectl stellar list --dry-run
+kubectl stellar status --dry-run
+```
+
+
 
 ### List StellarNode Resources
 
@@ -102,6 +127,48 @@ Output in JSON or YAML format:
 ```bash
 kubectl stellar status -o json
 kubectl stellar status -o yaml
+```
+
+### Summary
+
+Show a high-level aggregate view of all managed StellarNodes and their health:
+
+```bash
+kubectl stellar summary
+```
+
+Includes across all namespaces:
+
+```bash
+kubectl stellar summary -A
+```
+
+Output in JSON or YAML format:
+
+```bash
+kubectl stellar summary -o json
+kubectl stellar summary -o yaml
+```
+
+Example table output:
+
+```
+StellarNode Summary
+========================================
+  Total nodes : 5
+  Healthy     : 4
+  Synced      : 3
+  Degraded    : 1
+  Pending     : 0
+
+By Type:
+  Horizon         : 2
+  SorobanRpc      : 1
+  Validator       : 2
+
+By Network:
+  Mainnet         : 3
+  Testnet         : 2
 ```
 
 ### Explain Stellar Error Codes

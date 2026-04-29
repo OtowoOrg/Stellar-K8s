@@ -322,3 +322,111 @@ spec:
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp
+
+---
+# StellarBenchmark CRD
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stellarbenchmarks.stellar.org
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+spec:
+  group: stellar.org
+  names:
+    kind: StellarBenchmark
+    listKind: StellarBenchmarkList
+    plural: stellarbenchmarks
+    singular: stellarbenchmark
+    shortNames:
+      - sbench
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Target
+          type: string
+          jsonPath: .spec.targetEndpoint
+        - name: Duration
+          type: integer
+          jsonPath: .spec.durationSeconds
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - targetEndpoint
+              x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+
+---
+# BenchmarkReport CRD
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: benchmarkreports.stellar.org
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+spec:
+  group: stellar.org
+  names:
+    kind: BenchmarkReport
+    listKind: BenchmarkReportList
+    plural: benchmarkreports
+    singular: benchmarkreport
+    shortNames:
+      - br
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Benchmark
+          type: string
+          jsonPath: .spec.benchmarkRef
+        - name: PeakTPS
+          type: number
+          jsonPath: .spec.metrics.peakTps
+        - name: AvgLedgerMs
+          type: number
+          jsonPath: .spec.metrics.avgLedgerCloseMs
+        - name: P99LatencyMs
+          type: number
+          jsonPath: .spec.metrics.p99ApiLatencyMs
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - benchmarkRef
+                - startedAt
+                - completedAt
+                - targetEndpoint
+                - config
+                - metrics
+              x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true

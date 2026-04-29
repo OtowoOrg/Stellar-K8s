@@ -9,24 +9,22 @@ repository = "https://github.com/stellar/stellar-k8s"
 
 [dependencies]
 ed25519-dalek = { version = "2", features = ["rand_core"] }
+lru = "0.16"
+printpdf = "0.7"
 toml = "0.8"
 # Glob pattern matching for label propagation filters
 glob = "0.3"
 
 # Kubernetes client and operator framework
-kube = { version = "0.94", features = [
-    "runtime",
-    "derive",
-    "unstable-runtime",
-    "admission",
-] }
+kube = { version = "0.94", features = ["runtime", "derive", "unstable-runtime", "admission", "client", "ws"] }
 kube-runtime = { version = "0.94", features = ["unstable-runtime"] }
-k8s-openapi = { version = "0.26", default-features = false, features = [
+k8s-openapi = { version = "0.22", default-features = false, features = [
     "v1_30",
 ] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
 futures = "0.3"
 
 # Serialization
@@ -35,7 +33,7 @@ serde_json = "1"
 serde_yaml = "0.9"
 
 # Schema generation for CRDs
-schemars = "1.2"
+schemars = "0.8"
 
 # Error handling
 thiserror = "1"
@@ -83,8 +81,11 @@ reqwest = { version = "0.12", features = [
     "multipart",
 ] }
 
+# Kafka client for SCP analytics pipeline
+rdkafka = { version = "0.36", features = ["cmake-build", "ssl", "sasl"] }
+
 # REST API (optional)
-axum = { version = "0.8.8", optional = true }
+axum = { version = "0.8.8", optional = true, features = ["ws"] }
 tower = { version = "0.4", optional = true }
 tower-http = { version = "0.5", features = ["trace"], optional = true }
 
@@ -100,8 +101,8 @@ rustls-pki-types = "1.14.0"
 x509-parser = "0.16"
 
 # Wasm runtime for custom validation plugins
-wasmtime = { version = "24.0.6", optional = true }
-wasmtime-wasi = { version = "24.0.6", features = ["preview1"], optional = true }
+wasmtime = { version = "24.0.7", optional = true }
+wasmtime-wasi = { version = "24.0.7", features = ["preview1"], optional = true }
 
 # Additional crypto for webhook TLS
 tokio-rustls = { version = "0.26", optional = true }
@@ -109,9 +110,12 @@ tokio-rustls = { version = "0.26", optional = true }
 # Base64 for Wasm plugin loading
 base64 = "0.21"
 
+# HMAC-SHA256 for webhook payload signing
+hmac = "0.12"
+
 # SHA256 for plugin integrity verification
 sha2 = "0.10"
-hex = { version = "0.4", optional = true }
+hex = "0.4"
 rand = "0.8"
 rand_distr = "0.5.1"
 
@@ -127,6 +131,15 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 pqcrypto-dilithium = "0.5.0"
 pqcrypto-kyber = "0.8.1"
 pqcrypto-traits = "0.3.5"
+comfy-table = "7.2.2"
+csv = "1.4.0"
+url = "2.5"
+urlencoding = "2.1"
+aws-sdk-s3 = "1.131.0"
+aws-config = "1.8.16"
+serde_json_diff = "0.2.0"
+json-patch = "4.1.0"
+md5 = "0.8.0"
 
 [build-dependencies]
 chrono = "0.4"
@@ -135,14 +148,13 @@ walkdir = "2"
 serde = { version = "1", features = ["derive"] }
 
 [features]
-default = ["rest-api", "metrics", "admission-webhook"]
+default = ["rest-api", "metrics", "admission-webhook", "k8s-v1-30"]
 rest-api = ["axum", "tower", "tower-http"]
 metrics = ["prometheus-client", "once_cell"]
 admission-webhook = [
     "wasmtime",
     "wasmtime-wasi",
     "tokio-rustls",
-    "hex",
     "axum",
     "tower",
     "tower-http",
@@ -151,12 +163,17 @@ axum = ["dep:axum"]
 # Expose reconciler for state-machine fuzzing (reconcile_no_panic, event sequences)
 reconciler-fuzz = []
 
+# Kubernetes API version selection (exactly one must be enabled)
+k8s-v1-30 = ["k8s-openapi/v1_30"]
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3"
 wiremock = "=0.6.5"
 proptest = "1.5"
 wat = "1.246"
+# Ensure dev builds that pull k8s-openapi 0.22 have an explicit API version feature.
+k8s-openapi = { version = "0.22", default-features = false, features = ["v1_30"] }
 
 [[bin]]
 name = "stellar-operator"
@@ -174,5 +191,18 @@ path = "src/kubectl_plugin.rs"
 name = "stellar-completions"
 path = "src/bin/completions.rs"
 
-[workspace]
+# Byzantine Monitoring Watcher — deployed as a sidecar in multiple cloud regions
+# to detect local vs. global consensus issues (Byzantine partition detection).
+[[bin]]
+name = "stellar-watcher"
+path = "src/bin/stellar-watcher.rs"
+required-features = ["rest-api", "metrics"]
 
+# Fork Detection Sidecar — compares local ledger hash against public anchors
+# to detect potential network forks early.
+[[bin]]
+name = "stellar-fork-detector"
+path = "src/bin/stellar-fork-detector.rs"
+required-features = ["rest-api", "metrics"]
+
+[workspace]

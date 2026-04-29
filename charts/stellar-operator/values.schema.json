@@ -1,13 +1,10 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "stellar-operator Helm values",
+  "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
-  "additionalProperties": false,
   "properties": {
     "replicaCount": {
       "type": "integer",
-      "minimum": 1,
-      "description": "Number of operator replicas"
+      "minimum": 1
     },
     "image": {
       "type": "object",
@@ -21,7 +18,7 @@
         },
         "pullPolicy": {
           "type": "string",
-          "enum": ["Always", "IfNotPresent", "Never", "validation error"],
+          "enum": ["Always", "IfNotPresent", "Never"],
           "description": "Image pull policy"
         },
         "tag": {
@@ -31,14 +28,7 @@
       }
     },
     "imagePullSecrets": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["name"],
-        "properties": {
-          "name": { "type": "string" }
-        }
-      }
+      "type": "array"
     },
     "nameOverride": {
       "type": "string"
@@ -48,283 +38,118 @@
     },
     "serviceAccount": {
       "type": "object",
-      "additionalProperties": false,
       "properties": {
         "create": {
-          "type": "boolean",
-          "description": "Whether to create a ServiceAccount"
+          "type": "boolean"
         },
         "annotations": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
+          "type": "object"
         },
         "name": {
-          "type": "string",
-          "description": "ServiceAccount name override"
+          "type": "string"
         }
       }
     },
     "secrets": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "create": {
-          "type": "boolean"
-        },
-        "useExternalSecrets": {
-          "type": "boolean"
-        },
-        "externalSecret": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "secretStoreRef": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["name", "kind"],
-              "properties": {
-                "name": { "type": "string", "minLength": 1 },
-                "kind": {
-                  "type": "string",
-                  "enum": ["SecretStore", "ClusterSecretStore"]
-                }
-              }
-            },
-            "refreshInterval": {
-              "type": "string",
-              "pattern": "^[0-9]+(s|m|h)$",
-              "description": "Refresh interval, e.g. 1h, 30m, 60s"
-            }
-          }
-        },
-        "items": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["key", "value"],
-            "properties": {
-              "key": { "type": "string", "minLength": 1 },
-              "value": { "type": "string" }
-            }
-          }
-        }
-      }
+      "type": "object"
     },
     "podAnnotations": {
-      "type": "object",
-      "additionalProperties": { "type": "string" }
+      "type": "object"
     },
     "podSecurityContext": {
-      "type": "object",
-      "properties": {
-        "runAsNonRoot": { "type": "boolean" },
-        "runAsUser": { "type": "integer", "minimum": 0 },
-        "runAsGroup": { "type": "integer", "minimum": 0 },
-        "fsGroup": { "type": "integer", "minimum": 0 }
-      }
+      "type": "object"
     },
     "securityContext": {
-      "type": "object",
-      "properties": {
-        "allowPrivilegeEscalation": { "type": "boolean" },
-        "readOnlyRootFilesystem": { "type": "boolean" },
-        "capabilities": {
-          "type": "object",
-          "properties": {
-            "drop": {
-              "type": "array",
-              "items": { "type": "string" }
-            },
-            "add": {
-              "type": "array",
-              "items": { "type": "string" }
-            }
-          }
-        }
-      }
+      "type": "object"
     },
     "resources": {
-      "$ref": "#/definitions/resourceRequirements"
+      "type": "object"
+    },
+    "autoscaling": {
+      "type": "object"
     },
     "nodeSelector": {
-      "type": "object",
-      "additionalProperties": { "type": "string" }
+      "type": "object"
     },
     "tolerations": {
-      "type": "array",
-      "items": { "type": "object" }
+      "type": "array"
     },
     "affinity": {
       "type": "object"
     },
+    "arch": {
+      "type": "string"
+    },
     "podDisruptionBudget": {
+      "type": "object"
+    },
+    "operator": {
       "type": "object",
-      "additionalProperties": false,
-      "description": "PodDisruptionBudget configuration",
       "properties": {
-        "enabled": {
+        "logLevel": {
+          "type": "string",
+          "enum": ["trace", "debug", "info", "warn", "error"]
+        },
+        "restApiEnabled": {
           "type": "boolean"
         },
-        "minAvailable": {
-          "oneOf": [
-            { "type": "integer", "minimum": 0 },
-            { "type": "string" }
-          ]
+        "restApiPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
         },
-        "maxUnavailable": {
-          "oneOf": [
-            { "type": "integer", "minimum": 0 },
-            { "type": "string" }
-          ]
+        "metricsPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "watchNamespace": {
+          "type": "string"
         }
       }
     },
     "sidecar": {
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "image": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "repository": { "type": "string" },
-            "tag": { "type": "string" },
-            "pullPolicy": {
-              "type": "string",
-              "enum": ["Always", "IfNotPresent", "Never"]
-            }
-          }
-        },
-        "resources": {
-          "$ref": "#/definitions/resourceRequirements"
-        }
-      }
+      "type": "object"
     },
-    "operator": {
-      "properties": {
-        "logLevel": {
-          "type": "string",
-          "enum": ["trace", "debug", "info", "warn", "error", "validation error"],
-          "description": "Operator log level (trace, debug, info, warn, error)"
-        },
-        "restApiEnabled": {
-          "type": "boolean",
-          "description": "Enable the REST API"
-        },
-        "restApiPort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535,
-          "description": "REST API port"
-        },
-        "metricsPort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535,
-          "description": "Prometheus metrics port"
-        },
-        "watchNamespace": {
-          "type": "string",
-          "description": "Namespace to watch; empty means all namespaces"
-        }
-      }
+    "forkDetector": {
+      "type": "object"
     },
     "service": {
       "type": "object",
-      "additionalProperties": false,
-      "required": ["type", "restApiPort", "metricsPort"],
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["ClusterIP", "NodePort", "LoadBalancer", "validation error"],
-          "description": "Kubernetes Service type"
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
         },
         "restApiPort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+          "type": "integer"
         },
         "metricsPort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+          "type": "integer"
         }
       }
     },
     "defaultResources": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["validator", "horizon", "sorobanRpc"],
-      "properties": {
-        "validator": { "$ref": "#/definitions/resourceRequirements" },
-        "horizon": { "$ref": "#/definitions/resourceRequirements" },
-        "sorobanRpc": { "$ref": "#/definitions/resourceRequirements" }
-      }
+      "type": "object"
     },
     "featureFlags": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Runtime feature flags written into the stellar-operator-config ConfigMap",
-      "properties": {
-        "enableCveScanning": {
-          "type": "string",
-          "enum": ["true", "false"],
-          "description": "Enable automatic CVE patch reconciliation"
-        },
-        "enableReadPool": {
-          "type": "string",
-          "enum": ["true", "false"],
-          "description": "Enable read-replica pool management"
-        },
-        "enableDr": {
-          "type": "string",
-          "enum": ["true", "false"],
-          "description": "Enable disaster-recovery drill scheduling"
-        },
-        "enablePeerDiscovery": {
-          "type": "string",
-          "enum": ["true", "false"],
-          "description": "Enable automatic peer discovery"
-        },
-        "enableArchiveHealth": {
-          "type": "string",
-          "enum": ["true", "false"],
-          "description": "Enable history archive health checks"
-        },
-        "enableSorobanMetrics": {
-          "type": "string",
-          "enum": ["true", "false"],
-          "description": "Enable Soroban-specific Prometheus metrics collection"
-        }
-      }
+      "type": "object"
+    },
+    "security": {
+      "type": "object"
+    },
+    "networkIsolation": {
+      "type": "object"
+    },
+    "byzantineWatcher": {
+      "type": "object"
+    },
+    "otel": {
+      "type": "object"
+    },
+    "scpAnalytics": {
+      "type": "object"
     }
   },
-  "definitions": {
-    "resourceList": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "cpu": {
-          "type": "string",
-          "pattern": "^([0-9]+(\\.[0-9]+)?m?|[0-9]+(\\.[0-9]+)?)$",
-          "description": "CPU quantity, e.g. 500m or 2"
-        },
-        "memory": {
-          "type": "string",
-          "pattern": "^[0-9]+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$",
-          "description": "Memory quantity, e.g. 128Mi or 4Gi"
-        }
-      }
-    },
-    "resourceRequirements": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "requests": { "$ref": "#/definitions/resourceList" },
-        "limits": { "$ref": "#/definitions/resourceList" }
-      }
-    }
-  }
+  "additionalProperties": true
 }

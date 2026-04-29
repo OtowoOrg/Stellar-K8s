@@ -1,0 +1,39 @@
+# tests/chaos/05-disk-fill.yaml
+#
+# Experiment 5: Fill up disk space on the operator pod.
+#
+# What this tests:
+#   The operator's disk fills up completely, simulating disk exhaustion scenarios
+#   like log accumulation, temporary file buildup, or storage quota limits.
+#   The operator must handle disk full errors gracefully without crashing or
+#   corrupting cluster state.
+#
+# Expected outcome:
+#   - Operator pod does not crash due to disk exhaustion.
+#   - Operator continues to reconcile (may log warnings about disk space).
+#   - All StellarNodes remain functional and converge to Ready.
+#   - After disk space is freed, operator resumes normal operation.
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: operator-disk-fill
+  namespace: chaos-testing
+  labels:
+    app.kubernetes.io/part-of: stellar-chaos-suite
+    chaos/experiment: "05-disk-fill"
+spec:
+  action: pod-failure            # Make pods fail by filling disk
+  mode: one
+  selector:
+    namespaces:
+      - stellar-system
+    labelSelectors:
+      app: stellar-operator
+  failure:
+    diskFill:
+      bytes: "100Mi"              # Fill 100MB of disk space
+      fillByFallocate: true       # Use fallocate for faster filling
+  duration: "45s"                 # Fill disk for 45 seconds
+  scheduler:
+    cron: "@once"

@@ -1,0 +1,165 @@
+{{- /*
+Byzantine Monitoring Watcher — deploys one Deployment per configured region.
+
+Each Deployment runs a single `stellar-watcher` pod that polls a Stellar Core
+node from that geographic vantage point and exports Prometheus metrics.
+
+Enable with:
+  byzantineWatcher:
+    enabled: true
+    regions:
+      - cloud: aws
+        region: us-east-1
+        nodeEndpoint: http://stellar-core.stellar-system.svc.cluster.local:11626
+      - cloud: gcp
+        region: eu-west-1
+        nodeEndpoint: http://stellar-core-eu.stellar-system.svc.cluster.local:11626
+*/ -}}
+{{- if .Values.byzantineWatcher.enabled }}
+{{- $root := . }}
+{{- range $i, $watcher := .Values.byzantineWatcher.regions }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stellar-operator.fullname" $root }}-watcher-{{ $watcher.region | replace "." "-" | lower }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: byzantine-watcher
+    app: stellar-watcher
+    stellar.org/watcher-region: {{ $watcher.region | quote }}
+    stellar.org/watcher-cloud: {{ $watcher.cloud | quote }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: {{ $root.Values.byzantineWatcher.metricsPort | default 9101 | quote }}
+    prometheus.io/path: "/metrics"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "stellar-operator.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: byzantine-watcher
+      stellar.org/watcher-region: {{ $watcher.region | quote }}
+  template:
+    metadata:
+      labels:
+        {{- include "stellar-operator.selectorLabels" $root | nindent 8 }}
+        app.kubernetes.io/component: byzantine-watcher
+        app: stellar-watcher
+        stellar.org/watcher-region: {{ $watcher.region | quote }}
+        stellar.org/watcher-cloud: {{ $watcher.cloud | quote }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $root.Values.byzantineWatcher.metricsPort | default 9101 | quote }}
+        prometheus.io/path: "/metrics"
+    spec:
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "stellar-operator.serviceAccountName" $root }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: watcher
+          image: "{{ $root.Values.byzantineWatcher.image.repository | default $root.Values.image.repository }}:{{ $root.Values.byzantineWatcher.image.tag | default $root.Values.image.tag | default $root.Chart.AppVersion }}"
+          imagePullPolicy: {{ $root.Values.byzantineWatcher.image.pullPolicy | default "IfNotPresent" }}
+          command: ["/stellar-watcher"]
+          env:
+            - name: WATCHER_ID
+              value: "watcher-{{ $watcher.cloud }}-{{ $watcher.region | replace "." "-" | lower }}"
+            - name: WATCHER_CLOUD
+              value: {{ $watcher.cloud | quote }}
+            - name: WATCHER_REGION
+              value: {{ $watcher.region | quote }}
+            - name: WATCHER_NETWORK
+              value: {{ $watcher.network | default $root.Values.byzantineWatcher.defaultNetwork | default "mainnet" | quote }}
+            - name: WATCHER_NODE_ENDPOINT
+              value: {{ $watcher.nodeEndpoint | quote }}
+            - name: WATCHER_POLL_INTERVAL
+              value: {{ $root.Values.byzantineWatcher.pollIntervalSecs | default 10 | quote }}
+            - name: WATCHER_REQUEST_TIMEOUT
+              value: {{ $root.Values.byzantineWatcher.requestTimeoutSecs | default 5 | quote }}
+            - name: WATCHER_METRICS_BIND
+              value: "0.0.0.0:{{ $root.Values.byzantineWatcher.metricsPort | default 9101 }}"
+            - name: RUST_LOG
+              value: {{ $root.Values.byzantineWatcher.logLevel | default "info" | quote }}
+          ports:
+            - name: metrics
+              containerPort: {{ $root.Values.byzantineWatcher.metricsPort | default 9101 }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml ($root.Values.byzantineWatcher.resources | default (dict "limits" (dict "cpu" "100m" "memory" "64Mi") "requests" (dict "cpu" "25m" "memory" "32Mi"))) | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      {{- with $root.Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $root.Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Prefer scheduling on nodes in the target region when running in a
+      # multi-region cluster. This is a soft preference — the pod will still
+      # schedule elsewhere if no matching node is available.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: topology.kubernetes.io/region
+                    operator: In
+                    values:
+                      - {{ $watcher.region | quote }}
+---
+# Service for Prometheus scraping (ClusterIP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "stellar-operator.fullname" $root }}-watcher-{{ $watcher.region | replace "." "-" | lower }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: byzantine-watcher
+    app: stellar-watcher
+    stellar.org/watcher-region: {{ $watcher.region | quote }}
+    stellar.org/watcher-cloud: {{ $watcher.cloud | quote }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "stellar-operator.selectorLabels" $root | nindent 4 }}
+    app.kubernetes.io/component: byzantine-watcher
+    stellar.org/watcher-region: {{ $watcher.region | quote }}
+  ports:
+    - name: metrics
+      port: {{ $root.Values.byzantineWatcher.metricsPort | default 9101 }}
+      targetPort: metrics
+      protocol: TCP
+{{- end }}
+{{- end }}

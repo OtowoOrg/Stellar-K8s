@@ -1,0 +1,232 @@
+---
+# Example: Automated Backup Verification via Temporary Clusters
+#
+# This example demonstrates how to enable automated verification of database
+# backups by spinning up temporary clusters and validating data integrity.
+#
+# Features:
+# - Scheduled backup verification (weekly by default)
+# - Temporary cluster provisioning for testing
+# - Data integrity checks (checksums, row counts, sample queries)
+# - Performance benchmarking of restored data
+# - Automatic cleanup of temporary resources
+# - Detailed verification reports stored in S3
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-with-backup-verification
+  namespace: stellar
+spec:
+  nodeType: Horizon
+  network: Testnet
+  version: "v21.0.0"
+
+  # Database configuration
+  managedDatabase:
+    enabled: true
+    databaseName: horizon
+    username: horizon
+    storageSize: "200Gi"
+    instances: 2
+    backup:
+      enabled: true
+      schedule: "0 2 * * *" # Daily backups at 2 AM
+      retentionDays: 30
+      destinationPath: "s3://stellar-backups/horizon-testnet"
+
+  # Automated backup verification configuration
+  backupVerification:
+    enabled: true
+
+    # Verification schedule (cron format)
+    # Default: "0 2 * * 0" (every Sunday at 2 AM)
+    # Examples:
+    #   - "0 2 * * 0"     # Weekly on Sunday
+    #   - "0 3 1 * *"     # Monthly on the 1st
+    #   - "0 4 1 */3 *"   # Quarterly
+    schedule: "0 2 * * 0"
+
+    # Backup source configuration
+    backupSource:
+      type: s3
+      bucket: stellar-backups
+      region: us-east-1
+      prefix: horizon-testnet/
+      credentialsSecret: aws-credentials
+
+    # Verification strategy
+    # Options: quick, standard, full
+    # - quick: Checksums only
+    # - standard: Checksums + sample queries (default)
+    # - full: Checksums + full table scans + benchmarks
+    strategy: standard
+
+    # Timeout for verification process (in minutes)
+    timeoutMinutes: 60
+
+    # Enable performance benchmarking
+    benchmarkEnabled: true
+
+    # Notification webhook for verification results
+    notificationWebhook: "https://slack.example.com/hooks/backup-verification"
+
+    # S3 bucket for storing verification reports
+    reportStorage:
+      bucket: stellar-reports
+      region: us-east-1
+      prefix: verification-reports/
+
+    # Resource limits for temporary verification pods
+    resources:
+      cpuLimit: "2000m"
+      memoryLimit: "4Gi"
+      storageSize: "100Gi"
+
+  storage:
+    storageClass: "standard"
+    size: "200Gi"
+
+  resources:
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
+
+---
+# Example: Validator with VolumeSnapshot-based Backup Verification
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-snapshot-verification
+  namespace: stellar
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+
+  # Managed database
+  managedDatabase:
+    enabled: true
+    databaseName: stellar
+    username: stellar
+    storageSize: "1Ti"
+    instances: 3
+
+  # Volume snapshot schedule
+  snapshotSchedule:
+    enabled: true
+    schedule: "0 0 * * *" # Daily snapshots
+    retentionDays: 7
+    snapshotClassName: "csi-snapshotter"
+
+  # Backup verification using VolumeSnapshots
+  backupVerification:
+    enabled: true
+    schedule: "0 3 * * 1" # Weekly on Monday at 3 AM
+
+    backupSource:
+      type: volumeSnapshot
+      snapshotName: "validator-snapshot-latest"
+      storageClass: "fast-ssd"
+
+    strategy: full
+    timeoutMinutes: 120
+    benchmarkEnabled: true
+
+    notificationWebhook: "https://alerts.example.com/webhooks/backup-verification"
+
+    reportStorage:
+      bucket: stellar-compliance
+      region: us-west-2
+      prefix: backup-verification/mainnet/
+
+    resources:
+      cpuLimit: "4000m"
+      memoryLimit: "8Gi"
+      storageSize: "500Gi"
+
+  validatorConfig:
+    seedSecretRef: "validator-seed"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "s3://stellar-history/mainnet"
+
+  storage:
+    storageClass: "fast-ssd"
+    size: "1Ti"
+    mode: Local
+
+  resources:
+    limits:
+      cpu: "4000m"
+      memory: "8Gi"
+    requests:
+      cpu: "2000m"
+      memory: "4Gi"
+
+---
+# Example: Horizon with pgBackRest Backup Verification
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-pgbackrest-verification
+  namespace: stellar
+spec:
+  nodeType: Horizon
+  network: Testnet
+  version: "v21.0.0"
+
+  database:
+    host: postgres-pgbackrest.stellar.svc.cluster.local
+    port: 5432
+    database: horizon
+    user: horizon
+    passwordSecret: horizon-db-credentials
+
+  # Backup verification using pgBackRest
+  backupVerification:
+    enabled: true
+    schedule: "0 4 * * 6" # Weekly on Saturday at 4 AM
+
+    backupSource:
+      type: pgbackrest
+      repoPath: "/pgbackrest/repo"
+      stanza: "horizon-testnet"
+
+    strategy: standard
+    timeoutMinutes: 90
+    benchmarkEnabled: false
+
+    notificationWebhook: "https://monitoring.example.com/webhooks/backup-status"
+
+    resources:
+      cpuLimit: "2000m"
+      memoryLimit: "4Gi"
+      storageSize: "150Gi"
+
+  storage:
+    storageClass: "standard"
+    size: "200Gi"
+
+  resources:
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
+
+---
+# AWS Credentials Secret for S3 Access
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aws-credentials
+  namespace: stellar
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: "your-access-key-id"
+  AWS_SECRET_ACCESS_KEY: "your-secret-access-key"

@@ -4,6 +4,10 @@ metadata:
   name: {{ include "stellar-operator.fullname" . }}
   labels:
     {{- include "stellar-operator.labels" . | nindent 4 }}
+  {{- with .Values.extraAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -13,6 +17,9 @@ spec:
     metadata:
       annotations:
         {{- toYaml .Values.podAnnotations | nindent 8 }}
+        {{- with .Values.extraAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       labels:
         {{- include "stellar-operator.selectorLabels" . | nindent 8 }}
     spec:
@@ -36,6 +43,20 @@ spec:
           env:
             - name: STELLAR_OPERATOR_CONFIG
               value: /etc/stellar-operator/config.yaml
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            {{- if .Values.otel.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: "stellar-operator"
+            - name: OTEL_TRACES_SAMPLER
+              value: "parentbased_traceidratio"
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: {{ .Values.otel.samplingRatio | quote }}
+            {{- end }}
           volumeMounts:
             - name: operator-config
               mountPath: /etc/stellar-operator
@@ -105,9 +126,60 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
         {{- end }}
+        {{- if .Values.forkDetector.enabled }}
+        - name: fork-detector
+          image: "{{ .Values.forkDetector.image.repository | default .Values.image.repository }}:{{ .Values.forkDetector.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.forkDetector.image.pullPolicy | default .Values.image.pullPolicy }}
+          command: ["/stellar-fork-detector"]
+          env:
+            - name: FORK_DETECTOR_LOCAL_ENDPOINT
+              value: {{ .Values.forkDetector.localEndpoint | quote }}
+            - name: FORK_DETECTOR_ANCHORS
+              value: {{ join "," .Values.forkDetector.anchors | quote }}
+            - name: FORK_DETECTOR_POLL_INTERVAL
+              value: {{ .Values.forkDetector.pollIntervalSecs | quote }}
+            - name: FORK_DETECTOR_DIVERGENCE_THRESHOLD
+              value: {{ .Values.forkDetector.divergenceThreshold | quote }}
+            - name: FORK_DETECTOR_METRICS_BIND
+              value: "0.0.0.0:{{ .Values.forkDetector.metricsPort }}"
+            - name: FORK_DETECTOR_NETWORK
+              value: {{ .Values.operator.watchNamespace | default "mainnet" | quote }}
+            - name: FORK_DETECTOR_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: RUST_LOG
+              value: {{ .Values.operator.logLevel }}
+          ports:
+            - name: fork-metrics
+              containerPort: {{ .Values.forkDetector.metricsPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: fork-metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: fork-metrics
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.forkDetector.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.arch }}
+      {{- if not .Values.nodeSelector }}
+      nodeSelector:
+      {{- end }}
+        kubernetes.io/arch: {{ .Values.arch }}
       {{- end }}
       {{- with .Values.affinity }}
       affinity:
@@ -116,4 +188,13 @@ spec:
       {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.arch }}
+      {{- if not .Values.tolerations }}
+      tolerations:
+      {{- end }}
+        - key: "kubernetes.io/arch"
+          operator: "Equal"
+          value: {{ .Values.arch }}
+          effect: "NoSchedule"
       {{- end }}

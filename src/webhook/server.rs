@@ -624,17 +624,59 @@ fn validate_spec_builtin(object: &serde_json::Value) -> Option<ServerValidationR
         Err(e) => {
             return Some(ServerValidationResult {
                 allowed: false,
-                message: Some(format!("Invalid StellarNode manifest: {e}")),
+                message: Some(format!(
+                    "Invalid StellarNode manifest: {e}\n\
+                     Hint: Ensure the manifest matches the StellarNode CRD schema (apiVersion: stellar.org/v1alpha1, kind: StellarNode)."
+                )),
                 warnings: vec![],
                 plugin_results: vec![],
                 total_execution_time_ms: 0,
             });
         }
     };
+
+    // PSS 'restricted' bypass check — runs before spec validation so security
+    // violations are surfaced with a clear, actionable message.
+    let pss_violations = crate::controller::pss::validate_pss_compliance(&node.spec);
+    if !pss_violations.is_empty() {
+        let message = pss_violations
+            .iter()
+            .map(|v| format!("{}: {}", v.field, v.message))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Some(ServerValidationResult {
+            allowed: false,
+            message: Some(format!(
+                "PSS 'restricted' violation(s) detected — zero-trust policy forbids these settings: {message}"
+            )),
+            warnings: vec![],
+            plugin_results: vec![],
+            total_execution_time_ms: 0,
+        });
+    }
+
+    // Organizational standards: resource limits, required labels.
+    let org_errors = super::org_validator::validate_org_standards(&node);
+    if !org_errors.is_empty() {
+        let message = org_errors
+            .iter()
+            .map(|e| format!("[{}] {} — Hint: {}", e.field, e.message, e.hint))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Some(ServerValidationResult {
+            allowed: false,
+            message: Some(message),
+            warnings: vec![],
+            plugin_results: vec![],
+            total_execution_time_ms: 0,
+        });
+    }
+
     let errors = node.spec.validate().err()?;
+    // Format each error as: [spec.field] Message — Hint: how_to_fix
     let message = errors
         .iter()
-        .map(|e| format!("{}: {}", e.field, e.message))
+        .map(|e| format!("[{}] {} — Hint: {}", e.field, e.message, e.how_to_fix))
         .collect::<Vec<_>>()
         .join("; ");
     Some(ServerValidationResult {

@@ -1,0 +1,191 @@
+---
+# Example StellarNode with proactive disk scaling
+# This example demonstrates a validator node with storage configuration
+# that will benefit from automatic disk expansion as the ledger grows.
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-with-disk-scaling
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-validator
+    app.kubernetes.io/component: validator
+    stellar.org/network: testnet
+spec:
+  # Node type: Validator (requires persistent storage for ledger data)
+  nodeType: Validator
+  
+  # Network configuration
+  network: testnet
+  
+  # Stellar Core version
+  version: "21.0.0"
+  
+  # History mode: Full history requires more storage
+  historyMode: Full
+  
+  # Storage configuration
+  # The operator will monitor this PVC and automatically expand it
+  # when disk usage exceeds 80% (configurable in operator config)
+  storage:
+    # Use persistent volume (required for validators)
+    mode: PersistentVolume
+    
+    # Storage class that supports volume expansion
+    # IMPORTANT: The StorageClass must have allowVolumeExpansion: true
+    storageClass: fast-ssd
+    
+    # Initial size: 1500Gi for full history mode
+    # This will be automatically expanded as needed
+    size: "1500Gi"
+    
+    # Retention policy: Retain PVC when node is deleted
+    retentionPolicy: Retain
+    
+    # Optional: Annotations for cost tracking
+    annotations:
+      cost-center: "stellar-infrastructure"
+      environment: "production"
+      auto-scaling: "enabled"
+  
+  # Resource requirements
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  
+  # Quorum configuration
+  quorumSet:
+    threshold: 3
+    validators:
+      - name: sdf1
+        publicKey: "GCGB2S2KGYARPVIA37HYZXVRM2YZUEXA6S33ZU5BUDC6THSB62LZSTYH"
+      - name: sdf2
+        publicKey: "GCM6QMP3DLRPTAZW2UZPCPX2LF3SXWXKPMP3GKFZBDSF3QZGV2G5QSTK"
+      - name: sdf3
+        publicKey: "GABMKJM6I25XI4K7U6XWMULOUQIQ27BCTMLS6BYYSOWKTBUXVRJSXHYQ"
+  
+  # Enable monitoring for disk usage metrics
+  autoscaling:
+    enabled: false  # HPA not needed for validators
+  
+  # Snapshot schedule for backup (optional)
+  snapshotSchedule:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retentionPolicy:
+      maxSnapshots: 7
+  
+  # Alerting configuration
+  alerting:
+    enabled: true
+    rules:
+      - alert: HighDiskUsage
+        expr: stellar_pvc_disk_usage_percent > 75
+        for: 10m
+        severity: warning
+        annotations:
+          summary: "High disk usage detected"
+          description: "Disk usage is above 75%, automatic expansion will trigger at 80%"
+      
+      - alert: MaxExpansionsReached
+        expr: stellar_pvc_expansion_count >= 10
+        for: 5m
+        severity: critical
+        annotations:
+          summary: "Maximum disk expansions reached"
+          description: "PVC has been expanded 10 times, manual intervention required"
+
+---
+# StorageClass configuration for disk scaling
+# This StorageClass must have allowVolumeExpansion: true
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast-ssd
+provisioner: kubernetes.io/aws-ebs  # Or ebs.csi.aws.com for CSI driver
+parameters:
+  type: gp3
+  iops: "3000"
+  throughput: "125"
+  encrypted: "true"
+allowVolumeExpansion: true  # Required for automatic disk scaling
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+
+---
+# PrometheusRule for disk scaling alerts
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-disk-scaling-alerts
+  namespace: stellar-system
+  labels:
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: stellar-disk-scaling
+      interval: 30s
+      rules:
+        - alert: StellarHighDiskUsage
+          expr: stellar_pvc_disk_usage_percent > 75
+          for: 10m
+          labels:
+            severity: warning
+            component: storage
+          annotations:
+            summary: "High disk usage on {{ $labels.namespace }}/{{ $labels.name }}"
+            description: |
+              Disk usage is {{ $value }}% on {{ $labels.namespace }}/{{ $labels.name }}.
+              Automatic expansion will trigger at 80%.
+              Current PVC size: {{ stellar_pvc_size_bytes{namespace="{{ $labels.namespace }}",name="{{ $labels.name }}"} | humanize }}
+        
+        - alert: StellarMaxExpansionsReached
+          expr: stellar_pvc_expansion_count >= 10
+          for: 5m
+          labels:
+            severity: critical
+            component: storage
+          annotations:
+            summary: "Maximum disk expansions reached for {{ $labels.namespace }}/{{ $labels.name }}"
+            description: |
+              PVC has been expanded {{ $value }} times (maximum: 10).
+              Manual intervention required to increase storage or adjust expansion limits.
+              Current disk usage: {{ stellar_pvc_disk_usage_percent{namespace="{{ $labels.namespace }}",name="{{ $labels.name }}"} }}%
+        
+        - alert: StellarDiskExpansionStalled
+          expr: |
+            stellar_pvc_disk_usage_percent > 80
+            and
+            increase(stellar_pvc_expansion_total[15m]) == 0
+          for: 15m
+          labels:
+            severity: critical
+            component: storage
+          annotations:
+            summary: "Disk expansion may have failed for {{ $labels.namespace }}/{{ $labels.name }}"
+            description: |
+              Disk usage is {{ $value }}% (above 80% threshold) but no expansion occurred in the last 15 minutes.
+              Check operator logs and PVC events for errors.
+        
+        - alert: StellarRapidDiskGrowth
+          expr: |
+            rate(stellar_pvc_size_bytes[1h]) > 0
+            and
+            increase(stellar_pvc_expansion_total[6h]) >= 3
+          for: 10m
+          labels:
+            severity: warning
+            component: storage
+          annotations:
+            summary: "Rapid disk growth detected for {{ $labels.namespace }}/{{ $labels.name }}"
+            description: |
+              PVC has been expanded {{ increase(stellar_pvc_expansion_total[6h]) }} times in the last 6 hours.
+              This may indicate abnormal ledger growth or data accumulation.
+              Review node logs and consider adjusting history mode or pruning settings.

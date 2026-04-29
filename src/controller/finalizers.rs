@@ -170,8 +170,12 @@ mod tests {
             read_pool_endpoint: None,
             resource_meta: None,
             sidecars: None,
+            cert_manager: None,
             nat_traversal: None,
             custom_network_passphrase: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
+            ..Default::default()
         }
     }
 
@@ -255,5 +259,100 @@ mod tests {
             !is_being_deleted(&node),
             "Should not detect deletion when timestamp is absent"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // PVC retention policy tests
+    // -----------------------------------------------------------------------
+
+    fn spec_with_retention(policy: crate::crd::types::RetentionPolicy) -> StellarNodeSpec {
+        let mut spec = create_test_spec();
+        spec.storage.retention_policy = policy;
+        spec
+    }
+
+    #[test]
+    fn test_should_delete_pvc_when_policy_is_delete() {
+        let spec = spec_with_retention(crate::crd::types::RetentionPolicy::Delete);
+        assert!(
+            spec.should_delete_pvc(),
+            "should_delete_pvc must return true when retention policy is Delete"
+        );
+    }
+
+    #[test]
+    fn test_should_not_delete_pvc_when_policy_is_retain() {
+        let spec = spec_with_retention(crate::crd::types::RetentionPolicy::Retain);
+        assert!(
+            !spec.should_delete_pvc(),
+            "should_delete_pvc must return false when retention policy is Retain"
+        );
+    }
+
+    #[test]
+    fn test_default_retention_policy_is_delete() {
+        // The default StorageConfig uses RetentionPolicy::Delete, so PVCs are
+        // cleaned up automatically unless the user explicitly opts into Retain.
+        let spec = create_test_spec();
+        assert!(
+            spec.should_delete_pvc(),
+            "default retention policy must be Delete"
+        );
+    }
+
+    #[test]
+    fn test_finalizer_present_on_node_with_delete_policy() {
+        // A node with Delete policy must still carry the finalizer so the
+        // operator has a chance to remove the PVC before the resource is gone.
+        let node = StellarNode {
+            metadata: ObjectMeta {
+                name: Some("validator-delete".to_string()),
+                namespace: Some("default".to_string()),
+                finalizers: Some(vec![STELLAR_NODE_FINALIZER.to_string()]),
+                ..Default::default()
+            },
+            spec: spec_with_retention(crate::crd::types::RetentionPolicy::Delete),
+            status: None,
+        };
+
+        assert!(has_finalizer(&node));
+        assert!(node.spec.should_delete_pvc());
+    }
+
+    #[test]
+    fn test_finalizer_present_on_node_with_retain_policy() {
+        // A node with Retain policy also carries the finalizer; the operator
+        // skips PVC deletion but still cleans up other resources.
+        let node = StellarNode {
+            metadata: ObjectMeta {
+                name: Some("validator-retain".to_string()),
+                namespace: Some("default".to_string()),
+                finalizers: Some(vec![STELLAR_NODE_FINALIZER.to_string()]),
+                ..Default::default()
+            },
+            spec: spec_with_retention(crate::crd::types::RetentionPolicy::Retain),
+            status: None,
+        };
+
+        assert!(has_finalizer(&node));
+        assert!(!node.spec.should_delete_pvc());
+    }
+
+    #[test]
+    fn test_retention_policy_roundtrip_delete() {
+        let policy = crate::crd::types::RetentionPolicy::Delete;
+        let json = serde_json::to_string(&policy).expect("serialize");
+        let restored: crate::crd::types::RetentionPolicy =
+            serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(policy, restored);
+    }
+
+    #[test]
+    fn test_retention_policy_roundtrip_retain() {
+        let policy = crate::crd::types::RetentionPolicy::Retain;
+        let json = serde_json::to_string(&policy).expect("serialize");
+        let restored: crate::crd::types::RetentionPolicy =
+            serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(policy, restored);
     }
 }

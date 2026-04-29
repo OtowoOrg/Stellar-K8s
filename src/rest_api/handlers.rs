@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
     Json,
 };
@@ -11,8 +11,9 @@ use chrono::{Duration, Utc};
 use kube::{api::Api, ResourceExt};
 use tracing::{error, instrument};
 
-use crate::controller::ControllerState;
+use crate::controller::{AdminAction, AuditEntry, ControllerState};
 use crate::crd::StellarNode;
+use crate::rest_api::auth::RequestIdentity;
 
 use super::dto::{
     ErrorResponse, HealthResponse, LeaderResponse, LogLevelRequest, LogLevelResponse,
@@ -139,6 +140,7 @@ pub async fn get_node(
 #[instrument(skip(state), fields(node_name = "-", namespace = %state.operator_namespace, reconcile_id = "-"))]
 pub async fn set_log_level(
     State(state): State<Arc<ControllerState>>,
+    Extension(identity): Extension<RequestIdentity>,
     Json(req): Json<LogLevelRequest>,
 ) -> Result<Json<LogLevelResponse>, (StatusCode, Json<ErrorResponse>)> {
     let filter = match req.level.parse::<tracing_subscriber::EnvFilter>() {
@@ -158,6 +160,23 @@ pub async fn set_log_level(
             Json(ErrorResponse::new("reload_failed", &e.to_string())),
         ));
     }
+
+    state
+        .audit_recorder
+        .record(
+            AuditEntry::new(
+                AdminAction::SetLogLevel,
+                identity.subject.clone(),
+                "operator",
+                state.operator_namespace.clone(),
+                Some(&format!("{{\"level\":\"{}\"}}", req.level)),
+            )
+            .with_metadata(serde_json::json!({
+                "authType": identity.auth_type,
+                "groups": identity.groups,
+            })),
+        )
+        .await;
 
     let mut expires_at = None;
     if let Some(mins) = req.duration_minutes {
@@ -344,5 +363,34 @@ pub async fn livez(State(state): State<Arc<ControllerState>>) -> (StatusCode, Js
                 )),
             }),
         )
+    }
+}
+
+/// Compliance report endpoint
+///
+/// Returns a fleet-wide report of the physical location constraints for all
+/// StellarNode resources, suitable for regulatory audits.
+///
+/// `GET /api/v1/compliance/report`
+#[instrument(
+    skip(state),
+    fields(node_name = "-", namespace = "-", reconcile_id = "-")
+)]
+pub async fn compliance_report(
+    State(state): State<Arc<ControllerState>>,
+) -> Result<Json<Vec<crate::controller::ComplianceReportEntry>>, (StatusCode, Json<ErrorResponse>)>
+{
+    match crate::controller::compliance_report(state.client.clone()).await {
+        Ok(report) => Ok(Json(report)),
+        Err(e) => {
+            error!("Failed to generate compliance report: {}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(
+                    "compliance_report_error",
+                    &format!("Failed to generate compliance report: {e}"),
+                )),
+            ))
+        }
     }
 }

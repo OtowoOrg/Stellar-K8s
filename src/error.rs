@@ -8,27 +8,34 @@ use thiserror::Error;
 /// Central error type for the Stellar-K8s operator
 #[derive(Error, Debug)]
 pub enum Error {
-    /// Kubernetes API error from kube-rs
+    /// Triggered when an operation with the Kubernetes API server fails.
+    /// This includes connection timeouts, permission denied (RBAC), or
+    /// resource conflicts during a Patch or Update.
     #[error("[SK8S-001] Kubernetes API error: {0}")]
     KubeError(#[from] kube::Error),
 
-    /// JSON serialization/deserialization error
+    /// Occurs when failing to parse JSON from the Kubernetes API or
+    /// when serializing internal state (like status conditions) into the CRD.
     #[error("[SK8S-002] Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
 
-    /// Finalizer-related error during cleanup
+    /// Represents a failure during the resource deletion phase.
+    /// If a finalizer cannot be removed, the resource will remain in a 'Terminating' state.
     #[error("[SK8S-003] Finalizer error: {0}")]
     FinalizerError(String),
 
-    /// Configuration validation error
+    /// A catch-all for invalid operator configuration, such as missing
+    /// environment variables or malformed ConfigMaps used for feature flags.
     #[error("[SK8S-004] Configuration error: {0}")]
     ConfigError(String),
 
-    /// Node spec validation error
+    /// Triggered during pre-reconciliation validation if the StellarNode spec
+    /// violates business logic (e.g., mutually exclusive flags or invalid replicas).
     #[error("[SK8S-005] Node validation error: {0}")]
     ValidationError(String),
 
-    /// Resource not found in the cluster
+    /// The requested Kubernetes resource (Pod, Secret, etc.) was not found.
+    /// Usually implies a dependency hasn't been created yet.
     #[error("[SK8S-006] Resource not found: {kind}/{name} in namespace {namespace}")]
     NotFound {
         kind: String,
@@ -36,61 +43,70 @@ pub enum Error {
         namespace: String,
     },
 
-    /// Invalid node type specified
+    /// The `nodeType` provided in the spec is not recognized by this version of the operator.
     #[error("[SK8S-007] Invalid node type: {0}")]
     InvalidNodeType(String),
 
-    /// Missing required field in spec
+    /// A required field for the specific node type (e.g., `seedSecretRef` for Validators) is missing.
     #[error("[SK8S-008] Missing required field: {field} for node type {node_type}")]
     MissingRequiredField { field: String, node_type: String },
 
-    /// History archive health check error
+    /// Failure during the background integrity check of a history archive bucket.
     #[error("[SK8S-009] Archive health check failed: {0}")]
     ArchiveHealthCheckError(String),
 
-    /// HTTP request error (from reqwest)
+    /// Generic HTTP failure, often from querying the Stellar network's SCP status or Horizon health.
     #[error("[SK8S-010] HTTP request error: {0}")]
     HttpError(#[from] reqwest::Error),
 
-    /// Remediation action failed
+    /// An automated remediation action (e.g., restarting a stuck pod) failed to execute.
     #[error("[SK8S-011] Remediation failed: {0}")]
     RemediationError(String),
 
-    /// Wasm plugin error
+    /// Error returned by a WASM admission plugin during the validation phase.
     #[error("[SK8S-012] Plugin error: {0}")]
     PluginError(String),
 
-    /// Webhook server error
+    /// Failure within the internal admission webhook server (e.g., port binding issues).
     #[error("[SK8S-013] Webhook error: {0}")]
     WebhookError(String),
 
-    /// Network connectivity error
+    /// Connectivity issues between operator components or between the operator and the cluster.
     #[error("[SK8S-014] Network error: {0}")]
     NetworkError(String),
 
-    /// Certificate generation error
+    /// Failure to generate or rotate TLS certificates for mTLS or webhooks.
     #[error("[SK8S-015] Certificate error: {0}")]
     CertificateError(#[from] rcgen::Error),
 
-    /// I/O error
+    /// File system interaction failure, usually related to local configuration or WASM module loading.
     #[error("[SK8S-016] I/O error: {0}")]
     IoError(#[from] std::io::Error),
 
-    /// Database maintenance error
+    /// Failure during database schema migrations or automated vacuum/pruning tasks.
     #[error("[SK8S-017] Database maintenance error: {0}")]
     MaintenanceError(String),
 
-    /// SQLx error
+    /// Error from the SQLx driver during database interactions.
     #[error("[SK8S-018] SQL error: {0}")]
     SqlxError(#[from] sqlx::Error),
 
-    /// Kubeconfig error
+    /// Failure to load or parse the local Kubeconfig file.
     #[error("[SK8S-019] Kubeconfig error: {0}")]
     KubeconfigError(#[from] kube::config::KubeconfigError),
 
-    /// Zip archive error
+    /// Failure during the compression or extraction of node snapshots.
     #[error("[SK8S-020] Zip error: {0}")]
     ZipError(#[from] zip::result::ZipError),
+
+    /// A security violation where nodes from different networks (e.g., Mainnet and Testnet)
+    /// are detected in the same namespace, which could lead to ledger contamination.
+    #[error("[SK8S-021] {0}")]
+    NetworkSafetyViolation(#[from] crate::controller::network_isolation::NetworkSafetyViolation),
+
+    /// An unexpected internal state error that doesn't fit other categories.
+    #[error("[SK8S-022] Internal error: {0}")]
+    InternalError(String),
 }
 
 /// Result type alias for operator operations
@@ -136,6 +152,8 @@ impl Error {
             Error::SqlxError(e) => format!("[SK8S-018] SQL error: {e}"),
             Error::KubeconfigError(e) => format!("[SK8S-019] Kubeconfig error: {e}"),
             Error::ZipError(e) => format!("[SK8S-020] Zip error: {e}"),
+            Error::NetworkSafetyViolation(v) => format!("[SK8S-021] Network safety violation: {v}"),
+            Error::InternalError(msg) => format!("[SK8S-022] Internal error: {msg}"),
         }
     }
 }

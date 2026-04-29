@@ -322,6 +322,12 @@ main() {
   # Experiment 3: API latency — wait 130s, recovery timeout 600s
   run_experiment "03-api-latency" "tests/chaos/03-api-latency.yaml" 130 600 || OVERALL_PASS=false
 
+  # Experiment 4: validator peer partition — wait 100s, recovery timeout 300s
+  run_experiment "04-validator-peer-partition" "tests/chaos/04-validator-peer-partition.yaml" 100 300 || OVERALL_PASS=false
+
+  # Experiment 5: disk fill — wait 50s, recovery timeout 180s
+  run_experiment "05-disk-fill" "tests/chaos/05-disk-fill.yaml" 50 180 || OVERALL_PASS=false
+
   echo ""
   echo "=================================================="
   echo "  Results saved to: $RESULTS_DIR"

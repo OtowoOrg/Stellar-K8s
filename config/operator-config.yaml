@@ -43,3 +43,64 @@ reconciler:
   # Adds randomness (0.5x to 1.5x) to prevent thundering herd
   # Default: true
   enableJitter: true
+
+# OIDC authentication for the operator REST API (optional)
+# When configured, the operator validates JWT bearer tokens against the
+# specified OIDC provider and enforces role-based access control.
+# Supported providers: GitHub, Google, Okta, or any standard OIDC issuer.
+#
+# Roles embedded in the JWT (via the `rolesClaim` field):
+#   - "Reader" – read-only access to all GET endpoints
+#   - "Admin"  – full access including mutating endpoints
+#
+# oidc:
+#   issuer: "https://accounts.google.com"
+#   audience: "stellar-operator"
+#   jwksUri: "https://www.googleapis.com/oauth2/v3/certs"
+#   rolesClaim: "roles"
+
+# Proactive disk scaling configuration
+# Automatically expands PVCs when disk usage exceeds threshold
+diskScaling:
+  # Enable automatic disk scaling
+  # Default: true
+  enabled: true
+
+  # Disk usage percentage that triggers expansion (0-100)
+  # When usage exceeds this threshold, the PVC will be expanded
+  # Default: 80
+  expansionThreshold: 80
+
+  # Percentage to increase disk size by (e.g., 50 = increase by 50%)
+  # Default: 50
+  expansionIncrement: 50
+
+  # Minimum time between expansions (seconds)
+  # Prevents rapid successive expansions
+  # Default: 3600 (1 hour)
+  minExpansionIntervalSecs: 3600
+
+  # Maximum number of expansions allowed per PVC
+  # Safety limit to prevent runaway costs
+  # Default: 10
+  maxExpansions: 10
+
+# ML-based anomaly detection for operator behavioral patterns
+anomalyDetection:
+  # Enable anomaly detection
+  enabled: true
+
+  # Interval between detection runs (seconds)
+  intervalSeconds: 30
+
+  # Rolling window size for action counts (seconds)
+  windowSeconds: 300
+
+  # Z-score threshold to flag anomalies
+  zscoreThreshold: 3.0
+
+  # EWMA smoothing factor (0-1)
+  ewmaAlpha: 0.25
+
+  # Max anomalies retained in memory
+  maxAnomalies: 500

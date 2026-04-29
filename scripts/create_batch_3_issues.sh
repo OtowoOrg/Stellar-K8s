@@ -1,5 +1,8 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=lib/repo.sh
+source "$(dirname "$0")/lib/repo.sh"
 
 # Stellar-K8s Wave Issue Creation Script - BATCH 3 (High Complexity)
 # Issues #22 - #24

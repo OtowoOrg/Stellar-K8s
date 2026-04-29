@@ -1,0 +1,165 @@
+{{- if .Values.otel.collector.enabled }}
+# OTel Collector — receives OTLP spans from the operator and forwards them to
+# Honeycomb, Jaeger, or Grafana Tempo depending on values.yaml configuration.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-otel-collector
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: "0.0.0.0:4317"
+          http:
+            endpoint: "0.0.0.0:4318"
+
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 512
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 200
+
+    exporters:
+      {{- if .Values.otel.collector.config.honeycomb.enabled }}
+      otlp/honeycomb:
+        endpoint: {{ .Values.otel.collector.config.honeycomb.endpoint | quote }}
+        headers:
+          x-honeycomb-team: "${HONEYCOMB_API_KEY}"
+      {{- end }}
+      {{- if .Values.otel.collector.config.jaeger.enabled }}
+      otlp/jaeger:
+        endpoint: {{ .Values.otel.collector.config.jaeger.endpoint | quote }}
+        tls:
+          insecure: true
+      {{- end }}
+      {{- if .Values.otel.collector.config.tempo.enabled }}
+      otlp/tempo:
+        endpoint: {{ .Values.otel.collector.config.tempo.endpoint | quote }}
+        tls:
+          insecure: true
+      {{- end }}
+      # Always include a debug exporter so the collector starts even with no
+      # backend configured (useful for local development).
+      debug:
+        verbosity: basic
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters:
+            - debug
+            {{- if .Values.otel.collector.config.honeycomb.enabled }}
+            - otlp/honeycomb
+            {{- end }}
+            {{- if .Values.otel.collector.config.jaeger.enabled }}
+            - otlp/jaeger
+            {{- end }}
+            {{- if .Values.otel.collector.config.tempo.enabled }}
+            - otlp/tempo
+            {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-otel-collector
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "stellar-operator.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: otel-collector
+  template:
+    metadata:
+      labels:
+        {{- include "stellar-operator.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: otel-collector
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "stellar-operator.fullname" . }}-otel-collector
+      {{- if .Values.otel.collector.config.honeycomb.enabled }}
+      {{- if .Values.otel.collector.config.honeycomb.apiKeySecretRef }}
+      initContainers: []
+      {{- end }}
+      {{- end }}
+      containers:
+        - name: otel-collector
+          image: "{{ .Values.otel.collector.image.repository }}:{{ .Values.otel.collector.image.tag }}"
+          imagePullPolicy: {{ .Values.otel.collector.image.pullPolicy }}
+          args: ["--config=/conf/config.yaml"]
+          {{- if and .Values.otel.collector.config.honeycomb.enabled .Values.otel.collector.config.honeycomb.apiKeySecretRef }}
+          env:
+            - name: HONEYCOMB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.otel.collector.config.honeycomb.apiKeySecretRef | quote }}
+                  key: HONEYCOMB_API_KEY
+          {{- end }}
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+          resources:
+            {{- toYaml .Values.otel.collector.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 13133
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 13133
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-otel-collector
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "stellar-operator.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+{{- end }}

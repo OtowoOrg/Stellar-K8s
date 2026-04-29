@@ -17,6 +17,7 @@ pub struct DashboardOverview {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeTypeBreakdown {
     pub validators: usize,
     pub horizon: usize,
@@ -24,6 +25,7 @@ pub struct NodeTypeBreakdown {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NetworkBreakdown {
     pub mainnet: usize,
     pub testnet: usize,
@@ -50,12 +52,16 @@ pub struct NodeActionRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum NodeAction {
     Restart,
     Snapshot,
     Suspend,
     Resume,
+    /// Toggle maintenance mode on the node
+    MaintenanceMode,
+    /// Prune old history archives for the node
+    Prune,
 }
 
 /// Node action response
@@ -116,6 +122,14 @@ impl From<&Condition> for ConditionDisplay {
             severity,
         }
     }
+}
+
+/// Operator logs response
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperatorLogsResponse {
+    pub logs: Vec<String>,
+    pub timestamp: String,
 }
 
 /// Metrics summary for dashboard

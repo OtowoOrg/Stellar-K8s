@@ -1,5 +1,8 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=lib/repo.sh
+source "$(dirname "$0")/lib/repo.sh"
 
 # Stellar-K8s Wave Issue Creation Script - BATCH 4
 # 6 High (200 pts), 2 Medium (150 pts), 2 Trivial (100 pts)
@@ -43,7 +46,7 @@ Currently, peers are defined statically. We need a controller that dynamically d
 - Trigger a rolling update or signal the Stellar process to refresh configuration.
 
 ### 📚 Resources
-- [Stellar Core Peers Config](https://github.com/stellar/stellar-core/blob/master/docs/stellar-core_example.cfg)
+- [Stellar Core Peers Config](https://github.com/OtowoOrg/Stellar-K8s/blob/main/docs/stellar-core_example.cfg)
 - [kube-rs Runtime Watcher](https://kube.rs/controllers/watcher/)
 "
 

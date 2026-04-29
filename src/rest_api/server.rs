@@ -20,10 +20,14 @@ use tracing::info;
 use crate::controller::ControllerState;
 use crate::{Error, Result};
 
+use super::audit_handlers;
 use super::auth;
 use super::custom_metrics;
 use super::dashboard_handlers;
 use super::handlers;
+use super::health_summary;
+use super::job_handlers;
+use super::scp_topology;
 
 /// Build a rustls ServerConfig from PEM data (cert, key, CA for client verification).
 /// Used for initial server setup and after certificate rotation to reload without restart.
@@ -88,31 +92,74 @@ pub async fn run_server(
     state: Arc<ControllerState>,
     rustls_config: Option<RustlsConfig>,
 ) -> Result<()> {
-    let mut app = Router::new()
+    let public = Router::new()
         .route("/health", get(handlers::health))
         .route("/healthz", get(handlers::healthz))
         .route("/readyz", get(handlers::readyz))
-        .route("/livez", get(handlers::livez))
+        .route("/livez", get(handlers::livez));
+
+    let mut protected = Router::new()
         .route("/leader", get(handlers::leader_status))
         .route("/api/v1/nodes", get(handlers::list_nodes))
         .route("/api/v1/nodes/:namespace/:name", get(handlers::get_node))
-        // Log level dynamic control
+        // Health summary API (Issue #552)
+        .route("/v1/health/summary", get(health_summary::get_health_summary))
+        .route("/v1/health/nodes", get(health_summary::get_node_health_status))
+        .route("/v1/health/incidents", get(health_summary::get_health_incidents))
+        // Log level dynamic control (GET is reader, POST is admin)
         .route(
             "/config/log-level",
-            get(handlers::get_log_level)
-                .post(handlers::set_log_level)
-                .route_layer(middleware::from_fn_with_state(state.clone(), auth::k8s_rbac_auth)),
+            get(handlers::get_log_level),
         )
+        .route(
+            "/config/log-level",
+            axum::routing::post(handlers::set_log_level)
+                .route_layer(middleware::from_fn(auth::api_admin)),
+        )
+        // Compliance report
+        .route("/api/v1/compliance/report", get(handlers::compliance_report))
         // Dashboard routes
         .route("/", get(dashboard_ui))
         .route("/api/v1/dashboard/overview", get(dashboard_handlers::dashboard_overview))
-        .route("/api/v1/dashboard/nodes/:namespace/:name/logs", get(dashboard_handlers::get_node_logs))
-        .route("/api/v1/dashboard/nodes/:namespace/:name/conditions", get(dashboard_handlers::get_node_conditions))
-        .route("/api/v1/dashboard/nodes/:namespace/:name/metrics", get(dashboard_handlers::get_node_metrics))
-        .route("/api/v1/dashboard/nodes/:namespace/:name/actions", axum::routing::post(dashboard_handlers::execute_node_action))
+        .route(
+            "/api/v1/dashboard/nodes/:namespace/:name/logs",
+            get(dashboard_handlers::get_node_logs),
+        )
+        .route(
+            "/api/v1/dashboard/nodes/:namespace/:name/conditions",
+            get(dashboard_handlers::get_node_conditions),
+        )
+        .route(
+            "/api/v1/dashboard/nodes/:namespace/:name/metrics",
+            get(dashboard_handlers::get_node_metrics),
+        )
+        .route(
+            "/api/v1/dashboard/nodes/:namespace/:name/actions",
+            axum::routing::post(dashboard_handlers::execute_node_action)
+                .route_layer(middleware::from_fn(auth::api_admin)),
+        )
+        // Operator logs
+        .route("/api/v1/dashboard/operator/logs", get(dashboard_handlers::get_operator_logs))
+        // SCP topology endpoints (REST snapshot + WebSocket stream)
+        .route("/api/v1/quorum/topology", get(scp_topology::get_topology))
+        .route("/api/v1/quorum/topology/stream", get(scp_topology::topology_ws))
         // Documentation search API
         .route("/api/v1/docs/search-index", get(handlers::get_search_index))
+        // Background job monitoring dashboard
+        .route("/api/v1/jobs", get(job_handlers::list_jobs))
+        .route("/api/v1/jobs/stats", get(job_handlers::job_stats))
+        // Audit log
+        .route("/api/v1/audit-log", get(audit_handlers::list_audit_log))
+        .route("/api/v1/audit-log/search", get(audit_handlers::search_audit_log))
+        .route("/api/v1/audit-log/stream", get(audit_handlers::audit_log_stream))
+        .route("/api/v1/audit-log/anomalies", get(audit_handlers::list_audit_anomalies))
         // Custom metrics API
+        // Custom metrics API (Kubernetes custom.metrics.k8s.io/v1beta2)
+        // Discovery endpoint — required by the HPA aggregation layer
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2",
+            get(custom_metrics::get_metrics_discovery),
+        )
         .route(
             "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric",
             get(custom_metrics::get_pod_metric),
@@ -121,8 +168,16 @@ pub async fn run_server(
             "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/stellarnodes.stellar.org/:name/:metric",
             get(custom_metrics::get_stellar_node_metric),
         )
+        .layer(middleware::from_fn_with_state(state.clone(), auth::api_reader))
+        // Horizon-specific convenience endpoint
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/horizons.stellar.org/:name/:metric",
+            get(custom_metrics::get_horizon_metric),
+        )
         .layer(TraceLayer::new_for_http())
         .with_state(state);
+
+    let mut app = public.merge(protected);
 
     #[cfg(feature = "metrics")]
     {

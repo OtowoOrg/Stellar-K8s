@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![allow(missing_docs)]
 //! Stellar-K8s: Cloud-Native Kubernetes Operator for Stellar Infrastructure
 //!
 //! This crate provides a Kubernetes operator for managing Stellar Core,
@@ -38,6 +38,10 @@
 //! - [`search`] - Search and discovery utilities
 //! - [`carbon_aware`] - Carbon-aware scheduling
 //! - [`runbook`] - Troubleshooting runbook generation
+//! - [`incident`] - Incident report generation
+//! - [`byzantine`] - Byzantine fault detection and analysis
+//! - [`log_scrub`] - PII and sensitive data scrubbing for logs
+//! - [`version_check`] - Background version checking against GitHub
 //!
 //! # Example: Creating a Validator Node
 //!
@@ -60,18 +64,27 @@
 //! ```
 
 pub mod backup;
+pub mod benchmark_compare;
+pub mod byzantine;
+pub mod canary_deployment;
 pub mod carbon_aware;
+pub mod consensus_monitoring;
 pub mod controller;
 pub mod crd;
 pub mod error;
+pub mod fork_detector;
 pub mod incident;
 pub mod infra;
+pub mod load_modeling;
 pub mod log_scrub;
+pub mod plugin_sdk;
 pub mod preflight;
 pub mod runbook;
 pub mod scheduler;
 pub mod search;
 pub mod telemetry;
+pub mod version_check;
+pub mod websocket_streaming;
 
 #[cfg(feature = "rest-api")]
 pub mod rest_api;

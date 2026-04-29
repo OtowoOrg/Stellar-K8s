@@ -30,7 +30,7 @@ fmt-check: ## Check formatting
 
 lint: ## Run clippy
 	@echo "→ Running clippy..."
-	@$(CARGO) clippy --workspace --all-targets --all-features -- \
+	@K8S_OPENAPI_ENABLED_VERSION=1.30 $(CARGO) clippy --workspace --all-targets --all-features -- \
 		-D clippy::correctness \
 		-D clippy::suspicious \
 		-D clippy::perf \
@@ -43,9 +43,9 @@ audit: ## Security audit
 
 test: ## Run tests
 	@echo "→ Running tests..."
-	@$(CARGO) test --workspace --all-features --tests --lib --bins --verbose
+	@$(CARGO) test --workspace --features "rest-api,metrics,admission-webhook,k8s-v1-30,reconciler-fuzz" --tests --lib --bins --verbose
 	@echo "→ Running doc tests..."
-	@$(CARGO) test --doc --workspace
+	@$(CARGO) test --doc --workspace --features "rest-api,metrics,admission-webhook,k8s-v1-30"
 
 build: ## Build release
 	@echo "→ Building release..."

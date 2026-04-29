@@ -1,0 +1,46 @@
+# Example: Automated Peer Discovery with ExternalDNS
+#
+# This example demonstrates how to use ExternalDNS to automate DNS record
+# management for Stellar validators.
+#
+# The operator will:
+# 1. Add ExternalDNS annotations to the validator's Service
+# 2. Automatically generate A and SRV records (_stellar-peering._tcp)
+# 3. Configure low TTLs for rapid convergence
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-external-dns
+  namespace: stellar-nodes
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  storage:
+    storageClass: "standard"
+    size: "500Gi"
+  validatorConfig:
+    seedSecretRef: "validator-seed"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-testnet/core_testnet_001"
+    # ExternalDNS configuration for this validator
+    externalDns:
+      hostname: "validator-1.stellar.example.com"
+      ttl: 60
+      provider: "aws" # Optional: specify provider (aws, google, etc.)
+      annotations:
+        # Extra annotations for ExternalDNS
+        external-dns.alpha.kubernetes.io/aws-weight: "100"
+  loadBalancer:
+    # Use MetalLB or cloud load balancer to get a public IP
+    type: LoadBalancer

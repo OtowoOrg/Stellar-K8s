@@ -1,5 +1,5 @@
 //! TOML validation tests for ConfigMap generation
-//! 
+//!
 //! Verifies generated stellar-core.cfg and captive-core.cfg are valid TOML.
 
 #[cfg(test)]
@@ -29,7 +29,7 @@ mod tests {
         });
 
         let cm = build_config_map_for_test(&node, None, false);
-        
+
         if let Some(data) = cm.data {
             if let Some(core_cfg) = data.get("stellar-core.cfg") {
                 // Should parse as valid TOML
@@ -61,7 +61,7 @@ mod tests {
         });
 
         let cm = build_config_map_for_test(&node, None, true);  // enable_mtls = true
-        
+
         if let Some(data) = cm.data {
             if let Some(core_cfg) = data.get("stellar-core.cfg") {
                 let parsed: Value = toml::from_str(core_cfg).expect("mTLS stellar-core.cfg is invalid TOML");

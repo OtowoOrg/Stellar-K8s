@@ -14,7 +14,10 @@ to a healthy state.
 | `01-operator-pod-kill.yaml` | Kills the operator pod while it's reconciling |
 | `02-network-partition.yaml` | Cuts all network between the operator and the K8s API |
 | `03-api-latency.yaml` | Adds 2s latency to every API call the operator makes |
-| `run-chaos-tests.sh` | Runs all three experiments end-to-end on a local kind cluster |
+| `04-validator-peer-partition.yaml` | Partitions validator pods from each other |
+| `05-disk-fill.yaml` | Fills up disk space on the operator pod |
+| `run-chaos-tests.sh` | Runs all experiments end-to-end on a local kind cluster |
+| `generate-report.sh` | Generates automated resilience reports from test results |
 
 ---
 
@@ -75,7 +78,7 @@ The workflow lives at `.github/workflows/chaos-tests.yml`.
 
 It runs:
 - **Manually** — go to Actions → Chaos Engineering Tests → Run workflow
-- **Weekly** — every Sunday at midnight UTC automatically
+- **Nightly** — every day at 2 AM UTC automatically
 
 To trigger it manually on any branch:
 1. Go to your repo on GitHub
@@ -83,7 +86,7 @@ To trigger it manually on any branch:
 3. Click **Chaos Engineering Tests** in the left sidebar
 4. Click **Run workflow** → choose your branch → click the green button
 
-You can also skip a specific experiment by entering `01`, `02`, or `03` in the
+You can also skip a specific experiment by entering `01`, `02`, `03`, `04`, or `05` in the
 "Skip a specific experiment" input when triggering manually.
 
 ---

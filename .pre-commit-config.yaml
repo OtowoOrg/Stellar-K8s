@@ -5,6 +5,7 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        exclude: ^charts/.*/templates/.*\.yaml$
       - id: check-added-large-files
       - id: check-merge-conflict
 
@@ -19,14 +20,14 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy
-        entry: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        entry: env K8S_OPENAPI_ENABLED_VERSION=1.30 cargo clippy --workspace --all-targets --all-features -- -D warnings
         language: system
         types: [rust]
         pass_filenames: false
 
       - id: cargo-test
         name: cargo test
-        entry: cargo test --workspace --all-features
+        entry: env K8S_OPENAPI_ENABLED_VERSION=1.30 cargo test --workspace --all-features
         language: system
         types: [rust]
         pass_filenames: false
@@ -37,3 +38,4 @@ repos:
     hooks:
       - id: yamllint
         args: [-c=.yamllint.yml]
+        exclude: ^charts/.*/templates/.*\.yaml$

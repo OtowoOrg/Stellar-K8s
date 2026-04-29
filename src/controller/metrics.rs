@@ -11,6 +11,7 @@
 //! - `stellar_node_sync_status` (gauge): node sync status (0=Pending, 1=Creating, 2=Running, 3=Syncing, 4=Ready, 5=Failed, 6=Degraded, 7=Suspended).
 //! - `stellar_node_up` (gauge): binary indicator if node is up based on pod readiness (1=up, 0=down).
 //! - `stellar_horizon_tps` (gauge): Horizon TPS labeled by namespace/name/node_type/network/hardware_generation.
+//! - `stellar_horizon_queue_length` (gauge): pending Horizon request queue length labeled by namespace/name/node_type/network/hardware_generation.
 //! - `stellar_node_active_connections` (gauge): active peer connections labeled by namespace/name/node_type/network/hardware_generation.
 
 use std::sync::atomic::{AtomicI64, AtomicU64};
@@ -61,6 +62,10 @@ pub static INGESTION_LAG: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
 
 /// Gauge tracking requests per second for Horizon nodes
 pub static HORIZON_TPS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking pending Horizon request queue length
+pub static HORIZON_QUEUE_LENGTH: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
 /// Gauge tracking active connections per node
@@ -181,6 +186,15 @@ pub struct TransactionResultLabels {
     pub result: String, // "success" or "failed"
 }
 
+/// Labels for Horizon migration metrics
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct HorizonMigrationLabels {
+    pub namespace: String,
+    pub name: String,
+    pub network: String,
+    pub status: String, // "success" or "failed"
+}
+
 /// Histogram tracking reconcile duration (seconds)
 pub static RECONCILE_DURATION_SECONDS: Lazy<Family<ReconcileLabels, Histogram>> = Lazy::new(|| {
     fn reconcile_histogram() -> Histogram {
@@ -253,6 +267,20 @@ pub static TRANSACTION_RESULT_TOTAL: Lazy<
     Family<TransactionResultLabels, Counter<u64, AtomicU64>>,
 > = Lazy::new(Family::default);
 
+/// Histogram tracking Horizon migration duration in seconds
+pub static HORIZON_MIGRATION_DURATION_SECONDS: Lazy<
+    Family<HorizonMigrationLabels, Histogram>,
+> = Lazy::new(|| {
+    fn migration_histogram() -> Histogram {
+        Histogram::new(exponential_buckets(0.1, 2.0, 16))
+    }
+    Family::new_with_constructor(migration_histogram)
+});
+
+/// Counter tracking Horizon migration results
+pub static HORIZON_MIGRATION_TOTAL: Lazy<Family<HorizonMigrationLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
+
 /// Counter tracking host function calls
 pub static HOST_FUNCTION_CALLS_TOTAL: Lazy<Family<SorobanLabels, Counter<u64, AtomicU64>>> =
     Lazy::new(Family::default);
@@ -324,6 +352,11 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_horizon_tps",
         "Transactions per second for Horizon API nodes",
         HORIZON_TPS.clone(),
+    );
+    registry.register(
+        "stellar_horizon_queue_length",
+        "Pending Horizon request queue length",
+        HORIZON_QUEUE_LENGTH.clone(),
     );
     registry.register(
         "stellar_node_active_connections",
@@ -437,6 +470,17 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "soroban_rpc_host_function_calls_total",
         "Total number of host function calls",
         HOST_FUNCTION_CALLS_TOTAL.clone(),
+    );
+
+    registry.register(
+        "stellar_horizon_migration_duration_seconds",
+        "Duration of Horizon database migrations in seconds",
+        HORIZON_MIGRATION_DURATION_SECONDS.clone(),
+    );
+    registry.register(
+        "stellar_horizon_migration_total",
+        "Total number of Horizon database migration executions",
+        HORIZON_MIGRATION_TOTAL.clone(),
     );
 
     // Register DR drill metrics
@@ -826,6 +870,27 @@ pub fn set_horizon_tps(
     HORIZON_TPS.get_or_create(&labels).set(tps);
 }
 
+/// Update the Horizon queue length metric for a node
+pub fn set_horizon_queue_length(
+    namespace: &str,
+    name: &str,
+    node_type: &str,
+    network: &str,
+    hardware_generation: &str,
+    queue_length: i64,
+) {
+    let labels = NodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        network: network.to_string(),
+        hardware_generation: hardware_generation.to_string(),
+    };
+    HORIZON_QUEUE_LENGTH
+        .get_or_create(&labels)
+        .set(queue_length);
+}
+
 /// Update the active connections metric for a node
 pub fn set_active_connections(
     namespace: &str,
@@ -972,6 +1037,36 @@ pub fn inc_transaction_result(namespace: &str, name: &str, network: &str, succes
         },
     };
     TRANSACTION_RESULT_TOTAL.get_or_create(&labels).inc();
+}
+
+/// Record Horizon migration duration in seconds.
+pub fn observe_horizon_migration_duration(
+    namespace: &str,
+    name: &str,
+    network: &str,
+    status: &str,
+    duration_secs: f64,
+) {
+    let labels = HorizonMigrationLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        network: network.to_string(),
+        status: status.to_string(),
+    };
+    HORIZON_MIGRATION_DURATION_SECONDS
+        .get_or_create(&labels)
+        .observe(duration_secs);
+}
+
+/// Increment Horizon migration result counter.
+pub fn inc_horizon_migration_total(namespace: &str, name: &str, network: &str, status: &str) {
+    let labels = HorizonMigrationLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        network: network.to_string(),
+        status: status.to_string(),
+    };
+    HORIZON_MIGRATION_TOTAL.get_or_create(&labels).inc();
 }
 
 /// Increment host function call counter

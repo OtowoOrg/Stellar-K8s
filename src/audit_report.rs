@@ -203,10 +203,7 @@ impl AuditReporter {
                                     .unwrap_or_else(|_| "unknown".to_string()),
                                 results: vec![AuditResult::from(&entry)],
                             };
-                            println!(
-                                "{}",
-                                serde_json::to_string_pretty(&report).unwrap()
-                            );
+                            println!("{}", serde_json::to_string_pretty(&report).unwrap());
                         } else {
                             println!("Audit Entry Details:");
                             println!("--------------------");
@@ -280,8 +277,7 @@ mod tests {
         let json_str = serde_json::to_string_pretty(&report).expect("serialization failed");
 
         // Must round-trip cleanly
-        let parsed: AuditReport =
-            serde_json::from_str(&json_str).expect("deserialization failed");
+        let parsed: AuditReport = serde_json::from_str(&json_str).expect("deserialization failed");
 
         assert_eq!(parsed.cluster_name, "test-cluster");
         assert_eq!(parsed.results.len(), 2);

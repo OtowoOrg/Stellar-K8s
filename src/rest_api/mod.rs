@@ -54,6 +54,7 @@ mod dto;
 mod handlers;
 mod health_summary;
 mod job_handlers;
+pub mod metrics_store;
 mod oidc;
 mod scp_topology;
 mod server;
@@ -61,5 +62,6 @@ mod sustainability;
 
 pub use auth::{check_rbac_permission, k8s_rbac_auth};
 pub use health_summary::{get_health_incidents, get_health_summary, get_node_health_status};
+pub use metrics_store::StellarMetricsStore;
 pub use oidc::{oidc_auth, require_admin, require_reader, ApiRole, OidcConfig};
 pub use server::{build_tls_server_config, run_server};

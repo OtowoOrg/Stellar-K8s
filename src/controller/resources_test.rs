@@ -11,7 +11,7 @@ mod tests {
 
     use crate::controller::resources::build_topology_spread_constraints;
     use crate::crd::{
-        types::{PodAntiAffinityStrength, ResourceRequirements, ResourceSpec},
+        types::{HorizonConfig, PodAntiAffinityStrength, ResourceRequirements, ResourceSpec},
         NodeType, StellarNetwork, StellarNodeSpec,
     };
 
@@ -471,6 +471,44 @@ peer-2 = "G..."
         let deploy = build_deployment_for_test(&node);
         assert_standard_labels(&deploy.metadata, &node);
         assert_owner_reference(&deploy.metadata, &node);
+    }
+
+    #[test]
+    fn test_horizon_blue_green_deployment_has_color_label_and_no_migration_init_container() {
+        let mut node = make_node(NodeType::Horizon);
+        node.spec.strategy.strategy_type = crate::crd::types::RolloutStrategyType::BlueGreen;
+        node.spec.horizon_config = Some(HorizonConfig {
+            database_secret_ref: "db-secret".to_string(),
+            enable_ingest: true,
+            stellar_core_url: "http://core:8000".to_string(),
+            ingest_workers: 1,
+            enable_experimental_ingestion: false,
+            auto_migration: true,
+        });
+
+        let deploy = build_deployment_for_test(&node);
+        let spec = deploy.spec.as_ref().expect("deployment spec must exist");
+        let selector_labels = spec
+            .selector
+            .match_labels
+            .as_ref()
+            .expect("selector labels must exist");
+        assert_eq!(selector_labels.get("deployment-color"), Some(&"blue".to_string()));
+
+        let pod_labels = spec
+            .template
+            .metadata
+            .as_ref()
+            .and_then(|m| m.labels.as_ref())
+            .expect("pod labels must exist");
+        assert_eq!(pod_labels.get("deployment-color"), Some(&"blue".to_string()));
+
+        let init_containers = spec
+            .template
+            .spec
+            .as_ref()
+            .and_then(|ps| ps.init_containers.as_ref());
+        assert!(init_containers.is_none(), "Blue/Green deployments should not use init container migrations");
     }
 
     #[test]

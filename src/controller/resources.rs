@@ -38,7 +38,7 @@ use kube::api::{Api, DeleteParams, Patch, PatchParams, PostParams};
 use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
-use crate::crd::types::{PodAntiAffinityStrength, ReplicationRole};
+use crate::crd::types::{PodAntiAffinityStrength, ReplicationRole, RolloutStrategyType};
 use crate::crd::{
     BackupConfiguration, BarmanObjectStore, BootstrapConfiguration, Cluster, ClusterSpec,
     ExternalCluster, HistoryMode, HsmProvider, IngressConfig, InitDbConfiguration, KeySource,
@@ -648,8 +648,14 @@ pub async fn ensure_canary_deployment(
 }
 
 fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deployment {
-    let labels = standard_labels(node);
+    let mut labels = standard_labels(node);
     let name = node.name_any();
+
+    if node.spec.node_type == NodeType::Horizon
+        && node.spec.strategy.strategy_type == RolloutStrategyType::BlueGreen
+    {
+        labels.insert("deployment-color".to_string(), "blue".to_string());
+    }
 
     let mut replicas = if node.spec.suspended {
         0
@@ -1727,7 +1733,8 @@ fn build_pod_template(
     // Add Horizon database migration init container
     if let NodeType::Horizon = node.spec.node_type {
         if let Some(horizon_config) = &node.spec.horizon_config {
-            if horizon_config.auto_migration {
+            let blue_green_migration = node.spec.strategy.strategy_type == RolloutStrategyType::BlueGreen;
+            if horizon_config.auto_migration && !blue_green_migration {
                 let init_containers = pod_spec.init_containers.get_or_insert_with(Vec::new);
                 init_containers.push(build_horizon_migration_container(node));
             }
@@ -2897,7 +2904,7 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
 }
 
 /// Build the migration container for Horizon
-fn build_horizon_migration_container(node: &StellarNode) -> Container {
+pub(crate) fn build_horizon_migration_container(node: &StellarNode) -> Container {
     let mut container = build_container(node, false);
     container.name = "horizon-db-migration".to_string();
     container.command = Some(vec!["/bin/sh".to_string()]);
@@ -3197,7 +3204,26 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
     }
 
     for metric_name in &autoscaling.custom_metrics {
-        if metric_name == "ledger_ingestion_lag" {
+        let metric = match metric_name.as_str() {
+            "ledger_ingestion_lag" => Some((
+                "stellar_node_ingestion_lag".to_string(),
+                "Value".to_string(),
+                Quantity("5".to_string()),
+            )),
+            "stellar_horizon_tps" | "requests_per_second" => Some((
+                "stellar_horizon_tps".to_string(),
+                "Value".to_string(),
+                Quantity("1000".to_string()),
+            )),
+            "stellar_queue_length" | "queue_length" | "horizon_queue_length" => Some((
+                "stellar_horizon_queue_length".to_string(),
+                "Value".to_string(),
+                Quantity("50".to_string()),
+            )),
+            _ => None,
+        };
+
+        if let Some((metric_name, target_type, target_value)) = metric {
             metrics.push(MetricSpec {
                 type_: "Object".to_string(),
                 object: Some(ObjectMetricSource {
@@ -3207,17 +3233,19 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
                         name: node.name_any(),
                     },
                     metric: MetricIdentifier {
-                        name: "stellar_node_ingestion_lag".to_string(),
+                        name: metric_name,
                         selector: None,
                     },
                     target: MetricTarget {
-                        type_: "Value".to_string(),
-                        value: Some(Quantity("5".to_string())),
+                        type_: target_type,
+                        value: Some(target_value),
                         ..Default::default()
                     },
                 }),
                 ..Default::default()
             });
+        } else {
+            warn!("Unrecognized custom metric '{}' configured for node {}; skipping.", metric_name, node.name_any());
         }
     }
 
@@ -4235,5 +4263,36 @@ mod ensure_pvc_tests {
             Some("standard"),
             "PVC storage class must be preserved regardless of retention policy"
         );
+    }
+
+    #[test]
+    fn build_hpa_includes_supported_custom_metrics() {
+        use crate::crd::types::AutoscalingConfig;
+
+        let mut node = test_node();
+        node.spec.autoscaling = Some(AutoscalingConfig {
+            min_replicas: 1,
+            max_replicas: 5,
+            custom_metrics: vec![
+                "stellar_horizon_tps".to_string(),
+                "stellar_queue_length".to_string(),
+            ],
+            ..Default::default()
+        });
+
+        let hpa = build_hpa(&node).expect("HPA should build with supported custom metrics");
+        let metrics = hpa
+            .spec
+            .as_ref()
+            .and_then(|spec| spec.metrics.as_ref())
+            .expect("HPA spec metrics should exist");
+
+        let metric_names: Vec<String> = metrics
+            .iter()
+            .filter_map(|spec| spec.object.as_ref().map(|object| object.metric.name.clone()))
+            .collect();
+
+        assert!(metric_names.contains(&"stellar_horizon_tps".to_string()));
+        assert!(metric_names.contains(&"stellar_horizon_queue_length".to_string()));
     }
 }

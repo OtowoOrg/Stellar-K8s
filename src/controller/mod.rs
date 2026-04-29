@@ -54,6 +54,7 @@ pub mod canary;
 pub mod cross_cloud_failover;
 pub mod feature_flags;
 pub mod gas_autoscaling;
+pub mod horizon_metrics_collector;
 pub mod horizon_scaler;
 pub mod jurisdiction;
 pub mod label_propagation;

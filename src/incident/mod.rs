@@ -27,7 +27,12 @@ pub enum IncidentCommands {
 #[derive(clap::Parser, Debug)]
 pub struct IncidentCollectArgs {
     /// Kubernetes namespace to gather information from.
-    #[arg(long, short = 'N', env = "OPERATOR_NAMESPACE", default_value = "default")]
+    #[arg(
+        long,
+        short = 'N',
+        env = "OPERATOR_NAMESPACE",
+        default_value = "default"
+    )]
     pub namespace: String,
 
     /// Output path for the generated zip file.
@@ -347,7 +352,10 @@ async fn snapshot_managed_resources<W: Write + std::io::Seek>(
     zip: &mut ZipWriter<W>,
     options: SimpleFileOptions,
 ) -> Result<()> {
-    println!("Snapshotting managed resources in namespace '{}'...", namespace);
+    println!(
+        "Snapshotting managed resources in namespace '{}'...",
+        namespace
+    );
 
     // 1. StellarNodes
     let node_api: Api<StellarNode> = Api::namespaced(client.clone(), namespace);
@@ -366,7 +374,8 @@ async fn snapshot_managed_resources<W: Write + std::io::Seek>(
     }
 
     // 3. Services
-    let svc_api: Api<k8s_openapi::api::core::v1::Service> = Api::namespaced(client.clone(), namespace);
+    let svc_api: Api<k8s_openapi::api::core::v1::Service> =
+        Api::namespaced(client.clone(), namespace);
     if let Ok(svcs) = svc_api.list(&ListParams::default()).await {
         let svcs_json = serde_json::to_string_pretty(&svcs.items)?;
         zip.start_file("snapshots/services.json", options)?;
@@ -374,7 +383,8 @@ async fn snapshot_managed_resources<W: Write + std::io::Seek>(
     }
 
     // 4. ConfigMaps
-    let cm_api: Api<k8s_openapi::api::core::v1::ConfigMap> = Api::namespaced(client.clone(), namespace);
+    let cm_api: Api<k8s_openapi::api::core::v1::ConfigMap> =
+        Api::namespaced(client.clone(), namespace);
     if let Ok(cms) = cm_api.list(&ListParams::default()).await {
         let cms_json = serde_json::to_string_pretty(&cms.items)?;
         zip.start_file("snapshots/configmaps.json", options)?;
@@ -382,7 +392,8 @@ async fn snapshot_managed_resources<W: Write + std::io::Seek>(
     }
 
     // 5. StatefulSets
-    let sts_api: Api<k8s_openapi::api::apps::v1::StatefulSet> = Api::namespaced(client.clone(), namespace);
+    let sts_api: Api<k8s_openapi::api::apps::v1::StatefulSet> =
+        Api::namespaced(client.clone(), namespace);
     if let Ok(sts) = sts_api.list(&ListParams::default()).await {
         let sts_json = serde_json::to_string_pretty(&sts.items)?;
         zip.start_file("snapshots/statefulsets.json", options)?;
@@ -400,18 +411,26 @@ async fn capture_diagnostic_traces<W: Write + std::io::Seek>(
 ) -> Result<()> {
     println!("Checking for diagnostic sidecars to capture traces...");
     let pod_api: Api<Pod> = Api::namespaced(client.clone(), namespace);
-    let pods = pod_api.list(&ListParams::default()).await.map_err(Error::KubeError)?;
+    let pods = pod_api
+        .list(&ListParams::default())
+        .await
+        .map_err(Error::KubeError)?;
 
     for pod in pods.items {
         let pod_name = pod.name_any();
-        
+
         let has_diagnostic_sidecar = pod.spec.as_ref().and_then(|spec| {
-            spec.containers.iter().find(|c| c.name.contains("diagnostic"))
+            spec.containers
+                .iter()
+                .find(|c| c.name.contains("diagnostic"))
         });
 
         if let Some(container) = has_diagnostic_sidecar {
-            println!("Capturing trace from diagnostic sidecar in pod '{}'...", pod_name);
-            
+            println!(
+                "Capturing trace from diagnostic sidecar in pod '{}'...",
+                pod_name
+            );
+
             let container_name = &container.name;
             let exec_params = kube::api::AttachParams::default()
                 .container(container_name)
@@ -421,7 +440,7 @@ async fn capture_diagnostic_traces<W: Write + std::io::Seek>(
             // Execute trace command (e.g. perf record, bpftrace, or a built-in diagnostic script)
             // Here we simulate running a trace command using a common tool
             let command = vec!["sh", "-c", "echo 'Simulated FlameGraph/Trace Data'"];
-            
+
             match pod_api.exec(&pod_name, command, &exec_params).await {
                 Ok(mut attached) => {
                     if let Some(mut stdout) = attached.stdout() {
@@ -439,7 +458,7 @@ async fn capture_diagnostic_traces<W: Write + std::io::Seek>(
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -476,7 +495,10 @@ async fn gather_db_snapshots<W: Write + std::io::Seek>(
                         use tokio::io::AsyncReadExt;
                         let mut output = Vec::new();
                         if stdout.read_to_end(&mut output).await.is_ok() && !output.is_empty() {
-                            zip.start_file(format!("db-snapshots/snapshot-{}.sql", pod_name), options)?;
+                            zip.start_file(
+                                format!("db-snapshots/snapshot-{}.sql", pod_name),
+                                options,
+                            )?;
                             zip.write_all(&output)?;
                             println!("Successfully captured DB snapshot from '{}'", pod_name);
                         } else {

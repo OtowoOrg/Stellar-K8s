@@ -15,11 +15,11 @@ on:
   workflow_dispatch:              # Run manually from the GitHub Actions UI
     inputs:
       skip_experiment:
-        description: "Skip a specific experiment (01, 02, or 03). Leave blank to run all."
+        description: "Skip a specific experiment (01, 02, 03, 04, or 05). Leave blank to run all."
         required: false
         default: ""
   schedule:
-    - cron: "0 0 * * 0"          # Every Sunday at midnight UTC
+    - cron: "0 2 * * *"          # Every day at 2 AM UTC (nightly)
 
 env:
   CARGO_TERM_COLOR: always
@@ -268,7 +268,65 @@ jobs:
 
           echo "Experiment 3 PASSED"
 
-      # ── 12. Collect all logs on failure ──────────────────────────────────────
+      # ── 12. Experiment 4: Validator Peer Partition ──────────────────────────────
+      - name: "Experiment 4: Validator Peer Partition"
+        if: ${{ github.event.inputs.skip_experiment != '04' }}
+        run: |
+          echo "Applying validator peer partition experiment..."
+          kubectl apply -f tests/chaos/04-validator-peer-partition.yaml \
+            --namespace=${{ env.CHAOS_NAMESPACE }}
+
+          echo "Chaos running for 100s..."
+          sleep 100
+
+          kubectl delete -f tests/chaos/04-validator-peer-partition.yaml \
+            --namespace=${{ env.CHAOS_NAMESPACE }} --ignore-not-found
+
+          echo "Waiting for operator to recover..."
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NAMESPACE }} \
+            --timeout=120s
+
+          echo "Saving operator logs..."
+          kubectl logs \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NAMESPACE }} \
+            --tail=300 > /tmp/exp04-logs.txt || true
+
+          echo "Experiment 4 PASSED"
+
+      # ── 13. Experiment 5: Disk Fill ───────────────────────────────────────────
+      - name: "Experiment 5: Operator Disk Fill"
+        if: ${{ github.event.inputs.skip_experiment != '05' }}
+        run: |
+          echo "Applying disk fill experiment..."
+          kubectl apply -f tests/chaos/05-disk-fill.yaml \
+            --namespace=${{ env.CHAOS_NAMESPACE }}
+
+          echo "Chaos running for 50s..."
+          sleep 50
+
+          kubectl delete -f tests/chaos/05-disk-fill.yaml \
+            --namespace=${{ env.CHAOS_NAMESPACE }} --ignore-not-found
+
+          echo "Waiting for operator to recover..."
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NAMESPACE }} \
+            --timeout=120s
+
+          echo "Saving operator logs..."
+          kubectl logs \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NAMESPACE }} \
+            --tail=300 > /tmp/exp05-logs.txt || true
+
+          echo "Experiment 5 PASSED"
+
+      # ── 14. Collect all logs on failure ──────────────────────────────────────
       - name: Collect debug info on failure
         if: failure()
         run: |
@@ -288,16 +346,23 @@ jobs:
           echo "=== Kubernetes Events ==="
           kubectl get events --all-namespaces --sort-by='.lastTimestamp' | tail -50 || true
 
-      # ── 13. Upload logs as artifacts ──────────────────────────────────────────
-      - name: Upload experiment logs
+      # ── 15. Generate Resilience Report ───────────────────────────────────────
+      - name: Generate resilience report
+        if: always()
+        run: |
+          chmod +x tests/chaos/generate-report.sh
+          ./tests/chaos/generate-report.sh
+
+      # ── 16. Upload report as artifact ─────────────────────────────────────────
+      - name: Upload resilience report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: chaos-test-logs-${{ github.run_id }}
-          path: /tmp/exp*.txt
-          retention-days: 14
+          name: chaos-resilience-report-${{ github.run_id }}
+          path: tests/chaos/results/*/resilience-report.md
+          retention-days: 30
 
-      # ── 14. Summary ───────────────────────────────────────────────────────────
+      # ── 16. Summary ───────────────────────────────────────────────────────────
       - name: Write summary
         if: always()
         run: |
@@ -308,5 +373,7 @@ jobs:
           echo "| 01 | Operator Pod Kill | ${{ steps.exp01.outcome || 'ran' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 02 | Network Partition | ${{ steps.exp02.outcome || 'ran' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 03 | API High Latency  | ${{ steps.exp03.outcome || 'ran' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 04 | Validator Peer Partition | ${{ steps.exp04.outcome || 'ran' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 05 | Operator Disk Fill | ${{ steps.exp05.outcome || 'ran' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

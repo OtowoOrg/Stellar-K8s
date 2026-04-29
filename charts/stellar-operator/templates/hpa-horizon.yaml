@@ -1,0 +1,91 @@
+{{- if .Values.horizonHpa.enabled }}
+# HorizontalPodAutoscaler for Horizon instances
+#
+# Scales Horizon Deployment replicas based on Stellar-specific metrics exposed
+# by the operator's custom metrics API (custom.metrics.k8s.io/v1beta2):
+#
+#   - stellar_horizon_tps         — target {{ .Values.horizonHpa.tpsTargetPerReplica }} TPS per replica
+#   - stellar_horizon_queue_length — target {{ .Values.horizonHpa.queueLengthTarget }} pending transactions
+#
+# The HPA selects the metric that requires the most replicas and applies that
+# scale-up, ensuring responsiveness to both throughput spikes and queue back-pressure.
+#
+# Prerequisites:
+#   1. The custom metrics APIService must be registered:
+#        kubectl apply -f config/custom-metrics-apiservice.yaml
+#   2. The operator must be running and serving /apis/custom.metrics.k8s.io/v1beta2
+#
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "stellar-rpc.fullname" . }}-horizon-hpa
+  namespace: {{ .Values.horizonHpa.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "stellar-rpc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: horizon-autoscaler
+  annotations:
+    stellar.org/metrics-server: "custom.metrics.k8s.io/v1beta2"
+    stellar.org/hpa-signals: "tps,queue-length"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.horizonHpa.targetDeployment | default (printf "%s-horizon" (include "stellar-rpc.fullname" .)) }}
+  minReplicas: {{ .Values.horizonHpa.minReplicas | default 2 }}
+  maxReplicas: {{ .Values.horizonHpa.maxReplicas | default 10 }}
+  metrics:
+    # --- Primary signal: Transactions Per Second ---
+    # Scale up when TPS/replica exceeds the target value.
+    # Uses the StellarNode object as the metric source so the HPA fetches from
+    # /apis/custom.metrics.k8s.io/v1beta2/namespaces/{ns}/stellarnodes.stellar.org/{name}/stellar_horizon_tps
+    - type: Object
+      object:
+        metric:
+          name: stellar_horizon_tps
+        describedObject:
+          apiVersion: stellar.org/v1alpha1
+          kind: StellarNode
+          name: {{ .Values.horizonHpa.stellarNodeName | default "horizon" }}
+        target:
+          type: Value
+          # Scale up when total observed TPS > (this value * current replicas).
+          # Example: value=100 → scale up when TPS/replica > 100.
+          value: "{{ .Values.horizonHpa.tpsTargetPerReplica | default 100 }}"
+
+    # --- Secondary signal: Pending Transaction Queue Length ---
+    # Scale up when the transaction submission queue exceeds this absolute value.
+    # This ensures scale-up happens even when individual TPS is low but queuing is high
+    # (e.g. during brief ingestion pauses or validator congestion).
+    - type: Object
+      object:
+        metric:
+          name: stellar_horizon_queue_length
+        describedObject:
+          apiVersion: stellar.org/v1alpha1
+          kind: StellarNode
+          name: {{ .Values.horizonHpa.stellarNodeName | default "horizon" }}
+        target:
+          type: Value
+          value: "{{ .Values.horizonHpa.queueLengthTarget | default 500 }}"
+
+  behavior:
+    scaleUp:
+      # Allow up to 4 new replicas per 60-second window to avoid thrashing.
+      stabilizationWindowSeconds: {{ .Values.horizonHpa.scaleUpStabilizationSeconds | default 60 }}
+      policies:
+        - type: Pods
+          value: 4
+          periodSeconds: 60
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      # Require 5 minutes of low load before scaling down to avoid flapping.
+      stabilizationWindowSeconds: {{ .Values.horizonHpa.scaleDownStabilizationSeconds | default 300 }}
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+      selectPolicy: Min
+{{- end }}

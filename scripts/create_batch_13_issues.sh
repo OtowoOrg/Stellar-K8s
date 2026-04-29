@@ -40,7 +40,14 @@ if [ "$ACTUAL_ISSUE_COUNT" -ne "$EXPECTED_ISSUE_COUNT" ]; then
   exit 1
 fi
 
+# Source shared retry/backoff and dry-run helper.
+# shellcheck source=scripts/retry_helper.sh
+source "$(dirname "$0")/retry_helper.sh"
+
 echo "Creating Batch 13 (10 x 200 pts) - The 10k Milestone Batch..."
+
+# Alias kept for readability; delegates to the shared helper.
+create_issue_with_retry() { create_issue "$1" "$2" "$3"; }
 
 # ─── ISSUE 1 (200 pts) ────────────────────────────────────────────────────────
 create_issue_with_retry \

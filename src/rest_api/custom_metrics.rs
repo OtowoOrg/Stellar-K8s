@@ -27,6 +27,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use prometheus_client::encoding::text::encode;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -51,6 +52,8 @@ pub enum StellarMetricType {
     IngestionLag,
     /// Active connections to the node.
     ActiveConnections,
+    /// Horizon request queue length
+    HorizonQueueLength,
 }
 
 impl StellarMetricType {
@@ -75,6 +78,12 @@ impl StellarMetricType {
             // Ingestion lag
             "stellar_ingestion_lag" | "ingestion_lag" => Some(StellarMetricType::IngestionLag),
             // Active connections
+            "stellar_horizon_tps" | "requests_per_second" => {
+                Some(StellarMetricType::RequestsPerSecond)
+            }
+            "stellar_queue_length" | "queue_length" | "horizon_queue_length" => {
+                Some(StellarMetricType::HorizonQueueLength)
+            }
             "stellar_active_connections" | "active_connections" => {
                 Some(StellarMetricType::ActiveConnections)
             }
@@ -89,6 +98,8 @@ impl StellarMetricType {
             StellarMetricType::QueueLength => "stellar_horizon_queue_length",
             StellarMetricType::LedgerSequence => "stellar_node_ledger_sequence",
             StellarMetricType::IngestionLag => "stellar_node_ingestion_lag",
+            StellarMetricType::RequestsPerSecond => "stellar_horizon_tps",
+            StellarMetricType::HorizonQueueLength => "stellar_horizon_queue_length",
             StellarMetricType::ActiveConnections => "stellar_node_active_connections",
         }
     }
@@ -374,6 +385,68 @@ pub async fn get_metrics_discovery() -> Response {
 ///
 /// Returns the current value of a Stellar metric for a specific Pod.
 /// The HPA uses this to scale Horizon Deployments based on per-pod metrics.
+/// Fetch a metric value from the Prometheus registry
+/// Returns the metric value as a string, or None if not found
+fn get_metric_value(metric_type: &StellarMetricType, namespace: &str, name: &str) -> Option<i64> {
+    let metric_name = metric_type.prometheus_name();
+    let mut buffer = String::new();
+    if encode(&mut buffer, &crate::controller::metrics::REGISTRY).is_err() {
+        warn!("Failed to encode metrics registry for {}", metric_name);
+        return None;
+    }
+
+    buffer.lines().find_map(|line| match_metric_line(line, metric_name, namespace, name))
+}
+
+fn match_metric_line(line: &str, metric_name: &str, namespace: &str, name: &str) -> Option<i64> {
+    let prefix = format!("{metric_name}{{");
+    if !line.starts_with(&prefix) {
+        return None;
+    }
+
+    let parts: Vec<&str> = line[prefix.len()..].splitn(2, '}').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+
+    let (labels, value_str) = (parts[0], parts[1].trim_start());
+    let namespace_label = extract_label(labels, "namespace")?;
+    let name_label = extract_label(labels, "name")?;
+
+    if namespace_label != namespace || name_label != name {
+        return None;
+    }
+
+    parse_metric_value(value_str)
+}
+
+fn extract_label(labels: &str, key: &str) -> Option<String> {
+    for part in labels.split(',') {
+        let mut kv = part.splitn(2, '=');
+        let label_key = kv.next()?.trim();
+        let label_value = kv.next()?.trim();
+        if label_key != key {
+            continue;
+        }
+
+        if let Some(stripped) = label_value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
+            return Some(stripped.replace("\\\"", "\""));
+        }
+
+        return Some(label_value.to_string());
+    }
+    None
+}
+
+fn parse_metric_value(value_str: &str) -> Option<i64> {
+    let value_token = value_str.split_whitespace().next()?;
+    value_token
+        .parse::<f64>()
+        .ok()
+        .map(|value| value as i64)
+}
+
+/// Handler for custom metrics API: /apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric
 #[tracing::instrument(
     skip(state),
     fields(namespace = %namespace, name = %name, metric = %metric_name, reconcile_id = "-")
@@ -726,5 +799,49 @@ mod tests {
         assert_eq!(list.items[0].value, "42");
         assert_eq!(list.items[0].described_object.kind, "Pod");
         assert_eq!(list.items[0].described_object.namespace, "default");
+    }
+
+    #[test]
+    fn test_get_metric_value_horizon_tps() {
+        let labels = crate::controller::metrics::NodeLabels {
+            namespace: "test-ns".to_string(),
+            name: "horizon-pod-0".to_string(),
+            node_type: "Horizon".to_string(),
+            network: "Testnet".to_string(),
+            hardware_generation: "gen1".to_string(),
+        };
+
+        crate::controller::metrics::HORIZON_TPS
+            .get_or_create(&labels)
+            .set(123);
+
+        assert_eq!(
+            get_metric_value(
+                &StellarMetricType::RequestsPerSecond,
+                "test-ns",
+                "horizon-pod-0"
+            ),
+            Some(123)
+        );
+    }
+
+    #[test]
+    fn test_get_metric_value_queue_length() {
+        let labels = crate::controller::metrics::NodeLabels {
+            namespace: "test-ns".to_string(),
+            name: "horizon-pod-0".to_string(),
+            node_type: "Horizon".to_string(),
+            network: "Testnet".to_string(),
+            hardware_generation: "gen1".to_string(),
+        };
+
+        crate::controller::metrics::HORIZON_QUEUE_LENGTH
+            .get_or_create(&labels)
+            .set(42);
+
+        assert_eq!(
+            get_metric_value(&StellarMetricType::HorizonQueueLength, "test-ns", "horizon-pod-0"),
+            Some(42)
+        );
     }
 }

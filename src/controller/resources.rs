@@ -3197,7 +3197,26 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
     }
 
     for metric_name in &autoscaling.custom_metrics {
-        if metric_name == "ledger_ingestion_lag" {
+        let metric = match metric_name.as_str() {
+            "ledger_ingestion_lag" => Some((
+                "stellar_node_ingestion_lag".to_string(),
+                "Value".to_string(),
+                Quantity("5".to_string()),
+            )),
+            "stellar_horizon_tps" | "requests_per_second" => Some((
+                "stellar_horizon_tps".to_string(),
+                "Value".to_string(),
+                Quantity("1000".to_string()),
+            )),
+            "stellar_queue_length" | "queue_length" | "horizon_queue_length" => Some((
+                "stellar_horizon_queue_length".to_string(),
+                "Value".to_string(),
+                Quantity("50".to_string()),
+            )),
+            _ => None,
+        };
+
+        if let Some((metric_name, target_type, target_value)) = metric {
             metrics.push(MetricSpec {
                 type_: "Object".to_string(),
                 object: Some(ObjectMetricSource {
@@ -3207,17 +3226,19 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
                         name: node.name_any(),
                     },
                     metric: MetricIdentifier {
-                        name: "stellar_node_ingestion_lag".to_string(),
+                        name: metric_name,
                         selector: None,
                     },
                     target: MetricTarget {
-                        type_: "Value".to_string(),
-                        value: Some(Quantity("5".to_string())),
+                        type_: target_type,
+                        value: Some(target_value),
                         ..Default::default()
                     },
                 }),
                 ..Default::default()
             });
+        } else {
+            warn!("Unrecognized custom metric '{}' configured for node {}; skipping.", metric_name, node.name_any());
         }
     }
 
@@ -4235,5 +4256,36 @@ mod ensure_pvc_tests {
             Some("standard"),
             "PVC storage class must be preserved regardless of retention policy"
         );
+    }
+
+    #[test]
+    fn build_hpa_includes_supported_custom_metrics() {
+        use crate::crd::types::AutoscalingConfig;
+
+        let mut node = test_node();
+        node.spec.autoscaling = Some(AutoscalingConfig {
+            min_replicas: 1,
+            max_replicas: 5,
+            custom_metrics: vec![
+                "stellar_horizon_tps".to_string(),
+                "stellar_queue_length".to_string(),
+            ],
+            ..Default::default()
+        });
+
+        let hpa = build_hpa(&node).expect("HPA should build with supported custom metrics");
+        let metrics = hpa
+            .spec
+            .as_ref()
+            .and_then(|spec| spec.metrics.as_ref())
+            .expect("HPA spec metrics should exist");
+
+        let metric_names: Vec<String> = metrics
+            .iter()
+            .filter_map(|spec| spec.object.as_ref().map(|object| object.metric.name.clone()))
+            .collect();
+
+        assert!(metric_names.contains(&"stellar_horizon_tps".to_string()));
+        assert!(metric_names.contains(&"stellar_horizon_queue_length".to_string()));
     }
 }

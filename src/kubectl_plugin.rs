@@ -313,6 +313,7 @@ async fn run(cli: Cli) -> Result<()> {
             | Commands::Summary { .. }
             | Commands::InstallCompletion { .. } => None,
             Commands::Topology { .. } => Some("Visualize SCP topology (read-only)".to_string()),
+            Commands::Cve { .. } => Some("Inspect CVE status (read-only)".to_string()),
             Commands::Logs { node_name, .. } => Some(format!(
                 "Stream logs from StellarNode '{node_name}' (read-only, no cluster mutation)"
             )),
@@ -329,12 +330,12 @@ async fn run(cli: Cli) -> Result<()> {
                     Some(format!("Exec into pod for StellarNode '{node_name}'"))
                 }
             }
-            Commands::Incident { command: stellar_k8s::incident::IncidentCommands::Collect(_) } => {
-                Some("Collect forensic data for incident response (read-only)".to_string())
-            }
-            Commands::Incident { command: stellar_k8s::incident::IncidentCommands::Report(_) } => {
-                Some("Generate incident report (read-only, no cluster mutation)".to_string())
-            }
+            Commands::Incident {
+                command: stellar_k8s::incident::IncidentCommands::Collect(_),
+            } => Some("Collect forensic data for incident response (read-only)".to_string()),
+            Commands::Incident {
+                command: stellar_k8s::incident::IncidentCommands::Report(_),
+            } => Some("Generate incident report (read-only, no cluster mutation)".to_string()),
             Commands::Failover { node_name, .. } => {
                 Some(format!("Trigger failover for StellarNode '{node_name}'"))
             }
@@ -494,7 +495,9 @@ async fn run(cli: Cli) -> Result<()> {
                 .unwrap_or_else(|| PathBuf::from("."));
 
             let out_dir = match shell {
-                clap_complete::Shell::Bash => home_dir.join(".local/share/bash-completion/completions"),
+                clap_complete::Shell::Bash => {
+                    home_dir.join(".local/share/bash-completion/completions")
+                }
                 clap_complete::Shell::Zsh => home_dir.join(".zsh/completions"),
                 clap_complete::Shell::Fish => home_dir.join(".config/fish/completions"),
                 _ => std::env::current_dir().unwrap_or_default(),
@@ -507,7 +510,11 @@ async fn run(cli: Cli) -> Result<()> {
 
             match generate_to(shell, &mut cmd, &name, &out_dir) {
                 Ok(path) => {
-                    println!("Successfully installed {} completion script at: {}", shell, path.display());
+                    println!(
+                        "Successfully installed {} completion script at: {}",
+                        shell,
+                        path.display()
+                    );
                     if shell == clap_complete::Shell::Zsh {
                         println!("\nNote: Make sure {} is in your $fpath.", out_dir.display());
                         println!("You may need to add this to your ~/.zshrc:");
@@ -655,6 +662,7 @@ async fn run(cli: Cli) -> Result<()> {
                 }
             }
         }
+        _ => todo!(),
     }
 }
 

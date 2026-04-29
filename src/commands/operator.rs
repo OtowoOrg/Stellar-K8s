@@ -8,6 +8,8 @@ use tracing::{info, info_span, warn, Instrument, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::cli::RunArgs;
+#[cfg(feature = "rest-api")]
+use stellar_k8s::rest_api::metrics_store::StellarMetricsStore;
 use stellar_k8s::log_scrub::ScrubLayer;
 use stellar_k8s::{controller, preflight, Error};
 
@@ -236,6 +238,8 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
         audit_log: Arc::new(controller::AuditLog::new()),
         #[cfg(feature = "rest-api")]
         oidc_config,
+        #[cfg(feature = "rest-api")]
+        metrics_store: Arc::new(StellarMetricsStore::new()),
     });
 
     // Start the peer discovery manager

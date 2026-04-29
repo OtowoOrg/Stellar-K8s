@@ -315,6 +315,13 @@ pub struct ControllerState {
     /// back to Kubernetes RBAC token validation.
     #[cfg(feature = "rest-api")]
     pub oidc_config: Option<crate::rest_api::OidcConfig>,
+    /// Thread-safe cache of Stellar metrics (TPS, queue length, etc.) shared between
+    /// the background [`HorizonMetricsCollector`] and the custom metrics API handlers.
+    ///
+    /// Handlers read from this store to serve `custom.metrics.k8s.io/v1beta2` requests.
+    /// The collector writes to it on each scrape cycle.
+    #[cfg(feature = "rest-api")]
+    pub metrics_store: std::sync::Arc<crate::rest_api::metrics_store::StellarMetricsStore>,
 }
 
 impl ControllerState {
@@ -423,6 +430,26 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
             error!("Node Drain Orchestrator stopped with error: {}", e);
         }
     });
+
+    // Start Horizon Metrics Collector in the background
+    #[cfg(feature = "rest-api")]
+    {
+        use super::horizon_metrics_collector::spawn_horizon_metrics_collector;
+        let collector_client = client.clone();
+        let collector_store = state.metrics_store.clone();
+        let collector_watch_ns = state.watch_namespace.clone();
+        tokio::spawn(async move {
+            let _handle = spawn_horizon_metrics_collector(
+                collector_store,
+                30, // poll every 30 seconds
+                collector_client,
+                collector_watch_ns,
+            );
+            if let Err(e) = _handle.await {
+                error!("Horizon Metrics Collector stopped with error: {:?}", e);
+            }
+        });
+    }
 
     // Start Quorum Optimizer in the background
     let quorum_optimizer = Arc::new(super::quorum::QuorumOptimizer::new(

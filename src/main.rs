@@ -70,7 +70,9 @@ async fn main() -> Result<(), Error> {
                 .unwrap_or_else(|| PathBuf::from("."));
 
             let out_dir = match shell {
-                clap_complete::Shell::Bash => home_dir.join(".local/share/bash-completion/completions"),
+                clap_complete::Shell::Bash => {
+                    home_dir.join(".local/share/bash-completion/completions")
+                }
                 clap_complete::Shell::Zsh => home_dir.join(".zsh/completions"),
                 clap_complete::Shell::Fish => home_dir.join(".config/fish/completions"),
                 _ => std::env::current_dir().unwrap_or_default(),
@@ -83,7 +85,11 @@ async fn main() -> Result<(), Error> {
 
             match generate_to(shell, &mut cmd, &name, &out_dir) {
                 Ok(path) => {
-                    println!("Successfully installed {} completion script at: {}", shell, path.display());
+                    println!(
+                        "Successfully installed {} completion script at: {}",
+                        shell,
+                        path.display()
+                    );
                     if shell == clap_complete::Shell::Zsh {
                         println!("\nNote: Make sure {} is in your $fpath.", out_dir.display());
                         println!("You may need to add this to your ~/.zshrc:");

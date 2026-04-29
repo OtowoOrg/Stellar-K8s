@@ -42,10 +42,7 @@ mod tests {
     #[test]
     fn info_namespace_table() {
         for ns in &["default", "stellar-system", "my-ns", "a"] {
-            let a = subcmd!(
-                Info,
-                &["stellar-operator", "info", "--namespace", ns]
-            );
+            let a = subcmd!(Info, &["stellar-operator", "info", "--namespace", ns]);
             assert_eq!(&a.namespace, ns);
         }
     }
@@ -111,7 +108,13 @@ mod tests {
     fn generate_runbook_with_namespace_short() {
         let a = subcmd!(
             GenerateRunbook,
-            &["stellar-operator", "generate-runbook", "node1", "-n", "stellar"]
+            &[
+                "stellar-operator",
+                "generate-runbook",
+                "node1",
+                "-n",
+                "stellar"
+            ]
         );
         assert_eq!(a.namespace, "stellar");
     }
@@ -321,13 +324,7 @@ mod tests {
     fn diff_show_config_flag() {
         let a = subcmd!(
             Diff,
-            &[
-                "stellar-operator",
-                "diff",
-                "--name",
-                "v",
-                "--show-config"
-            ]
+            &["stellar-operator", "diff", "--name", "v", "--show-config"]
         );
         assert!(a.show_config);
     }
@@ -336,13 +333,7 @@ mod tests {
     fn diff_all_resources_flag() {
         let a = subcmd!(
             Diff,
-            &[
-                "stellar-operator",
-                "diff",
-                "--name",
-                "v",
-                "--all-resources"
-            ]
+            &["stellar-operator", "diff", "--name", "v", "--all-resources"]
         );
         assert!(a.all_resources);
     }
@@ -412,14 +403,7 @@ mod tests {
 
     #[test]
     fn diff_invalid_format_is_error() {
-        let result = parse(&[
-            "stellar-operator",
-            "diff",
-            "--name",
-            "v",
-            "--format",
-            "xml",
-        ]);
+        let result = parse(&["stellar-operator", "diff", "--name", "v", "--format", "xml"]);
         assert!(result.is_err(), "invalid format value should be rejected");
     }
 
@@ -427,10 +411,7 @@ mod tests {
 
     #[test]
     fn benchmark_compare_defaults() {
-        let a = subcmd!(
-            BenchmarkCompare,
-            &["stellar-operator", "benchmark-compare"]
-        );
+        let a = subcmd!(BenchmarkCompare, &["stellar-operator", "benchmark-compare"]);
         assert!(a.cluster_a_context.is_none());
         assert!(a.cluster_b_context.is_none());
         assert!(a.cluster_a_prometheus.is_none());
@@ -556,10 +537,7 @@ mod tests {
 
     #[test]
     fn incident_report_defaults() {
-        let a = subcmd!(
-            IncidentReport,
-            &["stellar-operator", "incident-report"]
-        );
+        let a = subcmd!(IncidentReport, &["stellar-operator", "incident-report"]);
         assert_eq!(a.namespace, "default");
         assert!(a.since.is_none());
         assert!(a.from.is_none());
@@ -681,8 +659,7 @@ mod tests {
 
     #[test]
     fn run_github_repo_flag() {
-        let parsed =
-            parse(&["stellar-operator", "run", "--github-repo", "org/repo"]).unwrap();
+        let parsed = parse(&["stellar-operator", "run", "--github-repo", "org/repo"]).unwrap();
         match parsed.command {
             Commands::Run(a) => assert_eq!(a.github_repo.as_deref(), Some("org/repo")),
             _ => panic!("expected Run"),
@@ -693,13 +670,7 @@ mod tests {
 
     #[test]
     fn webhook_log_format_pretty() {
-        let parsed = parse(&[
-            "stellar-operator",
-            "webhook",
-            "--log-format",
-            "pretty",
-        ])
-        .unwrap();
+        let parsed = parse(&["stellar-operator", "webhook", "--log-format", "pretty"]).unwrap();
         match parsed.command {
             Commands::Webhook(a) => {
                 assert!(matches!(a.log_format, LogFormat::Pretty))
@@ -718,8 +689,7 @@ mod tests {
 
     #[test]
     fn simulator_up_use_k3s_flag() {
-        let parsed =
-            parse(&["stellar-operator", "simulator", "up", "--use-k3s"]).unwrap();
+        let parsed = parse(&["stellar-operator", "simulator", "up", "--use-k3s"]).unwrap();
         match parsed.command {
             Commands::Simulator(s) => match s.command {
                 SimulatorCmd::Up(a) => assert!(a.use_k3s),
@@ -730,14 +700,7 @@ mod tests {
 
     #[test]
     fn simulator_up_namespace_flag() {
-        let parsed = parse(&[
-            "stellar-operator",
-            "simulator",
-            "up",
-            "--namespace",
-            "dev",
-        ])
-        .unwrap();
+        let parsed = parse(&["stellar-operator", "simulator", "up", "--namespace", "dev"]).unwrap();
         match parsed.command {
             Commands::Simulator(s) => match s.command {
                 SimulatorCmd::Up(a) => assert_eq!(a.namespace, "dev"),

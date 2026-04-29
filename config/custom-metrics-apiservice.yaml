@@ -1,0 +1,110 @@
+# APIService registration for the Stellar custom metrics server
+#
+# This resource tells the Kubernetes API aggregation layer that any request for
+# the `custom.metrics.k8s.io/v1beta2` API group should be forwarded to the
+# stellar-operator Service, which runs the custom metrics API server.
+#
+# Prerequisites:
+#   - The stellar-operator Service must exist in the stellar-system namespace
+#     and expose port 9090 (or whatever REST_API_PORT is set to).
+#   - The operator must present a TLS certificate that the API server can verify.
+#     Use `.insecureSkipTLSVerify: true` during development; in production supply
+#     the CA bundle via `.caBundle`.
+#
+# Apply:
+#   kubectl apply -f config/custom-metrics-apiservice.yaml
+#
+# Verify registration:
+#   kubectl get apiservice v1beta2.custom.metrics.k8s.io
+#
+# Test the discovery endpoint:
+#   kubectl get --raw /apis/custom.metrics.k8s.io/v1beta2 | jq .
+#
+# Test a metric value:
+#   kubectl get --raw \
+#     "/apis/custom.metrics.k8s.io/v1beta2/namespaces/stellar-system/stellarnodes.stellar.org/horizon/stellar_horizon_tps" \
+#     | jq .
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1beta2.custom.metrics.k8s.io
+  labels:
+    app.kubernetes.io/name: stellar-operator
+    app.kubernetes.io/component: custom-metrics-server
+    stellar.org/component: hpa-metrics-adapter
+spec:
+  # The API group and version this service implements.
+  group: custom.metrics.k8s.io
+  version: v1beta2
+  groupPriorityMinimum: 100
+  versionPriority: 100
+
+  # The Kubernetes Service that the aggregation layer should forward requests to.
+  service:
+    name: stellar-operator          # Must match the Service name in the operator namespace
+    namespace: stellar-system       # The namespace where the operator is deployed
+    port: 9090                      # Must match the REST_API_PORT (default: 9090)
+
+  # TLS verification.
+  # Set insecureSkipTLSVerify: true for local/development clusters.
+  # In production, replace with caBundle containing the operator's CA certificate:
+  #
+  #   caBundle: <base64-encoded-CA-cert>
+  #
+  insecureSkipTLSVerify: true
+
+---
+# RBAC: Allow the Kubernetes controller-manager (which runs the HPA controller)
+# to call the custom metrics API on behalf of service accounts.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: stellar-custom-metrics-reader
+  labels:
+    app.kubernetes.io/name: stellar-operator
+    app.kubernetes.io/component: custom-metrics-server
+rules:
+  - apiGroups:
+      - custom.metrics.k8s.io
+    resources:
+      - "*"
+    verbs:
+      - get
+      - list
+
+---
+# Bind the custom metrics reader role to the HPA controller's service account.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: stellar-custom-metrics-reader
+  labels:
+    app.kubernetes.io/name: stellar-operator
+    app.kubernetes.io/component: custom-metrics-server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: stellar-custom-metrics-reader
+subjects:
+  - kind: ServiceAccount
+    name: horizontal-pod-autoscaler
+    namespace: kube-system
+
+---
+# Allow the API server's aggregation layer to authenticate to our metrics service.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: stellar-custom-metrics-auth-delegator
+  labels:
+    app.kubernetes.io/name: stellar-operator
+    app.kubernetes.io/component: custom-metrics-server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: stellar-operator
+    namespace: stellar-system

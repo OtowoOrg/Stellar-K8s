@@ -90,6 +90,49 @@ autoscaling:
     minReplicas: 1
     maxReplicas: 10
 
+# Stellar-native HPA for Horizon instances.
+#
+# Scales Horizon Deployment replicas based on two custom metrics exposed by the
+# operator's custom metrics API (custom.metrics.k8s.io/v1beta2):
+#
+#   stellar_horizon_tps         — transactions per second ingested by Horizon
+#   stellar_horizon_queue_length — pending transaction queue depth
+#
+# Requires the custom-metrics APIService to be registered first:
+#   kubectl apply -f config/custom-metrics-apiservice.yaml
+horizonHpa:
+  # Set to true to deploy the HPA for Horizon scaling.
+  enabled: false
+
+  # Kubernetes namespace where the Horizon Deployment lives.
+  # Defaults to the Helm release namespace.
+  namespace: ""
+
+  # Name of the Deployment to scale.
+  targetDeployment: "horizon"
+
+  # Name of the StellarNode CR used as the metric source.
+  stellarNodeName: "horizon"
+
+  # Minimum number of Horizon replicas.
+  minReplicas: 2
+
+  # Maximum number of Horizon replicas.
+  maxReplicas: 10
+
+  # Scale up when observed TPS exceeds this value × current replicas.
+  # E.g. 100 means each replica should handle at most 100 TPS.
+  tpsTargetPerReplica: 100
+
+  # Scale up when the pending transaction queue exceeds this absolute count.
+  queueLengthTarget: 500
+
+  # Seconds of high-load data required before scaling up (prevents flapping).
+  scaleUpStabilizationSeconds: 60
+
+  # Seconds of low-load data required before scaling down.
+  scaleDownStabilizationSeconds: 300
+
 nodeSelector: {}
 
 tolerations: []

@@ -1,8 +1,7 @@
 use crate::cli::DoctorArgs;
-use crate::Error;
-use crate::preflight;
 use kube::Client;
 use std::process::Command;
+use stellar_k8s::{preflight, Error};
 
 /// Output-friendly status used by the doctor command.
 struct CheckStatus {
@@ -22,7 +21,7 @@ impl CheckStatus {
 
     fn format(&self) -> String {
         let label = if self.passed { "Green" } else { "Red" };
-        format!("[{label}] {name}: {message}")
+        format!("[{label}] {name}: {message}", name = self.name, message = self.message)
     }
 }
 
@@ -69,7 +68,12 @@ fn check_github_cli() -> CheckStatus {
 }
 
 fn check_kubectl_cli() -> CheckStatus {
-    run_command_check("kubectl CLI", "kubectl", &["version", "--client", "--short"], "kubectl")
+    run_command_check(
+        "kubectl CLI",
+        "kubectl",
+        &["version", "--client", "--short"],
+        "kubectl",
+    )
 }
 
 fn check_helm_cli() -> CheckStatus {
@@ -77,7 +81,10 @@ fn check_helm_cli() -> CheckStatus {
 }
 
 fn check_kubectl_current_context() -> CheckStatus {
-    match Command::new("kubectl").args(["config", "current-context"]).output() {
+    match Command::new("kubectl")
+        .args(["config", "current-context"])
+        .output()
+    {
         Ok(output) => {
             if output.status.success() {
                 let context = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -109,7 +116,8 @@ fn check_kubectl_current_context() -> CheckStatus {
         }
         Err(err) => {
             let message = if err.kind() == std::io::ErrorKind::NotFound {
-                "kubectl was not found in PATH, so the current context cannot be resolved".to_string()
+                "kubectl was not found in PATH, so the current context cannot be resolved"
+                    .to_string()
             } else {
                 format!("failed to execute kubectl: {err}")
             };
@@ -125,14 +133,13 @@ async fn run_kubernetes_checks(namespace: &str) -> Vec<CheckStatus> {
             return vec![CheckStatus::new(
                 "Kubernetes Permissions",
                 false,
-                format!(
-                    "failed to create Kubernetes client from current kubeconfig: {err}"
-                ),
+                format!("failed to create Kubernetes client from current kubeconfig: {err}"),
             )];
         }
     };
 
-    let preflight_results = preflight::run_preflight_checks(&client, namespace).await;
+    let preflight_results: Vec<stellar_k8s::preflight::CheckResult> =
+        preflight::run_preflight_checks(&client, namespace).await;
     preflight_results
         .into_iter()
         .map(|result| CheckStatus::new(result.name, result.passed, result.message))

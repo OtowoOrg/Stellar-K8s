@@ -17,6 +17,8 @@ mod tests {
         StellarNodeSpec, StorageConfig, ValidatorConfig,
     };
     use crate::error::Error;
+    #[cfg(feature = "rest-api")]
+    use crate::rest_api::metrics_store::StellarMetricsStore;
     use kube::api::ObjectMeta;
     use kube::runtime::controller::Action;
     use kube::Client;
@@ -375,6 +377,8 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             job_registry: Arc::new(JobRegistry::new()),
             audit_log: Arc::new(AuditLog::new()),
             oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
         });
 
         // Test with a retriable error (network-related)
@@ -420,6 +424,8 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             job_registry: Arc::new(JobRegistry::new()),
             audit_log: Arc::new(AuditLog::new()),
             oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
         });
 
         // Test with validation error (non-retriable)
@@ -464,6 +470,8 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             job_registry: Arc::new(JobRegistry::new()),
             audit_log: Arc::new(AuditLog::new()),
             oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
         });
 
         let errors = vec![

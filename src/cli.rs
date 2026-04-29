@@ -95,6 +95,8 @@ pub enum Commands {
     },
     /// Compare performance metrics between two clusters
     BenchmarkCompare(stellar_k8s::benchmark_compare::BenchmarkCompareArgs),
+    /// Export operator audit log and config as a signed compliance report
+    ExportCompliance(ExportComplianceArgs),
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -399,6 +401,28 @@ pub struct BenchmarkArgs {
     /// Minimum log level.
     #[arg(long, env = "LOG_LEVEL", default_value = "info")]
     pub log_level: String,
+}
+
+/// Arguments for the `export-compliance` subcommand.
+#[derive(Parser, Debug)]
+#[command(about = "Export operator audit log as a signed compliance report (JSON or PDF)")]
+pub struct ExportComplianceArgs {
+    /// Output format: json or pdf
+    #[arg(long, default_value = "json", value_parser = ["json", "pdf"])]
+    pub format: String,
+
+    /// Path to write the export file. Defaults to stdout for JSON, or
+    /// `compliance-report-<timestamp>.<ext>` for PDF.
+    #[arg(long)]
+    pub output: Option<String>,
+
+    /// Kubernetes namespace to read audit entries from (operator namespace).
+    #[arg(long, env = "OPERATOR_NAMESPACE", default_value = "default")]
+    pub namespace: String,
+
+    /// Maximum number of audit entries to include (0 = all).
+    #[arg(long, default_value = "0")]
+    pub limit: usize,
 }
 
 #[cfg(test)]

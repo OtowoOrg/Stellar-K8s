@@ -47,6 +47,7 @@ use crate::crd::{
     StellarNodeStatus,
 };
 use crate::error::{Error, Result};
+use crate::plugin_sdk::{HookResult, ReconcileContext};
 #[cfg(feature = "metrics")]
 use crate::infra;
 
@@ -68,6 +69,7 @@ use super::health;
 use super::kms_secret;
 use super::label_propagation::LabelPropagator;
 use super::maintenance;
+use super::spot_drain;
 #[cfg(feature = "metrics")]
 use super::metrics;
 use super::mtls;
@@ -310,6 +312,8 @@ pub struct ControllerState {
     pub job_registry: std::sync::Arc<super::background_jobs::JobRegistry>,
     /// In-memory audit log for admin activity.
     pub audit_log: std::sync::Arc<super::audit_log::AuditLog>,
+    /// Plugin registry for custom reconciliation hooks and sidecar injectors.
+    pub plugin_registry: std::sync::Arc<crate::plugin_sdk::PluginRegistry>,
     /// Optional OIDC configuration for JWT-based authentication on the REST API.
     /// When `Some`, the OIDC middleware is active; when `None`, the operator falls
     /// back to Kubernetes RBAC token validation.
@@ -423,6 +427,23 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
             error!("Node Drain Orchestrator stopped with error: {}", e);
         }
     });
+
+    // Start Spot/Preemptible Drain Handler in the background.
+    // NODE_NAME must be injected via the Downward API (spec.nodeName).
+    if let Ok(node_name) = std::env::var("NODE_NAME") {
+        let spot_handler = Arc::new(spot_drain::SpotDrainHandler::new(
+            client.clone(),
+            state.event_reporter.clone(),
+            node_name,
+        ));
+        tokio::spawn(async move {
+            if let Err(e) = spot_handler.run().await {
+                error!("Spot Drain Handler stopped with error: {}", e);
+            }
+        });
+    } else {
+        info!("NODE_NAME env var not set – Spot Drain Handler disabled");
+    }
 
     // Start Quorum Optimizer in the background
     let quorum_optimizer = Arc::new(super::quorum::QuorumOptimizer::new(
@@ -875,6 +896,19 @@ pub(crate) fn apply_stellar_node(
         }
 
         let propagated_labels = Arc::new(LabelPropagator::new(&node).compute());
+
+        // ── Plugin SDK: pre_reconcile hooks ───────────────────────────────────
+        let plugin_ctx = ReconcileContext::from_node(&node);
+        match ctx.plugin_registry.run_pre_reconcile(&plugin_ctx).await {
+            HookResult::Continue => {}
+            HookResult::Abort(reason) => {
+                warn!(
+                    "Plugin aborted reconciliation for {}/{}: {}",
+                    namespace, name, reason
+                );
+                return Err(Error::ConfigError(format!("plugin aborted: {reason}")));
+            }
+        }
 
         // Enforce PSS 'restricted' on the managed namespace (idempotent)
         if let Err(e) = pss::ensure_namespace_pss_labels(&client, &namespace).await {
@@ -2487,6 +2521,10 @@ pub(crate) fn apply_stellar_node(
         // 14. Update status to Running with ready replica count
         // Use configured requeue interval for healthy reconciliation
         let requeue_interval = ctx.operator_config.reconciler.requeue_interval;
+
+        // ── Plugin SDK: post_reconcile hooks ──────────────────────────────────
+        ctx.plugin_registry.run_post_reconcile(&plugin_ctx).await;
+
         Ok(Action::requeue(Duration::from_secs(if phase == "Ready" {
             requeue_interval
         } else {

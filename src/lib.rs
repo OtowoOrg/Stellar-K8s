@@ -74,6 +74,7 @@ pub mod fork_detector;
 pub mod incident;
 pub mod infra;
 pub mod log_scrub;
+pub mod plugin_sdk;
 pub mod preflight;
 pub mod runbook;
 pub mod scheduler;

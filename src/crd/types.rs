@@ -922,6 +922,11 @@ pub struct SorobanConfig {
     pub enable_preflight: bool,
     #[serde(default = "default_max_events")]
     pub max_events_per_request: u32,
+    /// Multi-layered cache configuration (L1 in-memory LRU + L2 local-SSD).
+    /// When set, the operator provisions an emptyDir volume and injects cache
+    /// path / size env vars into the Soroban RPC container.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_config: Option<crate::controller::soroban_cache::SorobanCacheConfig>,
 }
 
 /// External database configuration for managed Postgres databases

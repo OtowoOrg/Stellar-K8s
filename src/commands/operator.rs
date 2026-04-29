@@ -234,6 +234,7 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
         last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         job_registry: Arc::new(controller::JobRegistry::new()),
         audit_log: Arc::new(controller::AuditLog::new()),
+        plugin_registry: Arc::new(stellar_k8s::plugin_sdk::PluginRegistry::new()),
         #[cfg(feature = "rest-api")]
         oidc_config,
     });

@@ -2348,6 +2348,56 @@ fn build_pod_template(
         }
     }
 
+    // ── Soroban RPC multi-layer cache ─────────────────────────────────────────
+    // When cache_config is set, provision an emptyDir volume backed by the
+    // node's local SSD and inject cache path / size env vars into the main
+    // container so the Soroban RPC process can locate the cache directory.
+    if node.spec.node_type == NodeType::SorobanRpc {
+        if let Some(soroban_cfg) = &node.spec.soroban_config {
+            if let Some(cache_cfg) = &soroban_cfg.cache_config {
+                // Add emptyDir volume (uses node-local ephemeral storage).
+                let volumes = pod_spec.volumes.get_or_insert_with(Vec::new);
+                volumes.push(Volume {
+                    name: "soroban-cache".to_string(),
+                    empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource {
+                        size_limit: Some(Quantity(
+                            format!("{}", cache_cfg.l2_max_bytes)
+                        )),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                });
+
+                // Mount the volume and inject env vars into the main container.
+                if let Some(container) = pod_spec.containers.first_mut() {
+                    let mounts = container.volume_mounts.get_or_insert_with(Vec::new);
+                    mounts.push(VolumeMount {
+                        name: "soroban-cache".to_string(),
+                        mount_path: cache_cfg.l2_path.clone(),
+                        ..Default::default()
+                    });
+
+                    let env = container.env.get_or_insert_with(Vec::new);
+                    env.push(EnvVar {
+                        name: "SOROBAN_CACHE_PATH".to_string(),
+                        value: Some(cache_cfg.l2_path.clone()),
+                        ..Default::default()
+                    });
+                    env.push(EnvVar {
+                        name: "SOROBAN_CACHE_MAX_BYTES".to_string(),
+                        value: Some(cache_cfg.l2_max_bytes.to_string()),
+                        ..Default::default()
+                    });
+                    env.push(EnvVar {
+                        name: "SOROBAN_CACHE_L1_CAPACITY".to_string(),
+                        value: Some(cache_cfg.l1_capacity.to_string()),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+
     PodTemplateSpec {
         metadata: Some(merge_resource_meta(
             pod_object_meta,

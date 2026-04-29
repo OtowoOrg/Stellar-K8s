@@ -91,6 +91,14 @@ rules:
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
+  # Spot/Preemptible drain: cordon nodes and evict pods on termination notice
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+
 ---
 # Bind the Role to the ServiceAccount
 apiVersion: rbac.authorization.k8s.io/v1

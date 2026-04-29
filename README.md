@@ -4,7 +4,25 @@
 
 # Stellar-K8s: Cloud-Native Stellar Infrastructure
 
-![Rust](https://img.shields.io/badge/Built%20with-Rust-orange?style=for-the-badge&logo=rust) ![Kubernetes](https://img.shields.io/badge/Kubernetes-Operator-blue?style=for-the-badge&logo=kubernetes) ![License](https://img.shields.io/badge/License-Apache%202.0-green?style=for-the-badge) ![CI/CD](https://img.shields.io/github/actions/workflow/status/stellar/stellar-k8s/ci.yml?style=for-the-badge&label=Build) [![codecov](https://codecov.io/gh/TheCreatorNode/Stellar-K8s/branch/main/graph/badge.svg)](https://codecov.io/gh/TheCreatorNode/Stellar-K8s)
+<p align="center">
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/ci.yml?branch=main&style=for-the-badge&label=CI" alt="GitHub Actions Status" />
+  </a>
+  <a href="https://codecov.io/gh/OtowoOrg/Stellar-K8s">
+    <img src="https://img.shields.io/codecov/c/github/OtowoOrg/Stellar-K8s/main?style=for-the-badge" alt="Codecov Coverage" />
+  </a>
+  <a href="https://crates.io/crates/stellar-k8s">
+    <img src="https://img.shields.io/crates/v/stellar-k8s?style=for-the-badge" alt="crates.io version" />
+  </a>
+  <a href="https://crates.io/crates/stellar-k8s">
+    <img src="https://img.shields.io/crates/l/stellar-k8s?style=for-the-badge" alt="License" />
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Built%20with-Rust-orange?style=for-the-badge&logo=rust" alt="Built with Rust" />
+  <img src="https://img.shields.io/badge/Kubernetes-Operator-blue?style=for-the-badge&logo=kubernetes" alt="Kubernetes Operator" />
+</p>
 
 > **Production-grade Stellar infrastructure in one command.**
 

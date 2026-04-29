@@ -66,13 +66,16 @@
 pub mod backup;
 pub mod benchmark_compare;
 pub mod byzantine;
+pub mod canary_deployment;
 pub mod carbon_aware;
+pub mod consensus_monitoring;
 pub mod controller;
 pub mod crd;
 pub mod error;
 pub mod fork_detector;
 pub mod incident;
 pub mod infra;
+pub mod load_modeling;
 pub mod log_scrub;
 pub mod preflight;
 pub mod runbook;
@@ -80,6 +83,7 @@ pub mod scheduler;
 pub mod search;
 pub mod telemetry;
 pub mod version_check;
+pub mod websocket_streaming;
 
 #[cfg(feature = "rest-api")]
 pub mod rest_api;

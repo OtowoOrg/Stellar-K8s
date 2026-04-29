@@ -326,6 +326,41 @@ jobs:
       - name: Run tests (Unit and Doc)
         run: make test
 
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    needs: [security-audit, lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci-coverage"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
+
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Generate coverage
+        run: cargo tarpaulin --out Xml --timeout 300 --exclude-files tests/* --ignore-panics --ignore-timeouts
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./cobertura.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
   helm-test:
     name: Helm Unit Tests
     if: needs.changes.outputs.helm == 'true'

@@ -66,6 +66,8 @@ Stellar-K8s follows the **Operator Pattern**, extending Kubernetes with a `Stell
   - CI/CD and Docker builds use Rust 1.93 for consistency
   - Contributors can use any Rust 1.88+ version locally
 
+> **New to Stellar-K8s?** See the [Glossary](docs/glossary.md) for definitions of common terms like [Validator](docs/glossary.md#validator), [Horizon](docs/glossary.md#horizon), [SCP](docs/glossary.md#scp-stellar-consensus-protocol), and [Reconciliation](docs/glossary.md#reconciliation).
+
 ---
 
 ## 🚀 Quick Start
@@ -172,12 +174,28 @@ kubectl stellar logs my-validator -f
 
 See [kubectl-plugin.md](docs/kubectl-plugin.md) for complete documentation.
 
-### 4. Shell Completion
+### Shell Completions
 
-Generate shell completion scripts for the stellar-operator CLI to enable tab completion:
+Stellar CLI provides automated shell completions for Bash, Zsh, and Fish.
+
+**Installation:**
+
+You can easily install completions directly to your system's default directories:
 
 ```bash
-# Generate completions for all shells
+# Install for your current shell
+stellar-operator install-completion bash
+stellar-operator install-completion zsh
+stellar-operator install-completion fish
+
+# Same for the kubectl plugin
+kubectl stellar install-completion bash
+```
+
+Alternatively, you can generate them manually:
+
+```bash
+# Generate completions for all shells into ./completions
 make completions
 
 # Or generate for a specific shell
@@ -185,12 +203,6 @@ cargo run --bin stellar-completions completions bash > stellar-operator.bash
 cargo run --bin stellar-completions completions zsh > _stellar-operator
 cargo run --bin stellar-completions completions fish > stellar-operator.fish
 ```
-
-**Installation:**
-
-- **Bash**: `source completions/stellar-operator.bash` or copy to `/etc/bash_completion.d/`
-- **Zsh**: Copy `completions/_stellar-operator` to a directory in your `$fpath`
-- **Fish**: Copy `completions/stellar-operator.fish` to `~/.config/fish/completions/`
 
 After installation, you can use tab completion with the `stellar-operator` command:
 

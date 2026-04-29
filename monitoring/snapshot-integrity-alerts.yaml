@@ -1,0 +1,219 @@
+---
+# Snapshot Integrity Monitoring — PrometheusRule
+#
+# This rule monitors the automated snapshot integrity checks and fires alerts
+# when snapshots fail to produce consistent ledgers or cannot reach consensus.
+#
+# Deploy to the same namespace as your Prometheus instance:
+#   kubectl apply -f monitoring/snapshot-integrity-alerts.yaml -n monitoring
+#
+# Prerequisites:
+#   - Prometheus Operator (kube-prometheus-stack or standalone)
+#   - Snapshot integrity checker enabled in operator config
+#   - Metrics scraped from stellar-operator
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-snapshot-integrity-alerts
+  namespace: monitoring
+  labels:
+    app: stellar-operator
+    component: snapshot-integrity
+    # Required by kube-prometheus-stack to pick up this rule:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    # -------------------------------------------------------------------------
+    # Group 1: Recording rules — pre-compute failure rates
+    # -------------------------------------------------------------------------
+    - name: stellar.snapshot_integrity.recording
+      interval: 30s
+      rules:
+        # Count total snapshot checks in the last 24 hours
+        - record: stellar:snapshot_integrity:checks_total_24h
+          expr: |
+            count_over_time(stellar_snapshot_integrity_status[24h])
+
+        # Count failed snapshot checks in the last 24 hours
+        - record: stellar:snapshot_integrity:failures_total_24h
+          expr: |
+            count_over_time(stellar_snapshot_integrity_status{stellar_snapshot_integrity_status="0"}[24h])
+
+        # Calculate failure rate (percentage)
+        - record: stellar:snapshot_integrity:failure_rate_24h
+          expr: |
+            (
+              stellar:snapshot_integrity:failures_total_24h
+              /
+              stellar:snapshot_integrity:checks_total_24h
+            ) * 100
+
+    # -------------------------------------------------------------------------
+    # Group 2: Alerting rules
+    # -------------------------------------------------------------------------
+    - name: stellar.snapshot_integrity.alerts
+      rules:
+        # ── PRIMARY ALERT ────────────────────────────────────────────────────
+        # Fires when a snapshot fails integrity verification
+        - alert: SnapshotIntegrityCheckFailed
+          expr: stellar_snapshot_integrity_status == 0
+          for: 1m
+          labels:
+            severity: critical
+            component: snapshot-integrity
+            team: platform
+          annotations:
+            summary: "Snapshot {{ $labels.name }} failed integrity check"
+            description: |
+              Snapshot {{ $labels.name }} in namespace {{ $labels.namespace }} failed to produce a consistent ledger.
+              
+              The automated restore-and-test cycle detected that this snapshot cannot be used to spin up a working validator.
+              
+              **Impact**: This snapshot is corrupted and cannot be used for disaster recovery.
+              
+              **Action Required**:
+              1. Investigate the snapshot creation process
+              2. Check storage backend (S3/GCS) for corruption
+              3. Verify backup job logs for errors
+              4. Create a new snapshot from a healthy validator
+              5. Consider deleting the corrupted snapshot
+            runbook_url: "https://stellar-k8s.io/runbooks/snapshot-integrity-failure"
+            dashboard_url: "https://grafana.example.com/d/snapshot-integrity"
+
+        # ── HIGH FAILURE RATE ────────────────────────────────────────────────
+        # Fires when >20% of snapshots fail in the last 24 hours
+        - alert: SnapshotIntegrityHighFailureRate
+          expr: stellar:snapshot_integrity:failure_rate_24h > 20
+          for: 5m
+          labels:
+            severity: warning
+            component: snapshot-integrity
+            team: platform
+          annotations:
+            summary: "High snapshot integrity failure rate: {{ $value | humanizePercentage }}"
+            description: |
+              More than 20% of snapshot integrity checks have failed in the last 24 hours.
+              
+              Current failure rate: {{ $value | humanizePercentage }}
+              
+              **Impact**: Backup reliability is degraded. Disaster recovery may not work.
+              
+              **Action Required**:
+              1. Review recent snapshot creation jobs
+              2. Check storage backend health
+              3. Verify validator health during snapshot creation
+              4. Investigate network issues between validator and storage
+            runbook_url: "https://stellar-k8s.io/runbooks/snapshot-high-failure-rate"
+
+        # ── SLOW VERIFICATION ────────────────────────────────────────────────
+        # Fires when snapshot verification takes longer than expected
+        - alert: SnapshotIntegrityCheckSlow
+          expr: stellar_snapshot_integrity_check_duration_ms > 7200000  # 2 hours in ms
+          for: 5m
+          labels:
+            severity: warning
+            component: snapshot-integrity
+            team: platform
+          annotations:
+            summary: "Snapshot integrity check taking too long: {{ $value | humanizeDuration }}"
+            description: |
+              Snapshot {{ $labels.name }} verification is taking longer than 2 hours.
+              
+              Current duration: {{ $value | humanizeDuration }}
+              
+              **Possible Causes**:
+              - Large snapshot size
+              - Slow storage backend
+              - Resource constraints on verification validator
+              - Network latency
+              
+              **Action Required**:
+              1. Check verification validator resource usage
+              2. Review storage backend performance
+              3. Consider increasing timeout or resources
+            runbook_url: "https://stellar-k8s.io/runbooks/snapshot-verification-slow"
+
+        # ── NO RECENT CHECKS ─────────────────────────────────────────────────
+        # Fires when no snapshot checks have run in the last 48 hours
+        - alert: SnapshotIntegrityNoRecentChecks
+          expr: |
+            (time() - max(timestamp(stellar_snapshot_integrity_status))) > 172800
+          for: 10m
+          labels:
+            severity: warning
+            component: snapshot-integrity
+            team: platform
+          annotations:
+            summary: "No snapshot integrity checks in the last 48 hours"
+            description: |
+              The automated snapshot integrity checker has not run in the last 48 hours.
+              
+              **Possible Causes**:
+              - Integrity checker disabled in config
+              - Operator pod crashed or restarted
+              - Cron schedule misconfigured
+              - No snapshots available to check
+              
+              **Action Required**:
+              1. Check operator logs for errors
+              2. Verify integrity checker is enabled in config
+              3. Confirm cron schedule is correct
+              4. Ensure snapshots exist in storage backend
+            runbook_url: "https://stellar-k8s.io/runbooks/snapshot-no-recent-checks"
+
+        # ── CONSENSUS FAILURE ────────────────────────────────────────────────
+        # Fires when validator from snapshot cannot reach consensus
+        - alert: SnapshotValidatorConsensusFailure
+          expr: |
+            stellar_snapshot_integrity_status == 0
+            and
+            on(namespace, name) stellar_node_sync_status < 4
+          for: 5m
+          labels:
+            severity: critical
+            component: snapshot-integrity
+            team: platform
+          annotations:
+            summary: "Validator from snapshot {{ $labels.name }} cannot reach consensus"
+            description: |
+              A temporary validator restored from snapshot {{ $labels.name }} failed to reach consensus.
+              
+              **Impact**: This snapshot is unusable for disaster recovery.
+              
+              **Possible Causes**:
+              - Corrupted ledger data in snapshot
+              - Incomplete snapshot (missing files)
+              - Network configuration issues
+              - Quorum set misconfiguration
+              
+              **Action Required**:
+              1. Review validator logs from verification pod
+              2. Check snapshot completeness
+              3. Verify quorum set configuration
+              4. Create a new snapshot from a healthy validator
+            runbook_url: "https://stellar-k8s.io/runbooks/snapshot-consensus-failure"
+
+        # ── STORAGE BACKEND ISSUES ───────────────────────────────────────────
+        # Fires when multiple consecutive checks fail (likely storage issue)
+        - alert: SnapshotStorageBackendIssue
+          expr: |
+            count_over_time(stellar_snapshot_integrity_status{stellar_snapshot_integrity_status="0"}[1h]) >= 3
+          for: 5m
+          labels:
+            severity: critical
+            component: snapshot-integrity
+            team: platform
+          annotations:
+            summary: "Multiple snapshot integrity failures detected - possible storage issue"
+            description: |
+              Three or more snapshot integrity checks have failed in the last hour.
+              
+              **Impact**: Storage backend may be corrupted or inaccessible.
+              
+              **Action Required**:
+              1. Check S3/GCS bucket health and accessibility
+              2. Verify storage credentials are valid
+              3. Review storage backend logs for errors
+              4. Check network connectivity to storage
+              5. Consider switching to backup storage location
+            runbook_url: "https://stellar-k8s.io/runbooks/snapshot-storage-issue"

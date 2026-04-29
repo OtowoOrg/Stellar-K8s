@@ -22,6 +22,13 @@ use stellar_k8s::{incident, Error};
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
 
+    // Handle --version/-v flag
+    if args.version {
+        println!("stellar-cli v{}", env!("CARGO_PKG_VERSION"));
+        println!("Build Date: {}", env!("BUILD_DATE"));
+        return Ok(());
+    }
+
     let offline = args.offline;
 
     let result = match args.command {
@@ -37,13 +44,61 @@ async fn main() -> Result<(), Error> {
         Commands::PruneArchive(prune_args) => prune_archive(prune_args).await,
         Commands::Diff(diff_args) => diff(diff_args).await,
         Commands::GenerateRunbook(runbook_args) => run_generate_runbook(runbook_args).await,
-        Commands::IncidentReport(report_args) => incident::run_incident_report(report_args).await,
+        Commands::Incident { command } => match command {
+            incident::IncidentCommands::Collect(args) => incident::run_incident_collect(args).await,
+            incident::IncidentCommands::Report(args) => incident::run_incident_report(args).await,
+        },
         Commands::Completions { shell } => {
             use clap::CommandFactory;
             use clap_complete::generate;
             let mut cmd = Args::command();
-            let name = cmd.get_name().to_string();
+            let name = "stellar-operator".to_string();
             generate(shell, &mut cmd, name, &mut std::io::stdout());
+            Ok(())
+        }
+        Commands::InstallCompletion { shell } => {
+            use clap::CommandFactory;
+            use clap_complete::generate_to;
+            use std::env;
+            use std::path::PathBuf;
+
+            let mut cmd = Args::command();
+            let name = "stellar-operator".to_string();
+
+            let home_dir = env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("."));
+
+            let out_dir = match shell {
+                clap_complete::Shell::Bash => home_dir.join(".local/share/bash-completion/completions"),
+                clap_complete::Shell::Zsh => home_dir.join(".zsh/completions"),
+                clap_complete::Shell::Fish => home_dir.join(".config/fish/completions"),
+                _ => std::env::current_dir().unwrap_or_default(),
+            };
+
+            if let Err(e) = std::fs::create_dir_all(&out_dir) {
+                eprintln!("Failed to create directory {}: {}", out_dir.display(), e);
+                std::process::exit(1);
+            }
+
+            match generate_to(shell, &mut cmd, &name, &out_dir) {
+                Ok(path) => {
+                    println!("Successfully installed {} completion script at: {}", shell, path.display());
+                    if shell == clap_complete::Shell::Zsh {
+                        println!("\nNote: Make sure {} is in your $fpath.", out_dir.display());
+                        println!("You may need to add this to your ~/.zshrc:");
+                        println!("  fpath=({} $fpath)", out_dir.display());
+                        println!("  autoload -Uz compinit && compinit");
+                    } else if shell == clap_complete::Shell::Bash {
+                        println!("\nNote: You may need to restart your shell or run:");
+                        println!("  source {}", path.display());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to generate completion script: {}", e);
+                    std::process::exit(1);
+                }
+            }
             Ok(())
         }
         Commands::Run(run_args) => {

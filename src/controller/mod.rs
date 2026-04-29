@@ -62,6 +62,7 @@ pub mod network_isolation;
 pub mod predictive_scaling;
 pub mod pss;
 pub mod resource_meta;
+pub mod snapshot_integrity;
 
 pub(crate) mod archive_health;
 pub mod archive_prune;

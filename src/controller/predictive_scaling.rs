@@ -268,7 +268,7 @@ pub fn compute_min_replicas(
         return current_min;
     }
     let needed = ((forecast_tps * scaling_factor) / tps_per_replica).ceil() as i32;
-    needed.max(current_min).min(max_replicas).max(1)
+    needed.clamp(current_min, max_replicas).max(1)
 }
 
 // ============================================================================

@@ -145,8 +145,73 @@ enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
-    /// Generate an incident report for a specific time window
-    IncidentReport(stellar_k8s::incident::IncidentReportArgs),
+    /// Install shell completion scripts to user's home directory
+    InstallCompletion {
+        /// Shell to install completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Visualize the fleet deployment pattern and SCP topology
+    #[command(
+        about = "Visualize the fleet deployment pattern and SCP topology",
+        long_about = "Queries the Kubernetes cluster and prints out a representation of how\n\
+            Stellar nodes, Horizon servers, and Soroban RPC nodes are connected\n\
+            and distributed across cluster nodes and availability zones.\n\
+            \n\
+            OUTPUT FORMATS:\n  \
+            • ASCII (default):\n    \
+              A terminal-friendly tree view showing pod distribution.\n    \
+              Great for quick checks of your cluster layout.\n  \
+            • Graphviz:\n    \
+              Emits DOT format for rendering with external tools.\n    \
+              Useful for generating architecture diagrams and visual reports.\n\
+            \n\
+            FILTER FLAGS:\n  \
+            • Namespace (-N, --namespace-filter):\n    \
+              Limit the output to a specific Kubernetes namespace.\n  \
+            • Network (--network):\n    \
+              Filter nodes belonging to a specific Stellar network\n    \
+              (e.g., public, testnet).\n  \
+            • Zone (-z, --zone):\n    \
+              Restrict the visualization to a specific availability zone\n    \
+              (e.g., us-east-1a).\n\
+            \n\
+            EXAMPLES:\n  \
+            # Show ASCII topology for all namespaces\n  \
+            kubectl stellar topology\n\
+            \n  \
+            # Show Graphviz topology for a specific namespace\n  \
+            kubectl stellar topology --format graphviz -N stellar-prod\n\
+            \n  \
+            # Filter by network and output as DOT file\n  \
+            kubectl stellar topology --network public --format graphviz > topo.dot\n  \
+            dot -Tpng topo.dot -o topo.png\n\
+            \n  \
+            # Filter by specific availability zone in ASCII format\n  \
+            kubectl stellar topology --zone us-east-1a"
+    )]
+    Topology {
+        /// Output format (ascii, graphviz)
+        #[arg(short, long, default_value = "ascii")]
+        format: String,
+
+        /// Filter by Namespace
+        #[arg(short = 'N', long)]
+        namespace_filter: Option<String>,
+
+        /// Filter by Network (e.g., public, testnet)
+        #[arg(long)]
+        network: Option<String>,
+
+        /// Filter by Availability Zone (e.g., us-east-1a)
+        #[arg(short, long)]
+        zone: Option<String>,
+    },
+    /// Incident Response Toolkit
+    Incident {
+        #[command(subcommand)]
+        command: stellar_k8s::incident::IncidentCommands,
+    },
     /// Trigger a failover to a secondary cluster
     Failover {
         /// Name of the StellarNode to failover
@@ -193,11 +258,17 @@ pub enum AuditCommands {
         /// Filter by actor
         #[arg(short, long)]
         actor: Option<String>,
+        /// Output as JSON (suitable for automated security tools)
+        #[arg(short, long)]
+        json: bool,
     },
     /// Show detailed diff for a specific audit entry
     Show {
         /// Audit entry ID
         id: String,
+        /// Output as JSON (suitable for automated security tools)
+        #[arg(short, long)]
+        json: bool,
     },
 }
 
@@ -240,7 +311,8 @@ async fn run(cli: Cli) -> Result<()> {
             | Commands::Search { .. }
             | Commands::Completions { .. }
             | Commands::Summary { .. }
-            | Commands::Cve { .. } => None,
+            | Commands::InstallCompletion { .. } => None,
+            Commands::Topology { .. } => Some("Visualize SCP topology (read-only)".to_string()),
             Commands::Logs { node_name, .. } => Some(format!(
                 "Stream logs from StellarNode '{node_name}' (read-only, no cluster mutation)"
             )),
@@ -257,7 +329,10 @@ async fn run(cli: Cli) -> Result<()> {
                     Some(format!("Exec into pod for StellarNode '{node_name}'"))
                 }
             }
-            Commands::IncidentReport(_) => {
+            Commands::Incident { command: stellar_k8s::incident::IncidentCommands::Collect(_) } => {
+                Some("Collect forensic data for incident response (read-only)".to_string())
+            }
+            Commands::Incident { command: stellar_k8s::incident::IncidentCommands::Report(_) } => {
                 Some("Generate incident report (read-only, no cluster mutation)".to_string())
             }
             Commands::Failover { node_name, .. } => {
@@ -401,11 +476,63 @@ async fn run(cli: Cli) -> Result<()> {
             use clap::CommandFactory;
             use clap_complete::generate;
             let mut cmd = Cli::command();
-            let name = cmd.get_name().to_string();
+            let name = "kubectl-stellar".to_string();
             generate(shell, &mut cmd, name, &mut std::io::stdout());
             Ok(())
         }
-        Commands::IncidentReport(args) => stellar_k8s::incident::run_incident_report(args).await,
+        Commands::InstallCompletion { shell } => {
+            use clap::CommandFactory;
+            use clap_complete::generate_to;
+            use std::env;
+            use std::path::PathBuf;
+
+            let mut cmd = Cli::command();
+            let name = "kubectl-stellar".to_string();
+
+            let home_dir = env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("."));
+
+            let out_dir = match shell {
+                clap_complete::Shell::Bash => home_dir.join(".local/share/bash-completion/completions"),
+                clap_complete::Shell::Zsh => home_dir.join(".zsh/completions"),
+                clap_complete::Shell::Fish => home_dir.join(".config/fish/completions"),
+                _ => std::env::current_dir().unwrap_or_default(),
+            };
+
+            if let Err(e) = std::fs::create_dir_all(&out_dir) {
+                eprintln!("Failed to create directory {}: {}", out_dir.display(), e);
+                std::process::exit(1);
+            }
+
+            match generate_to(shell, &mut cmd, &name, &out_dir) {
+                Ok(path) => {
+                    println!("Successfully installed {} completion script at: {}", shell, path.display());
+                    if shell == clap_complete::Shell::Zsh {
+                        println!("\nNote: Make sure {} is in your $fpath.", out_dir.display());
+                        println!("You may need to add this to your ~/.zshrc:");
+                        println!("  fpath=({} $fpath)", out_dir.display());
+                        println!("  autoload -Uz compinit && compinit");
+                    } else if shell == clap_complete::Shell::Bash {
+                        println!("\nNote: You may need to restart your shell or run:");
+                        println!("  source {}", path.display());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to generate completion script: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            Ok(())
+        }
+        Commands::Incident { command } => match command {
+            stellar_k8s::incident::IncidentCommands::Collect(args) => {
+                stellar_k8s::incident::run_incident_collect(args).await
+            }
+            stellar_k8s::incident::IncidentCommands::Report(args) => {
+                stellar_k8s::incident::run_incident_report(args).await
+            }
+        },
         Commands::Failover { node_name, force } => {
             let client = Client::try_default().await.map_err(Error::KubeError)?;
             failover(client, &node_name, force).await
@@ -439,8 +566,9 @@ async fn run(cli: Cli) -> Result<()> {
                     limit,
                     resource,
                     actor,
-                } => reporter.list(limit, resource, actor).await,
-                AuditCommands::Show { id } => reporter.show(&id).await,
+                    json,
+                } => reporter.list(limit, resource, actor, json).await,
+                AuditCommands::Show { id, json } => reporter.show(&id, json).await,
             }
         }
         Commands::Summary { all_namespaces } => {

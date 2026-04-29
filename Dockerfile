@@ -23,17 +23,31 @@ ARG TARGETPLATFORM
 ARG TARGETARCH
 ARG BUILDPLATFORM
 
+# Install system dependencies
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+      libssl-dev \
+      libsasl2-dev \
+      pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install cross-compilation toolchains when building for arm64 on amd64 host.
 RUN if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDPLATFORM" != "$TARGETPLATFORM" ]; then \
+      dpkg --add-architecture arm64 && \
       apt-get update -qq && \
       apt-get install -y --no-install-recommends \
         gcc-aarch64-linux-gnu \
-        libc6-dev-arm64-cross && \
-      rustup target add aarch64-unknown-linux-gnu; \
+        libc6-dev-arm64-cross \
+        libssl-dev:arm64 \
+        libsasl2-dev:arm64 \
+        pkg-config:arm64 && \
+      rustup target add aarch64-unknown-linux-gnu && \
+      rm -rf /var/lib/apt/lists/*; \
     fi
 
-# Set Cargo target based on TARGETARCH.
+# Set Cargo target based on TARGETARCH and OpenSSL environment variables for cross-compilation
 ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+ENV PKG_CONFIG_ALLOW_CROSS=1
 
 # Copy the recipe and build dependencies first (cached layer)
 COPY --from=planner /app/recipe.json recipe.json
@@ -41,6 +55,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
   --mount=type=cache,target=/usr/local/cargo/git \
   --mount=type=cache,target=/app/target \
   if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDPLATFORM" != "$TARGETPLATFORM" ]; then \
+    export OPENSSL_DIR=/usr/lib/aarch64-linux-gnu && \
+    export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig && \
     cargo chef cook --release --target aarch64-unknown-linux-gnu --recipe-path recipe.json; \
   else \
     cargo chef cook --release --recipe-path recipe.json; \
@@ -53,6 +69,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
   --mount=type=cache,target=/usr/local/cargo/git \
   --mount=type=cache,target=/app/target \
   if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDPLATFORM" != "$TARGETPLATFORM" ]; then \
+    export OPENSSL_DIR=/usr/lib/aarch64-linux-gnu && \
+    export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig && \
     cargo build --release --target aarch64-unknown-linux-gnu \
       --bin stellar-operator \
       --bin kubectl-stellar \

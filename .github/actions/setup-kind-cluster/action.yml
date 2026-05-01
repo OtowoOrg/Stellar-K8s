@@ -1,0 +1,163 @@
+name: Setup kind Cluster
+description: >
+  Provision a kind cluster, optionally build the operator Docker image, load it
+  into kind, install CRDs, and deploy the operator. Centralises all
+  cluster-provisioning logic so every heavy-validation workflow shares identical
+  setup steps.
+  
+  When `skip-docker-build` is set to "true" the Docker build step is skipped and
+  the caller is responsible for ensuring the image already exists locally (e.g.
+  by running `docker build` or `docker load` before invoking this action).
+
+inputs:
+  cluster-name:
+    description: Name of the kind cluster to create
+    required: true
+  image-tag:
+    description: Docker image tag to use (e.g. chaos-test, soak-test)
+    required: true
+  operator-namespace:
+    description: Kubernetes namespace to deploy the operator into
+    required: false
+    default: stellar-system
+  worker-nodes:
+    description: Number of worker nodes to add to the cluster (0 = control-plane only)
+    required: false
+    default: "1"
+  operator-cpu-request:
+    description: CPU request for the operator container
+    required: false
+    default: "200m"
+  operator-memory-request:
+    description: Memory request for the operator container
+    required: false
+    default: "128Mi"
+  operator-cpu-limit:
+    description: CPU limit for the operator container
+    required: false
+    default: "1000m"
+  operator-memory-limit:
+    description: Memory limit for the operator container
+    required: false
+    default: "512Mi"
+  skip-docker-build:
+    description: >
+      Set to "true" to skip the `docker build` step. Use this when the image
+      has already been built or loaded by the calling job.
+    required: false
+    default: "false"
+
+outputs:
+  cluster-ready:
+    description: "true when the cluster and operator are ready"
+    value: ${{ steps.wait-operator.outputs.ready }}
+
+runs:
+  using: composite
+  steps:
+    # ── Build Docker image (skipped when caller pre-builds) ───────────────────
+    - name: Build operator Docker image
+      if: inputs.skip-docker-build != 'true'
+      shell: bash
+      run: docker build -t stellar-operator:${{ inputs.image-tag }} .
+
+    # ── Assemble kind config ──────────────────────────────────────────────────
+    - name: Write kind cluster config
+      shell: bash
+      run: |
+        WORKERS=${{ inputs.worker-nodes }}
+        {
+          echo "kind: Cluster"
+          echo "apiVersion: kind.x-k8s.io/v1alpha4"
+          echo "nodes:"
+          echo "  - role: control-plane"
+          for i in $(seq 1 "$WORKERS"); do
+            echo "  - role: worker"
+          done
+        } > /tmp/kind-cluster-config.yaml
+        cat /tmp/kind-cluster-config.yaml
+
+    # ── Create cluster ────────────────────────────────────────────────────────
+    - name: Create kind cluster
+      uses: helm/kind-action@v1.14.0
+      with:
+        cluster_name: ${{ inputs.cluster-name }}
+        config: /tmp/kind-cluster-config.yaml
+        wait: 120s
+
+    # ── Load image ────────────────────────────────────────────────────────────
+    - name: Load operator image into kind
+      shell: bash
+      run: kind load docker-image stellar-operator:${{ inputs.image-tag }} --name ${{ inputs.cluster-name }}
+
+    # ── Install CRDs ──────────────────────────────────────────────────────────
+    - name: Install StellarNode CRD
+      shell: bash
+      run: |
+        kubectl apply -f config/crd/stellarnode-crd.yaml
+        kubectl wait --for=condition=established --timeout=60s \
+          crd/stellarnodes.stellar.org || true
+
+    # ── Deploy operator ───────────────────────────────────────────────────────
+    - name: Deploy operator
+      shell: bash
+      env:
+        OPERATOR_NAMESPACE: ${{ inputs.operator-namespace }}
+        IMAGE_TAG: ${{ inputs.image-tag }}
+        CPU_REQUEST: ${{ inputs.operator-cpu-request }}
+        MEM_REQUEST: ${{ inputs.operator-memory-request }}
+        CPU_LIMIT: ${{ inputs.operator-cpu-limit }}
+        MEM_LIMIT: ${{ inputs.operator-memory-limit }}
+      run: |
+        kubectl create namespace "${OPERATOR_NAMESPACE}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+        kubectl apply -f - <<EOF
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: stellar-operator
+          namespace: ${OPERATOR_NAMESPACE}
+          labels:
+            app: stellar-operator
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: stellar-operator
+          template:
+            metadata:
+              labels:
+                app: stellar-operator
+            spec:
+              containers:
+                - name: operator
+                  image: stellar-operator:${IMAGE_TAG}
+                  imagePullPolicy: Never
+                  command: ["stellar-operator", "run"]
+                  env:
+                    - name: RUST_LOG
+                      value: info
+                    - name: OPERATOR_NAMESPACE
+                      value: ${OPERATOR_NAMESPACE}
+                  resources:
+                    requests:
+                      cpu: ${CPU_REQUEST}
+                      memory: ${MEM_REQUEST}
+                    limits:
+                      cpu: ${CPU_LIMIT}
+                      memory: ${MEM_LIMIT}
+        EOF
+
+    # ── Wait for operator ─────────────────────────────────────────────────────
+    - name: Wait for operator to be available
+      id: wait-operator
+      shell: bash
+      env:
+        OPERATOR_NAMESPACE: ${{ inputs.operator-namespace }}
+      run: |
+        kubectl wait deployment/stellar-operator \
+          --for=condition=available \
+          --namespace="${OPERATOR_NAMESPACE}" \
+          --timeout=120s
+        echo "ready=true" >> "$GITHUB_OUTPUT"

@@ -1,25 +1,28 @@
 # .github/workflows/chaos-tests.yml
 #
-# Chaos Engineering CI job for Stellar-K8s.
+# Chaos Engineering CI for Stellar-K8s.
 #
-# Runs on:
-#   - Manual trigger (workflow_dispatch) — run anytime on any branch
-#   - Weekly schedule (Sunday midnight UTC) — regular resilience check on main
+# Cluster provisioning is centralised in .github/actions/setup-kind-cluster.
+# Log/artifact gathering is centralised in .github/actions/collect-e2e-logs.
 #
-# It does NOT run on every PR/push (chaos tests are slow and cluster-intensive).
-# If you want to gate PRs on chaos tests, change the `on:` trigger below.
+# The operator binary and Docker image are built ONCE in the `build` job and
+# shared as artifacts so the two parallel experiment groups never rebuild.
+#
+# Triggers:
+#   - Manual (workflow_dispatch) — any branch
+#   - Nightly schedule (02:00 UTC)
 
 name: Chaos Engineering Tests
 
 on:
-  workflow_dispatch:              # Run manually from the GitHub Actions UI
+  workflow_dispatch:
     inputs:
       skip_experiment:
-        description: "Skip a specific experiment (01, 02, 03, 04, or 05). Leave blank to run all."
+        description: "Skip a specific experiment (01-05). Leave blank to run all."
         required: false
         default: ""
   schedule:
-    - cron: "0 2 * * *"          # Every day at 2 AM UTC (nightly)
+    - cron: "0 2 * * *"
 
 env:
   CARGO_TERM_COLOR: always
@@ -27,105 +30,69 @@ env:
   OPERATOR_NAMESPACE: stellar-system
   CHAOS_NAMESPACE: chaos-testing
   CHAOS_MESH_VERSION: "2.6.3"
+  IMAGE_TAG: chaos-test
 
 jobs:
-  chaos-tests:
-    name: Chaos Test Suite
+  # ── Build operator binary & Docker image once ────────────────────────────────
+  build:
+    name: Build Operator
     runs-on: ubuntu-latest
-    timeout-minutes: 60           # Full suite should complete well within an hour
-
     steps:
-      # ── 1. Checkout ─────────────────────────────────────────────────────────
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      # ── 2. Build the operator binary ────────────────────────────────────────
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
         with:
-          shared-key: "chaos-build"
+          cache-key: "chaos-build"
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
-
-      - name: Build operator
+      - name: Build operator binary
         run: cargo build --release --locked --bin stellar-operator
 
-      # ── 3. Build Docker image ────────────────────────────────────────────────
       - name: Build Docker image
-        run: docker build -t stellar-operator:chaos-test .
+        run: docker build -t stellar-operator:${{ env.IMAGE_TAG }} .
 
-      # ── 4. Create kind cluster ───────────────────────────────────────────────
-      - name: Create kind cluster
-        uses: helm/kind-action@v1.14.0
-        with:
-          cluster_name: ${{ env.CLUSTER_NAME }}
-          config: |
-            kind: Cluster
-            apiVersion: kind.x-k8s.io/v1alpha4
-            nodes:
-              - role: control-plane
-              - role: worker
-              - role: worker
-
-      # ── 5. Load operator image into kind ────────────────────────────────────
-      - name: Load image into kind
-        run: kind load docker-image stellar-operator:chaos-test --name ${{ env.CLUSTER_NAME }}
-
-      # ── 6. Install CRDs and operator ────────────────────────────────────────
-      - name: Install CRDs
-        run: kubectl apply -f config/crd/stellarnode-crd.yaml
-
-      - name: Deploy operator
+      - name: Save Docker image as artifact
         run: |
-          kubectl create namespace ${{ env.OPERATOR_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f - <<EOF
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: stellar-operator
-            namespace: ${{ env.OPERATOR_NAMESPACE }}
-            labels:
-              app: stellar-operator
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: stellar-operator
-            template:
-              metadata:
-                labels:
-                  app: stellar-operator
-              spec:
-                containers:
-                  - name: operator
-                    image: stellar-operator:chaos-test
-                    imagePullPolicy: Never
-                    command: ["stellar-operator", "run"]
-                    env:
-                      - name: RUST_LOG
-                        value: info
-                      - name: OPERATOR_NAMESPACE
-                        value: ${{ env.OPERATOR_NAMESPACE }}
-                    resources:
-                      requests:
-                        cpu: 200m
-                        memory: 256Mi
-                      limits:
-                        cpu: 1000m
-                        memory: 512Mi
-          EOF
+          docker save stellar-operator:${{ env.IMAGE_TAG }} \
+            | gzip > stellar-operator-chaos.tar.gz
 
-          kubectl wait deployment/stellar-operator \
-            --for=condition=available \
-            --namespace=${{ env.OPERATOR_NAMESPACE }} \
-            --timeout=120s
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-operator-artifacts
+          path: stellar-operator-chaos.tar.gz
+          retention-days: 1
 
-      # ── 7. Create a test StellarNode ─────────────────────────────────────────
+  # ── Experiments 01 & 02 (pod-kill + network partition) ───────────────────────
+  # Runs in parallel with chaos-latency-disk — uses a separate cluster name
+  # so both jobs can run simultaneously on the same runner pool.
+  chaos-kill-network:
+    name: "Chaos: Pod Kill & Network Partition"
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download operator artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: chaos-operator-artifacts
+
+      - name: Load Docker image
+        run: |
+          gunzip stellar-operator-chaos.tar.gz
+          docker load < stellar-operator-chaos.tar
+
+      - name: Setup kind cluster
+        uses: ./.github/actions/setup-kind-cluster
+        with:
+          cluster-name: ${{ env.CLUSTER_NAME }}-kn
+          image-tag: ${{ env.IMAGE_TAG }}
+          operator-namespace: ${{ env.OPERATOR_NAMESPACE }}
+          worker-nodes: "2"
+          skip-docker-build: "true"
+
       - name: Create test StellarNode
         run: |
           kubectl apply -f - <<EOF
@@ -149,7 +116,6 @@ jobs:
           EOF
           sleep 30
 
-      # ── 8. Install Chaos Mesh ────────────────────────────────────────────────
       - name: Install Chaos Mesh
         run: |
           helm repo add chaos-mesh https://charts.chaos-mesh.org
@@ -161,10 +127,8 @@ jobs:
             --set chaosDaemon.runtime=containerd \
             --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
             --wait --timeout=5m
-
-          kubectl create namespace ${{ env.CHAOS_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
-          # Grant chaos-mesh permission to inject into stellar-system
+          kubectl create namespace ${{ env.CHAOS_NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f - <<EOF
           apiVersion: rbac.authorization.k8s.io/v1
           kind: RoleBinding
@@ -181,199 +145,224 @@ jobs:
               namespace: chaos-mesh
           EOF
 
-      # ── 9. Experiment 1: Pod Kill ─────────────────────────────────────────────
-      - name: "Experiment 1: Operator Pod Kill"
-        if: ${{ github.event.inputs.skip_experiment != '01' }}
+      - name: "Experiment 01: Operator Pod Kill"
+        if: github.event.inputs.skip_experiment != '01'
         run: |
-          echo "Applying pod-kill experiment..."
           kubectl apply -f tests/chaos/01-operator-pod-kill.yaml \
             --namespace=${{ env.CHAOS_NAMESPACE }}
-
-          echo "Chaos running for 40s..."
           sleep 40
-
           kubectl delete -f tests/chaos/01-operator-pod-kill.yaml \
             --namespace=${{ env.CHAOS_NAMESPACE }} --ignore-not-found
-
-          echo "Waiting for operator to recover..."
           kubectl wait pod \
             --for=condition=Ready \
             --selector=app=stellar-operator \
             --namespace=${{ env.OPERATOR_NAMESPACE }} \
             --timeout=120s
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NAMESPACE }} --tail=300 \
+            > /tmp/exp01-logs.txt || true
+          echo "Experiment 01 PASSED"
 
-          echo "Saving operator logs..."
-          kubectl logs \
-            --selector=app=stellar-operator \
-            --namespace=${{ env.OPERATOR_NAMESPACE }} \
-            --tail=300 > /tmp/exp01-logs.txt || true
-
-          echo "Experiment 1 PASSED"
-
-      # ── 10. Experiment 2: Network Partition ──────────────────────────────────
-      - name: "Experiment 2: Network Partition"
-        if: ${{ github.event.inputs.skip_experiment != '02' }}
+      - name: "Experiment 02: Network Partition"
+        if: github.event.inputs.skip_experiment != '02'
         run: |
-          echo "Applying network partition experiment..."
           kubectl apply -f tests/chaos/02-network-partition.yaml \
             --namespace=${{ env.CHAOS_NAMESPACE }}
-
-          echo "Chaos running for 70s..."
           sleep 70
-
           kubectl delete -f tests/chaos/02-network-partition.yaml \
             --namespace=${{ env.CHAOS_NAMESPACE }} --ignore-not-found
-
-          echo "Waiting for operator to recover..."
           kubectl wait pod \
             --for=condition=Ready \
             --selector=app=stellar-operator \
             --namespace=${{ env.OPERATOR_NAMESPACE }} \
             --timeout=120s
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NAMESPACE }} --tail=300 \
+            > /tmp/exp02-logs.txt || true
+          echo "Experiment 02 PASSED"
 
-          echo "Saving operator logs..."
-          kubectl logs \
-            --selector=app=stellar-operator \
-            --namespace=${{ env.OPERATOR_NAMESPACE }} \
-            --tail=300 > /tmp/exp02-logs.txt || true
+      - name: Collect logs
+        if: always()
+        uses: ./.github/actions/collect-e2e-logs
+        with:
+          operator-namespace: ${{ env.OPERATOR_NAMESPACE }}
+          artifact-name: chaos-kill-network-logs-${{ github.run_id }}
+          extra-namespaces: ${{ env.CHAOS_NAMESPACE }}
 
-          echo "Experiment 2 PASSED"
+  # ── Experiments 03, 04 & 05 (latency, peer-partition, disk) ─────────────────
+  chaos-latency-disk:
+    name: "Chaos: Latency, Peer Partition & Disk Fill"
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
 
-      # ── 11. Experiment 3: API Latency ─────────────────────────────────────────
-      - name: "Experiment 3: API High Latency"
-        if: ${{ github.event.inputs.skip_experiment != '03' }}
+      - name: Download operator artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: chaos-operator-artifacts
+
+      - name: Load Docker image
         run: |
-          echo "Applying API latency experiment..."
+          gunzip stellar-operator-chaos.tar.gz
+          docker load < stellar-operator-chaos.tar
+
+      - name: Setup kind cluster
+        uses: ./.github/actions/setup-kind-cluster
+        with:
+          cluster-name: ${{ env.CLUSTER_NAME }}-ld
+          image-tag: ${{ env.IMAGE_TAG }}
+          operator-namespace: ${{ env.OPERATOR_NAMESPACE }}
+          worker-nodes: "2"
+          skip-docker-build: "true"
+
+      - name: Create test StellarNode
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: stellar.org/v1alpha1
+          kind: StellarNode
+          metadata:
+            name: chaos-test-horizon
+            namespace: ${{ env.OPERATOR_NAMESPACE }}
+          spec:
+            nodeType: Horizon
+            network: Testnet
+            version: "v21.0.0"
+            replicas: 1
+            horizonConfig:
+              databaseSecretRef: horizon-db-secret
+              enableIngest: false
+              stellarCoreUrl: "http://localhost:11626"
+              ingestWorkers: 1
+              enableExperimentalIngestion: false
+              autoMigration: false
+          EOF
+          sleep 30
+
+      - name: Install Chaos Mesh
+        run: |
+          helm repo add chaos-mesh https://charts.chaos-mesh.org
+          helm repo update
+          kubectl create namespace chaos-mesh
+          helm install chaos-mesh chaos-mesh/chaos-mesh \
+            --namespace chaos-mesh \
+            --version ${{ env.CHAOS_MESH_VERSION }} \
+            --set chaosDaemon.runtime=containerd \
+            --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
+            --wait --timeout=5m
+          kubectl create namespace ${{ env.CHAOS_NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f - <<EOF
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: chaos-mesh-stellar-system
+            namespace: ${{ env.OPERATOR_NAMESPACE }}
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: chaos-mesh-chaos-controller-manager-target-namespace
+          subjects:
+            - kind: ServiceAccount
+              name: chaos-controller-manager
+              namespace: chaos-mesh
+          EOF
+
+      - name: "Experiment 03: API High Latency"
+        if: github.event.inputs.skip_experiment != '03'
+        run: |
           kubectl apply -f tests/chaos/03-api-latency.yaml \
             --namespace=${{ env.CHAOS_NAMESPACE }}
-
-          echo "Chaos running for 130s..."
           sleep 130
-
           kubectl delete -f tests/chaos/03-api-latency.yaml \
             --namespace=${{ env.CHAOS_NAMESPACE }} --ignore-not-found
-
-          echo "Waiting for operator to recover (generous timeout due to latency)..."
           kubectl wait pod \
             --for=condition=Ready \
             --selector=app=stellar-operator \
             --namespace=${{ env.OPERATOR_NAMESPACE }} \
             --timeout=180s
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NAMESPACE }} --tail=300 \
+            > /tmp/exp03-logs.txt || true
+          echo "Experiment 03 PASSED"
 
-          echo "Saving operator logs..."
-          kubectl logs \
-            --selector=app=stellar-operator \
-            --namespace=${{ env.OPERATOR_NAMESPACE }} \
-            --tail=300 > /tmp/exp03-logs.txt || true
-
-          echo "Experiment 3 PASSED"
-
-      # ── 12. Experiment 4: Validator Peer Partition ──────────────────────────────
-      - name: "Experiment 4: Validator Peer Partition"
-        if: ${{ github.event.inputs.skip_experiment != '04' }}
+      - name: "Experiment 04: Validator Peer Partition"
+        if: github.event.inputs.skip_experiment != '04'
         run: |
-          echo "Applying validator peer partition experiment..."
           kubectl apply -f tests/chaos/04-validator-peer-partition.yaml \
             --namespace=${{ env.CHAOS_NAMESPACE }}
-
-          echo "Chaos running for 100s..."
           sleep 100
-
           kubectl delete -f tests/chaos/04-validator-peer-partition.yaml \
             --namespace=${{ env.CHAOS_NAMESPACE }} --ignore-not-found
-
-          echo "Waiting for operator to recover..."
           kubectl wait pod \
             --for=condition=Ready \
             --selector=app=stellar-operator \
             --namespace=${{ env.OPERATOR_NAMESPACE }} \
             --timeout=120s
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NAMESPACE }} --tail=300 \
+            > /tmp/exp04-logs.txt || true
+          echo "Experiment 04 PASSED"
 
-          echo "Saving operator logs..."
-          kubectl logs \
-            --selector=app=stellar-operator \
-            --namespace=${{ env.OPERATOR_NAMESPACE }} \
-            --tail=300 > /tmp/exp04-logs.txt || true
-
-          echo "Experiment 4 PASSED"
-
-      # ── 13. Experiment 5: Disk Fill ───────────────────────────────────────────
-      - name: "Experiment 5: Operator Disk Fill"
-        if: ${{ github.event.inputs.skip_experiment != '05' }}
+      - name: "Experiment 05: Operator Disk Fill"
+        if: github.event.inputs.skip_experiment != '05'
         run: |
-          echo "Applying disk fill experiment..."
           kubectl apply -f tests/chaos/05-disk-fill.yaml \
             --namespace=${{ env.CHAOS_NAMESPACE }}
-
-          echo "Chaos running for 50s..."
           sleep 50
-
           kubectl delete -f tests/chaos/05-disk-fill.yaml \
             --namespace=${{ env.CHAOS_NAMESPACE }} --ignore-not-found
-
-          echo "Waiting for operator to recover..."
           kubectl wait pod \
             --for=condition=Ready \
             --selector=app=stellar-operator \
             --namespace=${{ env.OPERATOR_NAMESPACE }} \
             --timeout=120s
-
-          echo "Saving operator logs..."
-          kubectl logs \
-            --selector=app=stellar-operator \
-            --namespace=${{ env.OPERATOR_NAMESPACE }} \
-            --tail=300 > /tmp/exp05-logs.txt || true
-
-          echo "Experiment 5 PASSED"
-
-      # ── 14. Collect all logs on failure ──────────────────────────────────────
-      - name: Collect debug info on failure
-        if: failure()
-        run: |
-          echo "=== Operator Pod Status ==="
-          kubectl get pods -n ${{ env.OPERATOR_NAMESPACE }} || true
-          echo ""
-          echo "=== Operator Logs ==="
           kubectl logs --selector=app=stellar-operator \
-            --namespace=${{ env.OPERATOR_NAMESPACE }} --tail=500 || true
-          echo ""
-          echo "=== StellarNode Status ==="
-          kubectl get stellarnode --all-namespaces -o wide || true
-          echo ""
-          echo "=== Chaos Mesh Status ==="
-          kubectl get podchaos,networkchaos --all-namespaces || true
-          echo ""
-          echo "=== Kubernetes Events ==="
-          kubectl get events --all-namespaces --sort-by='.lastTimestamp' | tail -50 || true
+            --namespace=${{ env.OPERATOR_NAMESPACE }} --tail=300 \
+            > /tmp/exp05-logs.txt || true
+          echo "Experiment 05 PASSED"
 
-      # ── 15. Generate Resilience Report ───────────────────────────────────────
-      - name: Generate resilience report
+      - name: Collect logs
         if: always()
+        uses: ./.github/actions/collect-e2e-logs
+        with:
+          operator-namespace: ${{ env.OPERATOR_NAMESPACE }}
+          artifact-name: chaos-latency-disk-logs-${{ github.run_id }}
+          extra-namespaces: ${{ env.CHAOS_NAMESPACE }}
+
+  # ── Generate resilience report after both parallel jobs finish ───────────────
+  report:
+    name: Generate Resilience Report
+    runs-on: ubuntu-latest
+    needs: [chaos-kill-network, chaos-latency-disk]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate resilience report
         run: |
           chmod +x tests/chaos/generate-report.sh
           ./tests/chaos/generate-report.sh
 
-      # ── 16. Upload report as artifact ─────────────────────────────────────────
       - name: Upload resilience report
-        if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: chaos-resilience-report-${{ github.run_id }}
           path: tests/chaos/results/*/resilience-report.md
           retention-days: 30
 
-      # ── 16. Summary ───────────────────────────────────────────────────────────
-      - name: Write summary
-        if: always()
+      - name: Write job summary
         run: |
-          echo "## 🔥 Chaos Engineering Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Experiment | Description | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|------------|-------------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 01 | Operator Pod Kill | ${{ steps.exp01.outcome || 'ran' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 02 | Network Partition | ${{ steps.exp02.outcome || 'ran' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 03 | API High Latency  | ${{ steps.exp03.outcome || 'ran' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 04 | Validator Peer Partition | ${{ steps.exp04.outcome || 'ran' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 05 | Operator Disk Fill | ${{ steps.exp05.outcome || 'ran' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          KN="${{ needs.chaos-kill-network.result }}"
+          LD="${{ needs.chaos-latency-disk.result }}"
+          {
+            echo "## 🔥 Chaos Engineering Test Results"
+            echo ""
+            echo "| Group | Experiments | Status |"
+            echo "|-------|-------------|--------|"
+            echo "| Kill & Network | 01 Pod Kill, 02 Network Partition | ${KN} |"
+            echo "| Latency & Disk | 03 API Latency, 04 Peer Partition, 05 Disk Fill | ${LD} |"
+            echo ""
+            echo "**Commit:** ${{ github.sha }}"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,5 +1,9 @@
 name: Performance Regression Testing
 
+# Uses the shared .github/actions/setup-perf-env composite action for
+# cluster provisioning, eliminating the duplicate kind/kubectl/k6 install
+# steps that previously existed in this workflow.
+
 on:
   workflow_dispatch:
     inputs:
@@ -15,64 +19,44 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  K6_VERSION: 0.54.0
-  KIND_VERSION: v0.20.0
-  KUBECTL_VERSION: v1.28.0
+  K6_VERSION: "0.54.0"
 
 jobs:
-  # ==========================================================================
-  # Build Operator
-  # ==========================================================================
+  # ── Build ─────────────────────────────────────────────────────────────────
   build:
     name: Build Operator
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
-      image_tag: ${{ steps.image.outputs.tag }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Get version
         id: version
         run: |
-          VERSION="pr-${{ github.event.pull_request.number }}-$(git rev-parse --short HEAD)"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          VERSION="pr-${{ github.event.pull_request.number || 'manual' }}-$(git rev-parse --short HEAD)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
         with:
-          shared-key: "perf-regression"
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
+          cache-key: "perf-regression"
 
       - name: Build release binary
         run: cargo build --release --locked
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
       - name: Build Docker image
-        id: image
-        run: |
-          IMAGE_TAG="stellar-operator:${{ steps.version.outputs.version }}"
-          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-          docker build -t $IMAGE_TAG .
+        run: docker build -t "stellar-operator:${{ steps.version.outputs.version }}" .
 
       - name: Save Docker image
         run: |
-          docker save stellar-operator:${{ steps.version.outputs.version }} | gzip > stellar-operator-image.tar.gz
+          docker save "stellar-operator:${{ steps.version.outputs.version }}" \
+            | gzip > stellar-operator-image.tar.gz
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: operator-artifacts-${{ steps.version.outputs.version }}
           path: |
@@ -80,215 +64,52 @@ jobs:
             stellar-operator-image.tar.gz
           retention-days: 7
 
-  # ==========================================================================
-  # Setup Test Environment
-  # ==========================================================================
-  # Removed: setup-cluster job - now consolidated into performance-test
-
-  # ==========================================================================
-  # Run Performance Tests
-  # ==========================================================================
+  # ── Performance test ──────────────────────────────────────────────────────
   performance-test:
     name: Run Performance Tests
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Install k6
-        run: |
-          curl -L https://github.com/grafana/k6/releases/download/v${{ env.K6_VERSION }}/k6-v${{ env.K6_VERSION }}-linux-amd64.tar.gz | tar xvz
-          sudo mv k6-v${{ env.K6_VERSION }}-linux-amd64/k6 /usr/local/bin/
-          k6 version
-
-      - name: Install kind
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ env.KIND_VERSION }}/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
-
-      - name: Install kubectl
-        run: |
-          curl -LO "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/
+      - uses: actions/checkout@v4
 
       - name: Download operator artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: operator-artifacts-${{ needs.build.outputs.version }}
 
-      - name: Create kind cluster
-        run: |
-          cat > kind-config.yaml <<EOF
-          kind: Cluster
-          apiVersion: kind.x-k8s.io/v1alpha4
-          nodes:
-            - role: control-plane
-              extraPortMappings:
-                - containerPort: 30080
-                  hostPort: 30080
-                  protocol: TCP
-            - role: worker
-            - role: worker
-          EOF
-
-          kind create cluster --name benchmark --config kind-config.yaml --wait 5m
-
-      - name: Load Docker image into kind
+      - name: Load Docker image
         run: |
           gunzip stellar-operator-image.tar.gz
-          kind load image-archive stellar-operator-image.tar --name benchmark
+          docker load < stellar-operator-image.tar
 
-      - name: Install CRDs
-        run: |
-          kubectl apply -f config/crd/stellarnode-crd.yaml
-          kubectl wait --for condition=established --timeout=60s crd/stellarnodes.stellar.org
-
-      - name: Create operator namespace
-        run: |
-          kubectl create namespace stellar-system
-          kubectl label namespace stellar-system name=stellar-system
-
-      - name: Deploy operator
-        run: |
-          cat > operator-deployment.yaml <<EOF
-          apiVersion: v1
-          kind: ServiceAccount
-          metadata:
-            name: stellar-operator
-            namespace: stellar-system
-          ---
-          apiVersion: rbac.authorization.k8s.io/v1
-          kind: ClusterRole
-          metadata:
-            name: stellar-operator
-          rules:
-            - apiGroups: ["stellar.org"]
-              resources: ["stellarnodes", "stellarnodes/status"]
-              verbs: ["*"]
-            - apiGroups: [""]
-              resources: ["pods", "services", "configmaps", "secrets", "events"]
-              verbs: ["*"]
-            - apiGroups: ["apps"]
-              resources: ["statefulsets", "deployments"]
-              verbs: ["*"]
-          ---
-          apiVersion: rbac.authorization.k8s.io/v1
-          kind: ClusterRoleBinding
-          metadata:
-            name: stellar-operator
-          roleRef:
-            apiGroup: rbac.authorization.k8s.io
-            kind: ClusterRole
-            name: stellar-operator
-          subjects:
-            - kind: ServiceAccount
-              name: stellar-operator
-              namespace: stellar-system
-          ---
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: stellar-operator
-            namespace: stellar-system
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: stellar-operator
-            template:
-              metadata:
-                labels:
-                  app: stellar-operator
-              spec:
-                serviceAccountName: stellar-operator
-                containers:
-                  - name: operator
-                    image: stellar-operator:${{ needs.build.outputs.version }}
-                    imagePullPolicy: Never
-                    ports:
-                      - containerPort: 8080
-                        name: http
-                      - containerPort: 9090
-                        name: metrics
-                    env:
-                      - name: RUST_LOG
-                        value: info
-                    resources:
-                      requests:
-                        cpu: 500m
-                        memory: 512Mi
-                      limits:
-                        cpu: 2000m
-                        memory: 2Gi
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: stellar-operator
-            namespace: stellar-system
-          spec:
-            type: NodePort
-            selector:
-              app: stellar-operator
-            ports:
-              - name: http
-                port: 8080
-                targetPort: 8080
-                nodePort: 30080
-              - name: metrics
-                port: 9090
-                targetPort: 9090
-          EOF
-
-          kubectl apply -f operator-deployment.yaml
-
-      - name: Wait for operator
-        run: |
-          kubectl wait --for=condition=available deployment/stellar-operator \
-            -n stellar-system --timeout=180s || true
-
-          sleep 10
-
-      - name: Verify operator
-        continue-on-error: true
-        run: |
-          # Check operator logs
-          kubectl logs -n stellar-system -l app=stellar-operator --tail=50 || true
-
-          # Verify operator is responding
-          kubectl port-forward -n stellar-system svc/stellar-operator 8080:8080 &
-          sleep 5
-
-          if curl -sf http://localhost:8080/healthz 2>/dev/null; then
-            echo "✅ Operator is ready"
-          else
-            echo "⚠️ Operator health check failed, continuing with tests"
-          fi
+      # Shared composite action handles k6, kind, kubectl, cluster, operator
+      - name: Setup performance environment
+        uses: ./.github/actions/setup-perf-env
+        with:
+          k6-version: ${{ env.K6_VERSION }}
+          cluster-name: benchmark
+          operator-image-tag: ${{ needs.build.outputs.version }}
+          worker-nodes: "2"
 
       - name: Determine baseline
         id: baseline
         run: |
           BASELINE_VERSION="${{ github.event.inputs.baseline_version || 'v0.1.0' }}"
           BASELINE_FILE="benchmarks/baselines/${BASELINE_VERSION}.json"
-
           if [[ -f "$BASELINE_FILE" ]]; then
-            echo "baseline_file=$BASELINE_FILE" >> $GITHUB_OUTPUT
-            echo "has_baseline=true" >> $GITHUB_OUTPUT
+            echo "baseline_file=$BASELINE_FILE" >> "$GITHUB_OUTPUT"
+            echo "has_baseline=true" >> "$GITHUB_OUTPUT"
             echo "✅ Using baseline: $BASELINE_FILE"
           else
-            echo "has_baseline=false" >> $GITHUB_OUTPUT
-            echo "⚠️ No baseline found, will run without comparison"
+            echo "has_baseline=false" >> "$GITHUB_OUTPUT"
+            echo "⚠️ No baseline found, running without comparison"
           fi
 
       - name: Run operator benchmarks
         id: operator_bench
+        continue-on-error: true
         run: |
           mkdir -p results
-
-          export KUBECONFIG=$(pwd)/kubeconfig.yaml
-
           k6 run \
             --env BASE_URL=http://localhost:8080 \
             --env K8S_API_URL=http://localhost:8001 \
@@ -299,26 +120,24 @@ jobs:
             --env BASELINE_FILE=${{ steps.baseline.outputs.baseline_file }} \
             --out json=results/operator-benchmark-raw.json \
             benchmarks/k6/operator-load-test.js
-        continue-on-error: true
 
       - name: Collect operator logs
         if: always()
         run: |
-          export KUBECONFIG=$(pwd)/kubeconfig.yaml
-          kubectl logs -n stellar-system -l app=stellar-operator --tail=1000 > results/operator-logs.txt || true
-          kubectl get events -n stellar-benchmark --sort-by='.lastTimestamp' > results/events.txt || true
+          kubectl logs -n stellar-system -l app=stellar-operator \
+            --tail=1000 > results/operator-logs.txt || true
+          kubectl get events -n stellar-benchmark \
+            --sort-by='.lastTimestamp' > results/events.txt || true
           kubectl get pods -n stellar-benchmark -o wide > results/pods.txt || true
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: performance-results-${{ needs.build.outputs.version }}
           path: results/
           retention-days: 30
 
-  # ==========================================================================
-  # Regression Analysis
-  # ==========================================================================
+  # ── Regression analysis ───────────────────────────────────────────────────
   regression-analysis:
     name: Regression Analysis
     runs-on: ubuntu-latest
@@ -327,20 +146,18 @@ jobs:
       pull-requests: write
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
+        run: pip install requests
 
       - name: Download benchmark results
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: performance-results-${{ needs.build.outputs.version }}
           path: results/
@@ -350,149 +167,79 @@ jobs:
         run: |
           BASELINE_VERSION="${{ github.event.inputs.baseline_version || 'v0.1.0' }}"
           BASELINE_FILE="benchmarks/baselines/${BASELINE_VERSION}.json"
-
           if [[ -f "$BASELINE_FILE" ]]; then
-            echo "baseline_file=$BASELINE_FILE" >> $GITHUB_OUTPUT
-            echo "has_baseline=true" >> $GITHUB_OUTPUT
+            echo "baseline_file=$BASELINE_FILE" >> "$GITHUB_OUTPUT"
+            echo "has_baseline=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has_baseline=false" >> $GITHUB_OUTPUT
+            echo "has_baseline=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Compare with baseline
         if: steps.baseline.outputs.has_baseline == 'true'
         id: compare
+        continue-on-error: true
         run: |
           THRESHOLD="${{ github.event.inputs.regression_threshold || '10' }}"
-
-          python benchmarks/scripts/compare_benchmarks.py compare \
+          python3 benchmarks/scripts/compare_benchmarks.py compare \
             --current results/benchmark-summary.json \
-            --baseline ${{ steps.baseline.outputs.baseline_file }} \
-            --threshold $THRESHOLD \
+            --baseline "${{ steps.baseline.outputs.baseline_file }}" \
+            --threshold "$THRESHOLD" \
             --output results/regression-report.json \
             --verbose
-        continue-on-error: true
 
       - name: Generate performance report
         id: report
         run: |
-          cat > pr-comment.md <<'COMMENT_EOF'
-          ## 📊 Performance Regression Test Results
+          {
+            printf "## 📊 Performance Regression Test Results\n\n"
+            printf "**Version:** %s\n" "${{ needs.build.outputs.version }}"
+            printf "**Commit:** %s\n" "${{ github.sha }}"
+            printf "**Baseline:** %s\n" "${{ github.event.inputs.baseline_version || 'v0.1.0' }}"
+            printf "**Threshold:** %s%%\n\n" "${{ github.event.inputs.regression_threshold || '10' }}"
 
-          **PR:** #${{ github.event.pull_request.number }}
-          **Version:** ${{ needs.build.outputs.version }}
-          **Commit:** ${{ github.sha }}
-          **Baseline:** ${{ github.event.inputs.baseline_version || 'v0.1.0' }}
-          **Threshold:** ${{ github.event.inputs.regression_threshold || '10' }}%
+            if [[ -f results/benchmark-summary.json ]]; then
+              TPS=$(jq -r '.metrics.tps.avg // "N/A"' results/benchmark-summary.json)
+              HTTP_P95=$(jq -r '.metrics.http_req_duration.p95 // "N/A"' results/benchmark-summary.json)
+              HTTP_P99=$(jq -r '.metrics.http_req_duration.p99 // "N/A"' results/benchmark-summary.json)
+              RECON_P95=$(jq -r '.metrics.reconciliation_duration.p95 // "N/A"' results/benchmark-summary.json)
+              RECON_P99=$(jq -r '.metrics.reconciliation_duration.p99 // "N/A"' results/benchmark-summary.json)
+              API_P95=$(jq -r '.metrics.api_latency.p95 // "N/A"' results/benchmark-summary.json)
+              ERROR_RATE=$(jq -r '.metrics.error_rate // "N/A"' results/benchmark-summary.json)
+              TOTAL=$(jq -r '.metrics.total_requests // "N/A"' results/benchmark-summary.json)
 
-          COMMENT_EOF
+              printf "### 🎯 Key Performance Metrics\n\n"
+              printf "| Metric | Value | Threshold |\n|--------|-------|----------|\n"
+              printf "| **TPS (avg)** | %s req/s | > 100 req/s |\n" "$TPS"
+              printf "| **HTTP Latency (p95)** | %s ms | < 500 ms |\n" "$HTTP_P95"
+              printf "| **HTTP Latency (p99)** | %s ms | < 1000 ms |\n" "$HTTP_P99"
+              printf "| **Reconciliation (p95)** | %s ms | < 3000 ms |\n" "$RECON_P95"
+              printf "| **Reconciliation (p99)** | %s ms | < 5000 ms |\n" "$RECON_P99"
+              printf "| **API Latency (p95)** | %s ms | < 200 ms |\n" "$API_P95"
+              printf "| **Error Rate** | %s | < 0.01 |\n" "$ERROR_RATE"
+              printf "| **Total Requests** | %s | - |\n\n" "$TOTAL"
+            fi
 
-          if [[ -f results/benchmark-summary.json ]]; then
-            TPS=$(jq -r '.metrics.tps.avg // "N/A"' results/benchmark-summary.json)
-            HTTP_P95=$(jq -r '.metrics.http_req_duration.p95 // "N/A"' results/benchmark-summary.json)
-            HTTP_P99=$(jq -r '.metrics.http_req_duration.p99 // "N/A"' results/benchmark-summary.json)
-            RECON_P95=$(jq -r '.metrics.reconciliation_duration.p95 // "N/A"' results/benchmark-summary.json)
-            RECON_P99=$(jq -r '.metrics.reconciliation_duration.p99 // "N/A"' results/benchmark-summary.json)
-            API_P95=$(jq -r '.metrics.api_latency.p95 // "N/A"' results/benchmark-summary.json)
-            ERROR_RATE=$(jq -r '.metrics.error_rate // "N/A"' results/benchmark-summary.json)
-            TOTAL_REQUESTS=$(jq -r '.metrics.total_requests // "N/A"' results/benchmark-summary.json)
+            if [[ -f results/regression-report.json ]]; then
+              OVERALL_PASSED=$(jq -r '.overall_passed' results/regression-report.json)
+              SUMMARY=$(jq -r '.summary' results/regression-report.json)
+              NUM_REG=$(jq -r '.regressions | length' results/regression-report.json)
+              NUM_IMP=$(jq -r '.improvements | length' results/regression-report.json)
+              NUM_STA=$(jq -r '.stable | length' results/regression-report.json)
 
-            cat >> pr-comment.md <<EOF
-          ### 🎯 Key Performance Metrics
-
-          | Metric | Value | Threshold |
-          |--------|-------|-----------|
-          | **TPS (avg)** | ${TPS} req/s | > 100 req/s |
-          | **HTTP Latency (p95)** | ${HTTP_P95} ms | < 500 ms |
-          | **HTTP Latency (p99)** | ${HTTP_P99} ms | < 1000 ms |
-          | **Reconciliation (p95)** | ${RECON_P95} ms | < 3000 ms |
-          | **Reconciliation (p99)** | ${RECON_P99} ms | < 5000 ms |
-          | **API Latency (p95)** | ${API_P95} ms | < 200 ms |
-          | **Error Rate** | ${ERROR_RATE} | < 0.01 |
-          | **Total Requests** | ${TOTAL_REQUESTS} | - |
-
-          EOF
-          fi
-
-          if [[ -f results/regression-report.json ]]; then
-            OVERALL_PASSED=$(jq -r '.overall_passed' results/regression-report.json)
-            SUMMARY=$(jq -r '.summary' results/regression-report.json)
-            NUM_REGRESSIONS=$(jq -r '.regressions | length' results/regression-report.json)
-            NUM_IMPROVEMENTS=$(jq -r '.improvements | length' results/regression-report.json)
-            NUM_STABLE=$(jq -r '.stable | length' results/regression-report.json)
-
-            if [[ "$OVERALL_PASSED" == "true" ]]; then
-              cat >> pr-comment.md <<EOF
-          ### ✅ Regression Check: PASSED
-
-          ${SUMMARY}
-
-          - 🟢 Improvements: ${NUM_IMPROVEMENTS}
-          - ⚪ Stable: ${NUM_STABLE}
-          - 🔴 Regressions: ${NUM_REGRESSIONS}
-
-          EOF
+              if [[ "$OVERALL_PASSED" == "true" ]]; then
+                printf "### ✅ Regression Check: PASSED\n\n%s\n\n" "$SUMMARY"
+              else
+                printf "### ❌ Regression Check: FAILED\n\n%s\n\n" "$SUMMARY"
+              fi
+              printf "- 🟢 Improvements: %s\n- ⚪ Stable: %s\n- 🔴 Regressions: %s\n\n" \
+                "$NUM_IMP" "$NUM_STA" "$NUM_REG"
             else
-              cat >> pr-comment.md <<EOF
-          ### ❌ Regression Check: FAILED
-
-          ${SUMMARY}
-
-          - 🟢 Improvements: ${NUM_IMPROVEMENTS}
-          - ⚪ Stable: ${NUM_STABLE}
-          - 🔴 Regressions: ${NUM_REGRESSIONS}
-
-          <details>
-          <summary>📉 View Regression Details</summary>
-
-          \`\`\`json
-          $(jq '.regressions' results/regression-report.json)
-          \`\`\`
-
-          </details>
-
-          EOF
+              printf "### ℹ️ No Baseline Comparison\n\nNo baseline found for comparison.\n\n"
             fi
 
-            if [[ ${NUM_IMPROVEMENTS} -gt 0 ]]; then
-              cat >> pr-comment.md <<EOF
-          <details>
-          <summary>📈 View Improvements</summary>
-
-          \`\`\`json
-          $(jq '.improvements' results/regression-report.json)
-          \`\`\`
-
-          </details>
-
-          EOF
-            fi
-          else
-            cat >> pr-comment.md <<EOF
-          ### ℹ️ No Baseline Comparison
-
-          No baseline found for comparison. This is the first benchmark run.
-
-          EOF
-          fi
-
-          cat >> pr-comment.md <<EOF
-          ---
-
-          <details>
-          <summary>📋 View Full Results</summary>
-
-          \`\`\`json
-          $(cat results/benchmark-summary.json 2>/dev/null || echo "{}")
-          \`\`\`
-
-          </details>
-
-          ---
-          *Performance tests run on kind cluster with GitHub Actions*
-          *Run ID: ${{ github.run_id }}*
-          EOF
-
-          echo "Report generated successfully"
+            printf "---\n*Performance tests run on kind cluster with GitHub Actions*\n"
+            printf "*Run ID: %s*\n" "${{ github.run_id }}"
+          } > pr-comment.md
 
       - name: Post PR comment
         if: github.event_name == 'pull_request'
@@ -505,9 +252,7 @@ jobs:
       - name: Create job summary
         if: always()
         run: |
-          if [[ -f pr-comment.md ]]; then
-            cat pr-comment.md >> $GITHUB_STEP_SUMMARY
-          fi
+          [[ -f pr-comment.md ]] && cat pr-comment.md >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Check regression status
         if: steps.compare.outcome == 'failure'
@@ -516,16 +261,11 @@ jobs:
             OVERALL_PASSED=$(jq -r '.overall_passed' results/regression-report.json)
             if [[ "$OVERALL_PASSED" == "false" ]]; then
               echo "::warning::Performance regression detected! Review the benchmark results."
-              # Don't fail on first run or if no baseline exists
-              if [[ -f ${{ steps.baseline.outputs.baseline_file }} ]]; then
-                exit 1
-              fi
+              [[ -f "${{ steps.baseline.outputs.baseline_file }}" ]] && exit 1 || true
             fi
           fi
 
-  # ==========================================================================
-  # Cleanup
-  # ==========================================================================
+  # ── Cleanup ───────────────────────────────────────────────────────────────
   cleanup:
     name: Cleanup
     runs-on: ubuntu-latest
@@ -534,14 +274,10 @@ jobs:
     steps:
       - name: Install kind
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ env.KIND_VERSION }}/kind-linux-amd64
+          curl -fsSLo ./kind \
+            "https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
       - name: Delete kind cluster
-        run: |
-          kind delete cluster --name benchmark || true
-
-      - name: Cleanup artifacts
-        run: |
-          echo "Cleanup completed"
+        run: kind delete cluster --name benchmark || true

@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: pre-commit-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pre-commit:
     name: Pre-commit Hooks
@@ -15,28 +19,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            libssl-dev \
-            libsasl2-dev \
-            pkg-config \
-            libcurl4-openssl-dev \
-            cmake
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
         with:
-          components: rustfmt, clippy
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
+          cache-key: "pre-commit"
+          components: "rustfmt clippy"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: "3.x"
 
       - name: Install pre-commit
         run: pip install pre-commit
@@ -47,7 +39,10 @@ jobs:
             BASE_SHA="${{ github.event.pull_request.base.sha }}"
             HEAD_SHA="${{ github.event.pull_request.head.sha }}"
             git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
-            pre-commit run --from-ref "$BASE_SHA" --to-ref "$HEAD_SHA" --show-diff-on-failure
+            pre-commit run \
+              --from-ref "$BASE_SHA" \
+              --to-ref "$HEAD_SHA" \
+              --show-diff-on-failure
           else
             pre-commit run --all-files --show-diff-on-failure
           fi

@@ -1,0 +1,236 @@
+name: Setup Performance Testing Environment
+description: >
+  Shared setup for all performance / benchmark workflows.
+  Installs k6, kind, kubectl, loads the operator image, deploys the operator
+  with RBAC, and sets up port-forwarding so k6 tests can reach the API.
+
+inputs:
+  k6-version:
+    description: k6 release version (without leading v)
+    required: false
+    default: "0.54.0"
+  kind-version:
+    description: kind release version (with leading v)
+    required: false
+    default: "v0.20.0"
+  kubectl-version:
+    description: kubectl release version (with leading v)
+    required: false
+    default: "v1.28.0"
+  cluster-name:
+    description: Name of the kind cluster to create
+    required: false
+    default: "benchmark"
+  operator-image-tag:
+    description: Docker image tag for the operator (must already be built)
+    required: true
+  operator-namespace:
+    description: Kubernetes namespace for the operator
+    required: false
+    default: "stellar-system"
+  worker-nodes:
+    description: Number of worker nodes
+    required: false
+    default: "2"
+
+outputs:
+  cluster-ready:
+    description: "true when the cluster and operator are ready"
+    value: ${{ steps.wait.outputs.ready }}
+
+runs:
+  using: composite
+  steps:
+    # ── k6 ────────────────────────────────────────────────────────────────────
+    - name: Install k6
+      shell: bash
+      run: |
+        K6_VER="${{ inputs.k6-version }}"
+        curl -fsSL \
+          "https://github.com/grafana/k6/releases/download/v${K6_VER}/k6-v${K6_VER}-linux-amd64.tar.gz" \
+          | tar xvz
+        sudo mv "k6-v${K6_VER}-linux-amd64/k6" /usr/local/bin/
+        k6 version
+
+    # ── kind ─────────────────────────────────────────────────────────────────
+    - name: Install kind
+      shell: bash
+      run: |
+        KIND_VER="${{ inputs.kind-version }}"
+        curl -fsSLo ./kind \
+          "https://kind.sigs.k8s.io/dl/${KIND_VER}/kind-linux-amd64"
+        chmod +x ./kind
+        sudo mv ./kind /usr/local/bin/kind
+
+    # ── kubectl ───────────────────────────────────────────────────────────────
+    - name: Install kubectl
+      shell: bash
+      run: |
+        KUBECTL_VER="${{ inputs.kubectl-version }}"
+        curl -fsSLo kubectl \
+          "https://dl.k8s.io/release/${KUBECTL_VER}/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/
+
+    # ── Create cluster ────────────────────────────────────────────────────────
+    - name: Create kind cluster
+      shell: bash
+      run: |
+        WORKERS=${{ inputs.worker-nodes }}
+        {
+          echo "kind: Cluster"
+          echo "apiVersion: kind.x-k8s.io/v1alpha4"
+          echo "nodes:"
+          echo "  - role: control-plane"
+          echo "    extraPortMappings:"
+          echo "      - containerPort: 30080"
+          echo "        hostPort: 30080"
+          echo "        protocol: TCP"
+          for i in $(seq 1 "$WORKERS"); do
+            echo "  - role: worker"
+          done
+        } > /tmp/kind-perf-config.yaml
+
+        kind create cluster \
+          --name "${{ inputs.cluster-name }}" \
+          --config /tmp/kind-perf-config.yaml \
+          --wait 5m
+
+    # ── Load image ────────────────────────────────────────────────────────────
+    - name: Load operator image into kind
+      shell: bash
+      run: |
+        kind load docker-image \
+          "stellar-operator:${{ inputs.operator-image-tag }}" \
+          --name "${{ inputs.cluster-name }}"
+
+    # ── CRDs ──────────────────────────────────────────────────────────────────
+    - name: Install CRDs
+      shell: bash
+      run: |
+        kubectl apply -f config/crd/stellarnode-crd.yaml
+        kubectl wait --for=condition=established --timeout=60s \
+          crd/stellarnodes.stellar.org
+
+    # ── Deploy operator with RBAC ─────────────────────────────────────────────
+    - name: Deploy operator
+      shell: bash
+      env:
+        OPERATOR_NS: ${{ inputs.operator-namespace }}
+        IMAGE_TAG: ${{ inputs.operator-image-tag }}
+      run: |
+        kubectl create namespace "${OPERATOR_NS}" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl label namespace "${OPERATOR_NS}" name="${OPERATOR_NS}" --overwrite
+
+        kubectl apply -f - <<EOF
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: stellar-operator
+          namespace: ${OPERATOR_NS}
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        metadata:
+          name: stellar-operator
+        rules:
+          - apiGroups: ["stellar.org"]
+            resources: ["stellarnodes", "stellarnodes/status"]
+            verbs: ["*"]
+          - apiGroups: [""]
+            resources: ["pods", "services", "configmaps", "secrets", "events"]
+            verbs: ["*"]
+          - apiGroups: ["apps"]
+            resources: ["statefulsets", "deployments"]
+            verbs: ["*"]
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: stellar-operator
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: stellar-operator
+        subjects:
+          - kind: ServiceAccount
+            name: stellar-operator
+            namespace: ${OPERATOR_NS}
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: stellar-operator
+          namespace: ${OPERATOR_NS}
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: stellar-operator
+          template:
+            metadata:
+              labels:
+                app: stellar-operator
+            spec:
+              serviceAccountName: stellar-operator
+              containers:
+                - name: operator
+                  image: stellar-operator:${IMAGE_TAG}
+                  imagePullPolicy: Never
+                  ports:
+                    - containerPort: 8080
+                      name: http
+                    - containerPort: 9090
+                      name: metrics
+                  env:
+                    - name: RUST_LOG
+                      value: info
+                  resources:
+                    requests:
+                      cpu: 500m
+                      memory: 512Mi
+                    limits:
+                      cpu: 2000m
+                      memory: 2Gi
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: stellar-operator
+          namespace: ${OPERATOR_NS}
+        spec:
+          type: NodePort
+          selector:
+            app: stellar-operator
+          ports:
+            - name: http
+              port: 8080
+              targetPort: 8080
+              nodePort: 30080
+            - name: metrics
+              port: 9090
+              targetPort: 9090
+        EOF
+
+    # ── Wait ──────────────────────────────────────────────────────────────────
+    - name: Wait for operator
+      id: wait
+      shell: bash
+      env:
+        OPERATOR_NS: ${{ inputs.operator-namespace }}
+      run: |
+        kubectl wait --for=condition=available deployment/stellar-operator \
+          -n "${OPERATOR_NS}" --timeout=180s || true
+        sleep 10
+        echo "ready=true" >> "$GITHUB_OUTPUT"
+
+    # ── Port-forward ──────────────────────────────────────────────────────────
+    - name: Start port-forwarding
+      shell: bash
+      env:
+        OPERATOR_NS: ${{ inputs.operator-namespace }}
+      run: |
+        kubectl port-forward -n "${OPERATOR_NS}" svc/stellar-operator 8080:8080 &
+        kubectl proxy --port=8001 &
+        sleep 5
+        echo "Port-forwarding started (operator=8080, k8s-proxy=8001)"

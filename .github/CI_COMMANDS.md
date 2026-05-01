@@ -1,225 +1,130 @@
-# CI Commands Reference
+# CI Pipeline Architecture & Optimization Guide
 
-This document lists the exact commands that run in CI. You can run these locally before pushing to ensure your changes will pass all checks.
+## Overview
 
-## Quick Check (Pre-Commit)
-
-**Purpose**: Fast validation before committing (~30 seconds)
-
-```bash
-# Check if code is properly formatted
-cargo fmt --all --check
-
-# Compile check (faster than full build)
-cargo check --workspace
-```
-
-**What it does**: Verifies your code is formatted and compiles without errors.
+This document describes the optimized CI/CD pipeline architecture introduced
+to address issues #663, #664, #665, and #666.
 
 ---
 
-## Full CI Pipeline
+## Shared Composite Actions
 
-These are the exact steps GitHub Actions runs. Run them locally to catch issues before pushing.
+All reusable logic lives under `.github/actions/`:
 
-### 1. Security Audit
-
-**Purpose**: Detect security vulnerabilities in dependencies
-
-```bash
-# Install cargo-audit if not already installed
-cargo install --locked cargo-audit
-
-# Check for unsound code (memory safety issues)
-cargo audit --deny unsound
-```
-
-**What it checks**:
-
-- Memory safety vulnerabilities (RUSTSEC advisories)
-- Blocks unsound code that could cause crashes or security issues
-- Warns about unmaintained dependencies (non-blocking)
+| Action | Purpose |
+|--------|---------|
+| `setup-rust` | Install Rust toolchain + system deps + Swatinem cache |
+| `setup-kind-cluster` | Provision kind cluster, load image, install CRDs, deploy operator |
+| `collect-e2e-logs` | Dump operator logs, K8s events, StellarNode status → artifact |
+| `setup-perf-env` | Install k6/kind/kubectl, create cluster, deploy operator with RBAC, port-forward |
 
 ---
 
-### 2. Format Check
+## Core CI Workflows (#663)
 
-**Purpose**: Enforce consistent code style
+### `ci.yml`
+- **Change detection** gates expensive jobs (helm-lint, api-docs, examples-smoke-test,
+  security-audit) so they only run when relevant files change.
+- **Unified Rust cache** via `setup-rust` composite action with per-job `shared-key`.
+- **Removed duplicate** system-dependency install blocks (now in `setup-rust`).
+- **Removed duplicate** `actions/checkout@v6` references (standardised on `@v4`).
+- `lint` and `security-audit` run in **parallel** (both depend only on `changes`).
+- `test` and `coverage` run in **parallel** (both depend on `lint` + `security-audit`).
 
-```bash
-# Verify all code follows Rust formatting standards
-cargo fmt --all --check
-```
+### `pre-commit.yml`
+- Uses `setup-rust` composite action — no more duplicated apt-get blocks.
+- Added `concurrency` group to cancel stale runs.
 
-**What it checks**: Code formatting according to rustfmt rules. If this fails, run `cargo fmt --all` to auto-fix.
+### `commit-lint.yml`
+- Fixed invalid action versions (`actions/checkout@v6`, `actions/setup-node@v6`
+  → `@v4`).
+- Pinned commitlint packages to major version `@19`.
+- Added `concurrency` group.
 
----
-
-### 3. Lint (Clippy)
-
-**Purpose**: Catch common mistakes and enforce best practices
-
-```bash
-# Run Clippy with zero-warnings policy
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-```
-
-**What it checks**:
-
-- Code quality issues
-- Common mistakes and anti-patterns
-- Performance improvements
-- Best practice violations
-
-**Note**: `-D warnings` means any warning = CI failure (zero-warning policy)
+### Estimated time reduction
+Parallel lint + audit + test/coverage, combined with shared caching, reduces
+the critical path by ~35–40% compared to the previous sequential layout.
 
 ---
 
-### 4. Test Suite
+## Heavy Validation Workflows (#666)
 
-**Purpose**: Verify all functionality works correctly
+### `chaos-tests.yml`
+- **Extracted** cluster provisioning into `setup-kind-cluster` composite action.
+- **Parallel execution**: experiments 01–02 (pod-kill, network partition) run in
+  `chaos-kill-network` job; experiments 03–05 (latency, peer-partition, disk-fill)
+  run in `chaos-latency-disk` job simultaneously.
+- **Consolidated logging** via `collect-e2e-logs` composite action.
+- Binary built once in a `build` job and downloaded as an artifact by both
+  parallel jobs — no duplicate Rust compilation.
 
-```bash
-# Run all unit tests, integration tests, and binary tests
-cargo test --workspace --all-features --verbose
+### `soak-test.yml`
+- Uses `setup-kind-cluster` for cluster provisioning.
+- Uses `collect-e2e-logs` for failure-time log collection.
+- Removed duplicated Rust toolchain + apt-get blocks.
 
-# Run documentation tests
-cargo test --doc --workspace
-```
-
-**What it runs**:
-- **62+ total tests** across the entire workspace
-  - 52 `StellarNodeSpec` validation tests (CRD validation)
-  - 5 kubectl plugin tests (table/JSON/YAML formatting)
-  - Controller logic tests
-  - Webhook tests
-  - Documentation example tests
-
-**Note**: CI runs both command sets. Locally, you can skip doc tests if examples are outdated.
-
----
-
-### 5. Build Release
-
-**Purpose**: Verify production build succeeds
-
-```bash
-# Build optimized release binary with locked dependencies
-cargo build --release --locked
-```
-
-**What it does**:
-
-- Builds with optimizations enabled
-- Uses exact dependency versions from Cargo.lock (--locked)
-- Produces production-ready binary in `target/release/stellar-operator`
+### `verify-operator-boot.yml`
+- Uses `setup-rust` composite action.
+- Added `concurrency` group to cancel stale PR runs.
+- Artifact name now includes `github.run_id` to avoid collisions.
 
 ---
 
-### 6. Docker Build
+## Performance & Benchmark Workflows (#664)
 
-**Purpose**: Verify container image builds successfully
+### `benchmark.yml`
+- Build step produces a Docker image saved as a `.tar.gz` artifact.
+- `setup-perf-env` composite action handles k6, kind, kubectl, cluster, RBAC,
+  operator deployment, and port-forwarding — eliminating ~80 lines of duplicated
+  setup across the three benchmark workflows.
+- Baseline comparison uses the same `compare_benchmarks.py` script as
+  `performance-regression.yml`.
 
-```bash
-# Build Docker image for local testing
-docker build -t stellar-operator:local .
-```
+### `performance-regression.yml`
+- Removed the now-redundant `setup-cluster` job (consolidated into
+  `performance-test` via `setup-perf-env`).
+- Removed duplicate k6/kind/kubectl install steps.
 
-**What it does**:
-
-- Multi-stage build using latest stable Rust
-- Creates minimal distroless runtime image
-- Supports multi-arch (amd64/arm64) in CI
-
----
-
-## Using Make Commands
-
-**Easier alternative**: Use the Makefile targets instead of running commands manually.
-
-```bash
-# One-time setup (installs Rust, components, tools)
-make dev-setup
-
-# Fast pre-commit check (~30 seconds)
-make quick
-
-# Full CI validation locally (~2-3 minutes)
-make ci-local
-
-# Show all available commands
-make help
-```
-
-### What Each Make Command Does:
-
-**`make dev-setup`**: Sets up development environment
-
-- Updates Rust to latest stable
-- Installs clippy and rustfmt
-- Installs cargo-audit and cargo-watch
-
-**`make quick`**: Fast pre-commit check
-
-1. Checks code formatting
-2. Runs compile check
-
-**`make ci-local`**: Full CI pipeline (runs all commands above)
-
-1. Checks formatting (`cargo fmt --all --check`)
-2. Runs clippy with zero warnings (`cargo clippy --workspace --all-targets --all-features -- -D warnings`)
-3. Security audit (`cargo audit --deny unsound`)
-4. Runs all 62+ tests (`cargo test --workspace --all-features --verbose`)
-5. Builds release binary (`cargo build --release --locked`)
-
-**Tip**: See sections 1-6 above for what each step does and how to troubleshoot failures.
+### `webhook-benchmark.yml`
+- Uses `setup-rust` composite action.
+- Standardised on `actions/upload-artifact@v4` / `actions/download-artifact@v4`
+  (was mixing v7/v8 which don't exist).
 
 ---
 
-## CI Workflows
+## Release & Multi-Arch Workflows (#665)
 
-GitHub Actions automatically runs these workflows:
+### `multiarch-build.yml`
+- Per-platform GHA cache scopes (`multiarch-amd64`, `multiarch-arm64`) prevent
+  cross-arch cache pollution and improve cache hit rates.
+- `arch-benchmark` jobs use `setup-rust` composite action.
+- Combined manifest build pulls from both per-platform caches.
 
-- **[ci.yml](workflows/ci.yml)**: Main pipeline
-  - Runs on every push to `main` and all PRs
-  - Security audit → Lint → Test → Build → Docker → Security Scan
-- **[benchmark.yml](workflows/benchmark.yml)**: Performance tests
-  - Runs on push to `main` and PRs
-  - Measures operator performance with k6
-- **[release.yml](workflows/release.yml)**: Release automation
-  - Runs on version tags (v*.*.\*)
-  - Builds multi-platform binaries and Docker images
-  - Creates GitHub release with artifacts
+### `release.yml`
+- **Eliminated duplicate Docker build**: `container` job first attempts to
+  re-tag the `sha-<sha>` image already published by `multiarch-build.yml`.
+  A fresh build only runs as a fallback when the sha image is unavailable.
+- **Fail-safe**: `validate` job enforces semver format AND Cargo.toml version
+  match before any build or publish step runs. A mismatch is now a hard error
+  (previously a warning).
+- `release` job depends on ALL of: `build-artifacts`, `container`, `security`,
+  `helm` — broken builds can never be tagged for release.
+- Standardised on `actions/upload-artifact@v4` / `actions/download-artifact@v4`.
 
 ---
 
-## Troubleshooting
+## Action Version Standardisation
 
-### Format Check Fails
+All workflows now use consistent, valid action versions:
 
-```bash
-# Auto-fix formatting
-cargo fmt --all
-```
-
-### Clippy Warnings
-
-```bash
-# See detailed clippy suggestions
-cargo clippy --workspace --all-targets --all-features
-```
-
-### Test Failures
-
-```bash
-# Run tests with detailed output
-cargo test --workspace --verbose -- --nocapture
-```
-
-### Build Failures
-
-```bash
-# Clean and rebuild
-cargo clean
-cargo build --release --locked
-```
+| Action | Version |
+|--------|---------|
+| `actions/checkout` | `v4` |
+| `actions/setup-node` | `v4` |
+| `actions/setup-python` | `v5` |
+| `actions/upload-artifact` | `v4` |
+| `actions/download-artifact` | `v4` |
+| `actions/cache` | `v4` |
+| `helm/kind-action` | `v1.14.0` |
+| `docker/build-push-action` | `v6` |
+| `Swatinem/rust-cache` | `v2` |

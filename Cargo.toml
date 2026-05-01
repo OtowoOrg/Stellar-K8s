@@ -18,7 +18,7 @@ glob = "0.3"
 # Kubernetes client and operator framework
 kube = { version = "0.94", features = ["runtime", "derive", "unstable-runtime", "admission", "client", "ws"] }
 kube-runtime = { version = "0.94", features = ["unstable-runtime"] }
-k8s-openapi = { version = "0.22", default-features = false, features = [
+k8s-openapi = { version = "0.26", default-features = false, features = [
     "v1_30",
 ] }
 
@@ -173,7 +173,7 @@ wiremock = "=0.6.5"
 proptest = "1.5"
 wat = "1.246"
 # Ensure dev builds that pull k8s-openapi 0.22 have an explicit API version feature.
-k8s-openapi = { version = "0.22", default-features = false, features = ["v1_30"] }
+k8s-openapi = { version = "0.26", default-features = false, features = ["v1_30"] }
 
 [[bin]]
 name = "stellar-operator"

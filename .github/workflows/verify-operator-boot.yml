@@ -1,10 +1,12 @@
-name: "Verify Operator Boot (Issue #146)"
+name: "Verify Operator Boot"
 
 # Verifies that the operator binary builds and connects to a live kind cluster.
 # Acceptance criteria:
 #   1. cargo build --release succeeds with zero errors
 #   2. ./target/release/stellar-operator run starts against a kind cluster
 #   3. Log line "Connected to Kubernetes cluster" appears
+#
+# Uses shared composite actions for Rust setup and log collection.
 
 on:
   push:
@@ -12,6 +14,10 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: verify-boot-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,9 +32,9 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      # ── 1. Checkout ──────────────────────────────────────────────────────────
       - uses: actions/checkout@v4
 
+      # ── Scope check: skip on PRs that don't touch operator code ──────────
       - name: Decide whether boot verification should run
         id: scope
         run: |
@@ -37,36 +43,23 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true)
-          echo "$CHANGED_FILES"
-
-          if echo "$CHANGED_FILES" | grep -Eq '^(src/|config/crd/|Cargo\.toml|Cargo\.lock|build\.rs|Makefile)'; then
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true)
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -Eq '^(src/|config/crd/|Cargo\.toml|Cargo\.lock|build\.rs|Makefile)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # ── 2. Rust toolchain + cache ────────────────────────────────────────────
-      - name: Install Rust toolchain
+      # ── Build (AC #1) ─────────────────────────────────────────────────────
+      - name: Setup Rust
         if: steps.scope.outputs.run == 'true'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Rust cache
-        if: steps.scope.outputs.run == 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: ./.github/actions/setup-rust
         with:
-          shared-key: "verify-boot"
+          cache-key: "verify-boot"
 
-      - name: Install system dependencies
-        if: steps.scope.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
-
-      # ── 3. Build release binary (AC #1) ─────────────────────────────────────
       - name: Build release binary
         if: steps.scope.outputs.run == 'true'
         run: cargo build --release --locked --bin stellar-operator
@@ -77,10 +70,10 @@ jobs:
           ls -lh target/release/stellar-operator
           echo "✅ cargo build --release succeeded"
 
-      # ── 4. Create kind cluster (AC #2) ──────────────────────────────────────
+      # ── Create kind cluster (AC #2) ───────────────────────────────────────
       - name: Install kind
         if: steps.scope.outputs.run == 'true'
-        uses: helm/kind-action@v1.13.0
+        uses: helm/kind-action@v1.14.0
         with:
           install_only: true
 
@@ -91,31 +84,28 @@ jobs:
           kubectl cluster-info --context kind-${{ env.CLUSTER_NAME }}
           echo "✅ kind cluster '${{ env.CLUSTER_NAME }}' is ready"
 
-      # ── 5. Install CRD ───────────────────────────────────────────────────────
+      # ── Install CRD ───────────────────────────────────────────────────────
       - name: Install StellarNode CRD
         if: steps.scope.outputs.run == 'true'
         run: |
           kubectl apply -f config/crd/stellarnode-crd.yaml
-          kubectl wait --for condition=established --timeout=30s \
+          kubectl wait --for=condition=established --timeout=30s \
             crd/stellarnodes.stellar.org || true
 
-      # ── 6. Run operator and verify log line (AC #2 + AC #3) ─────────────────
+      # ── Run operator and verify log line (AC #2 + AC #3) ─────────────────
       - name: Run operator and verify cluster connection
         if: steps.scope.outputs.run == 'true'
         run: |
-          # Run the operator in the background, capture output
           ./target/release/stellar-operator run \
             --namespace ${{ env.OPERATOR_NAMESPACE }} \
             > /tmp/operator.log 2>&1 &
           OPERATOR_PID=$!
-
           echo "Operator PID: $OPERATOR_PID"
 
-          # Wait up to 30 seconds for the expected log line
           TIMEOUT=30
           ELAPSED=0
           FOUND=false
-          while [ $ELAPSED -lt $TIMEOUT ]; do
+          while [[ $ELAPSED -lt $TIMEOUT ]]; do
             if grep -q "Connected to Kubernetes cluster" /tmp/operator.log 2>/dev/null; then
               FOUND=true
               break
@@ -124,22 +114,20 @@ jobs:
             ELAPSED=$((ELAPSED + 1))
           done
 
-          # Print full log for visibility
           echo "--- Operator log ---"
           cat /tmp/operator.log || true
           echo "--------------------"
 
-          # Terminate the operator
-          kill $OPERATOR_PID 2>/dev/null || true
+          kill "$OPERATOR_PID" 2>/dev/null || true
 
-          if [ "$FOUND" = "true" ]; then
+          if [[ "$FOUND" == "true" ]]; then
             echo "✅ Log line 'Connected to Kubernetes cluster' confirmed"
           else
             echo "❌ Log line 'Connected to Kubernetes cluster' NOT found within ${TIMEOUT}s"
             exit 1
           fi
 
-      # ── 7. Report any runtime errors ────────────────────────────────────────
+      # ── Runtime error check ───────────────────────────────────────────────
       - name: Report runtime errors
         if: always() && steps.scope.outputs.run == 'true'
         run: |
@@ -150,21 +138,20 @@ jobs:
             echo "✅ No runtime errors detected"
           fi
 
-      # ── 8. Upload log as artifact ────────────────────────────────────────────
+      # ── Upload log artifact ───────────────────────────────────────────────
       - name: Upload operator log
         if: always() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: operator-boot-log
+          name: operator-boot-log-${{ github.run_id }}
           path: /tmp/operator.log
           retention-days: 7
 
-      # ── 9. Cleanup ───────────────────────────────────────────────────────────
+      # ── Cleanup ───────────────────────────────────────────────────────────
       - name: Delete kind cluster
         if: always() && steps.scope.outputs.run == 'true'
         run: kind delete cluster --name ${{ env.CLUSTER_NAME }} || true
 
       - name: Skip message
         if: steps.scope.outputs.run != 'true'
-        run: |
-          echo "Skipping verify-operator-boot: no operator/runtime files changed."
+        run: echo "Skipping verify-operator-boot — no operator/runtime files changed."

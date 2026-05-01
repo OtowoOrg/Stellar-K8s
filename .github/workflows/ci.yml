@@ -17,7 +17,26 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Pipeline architecture
+# ──────────────────────────────────────────────────────────────────────────────
+# changes ──┬── lint ──────────────────────────────────────────────────────────┐
+#           ├── security-audit ──────────────────────────────────────────────┐ │
+#           ├── helm-lint (helm changes only)                                 │ │
+#           ├── examples-smoke-test (examples changes only)                   │ │
+#           └── api-docs (api_docs changes only)                              │ │
+#                                                                             ▼ ▼
+#                                                                    test ─── coverage
+#                                                                      │
+#                                                                    build (main only)
+#                                                                      │
+#                                                                    docker (main only)
+#                                                                      │
+#                                                                    security-scan
+# ──────────────────────────────────────────────────────────────────────────────
+
 jobs:
+  # ── 1. Change detection ─────────────────────────────────────────────────────
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
@@ -30,7 +49,8 @@ jobs:
       examples: ${{ steps.detect.outputs.examples }}
     steps:
       - uses: actions/checkout@v4
-      - name: Detect Docker-impacting changes
+
+      - name: Detect changed file groups
         id: detect
         shell: bash
         run: |
@@ -46,53 +66,28 @@ jobs:
             HEAD_SHA="${{ github.sha }}"
           fi
 
+          # First push on a new branch has no before SHA — treat as full change
           if [[ -z "$BASE_SHA" || "$BASE_SHA" == "0000000000000000000000000000000000000000" ]]; then
-            echo "docker=true" >> "$GITHUB_OUTPUT"
+            for key in docker helm api_docs rust_core deps examples; do
+              echo "${key}=true" >> "$GITHUB_OUTPUT"
+            done
             exit 0
           fi
 
-          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true)
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true)
           echo "Changed files:"
-          echo "$CHANGED_FILES"
+          echo "$CHANGED"
 
-          DOCKER_PATTERN='^(Dockerfile|\.dockerignore|Cargo\.toml|Cargo\.lock|src/|config/|Makefile)'
-          if echo "$CHANGED_FILES" | grep -Eq "$DOCKER_PATTERN"; then
-            echo "docker=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "docker=false" >> "$GITHUB_OUTPUT"
-          fi
+          _match() { echo "$CHANGED" | grep -Eq "$1" && echo "true" || echo "false"; }
 
-          if echo "$CHANGED_FILES" | grep -Eq '^(charts/|config/crd/|config/samples/|examples/|Makefile)'; then
-            echo "helm=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "helm=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "docker=$(_match   '^(Dockerfile|\.dockerignore|Cargo\.toml|Cargo\.lock|src/|config/|Makefile)')" >> "$GITHUB_OUTPUT"
+          echo "helm=$(_match     '^(charts/|config/crd/|config/samples/|examples/|Makefile)')"                  >> "$GITHUB_OUTPUT"
+          echo "api_docs=$(_match '^(docs/|scripts/generate-api-docs\.py|config/crd/|src/crd/|src/rest_api/|Makefile)')" >> "$GITHUB_OUTPUT"
+          echo "rust_core=$(_match '^(src/|Cargo\.toml|Cargo\.lock|Makefile|build\.rs)')"                        >> "$GITHUB_OUTPUT"
+          echo "deps=$(_match     '^(Cargo\.toml|Cargo\.lock)')"                                                  >> "$GITHUB_OUTPUT"
+          echo "examples=$(_match '^(examples/|config/crd/|config/samples/)')"                                   >> "$GITHUB_OUTPUT"
 
-          API_DOCS_PATTERN='^(docs/|scripts/generate-api-docs\.py|config/crd/|src/crd/|src/rest_api/|Makefile)'
-          if echo "$CHANGED_FILES" | grep -Eq "$API_DOCS_PATTERN"; then
-            echo "api_docs=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "api_docs=false" >> "$GITHUB_OUTPUT"
-          fi
-
-          if echo "$CHANGED_FILES" | grep -Eq '^(src/|Cargo\.toml|Cargo\.lock|Makefile|build\.rs)'; then
-            echo "rust_core=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "rust_core=false" >> "$GITHUB_OUTPUT"
-          fi
-
-          if echo "$CHANGED_FILES" | grep -Eq '^(Cargo\.toml|Cargo\.lock)'; then
-            echo "deps=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "deps=false" >> "$GITHUB_OUTPUT"
-          fi
-
-          if echo "$CHANGED_FILES" | grep -Eq '^(examples/|config/crd/|config/samples/)'; then
-            echo "examples=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "examples=false" >> "$GITHUB_OUTPUT"
-          fi
-
+  # ── 2. Version consistency (main push only) ──────────────────────────────────
   version-consistency:
     name: Version Consistency Check
     if: github.event_name != 'pull_request'
@@ -100,136 +95,74 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-version"
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
-
-      - name: Verify Cargo.toml and stellar-operator version output
+      - name: Verify Cargo.toml and binary version match
         run: |
           set -euo pipefail
-
           CARGO_VERSION=$(grep '^version = ' Cargo.toml | head -1 | cut -d'"' -f2)
-
           EXPECTED_VERSION="${EXPECTED_RELEASE_VERSION:-}"
           if [[ -z "$EXPECTED_VERSION" && "${GITHUB_REF:-}" =~ ^refs/tags/v ]]; then
             EXPECTED_VERSION="${GITHUB_REF#refs/tags/v}"
           fi
-          if [[ -z "$EXPECTED_VERSION" ]]; then
-            EXPECTED_VERSION="$CARGO_VERSION"
-          fi
+          EXPECTED_VERSION="${EXPECTED_VERSION:-$CARGO_VERSION}"
 
           K8S_OPENAPI_ENABLED_VERSION=1.30 cargo build --locked --bin stellar-operator
+          BIN_VERSION=$(./target/debug/stellar-operator version \
+            | sed -n 's/^Stellar-K8s Operator v//p' | head -1)
 
-          BIN_VERSION=$(./target/debug/stellar-operator version | sed -n 's/^Stellar-K8s Operator v//p' | head -1)
-
-          echo "Expected version: $EXPECTED_VERSION"
-          echo "Cargo.toml version: $CARGO_VERSION"
-          echo "stellar-operator version output: $BIN_VERSION"
+          echo "Expected: $EXPECTED_VERSION | Cargo: $CARGO_VERSION | Binary: $BIN_VERSION"
 
           [[ "$CARGO_VERSION" == "$EXPECTED_VERSION" ]] || {
-            echo "::error::Cargo.toml version ($CARGO_VERSION) does not match expected release version"
-            echo "::error::Expected: $EXPECTED_VERSION"
+            echo "::error::Cargo.toml version ($CARGO_VERSION) != expected ($EXPECTED_VERSION)"
             exit 1
           }
-
           [[ "$BIN_VERSION" == "$EXPECTED_VERSION" ]] || {
-            echo "::error::stellar-operator version output ($BIN_VERSION) does not match expected release version"
-            echo "::error::Expected: $EXPECTED_VERSION"
+            echo "::error::Binary version ($BIN_VERSION) != expected ($EXPECTED_VERSION)"
             exit 1
           }
 
-  helm-lint:
-    name: Helm Lint & Schema Validation
-    if: needs.changes.outputs.helm == 'true'
+  # ── 3. Lint & Format ─────────────────────────────────────────────────────────
+  lint:
+    name: Lint & Format
     runs-on: ubuntu-latest
     needs: [changes]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Helm
-        uses: azure/setup-helm@v4
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
         with:
-          version: "3.14.0"
+          cache-key: "ci-lint"
+          toolchain: "1.92"
+          components: "rustfmt clippy"
 
-      - name: Lint chart with default values
-        run: make helm-lint
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
 
-      - name: Lint chart with strict mode
-        run: helm lint charts/stellar-operator --strict
-
-      - name: Validate schema rejects invalid logLevel
+      - name: Run shellcheck
         run: |
-          cat > /tmp/bad-loglevel.yaml <<'EOF'
-          operator:
-            logLevel: verbose
-          EOF
-          if helm lint charts/stellar-operator -f /tmp/bad-loglevel.yaml 2>&1 | grep -q "must be one of"; then
-            echo "Schema correctly rejected invalid logLevel"
-          else
-            echo "ERROR: Schema did not reject invalid logLevel" && exit 1
+          mapfile -t shell_files < <(find scripts -type f -name "*.sh" 2>/dev/null || true)
+          if [[ "${#shell_files[@]}" -eq 0 ]]; then
+            echo "No shell scripts found — skipping shellcheck"
+            exit 0
           fi
+          shellcheck_cmd=(shellcheck -S error)
+          [[ -n "${SHELLCHECK_EXCLUDES}" ]] && shellcheck_cmd+=(-e "${SHELLCHECK_EXCLUDES}")
+          "${shellcheck_cmd[@]}" "${shell_files[@]}"
 
-      - name: Validate schema rejects invalid service type
-        run: |
-          cat > /tmp/bad-service.yaml <<'EOF'
-          service:
-            type: ExternalName
-          EOF
-          if helm lint charts/stellar-operator -f /tmp/bad-service.yaml 2>&1 | grep -q "must be one of"; then
-            echo "Schema correctly rejected invalid service type"
-          else
-            echo "ERROR: Schema did not reject invalid service type" && exit 1
-          fi
+      - name: Check formatting
+        if: needs.changes.outputs.rust_core == 'true'
+        run: make fmt-check
 
-      - name: Validate schema rejects invalid pullPolicy
-        run: |
-          cat > /tmp/bad-pullpolicy.yaml <<'EOF'
-          image:
-            pullPolicy: Whenever
-          EOF
-          if helm lint charts/stellar-operator -f /tmp/bad-pullpolicy.yaml 2>&1 | grep -q "must be one of"; then
-            echo "Schema correctly rejected invalid pullPolicy"
-          else
-            echo "ERROR: Schema did not reject invalid pullPolicy" && exit 1
-          fi
+      - name: Run clippy
+        if: needs.changes.outputs.rust_core == 'true'
+        run: make lint
 
-  examples-smoke-test:
-    name: Examples Smoke Test
-    if: needs.changes.outputs.examples == 'true'
-    runs-on: ubuntu-latest
-    needs: [changes]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Create kind cluster
-        uses: helm/kind-action@v1.13.0
-        with:
-          cluster_name: examples-test
-
-      - name: Apply StellarNode CRD
-        run: kubectl apply -f config/crd/stellarnode-crd.yaml
-
-      - name: Run smoke test on examples
-        run: |
-          echo "Creating required namespaces..."
-          kubectl create namespace stellar --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create namespace stellar-nodes --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create namespace stellar-system --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create namespace metallb-system --dry-run=client -o yaml | kubectl apply -f -
-
-          echo "Validating example manifests against the API server..."
-          # We skip broken.yaml and ensure other resource types are ignored if their CRDs are missing
-          # Actually, it's better to just test the principal examples
-          kubectl apply --dry-run=server -f examples/validator-mainnet.yaml
-          kubectl apply --dry-run=server -f examples/validator-testnet.yaml
-          kubectl apply --dry-run=server -f examples/horizon.yaml
-          kubectl apply --dry-run=server -f examples/soroban-rpc.yaml
-          kubectl apply --dry-run=server -f examples/dr-setup.yaml
-
+  # ── 4. Security audit (only when deps change) ────────────────────────────────
   security-audit:
     name: Security Audit
     if: needs.changes.outputs.deps == 'true'
@@ -238,11 +171,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-audit"
 
       - name: Run cargo audit
         run: |
@@ -258,109 +190,51 @@ jobs:
             --ignore RUSTSEC-2026-0094 \
             --ignore RUSTSEC-2026-0097
 
-  lint:
-    name: Lint & Format
+  # ── 5. Helm lint (only when helm/chart files change) ─────────────────────────
+  helm-lint:
+    name: Helm Lint & Schema Validation
+    if: needs.changes.outputs.helm == 'true'
     runs-on: ubuntu-latest
     needs: [changes]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Helm
+        uses: azure/setup-helm@v4
         with:
-          toolchain: "1.92"
-          components: rustfmt, clippy
+          version: "3.14.0"
 
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ci-lint"
+      - name: Lint chart (default values)
+        run: make helm-lint
 
-      - name: Install system dependencies
+      - name: Lint chart (strict)
+        run: helm lint charts/stellar-operator --strict
+
+      - name: Schema rejects invalid logLevel
         run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck libsasl2-dev libcurl4-openssl-dev
+          printf 'operator:\n  logLevel: verbose\n' > /tmp/bad-loglevel.yaml
+          helm lint charts/stellar-operator -f /tmp/bad-loglevel.yaml 2>&1 \
+            | grep -q "must be one of" \
+            && echo "Schema correctly rejected invalid logLevel" \
+            || { echo "ERROR: Schema did not reject invalid logLevel"; exit 1; }
 
-      - name: Run shellcheck
+      - name: Schema rejects invalid service type
         run: |
-          mapfile -t shell_files < <(find scripts -type f -name "*.sh")
-          if [ "${#shell_files[@]}" -eq 0 ]; then
-            echo "No shell scripts found in scripts/"
-            exit 0
-          fi
-          shellcheck_cmd=(shellcheck -S error)
-          if [ -n "${SHELLCHECK_EXCLUDES}" ]; then
-            shellcheck_cmd+=(-e "${SHELLCHECK_EXCLUDES}")
-            echo "Running shellcheck with excludes: ${SHELLCHECK_EXCLUDES}"
-          fi
-          "${shellcheck_cmd[@]}" "${shell_files[@]}"
+          printf 'service:\n  type: ExternalName\n' > /tmp/bad-service.yaml
+          helm lint charts/stellar-operator -f /tmp/bad-service.yaml 2>&1 \
+            | grep -q "must be one of" \
+            && echo "Schema correctly rejected invalid service type" \
+            || { echo "ERROR: Schema did not reject invalid service type"; exit 1; }
 
-      - name: Check formatting
-        if: needs.changes.outputs.rust_core == 'true'
-        run: make fmt-check
-
-      - name: Run clippy
-        if: needs.changes.outputs.rust_core == 'true'
-        run: make lint
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    needs: [security-audit, lint]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ci-test"
-
-      - name: Install system dependencies
+      - name: Schema rejects invalid pullPolicy
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
+          printf 'image:\n  pullPolicy: Whenever\n' > /tmp/bad-pullpolicy.yaml
+          helm lint charts/stellar-operator -f /tmp/bad-pullpolicy.yaml 2>&1 \
+            | grep -q "must be one of" \
+            && echo "Schema correctly rejected invalid pullPolicy" \
+            || { echo "ERROR: Schema did not reject invalid pullPolicy"; exit 1; }
 
-      - name: Run tests (Unit and Doc)
-        run: make test
-
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-    needs: [security-audit, lint]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ci-coverage"
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
-
-      - name: Install tarpaulin
-        run: cargo install cargo-tarpaulin
-
-      - name: Generate coverage
-        run: cargo tarpaulin --out Xml --timeout 300 --exclude-files tests/* --ignore-panics --ignore-timeouts
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./cobertura.xml
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-
+  # ── 6. Helm unit tests ────────────────────────────────────────────────────────
   helm-test:
     name: Helm Unit Tests
     if: needs.changes.outputs.helm == 'true'
@@ -380,6 +254,7 @@ jobs:
       - name: Run Helm unit tests
         run: helm unittest charts/stellar-operator --strict --color
 
+  # ── 7. API docs drift check ───────────────────────────────────────────────────
   api-docs:
     name: API Docs Drift Check
     if: needs.changes.outputs.api_docs == 'true'
@@ -402,13 +277,100 @@ jobs:
       - name: Fail if docs are out of date
         run: |
           if ! git diff --exit-code docs/api-reference.md; then
-            echo ""
             echo "ERROR: docs/api-reference.md is out of date."
             echo "Run 'make generate-api-docs' and commit the result."
             exit 1
           fi
           echo "OK: docs/api-reference.md is up to date."
 
+  # ── 8. Examples smoke test ────────────────────────────────────────────────────
+  examples-smoke-test:
+    name: Examples Smoke Test
+    if: needs.changes.outputs.examples == 'true'
+    runs-on: ubuntu-latest
+    needs: [changes]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.14.0
+        with:
+          cluster_name: examples-test
+
+      - name: Apply StellarNode CRD
+        run: kubectl apply -f config/crd/stellarnode-crd.yaml
+
+      - name: Run smoke test on examples
+        run: |
+          for ns in stellar stellar-nodes stellar-system metallb-system; do
+            kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f -
+          done
+          for f in validator-mainnet validator-testnet horizon soroban-rpc dr-setup; do
+            kubectl apply --dry-run=server -f "examples/${f}.yaml"
+          done
+
+  # ── 9. Tests (unit + doc) ─────────────────────────────────────────────────────
+  # security-audit is conditional (only runs when deps change). We use
+  # `if: always()` + an explicit check so test/coverage still run when
+  # security-audit was skipped, but are blocked when it actually failed.
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: [security-audit, lint]
+    if: >-
+      always() &&
+      needs.lint.result == 'success' &&
+      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-test"
+
+      - name: Run tests
+        run: make test
+
+  # ── 10. Code coverage ─────────────────────────────────────────────────────────
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    needs: [security-audit, lint]
+    if: >-
+      always() &&
+      needs.lint.result == 'success' &&
+      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-coverage"
+
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Generate coverage
+        run: |
+          cargo tarpaulin \
+            --out Xml \
+            --timeout 300 \
+            --exclude-files tests/* \
+            --ignore-panics \
+            --ignore-timeouts
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./cobertura.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ── 11. Release build (main push only) ───────────────────────────────────────
   build:
     name: Build
     if: github.event_name != 'pull_request'
@@ -417,18 +379,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
         with:
-          shared-key: "ci-build"
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
+          cache-key: "ci-build"
 
       - name: Build release
         run: make build
@@ -442,6 +396,7 @@ jobs:
             target/release/kubectl-stellar
           retention-days: 7
 
+  # ── 12. Docker build & push (main push only) ──────────────────────────────────
   docker:
     name: Docker Build
     if: >-
@@ -460,13 +415,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Lowercase IMAGE_NAME
-        run: echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -480,7 +434,6 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
-            type=ref,event=pr
             type=sha,prefix=sha-,format=long
             type=raw,value=latest,enable={{is_default_branch}}
 
@@ -490,7 +443,7 @@ jobs:
           context: .
           target: runtime
           platforms: ${{ env.DOCKER_PLATFORMS }}
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=stellar-k8s-docker
@@ -500,6 +453,7 @@ jobs:
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
+  # ── 13. Security scan (main push only) ───────────────────────────────────────
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -512,7 +466,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Lowercase IMAGE_NAME
-        run: echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
       - name: Run Trivy
         uses: aquasecurity/trivy-action@0.35.0

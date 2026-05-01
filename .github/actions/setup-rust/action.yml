@@ -1,0 +1,39 @@
+name: Setup Rust Toolchain
+description: Install Rust, system dependencies, and restore cache with a shared key
+
+inputs:
+  cache-key:
+    description: Shared cache key suffix for Swatinem/rust-cache
+    required: false
+    default: "default"
+  components:
+    description: Extra rustup components (e.g. "rustfmt clippy")
+    required: false
+    default: ""
+  toolchain:
+    description: Rust toolchain version
+    required: false
+    default: "stable"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        components: ${{ inputs.components }}
+
+    - name: Install system dependencies
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends \
+          libsasl2-dev \
+          libcurl4-openssl-dev \
+          pkg-config
+
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ${{ inputs.cache-key }}

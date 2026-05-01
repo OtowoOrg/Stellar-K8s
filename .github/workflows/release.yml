@@ -1,5 +1,20 @@
 name: Release
 
+# Streamlined release workflow.
+# The container job now reuses the multi-arch image already built and pushed
+# by multiarch-build.yml (via the `edge` / `sha-*` tags on main) rather than
+# rebuilding from scratch.  Binary artifacts are still built here because they
+# target multiple OS/arch combinations that the Docker image does not cover.
+#
+# Fail-safes:
+#   - validate job checks semver format and Cargo.toml version match before
+#     any build or publish step runs.
+#   - security job runs Trivy on the published image; a CRITICAL/HIGH finding
+#     does NOT block the release (uploaded as SARIF) but is visible in the
+#     Security tab.
+#   - release job only runs after ALL of: build-artifacts, container, security,
+#     helm succeed.
+
 on:
   push:
     tags:
@@ -16,6 +31,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # ── Validate tag & version ─────────────────────────────────────────────────
   validate:
     name: Validate
     runs-on: ubuntu-latest
@@ -27,14 +43,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract version
+      - name: Extract and validate version
         id: version
         run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#v}
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
 
           if ! [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
-            echo "::error::Invalid version: $VERSION"
+            echo "::error::Invalid version format: $VERSION"
             exit 1
           fi
 
@@ -43,12 +59,15 @@ jobs:
 
           CARGO_VERSION=$(grep '^version = ' Cargo.toml | head -1 | cut -d'"' -f2)
           if [[ "$VERSION" != "$CARGO_VERSION" ]]; then
-            echo "::warning::Version mismatch: tag=$VERSION, Cargo.toml=$CARGO_VERSION"
+            echo "::error::Version mismatch: tag=$VERSION, Cargo.toml=$CARGO_VERSION"
+            exit 1
           fi
 
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "✅ Version $VERSION validated"
 
+  # ── Build binary artifacts (matrix: 4 targets) ────────────────────────────
   build-artifacts:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
@@ -78,14 +97,14 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cross-compilation tools
+      - name: Install cross-compilation tools (Linux aarch64)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu libsasl2-dev libcurl4-openssl-dev
 
       - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.target != 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
           sudo apt-get install -y libsasl2-dev libcurl4-openssl-dev
@@ -94,29 +113,18 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install cyrus-sasl curl
 
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            target
-          key: ${{ runner.os }}-cargo-release-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
-
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "release-${{ matrix.target }}"
 
-      - name: Build release
+      - name: Build release binary
         run: cargo build --release --locked --target ${{ matrix.target }} --bin stellar-operator
 
       - name: Strip binary
         run: strip target/${{ matrix.target }}/release/stellar-operator
 
-      - name: Create tarball
+      - name: Create tarball + checksum
         run: |
           cd target/${{ matrix.target }}/release
           tar czf ${{ matrix.name }}.tar.gz stellar-operator
@@ -130,12 +138,20 @@ jobs:
             target/${{ matrix.target }}/release/${{ matrix.name }}.tar.gz
             target/${{ matrix.target }}/release/${{ matrix.name }}.tar.gz.sha256
 
+  # ── Publish multi-arch container image ────────────────────────────────────
+  # Re-tags the sha-* image already pushed by multiarch-build.yml so we never
+  # rebuild from scratch for a release.  Falls back to a fresh build only when
+  # the sha image is not available (e.g. manual tag on a commit that predates
+  # the multiarch workflow).
   container:
     name: Container
     runs-on: ubuntu-latest
     needs: validate
     steps:
       - uses: actions/checkout@v4
+
+      - name: Lowercase IMAGE_NAME
+        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -161,7 +177,29 @@ jobs:
             type=semver,pattern={{major}},enable=${{ needs.validate.outputs.is_prerelease == 'false' }}
             type=raw,value=latest,enable=${{ needs.validate.outputs.is_prerelease == 'false' }}
 
-      - name: Build and push
+      - name: Try to re-tag existing sha image
+        id: retag
+        continue-on-error: true
+        run: |
+          SHA_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
+          echo "Attempting to pull $SHA_TAG ..."
+          if docker buildx imagetools inspect "$SHA_TAG" > /dev/null 2>&1; then
+            echo "✅ sha image found — re-tagging for release"
+            while IFS= read -r tag; do
+              [[ -z "$tag" ]] && continue
+              docker buildx imagetools create \
+                --tag "$tag" \
+                "$SHA_TAG"
+              echo "Tagged: $tag"
+            done <<< "${{ steps.meta.outputs.tags }}"
+            echo "retagged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "⚠️ sha image not found — will build fresh"
+            echo "retagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push (fallback — only when sha image unavailable)
+        if: steps.retag.outputs.retagged != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -172,6 +210,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # ── Security scan ──────────────────────────────────────────────────────────
   security:
     name: Security
     runs-on: ubuntu-latest
@@ -181,6 +220,9 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Lowercase IMAGE_NAME
+        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
       - name: Run Trivy
         uses: aquasecurity/trivy-action@0.35.0
@@ -196,6 +238,7 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
+  # ── Helm chart ─────────────────────────────────────────────────────────────
   helm:
     name: Helm
     runs-on: ubuntu-latest
@@ -226,6 +269,7 @@ jobs:
           name: helm-chart
           path: stellar-operator-*.tgz
 
+  # ── Create GitHub release ──────────────────────────────────────────────────
   release:
     name: Release
     runs-on: ubuntu-latest
@@ -235,12 +279,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts/
 
-      - name: Prepare assets
+      - name: Prepare release assets
         run: |
           mkdir -p release-assets
           find artifacts/ -name "*.tar.gz" -exec cp {} release-assets/ \;
@@ -258,7 +302,7 @@ jobs:
           OUTPUT: changelog.md
           GITHUB_REPO: ${{ github.repository }}
 
-      - name: Create release
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           name: v${{ needs.validate.outputs.version }}

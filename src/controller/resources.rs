@@ -4096,7 +4096,7 @@ pub(crate) fn build_service_for_test(node: &StellarNode) -> k8s_openapi::api::co
 
 #[cfg(test)]
 mod ensure_pvc_tests {
-    use super::{build_pvc, pvc_needs_update, resolve_pvc_storage_class};
+    use super::{build_hpa, build_pvc, pvc_needs_update, resolve_pvc_storage_class};
     use crate::crd::{
         types::{ResourceRequirements, ResourceSpec, StorageMode},
         NodeType, StellarNetwork, StellarNode, StellarNodeSpec,

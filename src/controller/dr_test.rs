@@ -163,7 +163,7 @@ mod tests {
                 port: None,
                 enabled: true,
                 kubeconfig_secret_key: "kubeconfig".to_string(),
-                kubeconfig_secret_ref: "secret".to_string(),
+                kubeconfig_secret_ref: Some("secret".to_string()),
                 target_namespace: None,
             },
             PeerClusterConfig {
@@ -175,7 +175,7 @@ mod tests {
                 port: None,
                 enabled: true,
                 kubeconfig_secret_key: "kubeconfig".to_string(),
-                kubeconfig_secret_ref: "secret".to_string(),
+                kubeconfig_secret_ref: Some("secret".to_string()),
                 target_namespace: None,
             },
             PeerClusterConfig {
@@ -187,7 +187,7 @@ mod tests {
                 port: None,
                 enabled: true,
                 kubeconfig_secret_key: "kubeconfig".to_string(),
-                kubeconfig_secret_ref: "secret".to_string(),
+                kubeconfig_secret_ref: Some("secret".to_string()),
                 target_namespace: None,
             },
         ];
@@ -212,7 +212,7 @@ mod tests {
                 port: None,
                 enabled: true,
                 kubeconfig_secret_key: "kubeconfig".to_string(),
-                kubeconfig_secret_ref: "secret".to_string(),
+                kubeconfig_secret_ref: Some("secret".to_string()),
                 target_namespace: None,
             },
             PeerClusterConfig {
@@ -224,7 +224,7 @@ mod tests {
                 port: None,
                 enabled: false, // disabled – should be skipped
                 kubeconfig_secret_key: "kubeconfig".to_string(),
-                kubeconfig_secret_ref: "secret".to_string(),
+                kubeconfig_secret_ref: Some("secret".to_string()),
                 target_namespace: None,
             },
         ];

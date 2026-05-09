@@ -465,14 +465,14 @@ horizon_ingest_pending_txqueue_count{instance="h0"} 300
         assert_eq!(snap.ingestion_lag, 0);
     }
 
-    #[test]
-    fn test_collector_creation() {
+    #[tokio::test]
+    async fn test_collector_creation() {
         let store = Arc::new(StellarMetricsStore::new());
-            kube::Client::try_default().await.unwrap_or_else(|_| panic!("Need kube client for test"));
+        let client = kube::Client::try_default().await.unwrap_or_else(|_| panic!("Need kube client for test"));
         let collector = HorizonMetricsCollector::new(store, 30, client, None);
         // Verify minimum poll interval clamping (< 5 s gets clamped to 5 s).
         let store_fast = Arc::new(StellarMetricsStore::new());
-            kube::Client::try_default().await.unwrap_or_else(|_| panic!("Need kube client for test"));
+        let client_fast = kube::Client::try_default().await.unwrap_or_else(|_| panic!("Need kube client for test"));
         let collector_fast = HorizonMetricsCollector::new(store_fast, 1, client_fast, None);
         assert!(collector_fast.poll_interval >= Duration::from_secs(5));
         assert!(collector.poll_interval == Duration::from_secs(30));

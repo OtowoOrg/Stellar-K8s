@@ -5,7 +5,7 @@
 
 #[cfg(test)]
 mod tests {
-    use super::{Args, Commands, LogFormat, SimulatorCmd};
+    use crate::cli::{Args, Commands, LogFormat, SimulatorCmd};
     use clap::Parser;
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -535,9 +535,19 @@ mod tests {
 
     // ── IncidentReport ────────────────────────────────────────────────────────
 
+    fn parse_incident_report(args: &[&str]) -> stellar_k8s::incident::IncidentReportArgs {
+        let mut full: Vec<&str> = vec!["stellar-operator", "incident", "report"];
+        full.extend_from_slice(args);
+        let parsed = Args::try_parse_from(full).unwrap();
+        match parsed.command {
+            Commands::Incident { command: stellar_k8s::incident::IncidentCommands::Report(r) } => r,
+            _ => panic!("expected Incident Report subcommand"),
+        }
+    }
+
     #[test]
     fn incident_report_defaults() {
-        let a = subcmd!(IncidentReport, &["stellar-operator", "incident-report"]);
+        let a = parse_incident_report(&[]);
         assert_eq!(a.namespace, "default");
         assert!(a.since.is_none());
         assert!(a.from.is_none());
@@ -547,55 +557,31 @@ mod tests {
 
     #[test]
     fn incident_report_namespace() {
-        let a = subcmd!(
-            IncidentReport,
-            &[
-                "stellar-operator",
-                "incident-report",
-                "--namespace",
-                "stellar-system"
-            ]
-        );
+        let a = parse_incident_report(&["--namespace", "stellar-system"]);
         assert_eq!(a.namespace, "stellar-system");
     }
 
     #[test]
     fn incident_report_since() {
-        let a = subcmd!(
-            IncidentReport,
-            &["stellar-operator", "incident-report", "--since", "1h"]
-        );
+        let a = parse_incident_report(&["--since", "1h"]);
         assert_eq!(a.since.as_deref(), Some("1h"));
     }
 
     #[test]
     fn incident_report_from_to() {
-        let a = subcmd!(
-            IncidentReport,
-            &[
-                "stellar-operator",
-                "incident-report",
-                "--from",
-                "2024-01-01T00:00:00Z",
-                "--to",
-                "2024-01-01T01:00:00Z"
-            ]
-        );
+        let a = parse_incident_report(&[
+            "--from",
+            "2024-01-01T00:00:00Z",
+            "--to",
+            "2024-01-01T01:00:00Z",
+        ]);
         assert_eq!(a.from.as_deref(), Some("2024-01-01T00:00:00Z"));
         assert_eq!(a.to.as_deref(), Some("2024-01-01T01:00:00Z"));
     }
 
     #[test]
     fn incident_report_custom_output() {
-        let a = subcmd!(
-            IncidentReport,
-            &[
-                "stellar-operator",
-                "incident-report",
-                "--output",
-                "my-report.zip"
-            ]
-        );
+        let a = parse_incident_report(&["--output", "my-report.zip"]);
         assert_eq!(a.output, "my-report.zip");
     }
 
@@ -760,7 +746,7 @@ mod tests {
             &["stellar-operator", "benchmark"],
             &["stellar-operator", "info"],
             &["stellar-operator", "benchmark-compare"],
-            &["stellar-operator", "incident-report"],
+            &["stellar-operator", "incident", "report"],
             &["stellar-operator", "simulator", "up"],
         ];
         for argv in cases {

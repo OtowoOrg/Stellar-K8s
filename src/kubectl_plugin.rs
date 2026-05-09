@@ -251,6 +251,21 @@ enum Commands {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum FederationCommands {
+    /// List all configured ClusterRegistry resources
+    Clusters,
+    /// List all federated nodes across clusters
+    Nodes {
+        #[arg(short = 'A', long)]
+        all_namespaces: bool,
+    },
+    /// Show federation status for a specific node
+    Status {
+        name: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 pub enum AuditCommands {
     /// List recent audit entries
     List {
@@ -308,6 +323,7 @@ async fn run(cli: Cli) -> Result<()> {
     if cli.dry_run {
         let action = match &cli.command {
             Commands::List { .. }
+            | Commands::Federation { .. }
             | Commands::Status { .. }
             | Commands::SyncStatus { .. }
             | Commands::Events { .. }

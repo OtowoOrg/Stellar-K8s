@@ -216,7 +216,7 @@ pub struct ApiError {
 }
 
 /// APIResource entry returned by the discovery endpoint.
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiResource {
     pub name: String,
@@ -227,7 +227,7 @@ pub struct ApiResource {
 }
 
 /// APIResourceList returned by `GET /apis/custom.metrics.k8s.io/v1beta2`.
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiResourceList {
     pub kind: String,

@@ -19,7 +19,7 @@
 //!
 //! ```rust,no_run
 //! use stellar_k8s::controller::webhook_delivery::{
-//!     WebhookDeliveryService, WebhookEndpoint, WebhookEvent, TransactionEventPayload,
+//!     WebhookDeliveryService, WebhookEndpoint, WebhookEvent, WebhookEventType,
 //! };
 //! use std::sync::Arc;
 //!
@@ -35,7 +35,7 @@
 //!         enabled: true,
 //!         max_retries: 3,
 //!     };
-//!     svc.register_endpoint(endpoint);
+//!     svc.register_endpoint(endpoint).await;
 //!
 //!     let event = WebhookEvent::node_status_changed("stellar", "my-validator", "Ready");
 //!     svc.dispatch(event).await;

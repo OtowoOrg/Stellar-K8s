@@ -391,15 +391,19 @@ impl ControllerState {
 ///         log_reload_handle: reload_handle,
 ///         log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
 ///         last_event_received: Arc::new(AtomicU64::new(0)),
-///         oidc_config: None,
-///         audit_log: Arc::new(super::audit_log::AuditLog::new()),
-///         audit_recorder: Arc::new(super::audit_recorder::AuditRecorder::new(
-///             Arc::new(super::audit_log::AuditLog::new()),
+///         job_registry: Arc::new(stellar_k8s::controller::background_jobs::JobRegistry::new()),
+///         audit_log: Arc::new(stellar_k8s::controller::audit_log::AuditLog::new()),
+///         audit_recorder: Arc::new(stellar_k8s::controller::AuditRecorder::new(
+///             Arc::new(stellar_k8s::controller::audit_log::AuditLog::new()),
+///             vec![],
 ///             None,
 ///         )),
-///         anomaly_detector: Arc::new(super::anomaly_detection::AnomalyDetector::new(
+///         anomaly_detector: Arc::new(stellar_k8s::controller::AnomalyDetector::new(
 ///             Default::default(),
 ///         )),
+///         plugin_registry: Arc::new(stellar_k8s::plugin_sdk::PluginRegistry::new()),
+///         oidc_config: None,
+///         metrics_store: Arc::new(stellar_k8s::rest_api::metrics_store::StellarMetricsStore::new()),
 ///     });
 ///     run_controller(state).await?;
 ///     Ok(())

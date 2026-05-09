@@ -165,7 +165,7 @@ pub trait SidecarInjector: Send + Sync + 'static {
 /// let registry = Arc::new(
 ///     PluginRegistry::new()
 ///         .with_hook(CustomLoggerHook)
-///         .with_hook(MetricsMonitorHook)
+///         .with_hook(MetricsMonitorHook::new())
 /// );
 /// ```
 #[derive(Default)]

@@ -68,7 +68,21 @@ COPY target/release/kubectl-stellar /kubectl-stellar
 # ==============================================================================
 # Stage 5: Runtime Local - Minimal image for local dev (no container recompile)
 # ==============================================================================
-FROM gcr.io/distroless/cc-debian12:nonroot AS runtime-local
+FROM debian:bookworm-slim AS runtime-local
+
+# Install runtime dependencies for dynamic linking
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      libssl3 \
+      libsasl2-2 \
+      liblzma5 \
+      libzstd1 \
+      libbz2-1.0 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create nonroot user
+RUN useradd -u 65532 -U -m -s /bin/bash nonroot
 
 # Labels for container registry
 LABEL org.opencontainers.image.source="https://github.com/stellar/stellar-k8s"
@@ -79,7 +93,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 COPY --from=local-binaries /stellar-operator /stellar-operator
 COPY --from=local-binaries /kubectl-stellar /kubectl-stellar
 
-# Run as non-root user (UID 65532 is the nonroot user in distroless)
+# Run as nonroot user
 USER nonroot:nonroot
 
 # Expose metrics and REST API ports
@@ -94,7 +108,21 @@ ENTRYPOINT ["/stellar-operator"]
 # ==============================================================================
 # Stage 6: Runtime - Minimal distroless image (~15-20MB total)
 # ==============================================================================
-FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
+FROM debian:bookworm-slim AS runtime
+
+# Install runtime dependencies for dynamic linking
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      libssl3 \
+      libsasl2-2 \
+      liblzma5 \
+      libzstd1 \
+      libbz2-1.0 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create nonroot user
+RUN useradd -u 65532 -U -m -s /bin/bash nonroot
 
 # Labels for container registry
 LABEL org.opencontainers.image.source="https://github.com/stellar/stellar-k8s"
@@ -108,7 +136,7 @@ COPY --from=builder /app/bin/stellar-sidecar /stellar-sidecar
 COPY --from=builder /app/bin/stellar-watcher /stellar-watcher
 COPY --from=builder /app/bin/stellar-fork-detector /stellar-fork-detector
 
-# Run as non-root user (UID 65532 is the nonroot user in distroless)
+# Run as nonroot user
 USER nonroot:nonroot
 
 # Expose metrics and REST API ports

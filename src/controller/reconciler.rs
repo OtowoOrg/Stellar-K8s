@@ -462,6 +462,7 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
         });
     } else {
         info!("NODE_NAME env var not set – Spot Drain Handler disabled");
+    }
     // Start Horizon Metrics Collector in the background
     #[cfg(feature = "rest-api")]
     {

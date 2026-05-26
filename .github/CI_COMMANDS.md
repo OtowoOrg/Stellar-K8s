@@ -47,7 +47,7 @@ the critical path by ~35–40% compared to the previous sequential layout.
 
 ---
 
-## Heavy Validation Workflows (#666)
+## Heavy Validation Workflows (#703)
 
 ### `chaos-tests.yml`
 - **Extracted** cluster provisioning into `setup-kind-cluster` composite action.

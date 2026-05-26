@@ -3,7 +3,7 @@
 ## Overview
 
 This document describes the optimized CI/CD pipeline architecture introduced
-to address issues #663, #664, #665, and #666.
+to address issues #700, #701, #703, and #714.
 
 ---
 
@@ -20,7 +20,7 @@ All reusable logic lives under `.github/actions/`:
 
 ---
 
-## Core CI Workflows (#663)
+## Core CI Workflows (#700)
 
 ### `ci.yml`
 - **Change detection** gates expensive jobs (helm-lint, api-docs, examples-smoke-test,
@@ -47,7 +47,7 @@ the critical path by ~35–40% compared to the previous sequential layout.
 
 ---
 
-## Heavy Validation Workflows (#666)
+## Heavy Validation Workflows (#703)
 
 ### `chaos-tests.yml`
 - **Extracted** cluster provisioning into `setup-kind-cluster` composite action.
@@ -70,7 +70,7 @@ the critical path by ~35–40% compared to the previous sequential layout.
 
 ---
 
-## Performance & Benchmark Workflows (#664)
+## Performance & Benchmark Workflows (#701)
 
 ### `benchmark.yml`
 - Build step produces a Docker image saved as a `.tar.gz` artifact.

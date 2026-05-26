@@ -287,6 +287,7 @@ jobs:
 
       - name: Download all benchmark results
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           pattern: perf-results-*
           merge-multiple: true
@@ -295,6 +296,7 @@ jobs:
       - name: Write job summary
         if: always()
         run: |
+          mkdir -p results
           {
             echo "## Performance & Benchmark Pipeline (#701)"
             echo ""
@@ -311,6 +313,7 @@ jobs:
 
       - name: Post PR comment
         if: github.event_name == 'pull_request'
+        continue-on-error: true
         uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ github.event.pull_request.number }}

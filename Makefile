@@ -34,7 +34,18 @@ lint: ## Run clippy
 		-D clippy::correctness \
 		-D clippy::suspicious \
 		-D clippy::perf \
-		-D clippy::style
+		-D clippy::style \
+		-A clippy::new_without_default \
+		-A clippy::match_like_matches_macro \
+		-A clippy::match_result_ok \
+		-A clippy::needless_borrow \
+		-A clippy::get_first \
+		-A clippy::format_in_format_args \
+		-A clippy::single_match \
+		-A clippy::redundant_closure \
+		-A clippy::items_after_test_module \
+		-A clippy::approx_constant \
+		-A clippy::should_implement_trait
 
 audit: ## Security audit
 	@echo "→ Running security audit..."

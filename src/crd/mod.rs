@@ -58,6 +58,8 @@ pub mod federation;
 pub mod stellar_benchmark;
 mod stellar_node;
 pub mod types;
+pub mod tenant;
+
 
 #[cfg(test)]
 mod tests;

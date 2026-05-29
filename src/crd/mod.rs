@@ -48,6 +48,8 @@
 //! ```
 
 mod cnpg;
+pub mod federation;
+pub mod multi_region;
 pub mod read_replica;
 pub mod schema_utils;
 pub mod seed_secret;
@@ -65,6 +67,14 @@ pub mod tenant;
 mod tests;
 
 pub use cnpg::*;
+pub use federation::{
+    ClusterRegistry, ClusterRegistrySpec, ConflictResolutionStrategy, FederatedCluster,
+    FederatedPlacement, FederatedStellarNode, FederatedStellarNodeSpec,
+};
+pub use multi_region::{
+    ClusterConfig, ClusterHealthStatus, FailoverPolicy, MultiRegionConfig, MultiRegionHealthCheck,
+    MultiRegionSpec, MultiRegionStatus, SecretSyncConfig,
+};
 pub use read_replica::{ReadReplicaConfig, ReadReplicaStrategy};
 pub use service_mesh::{
     CircuitBreakerConfig, IstioMeshConfig, LinkerdMeshConfig, MtlsMode, RetryConfig,

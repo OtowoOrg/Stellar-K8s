@@ -245,7 +245,7 @@ impl PluginRegistry {
 /// Ready-to-use example plugins demonstrating the SDK.
 pub mod examples {
     use super::*;
-    use tracing::{info, warn};
+    use tracing::info;
 
     // ── CustomLoggerHook ──────────────────────────────────────────────────────
 
@@ -378,7 +378,7 @@ pub mod examples {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::{StellarNodeSpec, StellarNodeStatus};
+    use crate::crd::StellarNodeSpec;
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 
     fn make_node(node_type: NodeType) -> Arc<StellarNode> {

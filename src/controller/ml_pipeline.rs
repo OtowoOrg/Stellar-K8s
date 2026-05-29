@@ -37,7 +37,10 @@ pub fn extract_features(entries: &[AuditEntry]) -> FeatureVector {
     let mut errors = 0;
 
     for entry in entries {
-        *features.action_frequency.entry(format!("{:?}", entry.action)).or_insert(0.0) += 1.0;
+        *features
+            .action_frequency
+            .entry(format!("{:?}", entry.action))
+            .or_insert(0.0) += 1.0;
         if !entry.success {
             errors += 1;
         }
@@ -74,7 +77,10 @@ impl AnomalyModel for EwmaModel {
         Prediction {
             is_anomaly: features.error_rate > self.threshold,
             confidence: 0.85,
-            explanation: format!("Error rate {} exceeds threshold {}", features.error_rate, self.threshold),
+            explanation: format!(
+                "Error rate {} exceeds threshold {}",
+                features.error_rate, self.threshold
+            ),
         }
     }
 

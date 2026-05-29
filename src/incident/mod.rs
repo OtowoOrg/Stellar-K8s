@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use k8s_openapi::api::core::v1::{Event, Pod};
-use kube::api::{Api, AttachedProcess, ListParams, LogParams};
+use kube::api::{Api, ListParams, LogParams};
 use kube::{Client, ResourceExt};
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;

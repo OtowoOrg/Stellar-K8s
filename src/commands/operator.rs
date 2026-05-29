@@ -8,6 +8,7 @@ use tracing::{info, info_span, warn, Instrument, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::cli::RunArgs;
+use stellar_k8s::log_scrub::ScrubLayer;
 #[cfg(feature = "rest-api")]
 use stellar_k8s::rest_api::metrics_store::StellarMetricsStore;
 use stellar_k8s::log_scrub::ScrubLayer;
@@ -219,21 +220,20 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
     #[cfg(feature = "rest-api")]
     let oidc_config = operator_config.oidc.clone();
     let audit_log = Arc::new(controller::AuditLog::new());
-    let audit_sink: Option<Arc<dyn controller::audit_sink::AuditSink>> = if
-        operator_config.audit.enabled
-    {
-        if let Some(s3_config) = &operator_config.audit.s3 {
-            Some(
-                Arc::new(controller::audit_sink::S3AuditSink::new(s3_config.clone()).await)
-                    as Arc<dyn controller::audit_sink::AuditSink>,
-            )
+    let audit_sink: Option<Arc<dyn controller::audit_sink::AuditSink>> =
+        if operator_config.audit.enabled {
+            if let Some(s3_config) = &operator_config.audit.s3 {
+                Some(
+                    Arc::new(controller::audit_sink::S3AuditSink::new(s3_config.clone()).await)
+                        as Arc<dyn controller::audit_sink::AuditSink>,
+                )
+            } else {
+                Some(Arc::new(controller::audit_sink::NoopAuditSink)
+                    as Arc<dyn controller::audit_sink::AuditSink>)
+            }
         } else {
-            Some(Arc::new(controller::audit_sink::NoopAuditSink)
-                as Arc<dyn controller::audit_sink::AuditSink>)
-        }
-    } else {
-        None
-    };
+            None
+        };
     let audit_recorder = Arc::new(controller::AuditRecorder::new(
         audit_log.clone(),
         audit_sink.into_iter().collect(),
@@ -303,13 +303,8 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
         };
 
         tokio::spawn(async move {
-            controller::watch_feature_flags(
-                ff_client,
-                ff_namespace,
-                ff_flags,
-                ff_audit_recorder,
-            )
-            .await;
+            controller::watch_feature_flags(ff_client, ff_namespace, ff_flags, ff_audit_recorder)
+                .await;
         });
     }
 

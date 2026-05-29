@@ -493,7 +493,10 @@ peer-2 = "G..."
             .match_labels
             .as_ref()
             .expect("selector labels must exist");
-        assert_eq!(selector_labels.get("deployment-color"), Some(&"blue".to_string()));
+        assert_eq!(
+            selector_labels.get("deployment-color"),
+            Some(&"blue".to_string())
+        );
 
         let pod_labels = spec
             .template
@@ -501,14 +504,20 @@ peer-2 = "G..."
             .as_ref()
             .and_then(|m| m.labels.as_ref())
             .expect("pod labels must exist");
-        assert_eq!(pod_labels.get("deployment-color"), Some(&"blue".to_string()));
+        assert_eq!(
+            pod_labels.get("deployment-color"),
+            Some(&"blue".to_string())
+        );
 
         let init_containers = spec
             .template
             .spec
             .as_ref()
             .and_then(|ps| ps.init_containers.as_ref());
-        assert!(init_containers.is_none(), "Blue/Green deployments should not use init container migrations");
+        assert!(
+            init_containers.is_none(),
+            "Blue/Green deployments should not use init container migrations"
+        );
     }
 
     #[test]
@@ -767,7 +776,9 @@ peer-2 = "G..."
     fn test_network_policy_stellar_native_egress() {
         let mut node = make_node(NodeType::Validator);
         let vc = ValidatorConfig {
-            known_peers: Some(r#"KNOWN_PEERS = ["1.2.3.4:11625", "example.com:11625"]"#.to_string()),
+            known_peers: Some(
+                r#"KNOWN_PEERS = ["1.2.3.4:11625", "example.com:11625"]"#.to_string(),
+            ),
             quorum_set: Some(
                 r#"[VALIDATORS]
 "5.6.7.8" = "G..."

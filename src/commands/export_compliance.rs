@@ -92,9 +92,9 @@ async fn fetch_audit_entries(args: &ExportComplianceArgs) -> Result<Vec<AuditEnt
         .map_err(Error::KubeError)?;
 
     let data = cm.data.unwrap_or_default();
-    let raw = data
-        .get("entries.json")
-        .ok_or_else(|| Error::InternalError("entries.json key missing from audit ConfigMap".into()))?;
+    let raw = data.get("entries.json").ok_or_else(|| {
+        Error::InternalError("entries.json key missing from audit ConfigMap".into())
+    })?;
 
     let mut entries: Vec<AuditEntry> = serde_json::from_str(raw)
         .map_err(|e| Error::InternalError(format!("Failed to parse audit entries: {e}")))?;

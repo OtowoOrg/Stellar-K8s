@@ -47,16 +47,15 @@ use crate::crd::{
     StellarNodeStatus,
 };
 use crate::error::{Error, Result};
-use crate::plugin_sdk::{HookResult, ReconcileContext};
 #[cfg(feature = "metrics")]
 use crate::infra;
+use crate::plugin_sdk::{HookResult, ReconcileContext};
 
 use super::archive_health::{
     calculate_backoff, check_archive_integrity, check_archive_integrity_random,
     check_history_archive_health, ArchiveHealthResult, ArchiveIntegrityCheckResult,
     ARCHIVE_LAG_THRESHOLD,
 };
-use super::audit_sink::{AuditSink, NoopAuditSink, S3AuditSink};
 use super::audit_worker::AuditWorker;
 use super::conditions;
 use super::cross_cloud_failover;
@@ -69,7 +68,6 @@ use super::health;
 use super::kms_secret;
 use super::label_propagation::LabelPropagator;
 use super::maintenance;
-use super::spot_drain;
 #[cfg(feature = "metrics")]
 use super::metrics;
 use super::mtls;
@@ -80,6 +78,7 @@ use super::pss;
 use super::remediation;
 use super::resources;
 use super::service_mesh;
+use super::spot_drain;
 use super::sync_scale;
 use super::sync_state_monitor;
 use super::vpa as vpa_controller;
@@ -1492,7 +1491,7 @@ pub(crate) fn apply_stellar_node(
                                 namespace, name
                             );
 
-                            let mut status_patch = serde_json::json!({
+                            let status_patch = serde_json::json!({
                                 "status": {
                                     "phase": "Migrating",
                                     "message": format!(
@@ -2038,7 +2037,7 @@ pub(crate) fn apply_stellar_node(
                     }
                 }
 
-                let scaling_config_clone = scaling_config.clone();
+                let _scaling_config_clone = scaling_config.clone();
                 apply_or_emit!(
                     &ctx,
                     &node,

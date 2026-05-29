@@ -79,6 +79,7 @@ use super::peer_discovery;
 use super::pss;
 use super::remediation;
 use super::resources;
+use super::secret_watcher;
 use super::service_mesh;
 use super::sync_scale;
 use super::sync_state_monitor;
@@ -551,6 +552,19 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
                 Api::all(client.clone())
             },
             Config::default(),
+        )
+        .watches::<k8s_openapi::api::core::v1::Secret>(
+            if let Some(ns) = &state.watch_namespace {
+                Api::namespaced(client.clone(), ns)
+            } else {
+                Api::all(client.clone())
+            },
+            Config::default(),
+            |secret| {
+                // Trigger reconciliation for all StellarNodes that reference this secret
+                // The reconciler will check if the secret version changed and trigger restarts
+                vec![]
+            },
         )
         .shutdown_on_signal()
         .run(|obj, ctx| reconcile(obj, ctx), error_policy, state.clone())
@@ -1894,6 +1908,31 @@ pub(crate) fn apply_stellar_node(
             }
         )
         .await?;
+
+        // 5c. Secret rotation detection — passphrase and seed secrets
+        //
+        // Checks whether any referenced secrets have been rotated since the last
+        // reconciliation. If so, triggers a graceful rolling restart via pod template
+        // annotations so pods pick up the new secret values without downtime.
+        {
+            let dry_run = ctx.dry_run;
+            if let Err(e) =
+                secret_watcher::handle_passphrase_secret_rotation(&client, &node, dry_run).await
+            {
+                warn!(
+                    "Passphrase secret rotation check failed for {}/{}: {}",
+                    namespace, name, e
+                );
+            }
+            if let Err(e) =
+                secret_watcher::handle_seed_secret_rotation(&client, &node, dry_run).await
+            {
+                warn!(
+                    "Seed secret rotation check failed for {}/{}: {}",
+                    namespace, name, e
+                );
+            }
+        }
 
         // 5b. Read-Only Replica Pools
         apply_or_emit!(

@@ -69,6 +69,15 @@ pub struct StellarNodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_network_passphrase: Option<String>,
 
+    /// Reference to a Kubernetes Secret containing the network passphrase.
+    /// When set, the operator watches this secret and triggers graceful rolling
+    /// restarts when the secret is rotated. The secret must have a key named
+    /// `NETWORK_PASSPHRASE`.
+    ///
+    /// This takes precedence over `custom_network_passphrase` when both are set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub passphrase_secret_ref: Option<String>,
+
     /// Version of the Stellar software to run (e.g., "v21.0.0").
     pub version: String,
 
@@ -414,6 +423,7 @@ impl Default for StellarNodeSpec {
             label_propagation: None,
             resource_meta: None,
             custom_network_passphrase: None,
+            passphrase_secret_ref: None,
             sidecars: None,
             cert_manager: None,
             probes: None,
@@ -1372,6 +1382,22 @@ pub struct StellarNodeStatus {
     /// Status of the history archive pruning process.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pruning_status: Option<super::types::PruningStatus>,
+
+    /// Observed resource version of the passphrase secret (for rotation detection).
+    /// When this differs from the current secret's resourceVersion, the operator
+    /// triggers a graceful rolling restart.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_passphrase_secret_version: Option<String>,
+
+    /// Observed resource version of the validator seed secret (for rotation detection).
+    /// When this differs from the current secret's resourceVersion, the operator
+    /// triggers a graceful rolling restart.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_seed_secret_version: Option<String>,
+
+    /// Timestamp of the last secret rotation (RFC3339).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_secret_rotation_time: Option<String>,
 }
 
 /// BGP advertisement status information

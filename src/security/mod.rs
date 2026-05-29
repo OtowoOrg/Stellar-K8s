@@ -3,6 +3,11 @@
 //! Provides automated scanning, runtime monitoring, and automated remediation.
 
 pub mod compliance;
+pub mod kms;
+pub mod secret_audit;
+pub mod secret_metrics;
+pub mod secret_rotation;
+pub mod secret_sync;
 pub mod policy;
 pub mod remediation;
 pub mod runtime;

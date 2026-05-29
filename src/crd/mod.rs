@@ -56,6 +56,7 @@ pub mod schema_utils;
 pub mod seed_secret;
 pub mod service_mesh;
 pub mod stellar_benchmark;
+mod secret_policy;
 mod stellar_node;
 pub mod traffic_policy;
 pub mod types;
@@ -88,6 +89,23 @@ pub use stellar_benchmark::{
     BenchmarkReportStatus, BenchmarkResourceRequirements, BenchmarkSummary,
     EnvVar as BenchmarkEnvVar, PodResult, ResultStorage, StellarBenchmark, StellarBenchmarkSpec,
     StellarBenchmarkStatus, Toleration as BenchmarkToleration,
+};
+pub use multi_region::{
+    ClusterConfig, ClusterHealthStatus, FailoverPolicy, MultiRegionConfig, MultiRegionHealthCheck,
+    MultiRegionSpec, MultiRegionStatus, SecretSyncConfig,
+};
+pub use dr_policy::{
+    ComplianceStatus, DisasterRecoveryPolicy, DisasterRecoveryPolicySpec,
+    DisasterRecoveryPolicyStatus,
+};
+pub use federation::{
+    ClusterRegistry, ClusterRegistrySpec, ConflictResolutionStrategy, FederatedCluster,
+    FederatedPlacement, FederatedStellarNode, FederatedStellarNodeSpec,
+};
+pub use secret_policy::{
+    AwsKmsConfig, AzureKeyVaultConfig, GcpKmsConfig, KmsProvider, RotationPolicy,
+    SecretAuditConfig, SecretPolicy, SecretPolicyCondition, SecretPolicyPhase,
+    SecretPolicySpec, SecretPolicyStatus, SecretPolicySyncConfig, SyncConflictResolution,
 };
 pub use stellar_node::{
     BGPStatus, SnapshotBootstrapStatus, SpecValidationError, StellarNode, StellarNodeSpec,

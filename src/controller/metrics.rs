@@ -556,6 +556,83 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         OPERATOR_READY_STATUS.clone(),
     );
 
+    // ── Observability Pipeline metrics ────────────────────────────────────
+    registry.register(
+        "stellar_observability_pipeline_up",
+        "1 if the observability pipeline is running, 0 otherwise",
+        OBSERVABILITY_PIPELINE_UP.clone(),
+    );
+    registry.register(
+        "stellar_observability_events_ingested_total",
+        "Total number of observability events ingested by source",
+        OBSERVABILITY_EVENTS_INGESTED_TOTAL.clone(),
+    );
+    registry.register(
+        "stellar_observability_anomalies_total",
+        "Total number of anomalies detected by type",
+        OBSERVABILITY_ANOMALIES_TOTAL.clone(),
+    );
+    registry.register(
+        "stellar_observability_anomalies_active",
+        "Number of currently active (unresolved) anomalies",
+        OBSERVABILITY_ANOMALIES_ACTIVE.clone(),
+    );
+    registry.register(
+        "stellar_observability_alerts_total",
+        "Total number of intelligent alerts generated",
+        OBSERVABILITY_ALERTS_TOTAL.clone(),
+    );
+    registry.register(
+        "stellar_observability_alerts_active",
+        "Number of currently active (unresolved) alerts",
+        OBSERVABILITY_ALERTS_ACTIVE.clone(),
+    );
+    registry.register(
+        "stellar_observability_alerts_deduplicated_total",
+        "Total number of alerts suppressed by deduplication",
+        OBSERVABILITY_ALERTS_DEDUPLICATED_TOTAL.clone(),
+    );
+    registry.register(
+        "stellar_observability_alerts_resolved_total",
+        "Total number of alerts resolved",
+        OBSERVABILITY_ALERTS_RESOLVED_TOTAL.clone(),
+    );
+    registry.register(
+        "stellar_observability_correlations_total",
+        "Total number of event correlations found by type",
+        OBSERVABILITY_CORRELATIONS_TOTAL.clone(),
+    );
+    registry.register(
+        "stellar_observability_incidents_open",
+        "Number of currently open incidents",
+        OBSERVABILITY_INCIDENTS_OPEN.clone(),
+    );
+    registry.register(
+        "stellar_observability_incidents_resolved_total",
+        "Total number of incidents resolved",
+        OBSERVABILITY_INCIDENTS_RESOLVED_TOTAL.clone(),
+    );
+    registry.register(
+        "stellar_observability_incident_mttr_seconds",
+        "Mean time to resolve incidents in seconds",
+        OBSERVABILITY_INCIDENT_MTTR_SECONDS.clone(),
+    );
+    registry.register(
+        "stellar_observability_rca_confidence",
+        "Confidence score of the most recent root cause analysis (0.0–1.0)",
+        OBSERVABILITY_RCA_CONFIDENCE.clone(),
+    );
+    registry.register(
+        "stellar_observability_predictive_alerts_total",
+        "Total number of predictive alerts generated",
+        OBSERVABILITY_PREDICTIVE_ALERTS_TOTAL.clone(),
+    );
+    registry.register(
+        "stellar_observability_baseline_samples",
+        "Number of samples in the baseline for each metric",
+        OBSERVABILITY_BASELINE_SAMPLES.clone(),
+    );
+
     registry
 });
 
@@ -1215,6 +1292,176 @@ pub static OPERATOR_UPTIME_SECONDS: Lazy<Counter<u64, AtomicU64>> = Lazy::new(Co
 
 /// Gauge tracking whether the operator is ready (1 = ready, 0 = not ready).
 pub static OPERATOR_READY_STATUS: Lazy<Gauge<i64, AtomicI64>> = Lazy::new(Gauge::default);
+
+// ── Observability Pipeline Metrics ────────────────────────────────────────
+
+/// Labels for observability pipeline event source metrics
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct ObservabilitySourceLabels {
+    pub source: String,
+}
+
+/// Labels for observability anomaly metrics
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct ObservabilityAnomalyLabels {
+    pub anomaly_type: String,
+    pub metric_name: String,
+}
+
+/// Labels for observability correlation metrics
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct ObservabilityCorrelationLabels {
+    pub correlation_type: String,
+}
+
+/// Labels for observability baseline metrics
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct ObservabilityBaselineLabels {
+    pub metric_name: String,
+}
+
+/// Gauge: 1 if the observability pipeline is running
+pub static OBSERVABILITY_PIPELINE_UP: Lazy<Gauge<i64, AtomicI64>> = Lazy::new(Gauge::default);
+
+/// Counter: total events ingested by source (Metric, Log, Trace, Alert, Audit)
+pub static OBSERVABILITY_EVENTS_INGESTED_TOTAL: Lazy<
+    Family<ObservabilitySourceLabels, Counter<u64, AtomicU64>>,
+> = Lazy::new(Family::default);
+
+/// Counter: total anomalies detected by type and metric name
+pub static OBSERVABILITY_ANOMALIES_TOTAL: Lazy<
+    Family<ObservabilityAnomalyLabels, Counter<u64, AtomicU64>>,
+> = Lazy::new(Family::default);
+
+/// Gauge: currently active (unresolved) anomalies
+pub static OBSERVABILITY_ANOMALIES_ACTIVE: Lazy<Gauge<i64, AtomicI64>> = Lazy::new(Gauge::default);
+
+/// Counter: total intelligent alerts generated
+pub static OBSERVABILITY_ALERTS_TOTAL: Lazy<Counter<u64, AtomicU64>> = Lazy::new(Counter::default);
+
+/// Gauge: currently active (unresolved) alerts
+pub static OBSERVABILITY_ALERTS_ACTIVE: Lazy<Gauge<i64, AtomicI64>> = Lazy::new(Gauge::default);
+
+/// Counter: alerts suppressed by deduplication
+pub static OBSERVABILITY_ALERTS_DEDUPLICATED_TOTAL: Lazy<Counter<u64, AtomicU64>> =
+    Lazy::new(Counter::default);
+
+/// Counter: alerts resolved
+pub static OBSERVABILITY_ALERTS_RESOLVED_TOTAL: Lazy<Counter<u64, AtomicU64>> =
+    Lazy::new(Counter::default);
+
+/// Counter: event correlations found by type
+pub static OBSERVABILITY_CORRELATIONS_TOTAL: Lazy<
+    Family<ObservabilityCorrelationLabels, Counter<u64, AtomicU64>>,
+> = Lazy::new(Family::default);
+
+/// Gauge: currently open incidents
+pub static OBSERVABILITY_INCIDENTS_OPEN: Lazy<Gauge<i64, AtomicI64>> = Lazy::new(Gauge::default);
+
+/// Counter: incidents resolved
+pub static OBSERVABILITY_INCIDENTS_RESOLVED_TOTAL: Lazy<Counter<u64, AtomicU64>> =
+    Lazy::new(Counter::default);
+
+/// Gauge: mean time to resolve incidents in seconds
+pub static OBSERVABILITY_INCIDENT_MTTR_SECONDS: Lazy<Gauge<f64, AtomicU64>> =
+    Lazy::new(Gauge::default);
+
+/// Gauge: confidence of the most recent root cause analysis (0.0–1.0)
+pub static OBSERVABILITY_RCA_CONFIDENCE: Lazy<Gauge<f64, AtomicU64>> = Lazy::new(Gauge::default);
+
+/// Counter: predictive alerts generated
+pub static OBSERVABILITY_PREDICTIVE_ALERTS_TOTAL: Lazy<Counter<u64, AtomicU64>> =
+    Lazy::new(Counter::default);
+
+/// Gauge: number of baseline samples per metric
+pub static OBSERVABILITY_BASELINE_SAMPLES: Lazy<
+    Family<ObservabilityBaselineLabels, Gauge<i64, AtomicI64>>,
+> = Lazy::new(Family::default);
+
+// ── Observability helper functions ────────────────────────────────────────
+
+/// Record an ingested observability event
+pub fn inc_observability_event(source: &str) {
+    OBSERVABILITY_EVENTS_INGESTED_TOTAL
+        .get_or_create(&ObservabilitySourceLabels {
+            source: source.to_string(),
+        })
+        .inc();
+}
+
+/// Record a detected anomaly
+pub fn inc_observability_anomaly(anomaly_type: &str, metric_name: &str) {
+    OBSERVABILITY_ANOMALIES_TOTAL
+        .get_or_create(&ObservabilityAnomalyLabels {
+            anomaly_type: anomaly_type.to_string(),
+            metric_name: metric_name.to_string(),
+        })
+        .inc();
+    let current = OBSERVABILITY_ANOMALIES_ACTIVE.get();
+    OBSERVABILITY_ANOMALIES_ACTIVE.set(current + 1);
+}
+
+/// Record a new alert
+pub fn inc_observability_alert() {
+    OBSERVABILITY_ALERTS_TOTAL.inc();
+    let current = OBSERVABILITY_ALERTS_ACTIVE.get();
+    OBSERVABILITY_ALERTS_ACTIVE.set(current + 1);
+}
+
+/// Record a deduplicated (suppressed) alert
+pub fn inc_observability_alert_deduplicated() {
+    OBSERVABILITY_ALERTS_DEDUPLICATED_TOTAL.inc();
+}
+
+/// Record a resolved alert
+pub fn inc_observability_alert_resolved() {
+    OBSERVABILITY_ALERTS_RESOLVED_TOTAL.inc();
+    let current = OBSERVABILITY_ALERTS_ACTIVE.get();
+    OBSERVABILITY_ALERTS_ACTIVE.set((current - 1).max(0));
+}
+
+/// Record a correlation found
+pub fn inc_observability_correlation(correlation_type: &str) {
+    OBSERVABILITY_CORRELATIONS_TOTAL
+        .get_or_create(&ObservabilityCorrelationLabels {
+            correlation_type: correlation_type.to_string(),
+        })
+        .inc();
+}
+
+/// Update open incident count
+pub fn set_observability_incidents_open(count: i64) {
+    OBSERVABILITY_INCIDENTS_OPEN.set(count);
+}
+
+/// Record a resolved incident
+pub fn inc_observability_incident_resolved() {
+    OBSERVABILITY_INCIDENTS_RESOLVED_TOTAL.inc();
+}
+
+/// Update MTTR
+pub fn set_observability_mttr_seconds(mttr: f64) {
+    OBSERVABILITY_INCIDENT_MTTR_SECONDS.set(mttr);
+}
+
+/// Update RCA confidence
+pub fn set_observability_rca_confidence(confidence: f64) {
+    OBSERVABILITY_RCA_CONFIDENCE.set(confidence);
+}
+
+/// Record a predictive alert
+pub fn inc_observability_predictive_alert() {
+    OBSERVABILITY_PREDICTIVE_ALERTS_TOTAL.inc();
+}
+
+/// Update baseline sample count for a metric
+pub fn set_observability_baseline_samples(metric_name: &str, count: i64) {
+    OBSERVABILITY_BASELINE_SAMPLES
+        .get_or_create(&ObservabilityBaselineLabels {
+            metric_name: metric_name.to_string(),
+        })
+        .set(count);
+}
 
 /// Initialise the `stellar_operator_info` gauge with build-time labels.
 /// Call once at startup after the registry is first accessed.

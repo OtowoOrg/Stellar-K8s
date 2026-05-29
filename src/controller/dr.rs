@@ -7,7 +7,10 @@ use chrono::Utc;
 use kube::{Client, ResourceExt};
 use tracing::{debug, info, instrument, warn};
 
-use crate::crd::{DRPeerHealth, DRRole, DRSyncStrategy, DisasterRecoveryStatus, StellarNode};
+use crate::crd::{
+    ComplianceStatus, DRPeerHealth, DRRole, DRSyncStrategy, DisasterRecoveryPolicy,
+    DisasterRecoveryStatus, StellarNode,
+};
 use crate::error::Result;
 
 /// Key for the annotation that tracks the current failover state
@@ -35,6 +38,15 @@ pub async fn reconcile_dr(
         .as_ref()
         .and_then(|s| s.dr_status.clone())
         .unwrap_or_default();
+
+    // Fetch DR Policy if referenced
+    let policy = if let Some(policy_name) = &dr_config.policy_ref {
+        let policy_api: kube::Api<DisasterRecoveryPolicy> =
+            kube::Api::namespaced(client.clone(), node.namespace().unwrap_or_default());
+        policy_api.get_opt(policy_name).await.ok().flatten()
+    } else {
+        None
+    };
 
     let peer_candidates = resolve_peer_candidates(node, dr_config.peer_cluster_id.as_str());
     let mut peer_health_map = Vec::new();
@@ -86,18 +98,36 @@ pub async fn reconcile_dr(
     }
 
     // 2. Automated Failover Logic
-    if dr_config.role == DRRole::Standby && !primary_healthy {
+    let auto_failover_enabled = policy
+        .as_ref()
+        .map(|p| p.spec.automated_failover)
+        .unwrap_or(true);
+
+    if dr_config.role == DRRole::Standby && !primary_healthy && auto_failover_enabled {
         warn!(
             "Primary cluster {} is unreachable. Evaluating failover...",
             dr_config.peer_cluster_id
         );
 
+        // Check health score if policy exists
+        let health_score = calculate_health_score(node);
+        let min_score = policy.as_ref().map(|p| p.spec.min_health_score).unwrap_or(0);
+
+        if health_score < min_score {
+            warn!(
+                "Local health score {} is below policy minimum {}. Aborting failover.",
+                health_score, min_score
+            );
+            return Ok(Some(status));
+        }
+
         // Trigger failover if not already active
         if !status.failover_active {
+            let start_time = Utc::now();
             info!("Initiating automated failover for {}", name);
             status.failover_active = true;
             status.current_role = Some(DRRole::Primary);
-            status.last_failover_time = Some(Utc::now().to_rfc3339());
+            status.last_failover_time = Some(start_time.to_rfc3339());
             status.last_failover_reason = Some("Primary peer unreachable".to_string());
 
             // Perform DNS update
@@ -107,6 +137,22 @@ pub async fn reconcile_dr(
 
             if let Some(best) = select_best_peer(&healthy_peers) {
                 status.active_peer_cluster_id = Some(best.cluster_id);
+            }
+
+            // Measure RTO
+            let rto = Utc::now().signed_duration_since(start_time).num_seconds() as u32;
+            info!("Failover completed in {} seconds (RTO)", rto);
+            
+            // Update policy status if possible
+            if let (Some(mut p), Some(policy_name)) = (policy, &dr_config.policy_ref) {
+                update_policy_compliance(
+                    client,
+                    &mut p,
+                    rto,
+                    policy_name,
+                    node.namespace().unwrap_or_default().as_str(),
+                )
+                .await?;
             }
         }
     } else if dr_config.role == DRRole::Standby && primary_healthy && status.failover_active {
@@ -135,6 +181,20 @@ pub async fn reconcile_dr(
 
                 if let (Some(p), Some(l)) = (peer_ledger, local_ledger) {
                     status.sync_lag = Some(p.saturating_sub(l));
+
+                    // Measure RPO if policy exists
+                    if let (Some(mut policy), Some(policy_name)) = (policy, &dr_config.policy_ref) {
+                        // Assuming 5 seconds per ledger for RPO calculation
+                        let rpo = status.sync_lag.unwrap_or(0) * 5;
+                        update_policy_rpo(
+                            client,
+                            &mut policy,
+                            rpo as u32,
+                            policy_name,
+                            node.namespace().unwrap_or_default().as_str(),
+                        )
+                        .await?;
+                    }
                 }
             }
             DRSyncStrategy::ArchiveSync => {
@@ -148,6 +208,97 @@ pub async fn reconcile_dr(
     }
 
     Ok(Some(status))
+}
+
+fn calculate_health_score(node: &StellarNode) -> u32 {
+    let mut score = 100;
+    if let Some(status) = &node.status {
+        if !status.ready {
+            score -= 50;
+        }
+        // Deduct score for sync lag
+        if let Some(lag) = status.dr_status.as_ref().and_then(|dr| dr.sync_lag) {
+            if lag > 100 {
+                score = score.saturating_sub(20);
+            }
+            if lag > 1000 {
+                score = score.saturating_sub(30);
+            }
+        }
+    } else {
+        score = 0;
+    }
+    score
+}
+
+async fn update_policy_compliance(
+    client: &Client,
+    policy: &mut DisasterRecoveryPolicy,
+    rto: u32,
+    policy_name: &str,
+    namespace: &str,
+) -> Result<()> {
+    use crate::error::Error;
+    use kube::api::{Patch, PatchParams};
+
+    let mut status = policy.status.clone().unwrap_or_default();
+    status.last_rto_seconds = Some(rto);
+    status.compliance_status = if rto <= policy.spec.rto_seconds {
+        ComplianceStatus::Compliant
+    } else {
+        ComplianceStatus::NonCompliant
+    };
+    status.last_check_time = Some(Utc::now().to_rfc3339());
+
+    let policy_api: kube::Api<DisasterRecoveryPolicy> =
+        kube::Api::namespaced(client.clone(), namespace);
+    policy.status = Some(status);
+
+    policy_api
+        .patch_status(
+            policy_name,
+            &PatchParams::apply("stellar-operator"),
+            &Patch::Apply(policy),
+        )
+        .await
+        .map_err(Error::KubeError)?;
+
+    Ok(())
+}
+
+async fn update_policy_rpo(
+    client: &Client,
+    policy: &mut DisasterRecoveryPolicy,
+    rpo: u32,
+    policy_name: &str,
+    namespace: &str,
+) -> Result<()> {
+    use crate::error::Error;
+    use kube::api::{Patch, PatchParams};
+
+    let mut status = policy.status.clone().unwrap_or_default();
+    status.last_rpo_seconds = Some(rpo);
+    status.compliance_status = if rpo <= policy.spec.rpo_seconds {
+        ComplianceStatus::Compliant
+    } else {
+        ComplianceStatus::NonCompliant
+    };
+    status.last_check_time = Some(Utc::now().to_rfc3339());
+
+    let policy_api: kube::Api<DisasterRecoveryPolicy> =
+        kube::Api::namespaced(client.clone(), namespace);
+    policy.status = Some(status);
+
+    policy_api
+        .patch_status(
+            policy_name,
+            &PatchParams::apply("stellar-operator"),
+            &Patch::Apply(policy),
+        )
+        .await
+        .map_err(Error::KubeError)?;
+
+    Ok(())
 }
 
 /// Simulate checking health of a peer cluster

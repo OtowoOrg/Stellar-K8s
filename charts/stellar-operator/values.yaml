@@ -463,6 +463,17 @@ otel:
         enabled: false
         endpoint: "http://tempo:4317"
 
+      # Grafana Loki (Loki receiver/exporter)
+      loki:
+        enabled: false
+        endpoint: "http://loki:3100/loki/api/v1/push"
+
+      # Elasticsearch (Elasticsearch exporter)
+      elasticsearch:
+        enabled: false
+        endpoint: "http://elasticsearch:9200"
+        index: "stellar-logs"
+
 
 # SCP Analytics Pipeline Configuration
 # Real-time streaming of SCP messages to Kafka for network topology analysis

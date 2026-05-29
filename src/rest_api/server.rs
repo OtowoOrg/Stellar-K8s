@@ -28,6 +28,7 @@ use super::handlers;
 use super::health_summary;
 use super::job_handlers;
 use super::scp_topology;
+use super::stellar_metrics_server;
 
 /// Build a rustls ServerConfig from PEM data (cert, key, CA for client verification).
 /// Used for initial server setup and after certificate rotation to reload without restart.
@@ -99,7 +100,7 @@ pub async fn run_server(
         .route("/livez", get(handlers::livez))
         .with_state(state.clone());
 
-    let mut protected = Router::new()
+    let protected = Router::new()
         .route("/leader", get(handlers::leader_status))
         .route("/api/v1/nodes", get(handlers::list_nodes))
         .route("/api/v1/nodes/:namespace/:name", get(handlers::get_node))
@@ -122,6 +123,12 @@ pub async fn run_server(
         // Dashboard routes
         .route("/", get(dashboard_ui))
         .route("/api/v1/dashboard/overview", get(dashboard_handlers::dashboard_overview))
+        .route("/api/v1/dashboard/metrics", get(dashboard_handlers::dashboard_metrics))
+        .route("/api/v1/analytics/logs", get(dashboard_handlers::log_analytics))
+        .route("/api/v1/config/analyze", axum::routing::post(dashboard_handlers::analyze_config_impact))
+        .route("/api/v1/security/posture", get(dashboard_handlers::security_posture))
+        .route("/api/v1/capacity/plan", get(dashboard_handlers::capacity_planning))
+        .route("/api/v1/capacity/what-if", axum::routing::post(dashboard_handlers::run_what_if))
         .route(
             "/api/v1/dashboard/nodes/:namespace/:name/logs",
             get(dashboard_handlers::get_node_logs),
@@ -129,6 +136,10 @@ pub async fn run_server(
         .route(
             "/api/v1/dashboard/nodes/:namespace/:name/conditions",
             get(dashboard_handlers::get_node_conditions),
+        )
+        .route(
+            "/api/v1/dashboard/nodes/:namespace/:name/dr",
+            get(dashboard_handlers::get_dr_status),
         )
         .route(
             "/api/v1/dashboard/nodes/:namespace/:name/metrics",
@@ -159,18 +170,18 @@ pub async fn run_server(
         // Discovery endpoint — required by the HPA aggregation layer
         .route(
             "/apis/custom.metrics.k8s.io/v1beta2",
-            get(custom_metrics::get_metrics_discovery),
+            get(stellar_metrics_server::api_discovery),
         )
         .route(
             "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric",
-            get(custom_metrics::get_pod_metric),
+            get(stellar_metrics_server::get_pod_stellar_metric),
         )
         .route(
             "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/stellarnodes.stellar.org/:name/:metric",
-            get(custom_metrics::get_stellar_node_metric),
+            get(stellar_metrics_server::get_stellarnode_metric),
         )
         .layer(middleware::from_fn_with_state(state.clone(), auth::api_reader))
-        // Horizon-specific convenience endpoint
+        // Horizon-specific convenience endpoint (legacy path kept for compatibility)
         .route(
             "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/horizons.stellar.org/:name/:metric",
             get(custom_metrics::get_horizon_metric),

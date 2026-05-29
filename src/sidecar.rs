@@ -314,7 +314,7 @@ async fn report_performance_degradation(
     Ok(())
 }
 
-async fn run_ml_anomaly_detector(events: Api<Event>, pod_name: String, namespace: String) {
+async fn run_ml_anomaly_detector(_events: Api<Event>, _pod_name: String, _namespace: String) {
     info!("Starting ML anomaly detection sidecar task");
     // In a real implementation, this would:
     // 1. Fetch recent audit logs from the operator API

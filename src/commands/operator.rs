@@ -11,6 +11,8 @@ use crate::cli::RunArgs;
 use stellar_k8s::log_scrub::ScrubLayer;
 #[cfg(feature = "rest-api")]
 use stellar_k8s::rest_api::metrics_store::StellarMetricsStore;
+use stellar_k8s::log_scrub::ScrubLayer;
+use stellar_k8s::logging::{AnalyticsLayer, analytics::AnalyticsEngine, sampling::SamplingConfig};
 use stellar_k8s::{controller, preflight, Error};
 
 const LEASE_NAME: &str = "stellar-operator-leader";
@@ -51,12 +53,16 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
 
     let (env_filter, reload_handle) = tracing_subscriber::reload::Layer::new(env_filter);
 
+    let analytics_engine = Arc::new(AnalyticsEngine::new(std::time::Duration::from_secs(3600)));
+    let analytics_layer = AnalyticsLayer::new(SamplingConfig::default(), analytics_engine.clone());
+
     let fmt_layer = fmt::layer().json().with_target(true);
 
     // Register the subscriber with both stdout logging and OpenTelemetry tracing
     let registry = tracing_subscriber::registry()
         .with(env_filter)
         .with(ScrubLayer::new())
+        .with(analytics_layer)
         .with(fmt_layer);
 
     // Only enable OTEL if an endpoint is provided or via a flag
@@ -263,6 +269,7 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
         audit_recorder: audit_recorder.clone(),
         anomaly_detector: anomaly_detector.clone(),
         plugin_registry: Arc::new(stellar_k8s::plugin_sdk::PluginRegistry::new()),
+        analytics_engine: analytics_engine.clone(),
         #[cfg(feature = "rest-api")]
         oidc_config,
         #[cfg(feature = "rest-api")]

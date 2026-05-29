@@ -318,7 +318,7 @@ pub async fn api_reader(
 }
 
 async fn check_opa_policy(
-    state: &ControllerState,
+    _state: &ControllerState,
     user: &str,
     action: &str,
     resource: &str,

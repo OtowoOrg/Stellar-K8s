@@ -12,26 +12,28 @@ use kube::Client;
 
 use crate::cli::ExportComplianceArgs;
 use stellar_k8s::controller::audit_log::{AuditEntry, AuditLog};
-use stellar_k8s::controller::compliance_export;
+use stellar_k8s::controller::compliance_export::{self, DRComplianceSummary};
+use stellar_k8s::crd::DisasterRecoveryPolicy;
 use stellar_k8s::error::{Error, Result};
 
 /// Entry point for `stellar-operator export-compliance`.
 pub async fn run_export_compliance(args: ExportComplianceArgs) -> Result<()> {
     // Attempt to connect to the cluster and pull live audit entries.
-    // If the cluster is unreachable we fall back to an empty log so the
-    // command can still be used offline (e.g. in CI against a saved snapshot).
     let entries = fetch_audit_entries(&args).await.unwrap_or_else(|e| {
         eprintln!("Warning: could not fetch live audit entries ({e}); exporting empty log.");
         vec![]
     });
 
+    // Fetch DR compliance summary if possible
+    let dr_summary = fetch_dr_summary(&args).await.ok();
+
     match args.format.as_str() {
         "json" => {
-            let bytes = compliance_export::export_json(&entries)?;
+            let bytes = compliance_export::export_json(&entries, dr_summary)?;
             write_output(bytes, args.output.as_deref(), "json")?;
         }
         "pdf" => {
-            let bytes = compliance_export::export_pdf(&entries)?;
+            let bytes = compliance_export::export_pdf(&entries, dr_summary)?;
             write_output(bytes, args.output.as_deref(), "pdf")?;
         }
         other => {
@@ -42,6 +44,32 @@ pub async fn run_export_compliance(args: ExportComplianceArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn fetch_dr_summary(args: &ExportComplianceArgs) -> Result<DRComplianceSummary> {
+    let client = Client::try_default().await.map_err(Error::KubeError)?;
+    let policies: kube::api::Api<DisasterRecoveryPolicy> =
+        kube::api::Api::namespaced(client, &args.namespace);
+
+    let list = policies
+        .list(&kube::api::ListParams::default())
+        .await
+        .map_err(Error::KubeError)?;
+
+    let policy = list.items.first().ok_or_else(|| {
+        Error::ConfigError("No DisasterRecoveryPolicy found in namespace".to_string())
+    })?;
+
+    let status = policy.status.as_ref().ok_or_else(|| {
+        Error::ConfigError("DisasterRecoveryPolicy has no status".to_string())
+    })?;
+
+    Ok(DRComplianceSummary {
+        last_rto_seconds: status.last_rto_seconds,
+        last_rpo_seconds: status.last_rpo_seconds,
+        compliance_status: format!("{:?}", status.compliance_status),
+        last_drill_result: status.recent_drills.first().cloned(),
+    })
 }
 
 /// Fetch audit entries from the live operator.

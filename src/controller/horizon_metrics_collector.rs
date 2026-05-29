@@ -306,7 +306,7 @@ pub fn parse_prometheus_metrics(text: &str) -> StellarMetricsSnapshot {
 
         // The value is the first whitespace-separated token after closing '}' or after the key.
         let value_str = if rest.contains('}') {
-            rest.splitn(2, '}').nth(1).unwrap_or("").trim()
+            rest.split_once('}').map(|x| x.1).unwrap_or("").trim()
         } else {
             rest.trim()
         };

@@ -39,6 +39,7 @@ use k8s_openapi::api::batch::v1::{Job, JobSpec};
 use k8s_openapi::api::core::v1::{
     Container, PodSpec, PodTemplateSpec, SecretVolumeSource, Service, Volume,
 };
+use k8s_openapi::api::core::v1::{PodSpec, PodTemplateSpec, SecretVolumeSource, Service, Volume};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use kube::api::{Api, Patch, PatchParams, PostParams};
 use kube::Client;
@@ -520,6 +521,7 @@ pub async fn orchestrate_horizon_migration(
     }
 
     if let Some(green_dep) = blue_api.get(&format!("{}-green", node_name)).await.ok() {
+    if let Ok(green_dep) = blue_api.get(&format!("{}-green", node_name)).await {
         let _ = blue_api
             .delete(&green_dep.name_any(), &Default::default())
             .await;
@@ -610,14 +612,14 @@ pub async fn orchestrate_horizon_migration(
     crate::controller::metrics::observe_horizon_migration_duration(
         &namespace,
         &node_name,
-        &node.spec.network_passphrase(),
+        node.spec.network_passphrase(),
         "success",
         duration,
     );
     crate::controller::metrics::inc_horizon_migration_total(
         &namespace,
         &node_name,
-        &node.spec.network_passphrase(),
+        node.spec.network_passphrase(),
         "success",
     );
 

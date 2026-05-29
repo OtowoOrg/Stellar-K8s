@@ -1510,6 +1510,10 @@ pub struct DisasterRecoveryConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drill_schedule: Option<DRDrillScheduleConfig>,
 
+    /// Reference to a DisasterRecoveryPolicy
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_ref: Option<String>,
+
     /// Configuration for history archive integrity checks
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archive_integrity_config: Option<ArchiveIntegrityConfig>,
@@ -1684,6 +1688,9 @@ pub struct DRDrillScheduleConfig {
     /// Whether to actually perform failover or just simulate it (dry-run)
     #[serde(default)]
     pub dry_run: bool,
+    /// Type of failure to simulate
+    #[serde(default = "default_failure_type")]
+    pub failure_type: DRFailureType,
     /// Maximum time to wait for failover to complete (seconds)
     #[serde(default = "default_drill_timeout")]
     pub timeout_seconds: u32,
@@ -1693,6 +1700,21 @@ pub struct DRDrillScheduleConfig {
     /// Rollback delay after drill completion (seconds)
     #[serde(default = "default_drill_rollback_delay")]
     pub rollback_delay_seconds: u32,
+}
+
+/// Types of synthetic failures for DR drills
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DRFailureType {
+    #[default]
+    PodKill,
+    NetworkLatency,
+    DiskPressure,
+    RegionOutage,
+}
+
+fn default_failure_type() -> DRFailureType {
+    DRFailureType::PodKill
 }
 
 fn default_drill_timeout() -> u32 {

@@ -694,7 +694,7 @@ impl SnapshotIntegrityChecker {
     }
 
     /// Restore snapshot to validator
-    async fn restore_snapshot(&self, namespace: &str, snapshot_id: &str) -> Result<()> {
+    async fn restore_snapshot(&self, _namespace: &str, snapshot_id: &str) -> Result<()> {
         match &self.config.storage_backend {
             StorageBackend::S3 {
                 bucket,

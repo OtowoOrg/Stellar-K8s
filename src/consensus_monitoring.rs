@@ -188,6 +188,12 @@ pub struct ConsensusMonitoringController {
     alert_destinations: std::sync::Arc<tokio::sync::RwLock<Vec<AlertDestination>>>,
 }
 
+impl Default for ConsensusMonitoringController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConsensusMonitoringController {
     pub fn new() -> Self {
         Self {

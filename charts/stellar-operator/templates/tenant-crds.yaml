@@ -1,0 +1,149 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: tenants.stellar.org
+  labels: { { - include "stellar-operator.labels" . | nindent 4 } }
+spec:
+  group: stellar.org
+  names:
+    kind: Tenant
+    listKind: TenantList
+    plural: tenants
+    singular: tenant
+    shortNames:
+      - ten
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: TenantID
+          type: string
+          jsonPath: .spec.tenantId
+        - name: Namespace
+          type: string
+          jsonPath: .spec.namespace
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: CleanupOnDelete
+          type: boolean
+          jsonPath: .spec.cleanupOnDelete
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - tenantId
+                - namespace
+                - quota
+              properties:
+                tenantId:
+                  type: string
+                namespace:
+                  type: string
+                network:
+                  type: object
+                  properties:
+                    labelKey:
+                      type: string
+                      default: tenant.stellar.org/id
+                    labelValue:
+                      type: string
+                quota:
+                  type: object
+                  properties:
+                    cpu:
+                      type: string
+                      nullable: true
+                    memory:
+                      type: string
+                      nullable: true
+                  default: {}
+                billing:
+                  type: object
+                  properties:
+                    usageUnits:
+                      type: array
+                      items:
+                        type: string
+                      default: []
+                    endpoint:
+                      type: string
+                      nullable: true
+                cleanupOnDelete:
+                  type: boolean
+                  default: false
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: tenantusages.stellar.org
+  labels: { { - include "stellar-operator.labels" . | nindent 4 } }
+spec:
+  group: stellar.org
+  names:
+    kind: TenantUsage
+    listKind: TenantUsageList
+    plural: tenantusages
+    singular: tenantusage
+    shortNames:
+      - tus
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: TenantID
+          type: string
+          jsonPath: .spec.tenantId
+        - name: Namespace
+          type: string
+          jsonPath: .spec.namespace
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: WindowSeconds
+          type: integer
+          jsonPath: .spec.windowSeconds
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - tenantId
+                - namespace
+                - windowSeconds
+              properties:
+                tenantId:
+                  type: string
+                namespace:
+                  type: string
+                windowSeconds:
+                  type: integer
+                  format: int64
+                cpuUsageSeconds:
+                  type: number
+                  format: double
+                  nullable: true
+                memoryUsageBytesSeconds:
+                  type: number
+                  format: double
+                  nullable: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true

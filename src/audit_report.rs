@@ -1,7 +1,6 @@
 use aws_sdk_s3::Client as S3Client;
 use comfy_table::Table;
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
 use stellar_k8s::controller::audit_log::AuditEntry;
 use stellar_k8s::error::{Error, Result};
@@ -267,7 +266,7 @@ mod tests {
 
     #[test]
     fn audit_report_serializes_and_deserializes() {
-        let entries = vec![make_entry(true), make_entry(false)];
+        let entries = [make_entry(true), make_entry(false)];
         let report = AuditReport {
             timestamp: Utc::now().to_rfc3339(),
             cluster_name: "test-cluster".to_string(),

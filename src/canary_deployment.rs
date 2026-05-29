@@ -149,6 +149,12 @@ pub struct CanaryDeploymentController {
     version_compatibility: std::sync::Arc<tokio::sync::RwLock<HashMap<String, Vec<String>>>>,
 }
 
+impl Default for CanaryDeploymentController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CanaryDeploymentController {
     pub fn new() -> Self {
         Self {
@@ -362,6 +368,13 @@ impl CanaryDeploymentController {
                 | CanaryState::RollbackComplete
                 | CanaryState::Failed => false,
                 _ => true,
+            .filter(|s| {
+                !matches!(
+                    s.state,
+                    CanaryState::RolloutComplete
+                        | CanaryState::RollbackComplete
+                        | CanaryState::Failed
+                )
             })
             .cloned()
             .collect()

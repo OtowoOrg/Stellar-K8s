@@ -53,6 +53,15 @@ pub struct AuditSummary {
     pub action_counts: std::collections::BTreeMap<String, usize>,
 }
 
+/// Disaster Recovery compliance summary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DRComplianceSummary {
+    pub last_rto_seconds: Option<u32>,
+    pub last_rpo_seconds: Option<u32>,
+    pub compliance_status: String,
+    pub last_drill_result: Option<String>,
+}
+
 /// The inner payload of a compliance export (before signing).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompliancePayload {
@@ -60,6 +69,7 @@ pub struct CompliancePayload {
     pub operator_version: String,
     pub summary: AuditSummary,
     pub entries: Vec<AuditEntry>,
+    pub dr_summary: Option<DRComplianceSummary>,
 }
 
 /// Signed JSON envelope returned by [`export_json`].
@@ -104,12 +114,16 @@ pub fn summarise(entries: &[AuditEntry]) -> AuditSummary {
 /// Export audit entries as a signed JSON envelope.
 ///
 /// Returns the raw bytes of the JSON document.
-pub fn export_json(entries: &[AuditEntry]) -> Result<Vec<u8>> {
+pub fn export_json(
+    entries: &[AuditEntry],
+    dr_summary: Option<DRComplianceSummary>,
+) -> Result<Vec<u8>> {
     let payload = CompliancePayload {
         exported_at: Utc::now(),
         operator_version: env!("CARGO_PKG_VERSION").to_string(),
         summary: summarise(entries),
         entries: entries.to_vec(),
+        dr_summary,
     };
 
     // Canonical serialisation of the payload (deterministic key order via serde).
@@ -140,7 +154,10 @@ pub fn export_json(entries: &[AuditEntry]) -> Result<Vec<u8>> {
 /// Export audit entries as a PDF document.
 ///
 /// Returns the raw bytes of the PDF file.
-pub fn export_pdf(entries: &[AuditEntry]) -> Result<Vec<u8>> {
+pub fn export_pdf(
+    entries: &[AuditEntry],
+    dr_summary: Option<DRComplianceSummary>,
+) -> Result<Vec<u8>> {
     let summary = summarise(entries);
     let exported_at = Utc::now().to_rfc3339();
 
@@ -179,54 +196,109 @@ pub fn export_pdf(entries: &[AuditEntry]) -> Result<Vec<u8>> {
         &font,
     );
 
+    // ── DR Summary ───────────────────────────────────────────────────────────
+    let mut current_y = 250.0;
+    if let Some(dr) = dr_summary {
+        layer.use_text("Disaster Recovery Compliance", 14.0, Mm(15.0), Mm(current_y), &font_bold);
+        current_y -= 8.0;
+        layer.use_text(
+            format!("Compliance Status: {}", dr.compliance_status),
+            10.0,
+            Mm(15.0),
+            Mm(current_y),
+            &font,
+        );
+        current_y -= 6.0;
+        layer.use_text(
+            format!("Last RTO (s):      {}", dr.last_rto_seconds.unwrap_or(0)),
+            10.0,
+            Mm(15.0),
+            Mm(current_y),
+            &font,
+        );
+        current_y -= 6.0;
+        layer.use_text(
+            format!("Last RPO (s):      {}", dr.last_rpo_seconds.unwrap_or(0)),
+            10.0,
+            Mm(15.0),
+            Mm(current_y),
+            &font,
+        );
+        current_y -= 6.0;
+        if let Some(drill) = dr.last_drill_result {
+            layer.use_text(
+                format!("Last Drill Result: {}", drill),
+                10.0,
+                Mm(15.0),
+                Mm(current_y),
+                &font,
+            );
+            current_y -= 6.0;
+        }
+        current_y -= 10.0;
+    }
+
     // ── Summary ───────────────────────────────────────────────────────────────
-    layer.use_text("Summary", 14.0, Mm(15.0), Mm(250.0), &font_bold);
+    layer.use_text("Audit Summary", 14.0, Mm(15.0), Mm(current_y), &font_bold);
+    current_y -= 8.0;
     layer.use_text(
         format!("Total actions:      {}", summary.total_actions),
         10.0,
         Mm(15.0),
-        Mm(242.0),
+        Mm(current_y),
         &font,
     );
+    current_y -= 6.0;
     layer.use_text(
         format!("Successful actions: {}", summary.successful_actions),
         10.0,
         Mm(15.0),
-        Mm(236.0),
+        Mm(current_y),
         &font,
     );
+    current_y -= 6.0;
     layer.use_text(
         format!("Failed actions:     {}", summary.failed_actions),
         10.0,
         Mm(15.0),
-        Mm(230.0),
+        Mm(current_y),
         &font,
     );
+    current_y -= 6.0;
     layer.use_text(
         format!("Unique actors:      {}", summary.unique_actors.join(", ")),
         10.0,
         Mm(15.0),
-        Mm(224.0),
+        Mm(current_y),
         &font,
     );
+    current_y -= 12.0;
 
     // ── Action breakdown ──────────────────────────────────────────────────────
-    layer.use_text("Action Breakdown", 12.0, Mm(15.0), Mm(212.0), &font_bold);
-    let mut y = 204.0f32;
+    layer.use_text("Action Breakdown", 12.0, Mm(15.0), Mm(current_y), &font_bold);
+    current_y -= 8.0;
     for (action, count) in &summary.action_counts {
-        if y < 20.0 {
-            break; // avoid overflow on first page (entries section handles pagination)
+        if current_y < 20.0 {
+            break;
         }
         layer.use_text(format!("  {action}: {count}"), 9.0, Mm(15.0), Mm(y), &font);
         y -= 6.0;
+        layer.use_text(
+            format!("  {action}: {count}"),
+            9.0,
+            Mm(15.0),
+            Mm(current_y),
+            &font,
+        );
+        current_y -= 6.0;
     }
 
     // ── Audit entries (one page per ~30 entries) ──────────────────────────────
-    layer.use_text("Audit Log Entries", 12.0, Mm(15.0), Mm(y - 8.0), &font_bold);
-    y -= 18.0;
+    layer.use_text("Audit Log Entries", 12.0, Mm(15.0), Mm(current_y - 8.0), &font_bold);
+    current_y -= 18.0;
 
     let mut current_layer = layer;
-    let mut current_page_y = y;
+    let mut current_page_y = current_y;
 
     for entry in entries {
         // Start a new page when we run out of space.
@@ -236,11 +308,12 @@ pub fn export_pdf(entries: &[AuditEntry]) -> Result<Vec<u8>> {
             current_page_y = 280.0;
         }
 
+        let action = format!("{:?}", entry.action);
         let line = format!(
             "[{}] {} | {} | {}/{} | {}",
             if entry.success { "OK" } else { "FAIL" },
             entry.timestamp.format("%Y-%m-%dT%H:%M:%SZ"),
-            format!("{:?}", entry.action),
+            action,
             entry.namespace,
             entry.resource,
             entry.actor,

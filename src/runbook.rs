@@ -84,6 +84,11 @@ pub fn generate_runbook(node: &StellarNode) -> Result<String> {
     // Common troubleshooting
     runbook.push_str(&generate_common_troubleshooting(&name, &namespace));
 
+    // DR section if applicable
+    if spec.dr_config.as_ref().map(|dr| dr.enabled).unwrap_or(false) {
+        runbook.push_str(&generate_dr_runbook(node)?);
+    }
+
     // Archive section if applicable
     if spec
         .validator_config
@@ -133,6 +138,71 @@ fn generate_status_commands(name: &str, namespace: &str) -> String {
     commands.push_str("```\n\n");
 
     commands
+}
+
+/// Generate DR-specific troubleshooting steps
+fn generate_dr_runbook(node: &StellarNode) -> Result<String> {
+    let name = node.name_any();
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let dr_config = match &node.spec.dr_config {
+        Some(config) if config.enabled => config,
+        _ => return Ok(String::new()),
+    };
+
+    let mut runbook = String::new();
+    runbook.push_str("## Disaster Recovery Runbook\n\n");
+
+    runbook.push_str("### 1. DR Configuration\n\n");
+    runbook.push_str(&format!("- **Role**: {:?}\n", dr_config.role));
+    runbook.push_str(&format!(
+        "- **Peer Cluster**: {}\n",
+        dr_config.peer_cluster_id
+    ));
+    runbook.push_str(&format!(
+        "- **Sync Strategy**: {:?}\n",
+        dr_config.sync_strategy
+    ));
+    runbook.push_str(&format!(
+        "- **Policy Ref**: {}\n\n",
+        dr_config.policy_ref.as_deref().unwrap_or("None")
+    ));
+
+    runbook.push_str("### 2. Manual Failover Procedure\n\n");
+    runbook.push_str("If automated failover is disabled or failed, follow these steps:\n\n");
+    runbook.push_str("```bash\n");
+    runbook.push_str(&format!(
+        "# 1. Verify primary cluster status\nkubectl get stellarnode {name} -n {namespace} -o jsonpath='{{.status.drStatus}}'\n\n"
+    ));
+    runbook.push_str(&format!(
+        "# 2. Promote this node to Primary\nkubectl patch stellarnode {name} -n {namespace} --type merge -p '{{\"spec\": {{\"drConfig\": {{\"role\": \"primary\"}}}}}}'\n\n"
+    ));
+    runbook.push_str(&format!(
+        "# 3. Verify DNS update\nkubectl get stellarnode {name} -n {namespace} -o jsonpath='{{.status.drStatus.failoverActive}}'\n"
+    ));
+    runbook.push_str("```\n\n");
+
+    runbook.push_str("### 3. Automated DR Drill\n\n");
+    runbook.push_str("To run a manual DR drill:\n\n");
+    runbook.push_str("```bash\n");
+    runbook.push_str(&format!(
+        "# Trigger a manual drill\nkubectl annotate stellarnode {name} -n {namespace} stellar.org/run-dr-drill=true\n\n"
+    ));
+    runbook.push_str(&format!(
+        "# Watch drill progress\nkubectl get stellarnode {name} -n {namespace} -o jsonpath='{{.status.drStatus.lastDrillResult}}'\n"
+    ));
+    runbook.push_str("```\n\n");
+
+    runbook.push_str("### 4. Integrity Verification\n\n");
+    runbook.push_str("```bash\n");
+    runbook.push_str(&format!(
+        "# Check sync lag\nkubectl get stellarnode {name} -n {namespace} -o jsonpath='{{.status.drStatus.syncLag}}'\n\n"
+    ));
+    runbook.push_str(&format!(
+        "# Run history archive integrity check\nkubectl annotate stellarnode {name} -n {namespace} stellar.org/run-archive-check=true\n"
+    ));
+    runbook.push_str("```\n\n");
+
+    Ok(runbook)
 }
 
 /// Generate validator-specific troubleshooting steps

@@ -120,7 +120,7 @@ async fn stream_audit_log(mut socket: WebSocket, mut rx: broadcast::Receiver<Aud
         match rx.recv().await {
             Ok(entry) => {
                 if let Ok(json) = serde_json::to_string(&entry) {
-                    if socket.send(Message::Text(json.into())).await.is_err() {
+                    if socket.send(Message::Text(json)).await.is_err() {
                         debug!("Audit log WebSocket client disconnected");
                         break;
                     }

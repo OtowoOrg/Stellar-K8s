@@ -77,3 +77,4 @@ Compatibility aliases for Soroban RPC-oriented templates.
 {{- define "stellar-rpc.selectorLabels" -}}
 {{- include "stellar-operator.selectorLabels" . -}}
 {{- end }}
+

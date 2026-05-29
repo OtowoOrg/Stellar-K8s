@@ -1,172 +1,73 @@
 #!/usr/bin/env bash
 # tests/chaos/run-chaos-tests.sh
 #
-# Runs the full Stellar-K8s chaos test suite against a local kind cluster.
-#
-# Prerequisites: Docker. Everything else is installed automatically.
+# End-to-end chaos engineering runner for Stellar-K8s.
+# Runs all 10 experiments against a local kind cluster and generates
+# a resilience report.
 #
 # Usage:
-#   chmod +x tests/chaos/run-chaos-tests.sh
-#   ./tests/chaos/run-chaos-tests.sh
+#   ./tests/chaos/run-chaos-tests.sh                  # full run
+#   SKIP_SETUP=true ./tests/chaos/run-chaos-tests.sh  # skip cluster creation
+#   EXPERIMENTS="01 02 05" ./tests/chaos/run-chaos-tests.sh  # run subset
+#   SKIP_EXPERIMENTS="09" ./tests/chaos/run-chaos-tests.sh   # skip cascading
 #
-# To skip cluster setup (if you already have one running):
-#   SKIP_SETUP=true ./tests/chaos/run-chaos-tests.sh
+# Environment variables:
+#   SKIP_SETUP          Skip kind cluster creation (default: false)
+#   EXPERIMENTS         Space-separated list of experiment IDs to run (default: all)
+#   SKIP_EXPERIMENTS    Space-separated list of experiment IDs to skip
+#   CLUSTER_NAME        kind cluster name (default: stellar-chaos)
+#   OPERATOR_NS         Operator namespace (default: stellar-system)
+#   CHAOS_NS            Chaos Mesh namespace (default: chaos-testing)
+#   CHAOS_MESH_VERSION  Chaos Mesh Helm chart version (default: 2.6.3)
+#   IMAGE_TAG           Docker image tag (default: chaos-test)
+#   RECOVERY_TIMEOUT    Max seconds to wait for recovery (default: 300)
 
 set -euo pipefail
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-info()    { echo -e "${BLUE}[INFO]${NC}  $*"; }
-success() { echo -e "${GREEN}[PASS]${NC}  $*"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
-fail()    { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
-
+# ── Configuration ──────────────────────────────────────────────────────────
 CLUSTER_NAME="${CLUSTER_NAME:-stellar-chaos}"
-OPERATOR_NAMESPACE="${OPERATOR_NAMESPACE:-stellar-system}"
-CHAOS_NAMESPACE="${CHAOS_NAMESPACE:-chaos-testing}"
-SKIP_SETUP="${SKIP_SETUP:-false}"
+OPERATOR_NS="${OPERATOR_NS:-stellar-system}"
+CHAOS_NS="${CHAOS_NS:-chaos-testing}"
 CHAOS_MESH_VERSION="${CHAOS_MESH_VERSION:-2.6.3}"
-RESULTS_DIR="tests/chaos/results/$(date +%Y%m%d-%H%M%S)"
-OS="$(uname -s)"
+IMAGE_TAG="${IMAGE_TAG:-chaos-test}"
+RECOVERY_TIMEOUT="${RECOVERY_TIMEOUT:-300}"
+SKIP_SETUP="${SKIP_SETUP:-false}"
+ALL_EXPERIMENTS="01 02 03 04 05 06 07 08 09 10"
+EXPERIMENTS="${EXPERIMENTS:-$ALL_EXPERIMENTS}"
+SKIP_EXPERIMENTS="${SKIP_EXPERIMENTS:-}"
 
-mkdir -p "$RESULTS_DIR"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+RUN_ID="$(date +%Y%m%d-%H%M%S)"
+RESULTS_DIR="$SCRIPT_DIR/results/$RUN_ID"
 
-# ---- Helper: wait for pods to be Ready ----------------------------------------
-wait_for_pods() {
-  local namespace="$1" label="$2" timeout="${3:-120}"
-  info "Waiting for pods ($label) in $namespace to be Ready (timeout: ${timeout}s)..."
-  kubectl wait pod \
-    --for=condition=Ready \
-    --selector="$label" \
-    --namespace="$namespace" \
-    --timeout="${timeout}s" \
-    && success "Pods ($label) are Ready" \
-    || fail "Pods ($label) never became Ready within ${timeout}s"
+# ── Colours ────────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; BOLD='\033[1m'; RESET='\033[0m'
+
+log()  { echo -e "${BLUE}[chaos]${RESET} $*"; }
+ok()   { echo -e "${GREEN}[✓]${RESET} $*"; }
+warn() { echo -e "${YELLOW}[⚠]${RESET} $*"; }
+fail() { echo -e "${RED}[✗]${RESET} $*"; }
+sep()  { echo -e "${BOLD}────────────────────────────────────────────────${RESET}"; }
+
+# ── Dependency checks ──────────────────────────────────────────────────────
+check_deps() {
+    local missing=()
+    for cmd in docker kubectl helm kind python3; do
+        command -v "$cmd" &>/dev/null || missing+=("$cmd")
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        fail "Missing dependencies: ${missing[*]}"
+        echo "Install them and re-run, or set SKIP_SETUP=true if cluster already exists."
+        exit 1
+    fi
 }
 
-# ---- Helper: assert all StellarNodes are Ready --------------------------------
-assert_stellar_nodes_healthy() {
-  local timeout="${1:-300}"
-  local interval=10
-  local elapsed=0
-
-  info "Waiting for all StellarNodes to reach Ready condition (timeout: ${timeout}s)..."
-
-  while [ $elapsed -lt $timeout ]; do
-    local total not_ready
-    total=$(kubectl get stellarnode --all-namespaces --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo 0)
-    not_ready=$(kubectl get stellarnode --all-namespaces -o json 2>/dev/null \
-      | python3 -c "
-import json,sys
-data=json.load(sys.stdin)
-count=sum(1 for i in data['items']
-  if not any(c.get('type')=='Ready' and c.get('status')=='True'
-             for c in i.get('status',{}).get('conditions',[])))
-print(count)" 2>/dev/null || echo "$total")
-
-    if [ "$total" -gt 0 ] && [ "$not_ready" -eq 0 ]; then
-      success "All $total StellarNode(s) are Ready"
-      return 0
-    fi
-
-    info "  ${elapsed}s — ${not_ready}/${total} nodes not yet Ready, retrying in ${interval}s..."
-    sleep $interval
-    elapsed=$((elapsed + interval))
-  done
-
-  fail "StellarNodes did not converge to Ready within ${timeout}s"
-}
-
-# ---- Helper: run one chaos experiment and verify recovery ---------------------
-run_experiment() {
-  local name="$1"
-  local file="$2"
-  local duration_seconds="$3"
-  local recovery_timeout="$4"
-
-  echo ""
-  info "Running experiment: $name"
-  info "---------------------------------------------------------"
-
-  kubectl apply -f "$file" --namespace "$CHAOS_NAMESPACE"
-  info "Chaos running for ${duration_seconds}s..."
-  sleep "$duration_seconds"
-
-  kubectl delete -f "$file" --namespace "$CHAOS_NAMESPACE" --ignore-not-found
-  info "Chaos stopped. Waiting for operator to recover..."
-  sleep 10
-
-  wait_for_pods "$OPERATOR_NAMESPACE" "app=stellar-operator" 120
-  assert_stellar_nodes_healthy "$recovery_timeout"
-
-  kubectl logs \
-    --selector=app=stellar-operator \
-    --namespace="$OPERATOR_NAMESPACE" \
-    --tail=200 \
-    > "${RESULTS_DIR}/${name}-operator-logs.txt" 2>&1 || true
-
-  success "Experiment '$name' PASSED"
-}
-
-# ---- Step 1: Install prerequisites -------------------------------------------
-install_prerequisites() {
-  info "Checking prerequisites..."
-
-  if ! command -v kind &>/dev/null; then
-    info "Installing kind..."
-    if [ "$OS" = "Darwin" ]; then
-      command -v brew &>/dev/null || fail "Homebrew not found. Install it from https://brew.sh then re-run."
-      brew install kind
-    else
-      mkdir -p "$HOME/.local/bin"
-      curl -Lo "$HOME/.local/bin/kind" \
-        "https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64"
-      chmod +x "$HOME/.local/bin/kind"
-      export PATH="$HOME/.local/bin:$PATH"
-    fi
-    success "kind installed"
-  else
-    success "kind already installed"
-  fi
-
-  if ! command -v kubectl &>/dev/null; then
-    info "Installing kubectl..."
-    if [ "$OS" = "Darwin" ]; then
-      brew install kubectl
-    else
-      mkdir -p "$HOME/.local/bin"
-      curl -Lo "$HOME/.local/bin/kubectl" \
-        "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-      chmod +x "$HOME/.local/bin/kubectl"
-      export PATH="$HOME/.local/bin:$PATH"
-    fi
-    success "kubectl installed"
-  else
-    success "kubectl already installed"
-  fi
-
-  if ! command -v helm &>/dev/null; then
-    info "Installing helm..."
-    if [ "$OS" = "Darwin" ]; then
-      brew install helm
-    else
-      curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-    fi
-    success "helm installed"
-  else
-    success "helm already installed"
-  fi
-}
-
-# ---- Step 2: Create kind cluster ---------------------------------------------
+# ── Cluster setup ──────────────────────────────────────────────────────────
 setup_cluster() {
-  if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
-    warn "Cluster '$CLUSTER_NAME' already exists, reusing it."
-    kind export kubeconfig --name "$CLUSTER_NAME"
-    return
-  fi
-
-  info "Creating kind cluster '$CLUSTER_NAME'..."
-  kind create cluster --name "$CLUSTER_NAME" --config - <<EOF
+    log "Creating kind cluster: $CLUSTER_NAME"
+    kind create cluster --name "$CLUSTER_NAME" --config - <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -174,38 +75,39 @@ nodes:
   - role: worker
   - role: worker
 EOF
-  success "Cluster '$CLUSTER_NAME' created"
-}
 
-# ---- Step 3: Install Chaos Mesh ----------------------------------------------
-install_chaos_mesh() {
-  if kubectl get namespace chaos-mesh &>/dev/null; then
-    warn "Chaos Mesh already installed, skipping."
-    return
-  fi
+    log "Building operator Docker image: stellar-operator:$IMAGE_TAG"
+    docker build -t "stellar-operator:$IMAGE_TAG" "$PROJECT_ROOT"
+    kind load docker-image "stellar-operator:$IMAGE_TAG" --name "$CLUSTER_NAME"
 
-  info "Installing Chaos Mesh v${CHAOS_MESH_VERSION}..."
-  helm repo add chaos-mesh https://charts.chaos-mesh.org
-  helm repo update
+    log "Installing operator into $OPERATOR_NS"
+    kubectl create namespace "$OPERATOR_NS" --dry-run=client -o yaml | kubectl apply -f -
+    helm upgrade --install stellar-operator "$PROJECT_ROOT/charts/stellar-operator" \
+        --namespace "$OPERATOR_NS" \
+        --set image.tag="$IMAGE_TAG" \
+        --set image.pullPolicy=Never \
+        --wait --timeout=5m
 
-  kubectl create namespace chaos-mesh
-  helm install chaos-mesh chaos-mesh/chaos-mesh \
-    --namespace chaos-mesh \
-    --version "$CHAOS_MESH_VERSION" \
-    --set chaosDaemon.runtime=containerd \
-    --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
-    --wait --timeout=5m
+    log "Installing Chaos Mesh $CHAOS_MESH_VERSION"
+    helm repo add chaos-mesh https://charts.chaos-mesh.org --force-update
+    helm repo update
+    kubectl create namespace chaos-mesh --dry-run=client -o yaml | kubectl apply -f -
+    helm upgrade --install chaos-mesh chaos-mesh/chaos-mesh \
+        --namespace chaos-mesh \
+        --version "$CHAOS_MESH_VERSION" \
+        --set chaosDaemon.runtime=containerd \
+        --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
+        --wait --timeout=5m
 
-  success "Chaos Mesh installed"
+    kubectl create namespace "$CHAOS_NS" --dry-run=client -o yaml | kubectl apply -f -
 
-  kubectl create namespace "$CHAOS_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-
-  kubectl apply -f - <<EOF
+    # Grant Chaos Mesh permission to target stellar-system
+    kubectl apply -f - <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: chaos-mesh-stellar-system
-  namespace: $OPERATOR_NAMESPACE
+  namespace: $OPERATOR_NS
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -215,65 +117,14 @@ subjects:
     name: chaos-controller-manager
     namespace: chaos-mesh
 EOF
-}
 
-# ---- Step 4: Install the operator and a test StellarNode ---------------------
-install_operator() {
-  info "Installing StellarNode CRD..."
-  kubectl apply -f config/crd/stellarnode-crd.yaml
-  kubectl create namespace "$OPERATOR_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-
-  info "Building operator image..."
-  docker build -t stellar-operator:chaos-test .
-  kind load docker-image stellar-operator:chaos-test --name "$CLUSTER_NAME"
-
-  info "Deploying operator..."
-  kubectl apply -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: stellar-operator
-  namespace: $OPERATOR_NAMESPACE
-  labels:
-    app: stellar-operator
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: stellar-operator
-  template:
-    metadata:
-      labels:
-        app: stellar-operator
-    spec:
-      containers:
-        - name: operator
-          image: stellar-operator:chaos-test
-          imagePullPolicy: Never
-          command: ["stellar-operator", "run"]
-          env:
-            - name: RUST_LOG
-              value: info
-            - name: OPERATOR_NAMESPACE
-              value: $OPERATOR_NAMESPACE
-          resources:
-            requests:
-              cpu: 200m
-              memory: 256Mi
-            limits:
-              cpu: 1000m
-              memory: 512Mi
-EOF
-
-  wait_for_pods "$OPERATOR_NAMESPACE" "app=stellar-operator" 120
-
-  info "Creating test StellarNode..."
-  kubectl apply -f - <<EOF
+    log "Deploying test StellarNode"
+    kubectl apply -f - <<EOF
 apiVersion: stellar.org/v1alpha1
 kind: StellarNode
 metadata:
   name: chaos-test-horizon
-  namespace: $OPERATOR_NAMESPACE
+  namespace: $OPERATOR_NS
 spec:
   nodeType: Horizon
   network: Testnet
@@ -287,59 +138,167 @@ spec:
     enableExperimentalIngestion: false
     autoMigration: false
 EOF
-
-  info "Waiting 30s for initial reconciliation..."
-  sleep 30
+    sleep 30
+    ok "Cluster setup complete"
 }
 
-# ---- Main --------------------------------------------------------------------
+# ── Experiment runner ──────────────────────────────────────────────────────
+run_experiment() {
+    local exp_id="$1"
+    local manifest="$SCRIPT_DIR/${exp_id}-"*.yaml
+    local log_file="$RESULTS_DIR/exp${exp_id}-operator-logs.txt"
+    local meta_file="$RESULTS_DIR/exp${exp_id}-meta.json"
+
+    # Resolve glob
+    manifest=$(ls "$SCRIPT_DIR/${exp_id}-"*.yaml 2>/dev/null | head -1 || true)
+    if [[ -z "$manifest" ]]; then
+        warn "No manifest found for experiment $exp_id — skipping"
+        return 0
+    fi
+
+    sep
+    log "Running Experiment $exp_id: $(basename "$manifest" .yaml)"
+
+    # Determine duration from manifest
+    local duration_secs
+    duration_secs=$(grep -oP 'duration:\s*"\K[0-9]+(?=s")' "$manifest" | head -1 || echo "60")
+    local wait_secs=$(( duration_secs + 30 ))
+
+    local start_ts
+    start_ts=$(date +%s)
+
+    # Apply experiment
+    kubectl apply -f "$manifest" --namespace="$CHAOS_NS"
+
+    log "Experiment running for ${duration_secs}s (waiting ${wait_secs}s total)..."
+    sleep "$wait_secs"
+
+    # Remove experiment
+    kubectl delete -f "$manifest" --namespace="$CHAOS_NS" --ignore-not-found
+
+    # Collect operator logs
+    kubectl logs \
+        --selector=app=stellar-operator \
+        --namespace="$OPERATOR_NS" \
+        --tail=1000 \
+        --since="${wait_secs}s" \
+        > "$log_file" 2>&1 || true
+
+    # Wait for recovery
+    local recovery_start
+    recovery_start=$(date +%s)
+    local recovered=false
+
+    log "Waiting for operator recovery (timeout: ${RECOVERY_TIMEOUT}s)..."
+    if kubectl wait pod \
+        --for=condition=Ready \
+        --selector=app=stellar-operator \
+        --namespace="$OPERATOR_NS" \
+        --timeout="${RECOVERY_TIMEOUT}s" 2>/dev/null; then
+        recovered=true
+    fi
+
+    local recovery_end
+    recovery_end=$(date +%s)
+    local recovery_secs=$(( recovery_end - recovery_start ))
+
+    # Write metadata
+    cat > "$meta_file" <<EOF
+{
+  "experiment_id": "$exp_id",
+  "manifest": "$(basename "$manifest")",
+  "start_timestamp": $start_ts,
+  "duration_secs": $duration_secs,
+  "recovery_time_secs": $recovery_secs,
+  "recovered": $recovered
+}
+EOF
+
+    if [[ "$recovered" == "true" ]]; then
+        ok "Experiment $exp_id: operator recovered in ${recovery_secs}s"
+    else
+        fail "Experiment $exp_id: operator did NOT recover within ${RECOVERY_TIMEOUT}s"
+    fi
+}
+
+# ── Should we run this experiment? ────────────────────────────────────────
+should_run() {
+    local exp_id="$1"
+    # Check if in EXPERIMENTS list
+    if [[ ! " $EXPERIMENTS " =~ " $exp_id " ]]; then
+        return 1
+    fi
+    # Check if in SKIP_EXPERIMENTS list
+    if [[ -n "$SKIP_EXPERIMENTS" && " $SKIP_EXPERIMENTS " =~ " $exp_id " ]]; then
+        warn "Skipping experiment $exp_id (in SKIP_EXPERIMENTS)"
+        return 1
+    fi
+    return 0
+}
+
+# ── Report generation ──────────────────────────────────────────────────────
+generate_report() {
+    log "Generating resilience report..."
+    if command -v python3 &>/dev/null; then
+        python3 "$SCRIPT_DIR/generate_report.py" \
+            --results-dir "$RESULTS_DIR" \
+            --output-format both \
+            --run-id "$RUN_ID" || true
+    else
+        # Fallback to shell script
+        bash "$SCRIPT_DIR/generate-report.sh" "$RESULTS_DIR" || true
+    fi
+}
+
+# ── Main ───────────────────────────────────────────────────────────────────
 main() {
-  echo ""
-  echo "=================================================="
-  echo "  Stellar-K8s Chaos Engineering Test Suite"
-  echo "=================================================="
-  echo ""
+    sep
+    echo -e "${BOLD}🔥 Stellar-K8s Chaos Engineering Suite${RESET}"
+    echo -e "   Run ID: $RUN_ID"
+    echo -e "   Results: $RESULTS_DIR"
+    sep
 
-  install_prerequisites
+    check_deps
+    mkdir -p "$RESULTS_DIR"
 
-  if [ "$SKIP_SETUP" != "true" ]; then
-    setup_cluster
-    install_chaos_mesh
-    install_operator
-  else
-    warn "SKIP_SETUP=true — skipping cluster setup"
-    kind export kubeconfig --name "$CLUSTER_NAME" 2>/dev/null || true
-  fi
+    if [[ "$SKIP_SETUP" != "true" ]]; then
+        setup_cluster
+    else
+        log "Skipping cluster setup (SKIP_SETUP=true)"
+    fi
 
-  OVERALL_PASS=true
+    local pass_count=0
+    local fail_count=0
+    local skip_count=0
 
-  # Experiment 1: pod kill — wait 40s, recovery timeout 180s
-  run_experiment "01-operator-pod-kill" "tests/chaos/01-operator-pod-kill.yaml" 40 180 || OVERALL_PASS=false
+    for exp_id in $ALL_EXPERIMENTS; do
+        if should_run "$exp_id"; then
+            if run_experiment "$exp_id"; then
+                (( pass_count++ )) || true
+            else
+                (( fail_count++ )) || true
+            fi
+        else
+            (( skip_count++ )) || true
+        fi
+    done
 
-  # Experiment 2: network partition — wait 70s, recovery timeout 300s
-  run_experiment "02-network-partition" "tests/chaos/02-network-partition.yaml" 70 300 || OVERALL_PASS=false
+    generate_report
 
-  # Experiment 3: API latency — wait 130s, recovery timeout 600s
-  run_experiment "03-api-latency" "tests/chaos/03-api-latency.yaml" 130 600 || OVERALL_PASS=false
+    sep
+    echo -e "${BOLD}Results Summary${RESET}"
+    echo -e "  ✅ Passed:  $pass_count"
+    echo -e "  ❌ Failed:  $fail_count"
+    echo -e "  ⏭  Skipped: $skip_count"
+    echo -e "  📄 Report:  $RESULTS_DIR/resilience-report.md"
+    sep
 
-  # Experiment 4: validator peer partition — wait 100s, recovery timeout 300s
-  run_experiment "04-validator-peer-partition" "tests/chaos/04-validator-peer-partition.yaml" 100 300 || OVERALL_PASS=false
-
-  # Experiment 5: disk fill — wait 50s, recovery timeout 180s
-  run_experiment "05-disk-fill" "tests/chaos/05-disk-fill.yaml" 50 180 || OVERALL_PASS=false
-
-  echo ""
-  echo "=================================================="
-  echo "  Results saved to: $RESULTS_DIR"
-  echo "=================================================="
-  echo ""
-
-  if [ "$OVERALL_PASS" = "true" ]; then
-    success "ALL EXPERIMENTS PASSED"
-    exit 0
-  else
-    fail "ONE OR MORE EXPERIMENTS FAILED — check logs in $RESULTS_DIR"
-  fi
+    if [[ $fail_count -gt 0 ]]; then
+        fail "Chaos suite FAILED — $fail_count experiment(s) did not recover"
+        exit 1
+    else
+        ok "Chaos suite PASSED"
+    fi
 }
 
 main "$@"

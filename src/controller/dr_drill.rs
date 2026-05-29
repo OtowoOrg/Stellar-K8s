@@ -9,8 +9,10 @@ use std::str::FromStr;
 use std::time::Instant;
 use tracing::{debug, error, info, instrument, warn};
 
+use crate::controller::chaos_engineering::{ChaosExperimentConfig, ChaosExperimentType, ChaosRunner};
 use crate::crd::{
-    DRDrillResult, DRDrillScheduleConfig, DRDrillStatus, DisasterRecoveryStatus, StellarNode,
+    DRDrillResult, DRDrillScheduleConfig, DRDrillStatus, DRFailureType, DisasterRecoveryStatus,
+    StellarNode,
 };
 use crate::error::{Error, Result};
 
@@ -212,7 +214,7 @@ async fn execute_drill_phases(
 
 /// Simulate failover by triggering a fake primary failure
 async fn simulate_failover(
-    _client: &Client,
+    client: &Client,
     node: &StellarNode,
     drill_config: &DRDrillScheduleConfig,
     _dr_status: &DisasterRecoveryStatus,
@@ -222,63 +224,154 @@ async fn simulate_failover(
 
     if drill_config.dry_run {
         debug!(
-            "DRY RUN: Would simulate primary failure for {}/{}",
-            namespace, name
+            "DRY RUN: Would simulate {:?} failure for {}/{}",
+            drill_config.failure_type, namespace, name
         );
         Ok((true, "Dry-run failover simulation".to_string()))
     } else {
-        // In production, this would:
-        // 1. Kill the primary pod or
-        // 2. Inject network latency to simulate failure
-        // For now, we simulate success
         info!(
-            "Simulating primary failure for {}/{} (timeout: {}s)",
-            namespace, name, drill_config.timeout_seconds
+            "Simulating {:?} failure for {}/{} (timeout: {}s)",
+            drill_config.failure_type, namespace, name, drill_config.timeout_seconds
         );
-        Ok((true, "Primary failure simulated".to_string()))
+
+        let chaos_runner = ChaosRunner::new(client.clone());
+        let experiment_type = match drill_config.failure_type {
+            DRFailureType::PodKill => ChaosExperimentType::PodKill,
+            DRFailureType::NetworkLatency => ChaosExperimentType::NetworkDelay,
+            DRFailureType::DiskPressure => ChaosExperimentType::IoStress,
+            DRFailureType::RegionOutage => ChaosExperimentType::NetworkDelay, // Simulate region outage with network delay
+        };
+
+        let chaos_config = ChaosExperimentConfig {
+            experiment_type,
+            namespace: namespace.clone(),
+            target_label_selector: format!("app.kubernetes.io/instance={}", name),
+            duration_secs: 60,
+            delay_ms: Some(500),
+            jitter_ms: Some(50),
+            io_workers: Some(4),
+            cpu_workers: None,
+            memory_mb: None,
+        };
+
+        match chaos_runner.run_experiment(chaos_config).await {
+            Ok(res) => {
+                if res.system_recovered {
+                    Ok((true, format!("Synthetic failure {:?} successful", drill_config.failure_type)))
+                } else {
+                    Ok((false, format!("Synthetic failure {:?} failed to recover", drill_config.failure_type)))
+                }
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 
+use k8s_openapi::api::core::v1::{Endpoints, Pod, Service};
+use kube::Api;
+
 /// Verify that standby successfully took over
 async fn verify_standby_takeover(
-    _client: &Client,
+    client: &Client,
     node: &StellarNode,
     _drill_config: &DRDrillScheduleConfig,
 ) -> Result<bool> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
 
-    // Check if standby is now marked as primary
     debug!("Verifying standby takeover for {}/{}", namespace, name);
 
-    // In production, this would:
-    // 1. Query the standby node's status
-    // 2. Verify it's now accepting traffic
-    // 3. Check DNS has been updated
-    // For now, we simulate success
+    // 1. Check if node status reflects the change
+    let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+    let updated_node = api.get(&name).await.map_err(Error::KubeError)?;
+
+    let is_primary = updated_node
+        .status
+        .as_ref()
+        .and_then(|s| s.dr_status.as_ref())
+        .and_then(|dr| dr.current_role.as_ref())
+        .map(|r| matches!(r, crate::crd::DRRole::Primary))
+        .unwrap_or(false);
+
+    if !is_primary {
+        warn!(
+            "Standby node {}/{} did not transition to Primary role",
+            namespace, name
+        );
+        return Ok(false);
+    }
+
+    // 2. Check if pods are ready
+    let pods: Api<Pod> = Api::namespaced(client.clone(), &namespace);
+    let lp =
+        kube::api::ListParams::default().labels(&format!("app.kubernetes.io/instance={}", name));
+    let pod_list = pods.list(&lp).await.map_err(Error::KubeError)?;
+
+    let all_ready = pod_list.items.iter().all(|p| {
+        p.status
+            .as_ref()
+            .and_then(|s| s.container_statuses.as_ref())
+            .map(|cs| cs.iter().all(|c| c.ready))
+            .unwrap_or(false)
+    });
+
+    if !all_ready {
+        warn!(
+            "Not all pods for {}/{} are ready after takeover",
+            namespace, name
+        );
+        return Ok(false);
+    }
+
     Ok(true)
 }
 
 /// Verify that the application remained available during the drill
 async fn verify_application_availability(
-    _client: &Client,
+    client: &Client,
     node: &StellarNode,
     _drill_config: &DRDrillScheduleConfig,
 ) -> Result<bool> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
 
-    // Check application availability metrics
     debug!(
         "Verifying application availability for {}/{}",
         namespace, name
     );
 
-    // In production, this would:
-    // 1. Query application metrics (request success rate, latency)
-    // 2. Check for any dropped connections
-    // 3. Verify no data loss occurred
-    // For now, we simulate success
+    // 1. Perform a simple HTTP health check if it's a Horizon node
+    if node.spec.node_type == crate::crd::NodeType::Horizon {
+        let ep_api: Api<Endpoints> = Api::namespaced(client.clone(), &namespace);
+        let ep = ep_api.get(&name).await.map_err(Error::KubeError)?;
+
+        let has_endpoints = ep.subsets.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+        if !has_endpoints {
+            warn!("Service {}/{} has no active endpoints", namespace, name);
+            return Ok(false);
+        }
+    }
+
+    // 2. Data Integrity Check (Simplified)
+    // We can check if the ledger sequence is advancing
+    let initial_ledger = node.status.as_ref().and_then(|s| s.ledger_sequence).unwrap_or(0);
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+    let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+    let updated_node = api.get(&name).await.map_err(Error::KubeError)?;
+    let current_ledger = updated_node
+        .status
+        .as_ref()
+        .and_then(|s| s.ledger_sequence)
+        .unwrap_or(0);
+
+    if current_ledger <= initial_ledger && initial_ledger > 0 {
+        warn!(
+            "Ledger sequence did not advance for {}/{} ({} -> {})",
+            namespace, name, initial_ledger, current_ledger
+        );
+    }
+
     Ok(true)
 }
 

@@ -19,6 +19,11 @@ use super::types::{
     ResourceRequirements, RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy,
     SnapshotScheduleConfig, SorobanConfig, StellarNetwork, StorageConfig, SyncStateScalingConfig,
     ValidatorConfig, VpaConfig,
+    ManagedDatabaseConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig, PlacementConfig,
+    PodAntiAffinityStrength, PolicyConfig, ProbeConfig, RbacConfig, ResourceRequirements,
+    RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy, SnapshotScheduleConfig,
+    SorobanConfig, StellarNetwork, StorageConfig, SyncStateScalingConfig, ValidatorConfig,
+    VpaConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`

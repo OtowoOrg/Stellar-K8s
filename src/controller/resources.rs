@@ -3516,44 +3516,38 @@ fn extract_peers_from_config(node: &StellarNode) -> Vec<String> {
 
     // 1. Parse KNOWN_PEERS if present
     if let Some(known_peers_toml) = &config.known_peers {
-        match known_peers_toml.parse::<toml::Value>() {
-            Ok(value) => {
-                if let Some(kp_array) = value.as_array() {
-                    for v in kp_array {
-                        if let Some(s) = v.as_str() {
-                            // Extract IP/Hostname from "IP:PORT"
-                            let peer = s.split(':').next().unwrap_or(s);
-                            peers.push(peer.to_string());
-                        }
+        if let Ok(value) = known_peers_toml.parse::<toml::Value>() {
+            if let Some(kp_array) = value.as_array() {
+                for v in kp_array {
+                    if let Some(s) = v.as_str() {
+                        // Extract IP/Hostname from "IP:PORT"
+                        let peer = s.split(':').next().unwrap_or(s);
+                        peers.push(peer.to_string());
                     }
-                } else if let Some(kp_table) = value.get("KNOWN_PEERS").and_then(|v| v.as_array()) {
-                    for v in kp_table {
-                        if let Some(s) = v.as_str() {
-                            let peer = s.split(':').next().unwrap_or(s);
-                            peers.push(peer.to_string());
-                        }
+                }
+            } else if let Some(kp_table) = value.get("KNOWN_PEERS").and_then(|v| v.as_array()) {
+                for v in kp_table {
+                    if let Some(s) = v.as_str() {
+                        let peer = s.split(':').next().unwrap_or(s);
+                        peers.push(peer.to_string());
                     }
                 }
             }
-            Err(_) => {} // Silently skip unparseable KNOWN_PEERS
         }
     }
 
     // 2. Parse QUORUM_SET for any direct IP references (rare but possible in custom setups)
     if let Some(qs_toml) = &config.quorum_set {
-        match qs_toml.parse::<toml::Value>() {
-            Ok(value) => {
-                // Check for [VALIDATORS] section with IP-like keys
-                if let Some(validators) = value.get("VALIDATORS").and_then(|v| v.as_table()) {
-                    for key in validators.keys() {
-                        // If key looks like an IP or hostname (not a public key), add it
-                        if !key.starts_with('G') && key.contains('.') {
-                            peers.push(key.clone());
-                        }
+        if let Ok(value) = qs_toml.parse::<toml::Value>() {
+            // Check for [VALIDATORS] section with IP-like keys
+            if let Some(validators) = value.get("VALIDATORS").and_then(|v| v.as_table()) {
+                for key in validators.keys() {
+                    // If key looks like an IP or hostname (not a public key), add it
+                    if !key.starts_with('G') && key.contains('.') {
+                        peers.push(key.clone());
                     }
                 }
             }
-            Err(_) => {} // Silently skip unparseable QUORUM_SET
         }
     }
 

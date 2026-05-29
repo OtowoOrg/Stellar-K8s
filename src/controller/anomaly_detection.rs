@@ -8,7 +8,7 @@ use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tracing::{info, warn};
 
-use crate::controller::audit_log::{AdminAction, AuditEntry};
+use crate::controller::audit_log::AdminAction;
 use crate::controller::background_jobs::{JobKind, JobRegistry};
 use crate::controller::ControllerState;
 
@@ -186,7 +186,7 @@ impl AnomalyDetector {
 
         if zscore >= self.config.zscore_threshold {
             let parts: Vec<&str> = key.splitn(2, '|').collect();
-            let actor = parts.get(0).copied().unwrap_or("unknown").to_string();
+            let actor = parts.first().copied().unwrap_or("unknown").to_string();
             let action = parts
                 .get(1)
                 .and_then(|s| serde_json::from_str::<AdminAction>(s).ok())
@@ -308,7 +308,7 @@ async fn detect_once(state: &ControllerState, detector: &AnomalyDetector) -> Res
     Ok(())
 }
 
-async fn perform_remediation(state: &ControllerState, event: &AnomalyEvent) {
+async fn perform_remediation(_state: &ControllerState, event: &AnomalyEvent) {
     warn!(actor = %event.actor, message = %event.message, "Performing automated remediation");
 
     // In a real implementation, this would:

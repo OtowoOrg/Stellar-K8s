@@ -63,7 +63,7 @@ impl StellarMetricType {
     ///
     /// Accepts both canonical names and convenient short aliases so that HPA
     /// manifests can use either `stellar_horizon_tps` or `transactions_per_second`.
-    pub fn from_str(name: &str) -> Option<Self> {
+    pub fn parse_metric_name(name: &str) -> Option<Self> {
         match name {
             // TPS — primary HPA metric for Horizon load scaling
             "stellar_horizon_tps" | "transactions_per_second" | "stellar_tps" => {
@@ -482,7 +482,7 @@ pub async fn get_pod_metric(
         namespace, name, metric_name
     );
 
-    let metric_type = match StellarMetricType::from_str(&metric_name) {
+    let metric_type = match StellarMetricType::parse_metric_name(&metric_name) {
         Some(mt) => mt,
         None => {
             warn!(
@@ -523,7 +523,7 @@ pub async fn get_stellar_node_metric(
         namespace, name, metric_name
     );
 
-    let metric_type = match StellarMetricType::from_str(&metric_name) {
+    let metric_type = match StellarMetricType::parse_metric_name(&metric_name) {
         Some(mt) => mt,
         None => {
             warn!(
@@ -564,7 +564,7 @@ pub async fn get_horizon_metric(
         namespace, name, metric_name
     );
 
-    let metric_type = match StellarMetricType::from_str(&metric_name) {
+    let metric_type = match StellarMetricType::parse_metric_name(&metric_name) {
         Some(mt) => mt,
         None => {
             warn!(
@@ -596,20 +596,20 @@ pub async fn get_horizon_metric(
 mod tests {
     use super::*;
 
-    // ---- StellarMetricType::from_str ----------------------------------------
+    // ---- StellarMetricType::parse_metric_name ----------------------------------------
 
     #[test]
     fn test_tps_metric_type_aliases() {
         assert_eq!(
-            StellarMetricType::from_str("stellar_horizon_tps"),
+            StellarMetricType::parse_metric_name("stellar_horizon_tps"),
             Some(StellarMetricType::TransactionsPerSecond)
         );
         assert_eq!(
-            StellarMetricType::from_str("transactions_per_second"),
+            StellarMetricType::parse_metric_name("transactions_per_second"),
             Some(StellarMetricType::TransactionsPerSecond)
         );
         assert_eq!(
-            StellarMetricType::from_str("stellar_tps"),
+            StellarMetricType::parse_metric_name("stellar_tps"),
             Some(StellarMetricType::TransactionsPerSecond)
         );
     }
@@ -617,15 +617,15 @@ mod tests {
     #[test]
     fn test_queue_length_metric_type_aliases() {
         assert_eq!(
-            StellarMetricType::from_str("stellar_horizon_queue_length"),
+            StellarMetricType::parse_metric_name("stellar_horizon_queue_length"),
             Some(StellarMetricType::QueueLength)
         );
         assert_eq!(
-            StellarMetricType::from_str("queue_length"),
+            StellarMetricType::parse_metric_name("queue_length"),
             Some(StellarMetricType::QueueLength)
         );
         assert_eq!(
-            StellarMetricType::from_str("stellar_queue_length"),
+            StellarMetricType::parse_metric_name("stellar_queue_length"),
             Some(StellarMetricType::QueueLength)
         );
     }
@@ -633,11 +633,11 @@ mod tests {
     #[test]
     fn test_metric_type_from_str_ledger_sequence() {
         assert_eq!(
-            StellarMetricType::from_str("stellar_ledger_sequence"),
+            StellarMetricType::parse_metric_name("stellar_ledger_sequence"),
             Some(StellarMetricType::LedgerSequence)
         );
         assert_eq!(
-            StellarMetricType::from_str("ledger_sequence"),
+            StellarMetricType::parse_metric_name("ledger_sequence"),
             Some(StellarMetricType::LedgerSequence)
         );
     }
@@ -645,11 +645,11 @@ mod tests {
     #[test]
     fn test_metric_type_from_str_ingestion_lag() {
         assert_eq!(
-            StellarMetricType::from_str("stellar_ingestion_lag"),
+            StellarMetricType::parse_metric_name("stellar_ingestion_lag"),
             Some(StellarMetricType::IngestionLag)
         );
         assert_eq!(
-            StellarMetricType::from_str("ingestion_lag"),
+            StellarMetricType::parse_metric_name("ingestion_lag"),
             Some(StellarMetricType::IngestionLag)
         );
     }
@@ -657,20 +657,20 @@ mod tests {
     #[test]
     fn test_metric_type_from_str_active_connections() {
         assert_eq!(
-            StellarMetricType::from_str("stellar_active_connections"),
+            StellarMetricType::parse_metric_name("stellar_active_connections"),
             Some(StellarMetricType::ActiveConnections)
         );
         assert_eq!(
-            StellarMetricType::from_str("active_connections"),
+            StellarMetricType::parse_metric_name("active_connections"),
             Some(StellarMetricType::ActiveConnections)
         );
     }
 
     #[test]
     fn test_metric_type_from_str_unsupported() {
-        assert_eq!(StellarMetricType::from_str("unknown_metric"), None);
-        assert_eq!(StellarMetricType::from_str("cpu"), None);
-        assert_eq!(StellarMetricType::from_str(""), None);
+        assert_eq!(StellarMetricType::parse_metric_name("unknown_metric"), None);
+        assert_eq!(StellarMetricType::parse_metric_name("cpu"), None);
+        assert_eq!(StellarMetricType::parse_metric_name(""), None);
     }
 
     #[test]
@@ -801,7 +801,7 @@ mod tests {
             assert!(!name.is_empty());
             // Each canonical name must round-trip through from_str.
             assert!(
-                StellarMetricType::from_str(name).is_some(),
+                StellarMetricType::parse_metric_name(name).is_some(),
                 "Canonical name '{name}' did not round-trip"
             );
         }

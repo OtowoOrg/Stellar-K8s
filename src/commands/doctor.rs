@@ -165,12 +165,12 @@ pub async fn run_doctor(args: DoctorArgs) -> Result<(), Error> {
     println!("=== Stellar Doctor: Local environment verification ===");
     println!();
 
-    let mut checks = Vec::new();
-
-    checks.push(check_github_cli());
-    checks.push(check_kubectl_cli());
-    checks.push(check_helm_cli());
-    checks.push(check_kubectl_current_context());
+    let mut checks = vec![
+        check_github_cli(),
+        check_kubectl_cli(),
+        check_helm_cli(),
+        check_kubectl_current_context(),
+    ];
 
     println!("=== CLI tool and context checks ===");
     println!();

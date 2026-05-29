@@ -323,7 +323,8 @@ impl LoadModelingController {
 
         let mut predictions = Vec::new();
         for i in 1..=horizon_minutes {
-            let seasonal_factor = ((i as f32 / 60.0) * 2.0 * 3.14159).sin() * 10.0;
+            let seasonal_factor =
+                ((i as f32 / 60.0) * 2.0 * std::f64::consts::PI as f32).sin() * 10.0;
             let predicted_value = (window_avg + seasonal_factor).max(0.0).min(100.0);
             let lower = (predicted_value - 8.0).max(0.0);
             let upper = (predicted_value + 8.0).min(100.0);

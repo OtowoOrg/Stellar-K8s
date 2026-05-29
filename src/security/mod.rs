@@ -7,6 +7,11 @@ pub mod runtime;
 pub mod remediation;
 pub mod policy;
 pub mod compliance;
+pub mod kms;
+pub mod secret_audit;
+pub mod secret_metrics;
+pub mod secret_rotation;
+pub mod secret_sync;
 
 use serde::{Deserialize, Serialize};
 

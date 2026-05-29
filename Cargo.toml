@@ -83,6 +83,8 @@ reqwest = { version = "0.12", features = [
 
 # Kafka client for SCP analytics pipeline
 rdkafka = { version = "0.36", features = ["cmake-build", "ssl", "sasl"] }
+# Vendored libsasl2 so CI/dev builds succeed without system libsasl2-dev.
+sasl2-sys = { version = "0.1.22", features = ["vendored"] }
 
 # REST API (optional)
 axum = { version = "0.7.5", optional = true, features = ["ws"] }

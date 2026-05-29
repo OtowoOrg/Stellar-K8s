@@ -27,11 +27,11 @@ impl Validator {
         let mut errors = Vec::new();
 
         // 1. Resource consistency check
-        if let (Some(req), Some(lim)) = (&spec.resources.requests, &spec.resources.limits) {
-            if let (Some(req_cpu), Some(lim_cpu)) = (req.cpu.parse::<f64>().ok(), lim.cpu.parse::<f64>().ok()) {
-                if req_cpu > lim_cpu {
-                    errors.push("CPU request cannot be greater than limit".to_string());
-                }
+        let req = &spec.resources.requests;
+        let lim = &spec.resources.limits;
+        if let (Ok(req_cpu), Ok(lim_cpu)) = (req.cpu.parse::<f64>(), lim.cpu.parse::<f64>()) {
+            if req_cpu > lim_cpu {
+                errors.push("CPU request cannot be greater than limit".to_string());
             }
         }
 
@@ -41,7 +41,9 @@ impl Validator {
         }
 
         // 3. Network-specific validation
-        if spec.network == crate::crd::StellarNetwork::Custom(_) && spec.custom_network_passphrase.is_none() {
+        if matches!(spec.network, crate::crd::StellarNetwork::Custom(_))
+            && spec.custom_network_passphrase.is_none()
+        {
             errors.push("Custom network requires a network passphrase".to_string());
         }
 

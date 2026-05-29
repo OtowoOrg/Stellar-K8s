@@ -150,7 +150,7 @@ impl TenantSpecCrd {
 /// TenantUsage CRD placeholder for usage/billing metrics.
 ///
 /// This is intentionally minimal for now.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TenantUsageSpec {
     pub tenant_id: String,
@@ -173,7 +173,7 @@ pub struct TenantUsageStatus {
     pub last_updated_at: Option<String>,
 }
 
-#[derive(CustomResource, Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(CustomResource, Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[kube(
     group = "stellar.org",
     version = "v1alpha1",
@@ -186,4 +186,3 @@ pub struct TenantUsageCrd {
     pub spec: TenantUsageSpec,
     pub status: Option<TenantUsageStatus>,
 }
-

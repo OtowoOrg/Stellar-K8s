@@ -124,6 +124,7 @@ pub(crate) mod resources;
 mod resources_test;
 pub mod service_mesh;
 mod snapshot;
+pub mod secret_policy_controller;
 pub mod soroban_cache;
 pub mod spot_drain;
 pub mod snapshot_worker;

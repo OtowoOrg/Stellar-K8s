@@ -56,6 +56,7 @@ pub mod multi_region;
 pub mod dr_policy;
 pub mod federation;
 pub mod stellar_benchmark;
+mod secret_policy;
 mod stellar_node;
 pub mod types;
 pub mod tenant;
@@ -87,6 +88,11 @@ pub use dr_policy::{
 pub use federation::{
     ClusterRegistry, ClusterRegistrySpec, ConflictResolutionStrategy, FederatedCluster,
     FederatedPlacement, FederatedStellarNode, FederatedStellarNodeSpec,
+};
+pub use secret_policy::{
+    AwsKmsConfig, AzureKeyVaultConfig, GcpKmsConfig, KmsProvider, RotationPolicy,
+    SecretAuditConfig, SecretPolicy, SecretPolicyCondition, SecretPolicyPhase,
+    SecretPolicySpec, SecretPolicyStatus, SecretPolicySyncConfig, SyncConflictResolution,
 };
 pub use stellar_node::{
     BGPStatus, SnapshotBootstrapStatus, SpecValidationError, StellarNode, StellarNodeSpec,

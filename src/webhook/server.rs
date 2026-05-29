@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     extract::State,
@@ -37,6 +38,38 @@ pub struct WebhookServer {
 
     /// TLS configuration
     tls_config: Option<TlsConfig>,
+
+    /// External policy delegation configuration for OPA/Gatekeeper.
+    policy_config: PolicyDelegationConfig,
+
+    /// HTTP client used for external policy delegation requests.
+    policy_http: reqwest::Client,
+}
+
+#[derive(Clone, Debug)]
+struct PolicyDelegationConfig {
+    endpoint: Option<String>,
+    timeout: Duration,
+    fail_open: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DelegatedPolicyResponse {
+    allowed: bool,
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SecurityPolicyInfo {
+    name: String,
+    engine: String,
+    description: String,
+    path: String,
 }
 
 /// TLS configuration for the webhook server
@@ -115,10 +148,103 @@ pub struct PluginResultInfo {
 impl WebhookServer {
     /// Create a new webhook server
     pub fn new(runtime: WasmRuntime) -> Self {
+        let endpoint = std::env::var("OPA_GATEKEEPER_WEBHOOK_URL")
+            .ok()
+            .filter(|v| !v.trim().is_empty());
+        let timeout_ms = std::env::var("OPA_GATEKEEPER_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(1500);
+        let fail_open = std::env::var("OPA_GATEKEEPER_FAIL_OPEN")
+            .ok()
+            .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+            .unwrap_or(false);
+        let timeout = Duration::from_millis(timeout_ms);
+        let policy_http = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
         Self {
             runtime: Arc::new(runtime),
             plugins: Arc::new(RwLock::new(Vec::new())),
             tls_config: None,
+            policy_config: PolicyDelegationConfig {
+                endpoint,
+                timeout,
+                fail_open,
+            },
+            policy_http,
+        }
+    }
+
+    async fn delegate_policy_check(&self, input: &ValidationInput) -> ValidationOutput {
+        let Some(endpoint) = self.policy_config.endpoint.as_ref() else {
+            return ValidationOutput::allowed();
+        };
+
+        let result = self.policy_http.post(endpoint).json(input).send().await;
+
+        let response = match result {
+            Ok(resp) => resp,
+            Err(e) => {
+                let message = format!(
+                    "OPA/Gatekeeper delegation request failed (timeout={}ms): {}",
+                    self.policy_config.timeout.as_millis(),
+                    e
+                );
+                return if self.policy_config.fail_open {
+                    ValidationOutput::allowed_with_warnings(vec![message])
+                } else {
+                    ValidationOutput::denied(message)
+                };
+            }
+        };
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            let message = format!(
+                "OPA/Gatekeeper delegation returned HTTP {}: {}",
+                status,
+                body.trim()
+            );
+            return if self.policy_config.fail_open {
+                ValidationOutput::allowed_with_warnings(vec![message])
+            } else {
+                ValidationOutput::denied(message)
+            };
+        }
+
+        match response.json::<DelegatedPolicyResponse>().await {
+            Ok(payload) => {
+                if payload.allowed {
+                    if payload.warnings.is_empty() {
+                        ValidationOutput::allowed()
+                    } else {
+                        ValidationOutput::allowed_with_warnings(payload.warnings)
+                    }
+                } else {
+                    ValidationOutput {
+                        allowed: false,
+                        message: payload
+                            .message
+                            .or(Some("Denied by OPA/Gatekeeper policy".to_string())),
+                        reason: Some("DelegatedPolicyDenied".to_string()),
+                        errors: Vec::new(),
+                        warnings: payload.warnings,
+                        audit_annotations: BTreeMap::new(),
+                    }
+                }
+            }
+            Err(e) => {
+                let message = format!("Invalid OPA/Gatekeeper response payload: {}", e);
+                if self.policy_config.fail_open {
+                    ValidationOutput::allowed_with_warnings(vec![message])
+                } else {
+                    ValidationOutput::denied(message)
+                }
+            }
         }
     }
 
@@ -192,6 +318,20 @@ impl WebhookServer {
                 if let Some(mut builtin) = validate_spec_builtin(object) {
                     builtin.warnings.extend(warnings);
                     return builtin;
+                }
+
+                let delegated = self.delegate_policy_check(&input).await;
+                warnings.extend(delegated.warnings.clone());
+                if !delegated.allowed {
+                    return ServerValidationResult {
+                        allowed: false,
+                        message: delegated
+                            .message
+                            .or(Some("Denied by OPA/Gatekeeper policy".to_string())),
+                        warnings,
+                        plugin_results: vec![],
+                        total_execution_time_ms: 0,
+                    };
                 }
             }
         }
@@ -271,6 +411,8 @@ impl WebhookServer {
             .route("/healthz", get(health_handler))
             .route("/ready", get(ready_handler))
             .route("/validate", post(validate_handler))
+            .route("/validate/policy", post(validate_policy_handler))
+            .route("/policy/library", get(policy_library_handler))
             .route("/mutate", post(mutate_handler))
             .route("/db-trigger", post(db_trigger_handler))
             .route("/plugins", get(list_plugins_handler))
@@ -385,6 +527,82 @@ async fn validate_handler(
     );
 
     (StatusCode::OK, Json(response.into_review()))
+}
+
+#[instrument(
+    skip(state, review),
+    fields(node_name = "-", namespace = "-", reconcile_id = "-")
+)]
+async fn validate_policy_handler(
+    State(state): State<Arc<WebhookServer>>,
+    Json(review): Json<AdmissionReview<StellarNode>>,
+) -> impl IntoResponse {
+    let request = match review.try_into() {
+        Ok(req) => req,
+        Err(e) => {
+            error!("Failed to parse admission request: {e}");
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    AdmissionResponse::invalid(format!("Invalid admission request: {e}"))
+                        .into_review(),
+                ),
+            );
+        }
+    };
+
+    let req: AdmissionRequest<StellarNode> = request;
+    let input = build_validation_input(&req);
+    let delegated = state.delegate_policy_check(&input).await;
+
+    let mut response = if delegated.allowed {
+        AdmissionResponse::from(&req)
+    } else {
+        AdmissionResponse::from(&req).deny(
+            delegated
+                .message
+                .unwrap_or_else(|| "Denied by policy".to_string()),
+        )
+    };
+
+    if !delegated.warnings.is_empty() {
+        response.warnings = Some(delegated.warnings);
+    }
+
+    (StatusCode::OK, Json(response.into_review()))
+}
+
+fn default_security_policy_library() -> Vec<SecurityPolicyInfo> {
+    vec![
+        SecurityPolicyInfo {
+            name: "required-labels".to_string(),
+            engine: "gatekeeper".to_string(),
+            description: "Enforces required organizational labels on resources.".to_string(),
+            path: "config/manifests/gatekeeper/required-labels-template.yaml".to_string(),
+        },
+        SecurityPolicyInfo {
+            name: "approved-registries".to_string(),
+            engine: "gatekeeper".to_string(),
+            description: "Restricts container images to approved registries.".to_string(),
+            path: "config/manifests/gatekeeper/approved-registries-template.yaml".to_string(),
+        },
+        SecurityPolicyInfo {
+            name: "resource-limits".to_string(),
+            engine: "gatekeeper".to_string(),
+            description: "Requires CPU and memory limits on all containers.".to_string(),
+            path: "config/manifests/gatekeeper/resource-limits-template.yaml".to_string(),
+        },
+        SecurityPolicyInfo {
+            name: "stellarnode-cel-validation".to_string(),
+            engine: "cel".to_string(),
+            description: "Built-in CEL rules in the StellarNode CRD schema.".to_string(),
+            path: "config/crd/stellarnode-crd.yaml".to_string(),
+        },
+    ]
+}
+
+async fn policy_library_handler() -> impl IntoResponse {
+    (StatusCode::OK, Json(default_security_policy_library()))
 }
 
 #[instrument(
@@ -798,8 +1016,8 @@ mod tests {
         let server = WebhookServer::new(runtime);
 
         let valid_object = serde_json::json!({
-            "metadata": { 
-                "name": "my-validator", 
+            "metadata": {
+                "name": "my-validator",
                 "namespace": "default",
                 "labels": {
                     "project-id": "test",
@@ -835,8 +1053,8 @@ mod tests {
         let server = WebhookServer::new(runtime);
 
         let invalid_object = serde_json::json!({
-            "metadata": { 
-                "name": "bad", 
+            "metadata": {
+                "name": "bad",
                 "namespace": "default",
                 "labels": {
                     "project-id": "test",
@@ -870,8 +1088,8 @@ mod tests {
         let server = WebhookServer::new(runtime);
 
         let missing_required = serde_json::json!({
-            "metadata": { 
-                "name": "no-config", 
+            "metadata": {
+                "name": "no-config",
                 "namespace": "default",
                 "labels": {
                     "project-id": "test",
@@ -910,8 +1128,8 @@ mod tests {
         let server = WebhookServer::new(runtime);
 
         let valid_object = serde_json::json!({
-            "metadata": { 
-                "name": "my-validator", 
+            "metadata": {
+                "name": "my-validator",
                 "namespace": "default",
                 "labels": {
                     "project-id": "test",
@@ -980,8 +1198,8 @@ mod tests {
         server.add_plugin(config).await.unwrap();
 
         let valid_object = serde_json::json!({
-            "metadata": { 
-                "name": "test", 
+            "metadata": {
+                "name": "test",
                 "namespace": "default",
                 "labels": {
                     "project-id": "test",
@@ -1063,8 +1281,8 @@ mod tests {
         server.add_plugin(config).await.unwrap();
 
         let valid_object = serde_json::json!({
-            "metadata": { 
-                "name": "test", 
+            "metadata": {
+                "name": "test",
                 "namespace": "default",
                 "labels": {
                     "project-id": "test",
@@ -1091,6 +1309,19 @@ mod tests {
         assert!(
             !result.warnings.is_empty(),
             "expected warning about plugin failure"
+        );
+    }
+
+    #[test]
+    fn policy_library_contains_gatekeeper_and_cel_entries() {
+        let policies = default_security_policy_library();
+        assert!(
+            policies.iter().any(|p| p.engine == "gatekeeper"),
+            "expected at least one gatekeeper policy"
+        );
+        assert!(
+            policies.iter().any(|p| p.engine == "cel"),
+            "expected at least one CEL policy"
         );
     }
 }

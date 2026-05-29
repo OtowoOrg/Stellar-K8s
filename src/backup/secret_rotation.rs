@@ -571,8 +571,7 @@ mod tests {
             Ok(c) => c,
             Err(_) => return, // Skip test if no kubeconfig
         };
-        let scheduler =
-            SecretRotationScheduler::new(config.clone(), client);
+        let scheduler = SecretRotationScheduler::new(config.clone(), client);
 
         let password = scheduler.generate_secure_password();
         assert_eq!(password.len(), config.password_length);

@@ -2,7 +2,7 @@
 //!
 //! Evaluates the impact of hypothetical changes and projects associated costs.
 
-use crate::capacity_planning::{WhatIfResult, ResourceImpact};
+use crate::capacity_planning::{ResourceImpact, WhatIfResult};
 
 pub struct ScenarioAnalyzer;
 

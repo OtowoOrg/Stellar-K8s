@@ -3,13 +3,13 @@
 //! Provides proactive resource recommendations based on historical usage analysis,
 //! growth forecasting, and what-if scenario modeling.
 
-pub mod forecasting;
-pub mod recommendation;
 pub mod analysis;
+pub mod forecasting;
 pub mod metrics;
+pub mod recommendation;
 
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 /// Core resource metrics for capacity planning
 #[derive(Debug, Clone, Serialize, Deserialize)]

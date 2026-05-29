@@ -96,9 +96,7 @@ pub fn summarise(entries: &[AuditEntry]) -> AuditSummary {
 
     for e in entries {
         actors.insert(e.actor.clone());
-        *action_counts
-            .entry(format!("{:?}", e.action))
-            .or_insert(0) += 1;
+        *action_counts.entry(format!("{:?}", e.action)).or_insert(0) += 1;
         if !e.success {
             failed += 1;
         }
@@ -201,7 +199,13 @@ pub fn export_pdf(
     // ── DR Summary ───────────────────────────────────────────────────────────
     let mut current_y = 250.0;
     if let Some(dr) = dr_summary {
-        layer.use_text("Disaster Recovery Compliance", 14.0, Mm(15.0), Mm(current_y), &font_bold);
+        layer.use_text(
+            "Disaster Recovery Compliance",
+            14.0,
+            Mm(15.0),
+            Mm(current_y),
+            &font_bold,
+        );
         current_y -= 8.0;
         layer.use_text(
             format!("Compliance Status: {}", dr.compliance_status),
@@ -277,12 +281,20 @@ pub fn export_pdf(
     current_y -= 12.0;
 
     // ── Action breakdown ──────────────────────────────────────────────────────
-    layer.use_text("Action Breakdown", 12.0, Mm(15.0), Mm(current_y), &font_bold);
+    layer.use_text(
+        "Action Breakdown",
+        12.0,
+        Mm(15.0),
+        Mm(current_y),
+        &font_bold,
+    );
     current_y -= 8.0;
     for (action, count) in &summary.action_counts {
         if current_y < 20.0 {
             break;
         }
+        layer.use_text(format!("  {action}: {count}"), 9.0, Mm(15.0), Mm(y), &font);
+        y -= 6.0;
         layer.use_text(
             format!("  {action}: {count}"),
             9.0,
@@ -294,7 +306,13 @@ pub fn export_pdf(
     }
 
     // ── Audit entries (one page per ~30 entries) ──────────────────────────────
-    layer.use_text("Audit Log Entries", 12.0, Mm(15.0), Mm(current_y - 8.0), &font_bold);
+    layer.use_text(
+        "Audit Log Entries",
+        12.0,
+        Mm(15.0),
+        Mm(current_y - 8.0),
+        &font_bold,
+    );
     current_y -= 18.0;
 
     let mut current_layer = layer;
@@ -308,11 +326,12 @@ pub fn export_pdf(
             current_page_y = 280.0;
         }
 
+        let action = format!("{:?}", entry.action);
         let line = format!(
             "[{}] {} | {} | {}/{} | {}",
             if entry.success { "OK" } else { "FAIL" },
             entry.timestamp.format("%Y-%m-%dT%H:%M:%SZ"),
-            format!("{:?}", entry.action),
+            action,
             entry.namespace,
             entry.resource,
             entry.actor,
@@ -417,10 +436,7 @@ mod tests {
 
         // Payload integrity
         assert_eq!(envelope.payload.entries.len(), 3);
-        assert_eq!(
-            envelope.payload.operator_version,
-            env!("CARGO_PKG_VERSION")
-        );
+        assert_eq!(envelope.payload.operator_version, env!("CARGO_PKG_VERSION"));
 
         // SHA-256 field is a 64-char hex string
         assert_eq!(envelope.sha256.len(), 64);
@@ -435,8 +451,7 @@ mod tests {
             .expect("pubkey not hex")
             .try_into()
             .expect("pubkey wrong length");
-        let verifying_key =
-            VerifyingKey::from_bytes(&pubkey_bytes).expect("invalid verifying key");
+        let verifying_key = VerifyingKey::from_bytes(&pubkey_bytes).expect("invalid verifying key");
 
         let sig_bytes: [u8; 64] = hex::decode(&envelope.signature)
             .expect("sig not hex")

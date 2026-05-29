@@ -263,7 +263,13 @@ impl SorobanCache {
 /// Replace characters that are unsafe in filenames with underscores.
 fn sanitise_key(key: &str) -> String {
     key.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -349,7 +355,7 @@ mod tests {
         // Write two entries that together exceed the budget.
         // "hot" is accessed more times so it should survive.
         cache.put("hot", b"AAAAAAAAAA".to_vec()); // 10 bytes
-        // Access "hot" multiple times to raise its count
+                                                  // Access "hot" multiple times to raise its count
         cache.get("hot");
         cache.get("hot");
         cache.get("hot");
@@ -360,7 +366,10 @@ mod tests {
         cache.put("new", b"CCCCCCCCCC".to_vec());
 
         // "hot" should still be retrievable from L2
-        assert!(cache.get("hot").is_some(), "hot entry should survive LFU eviction");
+        assert!(
+            cache.get("hot").is_some(),
+            "hot entry should survive LFU eviction"
+        );
     }
 
     #[test]
@@ -429,9 +438,6 @@ mod tests {
         // The cache should be meaningfully faster than simulated WASM execution.
         // We use a conservative threshold (2×) because thread::sleep granularity
         // varies across CI environments; the real speedup is typically >100×.
-        assert!(
-            speedup > 2.0,
-            "expected >2x speedup, got {speedup:.1}x"
-        );
+        assert!(speedup > 2.0, "expected >2x speedup, got {speedup:.1}x");
     }
 }

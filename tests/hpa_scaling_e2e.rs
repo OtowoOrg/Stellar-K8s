@@ -60,7 +60,9 @@ async fn mock_controller_state() -> Option<Arc<ControllerState>> {
             vec![],
             None,
         )),
-        anomaly_detector: Arc::new(stellar_k8s::controller::AnomalyDetector::new(Default::default())),
+        anomaly_detector: Arc::new(stellar_k8s::controller::AnomalyDetector::new(
+            Default::default(),
+        )),
         plugin_registry: Arc::new(stellar_k8s::plugin_sdk::PluginRegistry::new()),
     }))
 }

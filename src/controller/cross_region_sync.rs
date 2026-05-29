@@ -190,8 +190,7 @@ impl CrossRegionSyncController {
         );
         data.insert(
             "target_regions".to_string(),
-            serde_json::to_string(&self.config.target_regions)
-                .unwrap_or_else(|_| "[]".to_string()),
+            serde_json::to_string(&self.config.target_regions).unwrap_or_else(|_| "[]".to_string()),
         );
 
         let cm = ConfigMap {
@@ -212,7 +211,10 @@ impl CrossRegionSyncController {
         .await
         .map_err(Error::KubeError)?;
 
-        info!("Cross-region bridge config ensured in namespace {}", namespace);
+        info!(
+            "Cross-region bridge config ensured in namespace {}",
+            namespace
+        );
         Ok(())
     }
 
@@ -234,11 +236,7 @@ impl CrossRegionSyncController {
 
         for pod in pod_list.items {
             let pod_name = pod.metadata.name.clone().unwrap_or_default();
-            let mut annotations = pod
-                .metadata
-                .annotations
-                .clone()
-                .unwrap_or_default();
+            let mut annotations = pod.metadata.annotations.clone().unwrap_or_default();
 
             // Idempotent — skip if already activated for this region.
             if annotations
@@ -295,9 +293,18 @@ impl CrossRegionSyncController {
             "ledger_sequence".to_string(),
             snapshot.ledger_sequence.to_string().into_bytes(),
         );
-        data.insert("checksum".to_string(), snapshot.checksum.as_bytes().to_vec());
-        data.insert("captured_at".to_string(), snapshot.captured_at.to_string().into_bytes());
-        data.insert("source_region".to_string(), snapshot.source_region.as_bytes().to_vec());
+        data.insert(
+            "checksum".to_string(),
+            snapshot.checksum.as_bytes().to_vec(),
+        );
+        data.insert(
+            "captured_at".to_string(),
+            snapshot.captured_at.to_string().into_bytes(),
+        );
+        data.insert(
+            "source_region".to_string(),
+            snapshot.source_region.as_bytes().to_vec(),
+        );
         data.insert("state_payload".to_string(), payload_b64.into_bytes());
 
         let secret = Secret {
@@ -306,10 +313,7 @@ impl CrossRegionSyncController {
                 namespace: Some(namespace.to_string()),
                 annotations: Some({
                     let mut ann = BTreeMap::new();
-                    ann.insert(
-                        "stellar.org/sync-phase".to_string(),
-                        "staging".to_string(),
-                    );
+                    ann.insert("stellar.org/sync-phase".to_string(), "staging".to_string());
                     ann
                 }),
                 ..Default::default()
@@ -370,14 +374,14 @@ impl CrossRegionSyncController {
         // Build the live secret name from the staging name.
         let live_name = staging_secret_name.replace(STAGING_SECRET_PREFIX, LIVE_SECRET_PREFIX);
 
-        let mut live_data = data.clone();
+        let _live_data = data.clone();
         // Promote phase annotation.
         let mut live_secret = staging.clone();
         live_secret.metadata.name = Some(live_name.clone());
         if let Some(ann) = live_secret.metadata.annotations.as_mut() {
             ann.insert("stellar.org/sync-phase".to_string(), "live".to_string());
         }
-        live_secret.data = Some(live_data);
+        live_secret.data = Some(data.clone());
 
         secrets
             .patch(
@@ -407,10 +411,8 @@ impl CrossRegionSyncController {
         let mut statuses = Vec::new();
 
         for region in &self.config.target_regions {
-            let lp = ListParams::default().labels(&format!(
-                "stellar.org/sync-target-region={}",
-                region.name
-            ));
+            let lp = ListParams::default()
+                .labels(&format!("stellar.org/sync-target-region={}", region.name));
 
             let result = secrets.list(&lp).await;
             let (last_ledger, healthy, err) = match result {
@@ -427,9 +429,10 @@ impl CrossRegionSyncController {
                                 .unwrap_or(false)
                         })
                         .filter_map(|s| {
-                            s.data.as_ref()?.get("ledger_sequence").and_then(|b| {
-                                String::from_utf8_lossy(&b.0).parse::<u64>().ok()
-                            })
+                            s.data
+                                .as_ref()?
+                                .get("ledger_sequence")
+                                .and_then(|b| String::from_utf8_lossy(&b.0).parse::<u64>().ok())
                         })
                         .max()
                         .unwrap_or(0);
@@ -480,11 +483,7 @@ impl CrossRegionSyncController {
 
     /// Perform automated failover: promote the replica with the highest synced
     /// ledger to primary. Returns the name of the promoted region.
-    pub async fn automated_failover(
-        &self,
-        namespace: &str,
-        primary_ledger: u64,
-    ) -> Result<String> {
+    pub async fn automated_failover(&self, namespace: &str, primary_ledger: u64) -> Result<String> {
         if self.config.failover_policy != FailoverPolicy::Automated {
             return Err(Error::ConfigError(
                 "Automated failover is disabled; set failover_policy=Automated".to_string(),
@@ -511,10 +510,7 @@ impl CrossRegionSyncController {
         let cms: Api<ConfigMap> = Api::namespaced(self.client.clone(), namespace);
         let mut data = BTreeMap::new();
         data.insert("promoted_region".to_string(), best.region.clone());
-        data.insert(
-            "failover_time".to_string(),
-            chrono::Utc::now().to_rfc3339(),
-        );
+        data.insert("failover_time".to_string(), chrono::Utc::now().to_rfc3339());
         data.insert(
             "last_synced_ledger".to_string(),
             best.last_synced_ledger.to_string(),

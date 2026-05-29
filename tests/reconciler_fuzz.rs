@@ -368,9 +368,9 @@ async fn reconcile_with_failing_client_never_panics_and_converges() {
             vec![],
             None,
         )),
-        anomaly_detector: std::sync::Arc::new(stellar_k8s::controller::anomaly_detection::AnomalyDetector::new(
-            Default::default(),
-        )),
+        anomaly_detector: std::sync::Arc::new(
+            stellar_k8s::controller::anomaly_detection::AnomalyDetector::new(Default::default()),
+        ),
         plugin_registry: std::sync::Arc::new(stellar_k8s::plugin_sdk::PluginRegistry::new()),
         metrics_store: std::sync::Arc::new(Default::default()),
     });

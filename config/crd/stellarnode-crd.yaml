@@ -35,6 +35,13 @@ spec:
         description: Auto-generated derived type for StellarNodeSpec via `CustomResource`
         properties:
           spec:
+            x-kubernetes-validations:
+            - message: horizonConfig is required when nodeType is Horizon
+              rule: self.nodeType != 'Horizon' || has(self.horizonConfig)
+            - message: validatorConfig is required when nodeType is Validator
+              rule: self.nodeType != 'Validator' || has(self.validatorConfig)
+            - message: customNetworkPassphrase can only be set when network is Custom
+              rule: '!has(self.customNetworkPassphrase) || self.network == ''Custom'''
             properties:
               alerting:
                 default: false

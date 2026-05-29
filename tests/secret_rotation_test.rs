@@ -41,7 +41,7 @@ async fn test_password_generation() {
 
     let config = SecretRotationConfig::default();
     let client = kube::Client::try_default().await.unwrap();
-    let scheduler = SecretRotationScheduler::new(config.clone(), client);
+    let _scheduler = SecretRotationScheduler::new(config.clone(), client);
 
     // Test password generation through the public interface
     // Note: generate_secure_password is private, so we test indirectly

@@ -8,6 +8,10 @@ mod tests {
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
     use kube::ResourceExt;
 
+    use crate::controller::traffic::{
+        get_traffic_dashboard_snapshot, TrafficPriority, TrafficRequest, TrafficShaper,
+        TrafficShapingConfig,
+    };
     use crate::crd::{
         NodeType, ReadReplicaConfig, ReadReplicaStrategy, ResourceRequirements, StellarNetwork,
         StellarNode, StellarNodeSpec,
@@ -782,5 +786,75 @@ mod tests {
         assert_eq!(ready_condition.type_, "Ready");
         assert_eq!(ready_condition.status, "True");
         assert_eq!(not_ready_condition.status, "False");
+    }
+
+    #[test]
+    fn test_adaptive_rate_limiting_scales_down_on_high_load() {
+        let shaper = TrafficShaper::new(TrafficShapingConfig::default(), 0);
+        let low_load_rps = shaper.effective_rps(0.30);
+        let high_load_rps = shaper.effective_rps(0.95);
+
+        assert!(low_load_rps > high_load_rps);
+        assert!(high_load_rps >= 50.0);
+    }
+
+    #[test]
+    fn test_token_and_leaky_bucket_enforcement() {
+        let mut shaper = TrafficShaper::new(TrafficShapingConfig::default(), 0);
+        let req = TrafficRequest::new("backend-a", TrafficPriority::Normal);
+
+        // Large burst should eventually be throttled by token/leaky buckets.
+        let mut dropped = 0;
+        for _ in 0..4000 {
+            let decision = shaper.admit_request(&req, 0.65, 1);
+            if !decision.allowed {
+                dropped += 1;
+            }
+        }
+
+        assert!(dropped > 0);
+    }
+
+    #[test]
+    fn test_circuit_breaker_opens_after_failures() {
+        let mut shaper = TrafficShaper::new(TrafficShapingConfig::default(), 0);
+        let req = TrafficRequest::new("unstable-backend", TrafficPriority::High);
+
+        for i in 0..5 {
+            shaper.record_backend_result("unstable-backend", false, i * 10);
+        }
+
+        let decision = shaper.admit_request(&req, 0.40, 100);
+        assert!(!decision.allowed);
+        assert_eq!(decision.reason, "circuit_breaker_open");
+    }
+
+    #[test]
+    fn test_priority_shedding_protects_high_priority() {
+        let mut shaper = TrafficShaper::new(TrafficShapingConfig::default(), 0);
+        let low = TrafficRequest::new("backend-b", TrafficPriority::Low);
+        let critical = TrafficRequest::new("backend-b", TrafficPriority::Critical);
+
+        let low_decision = shaper.admit_request(&low, 0.95, 50);
+        let critical_decision = shaper.admit_request(&critical, 0.95, 51);
+
+        assert!(!low_decision.allowed);
+        assert_eq!(low_decision.reason, "priority_shed");
+        assert!(critical_decision.allowed);
+    }
+
+    #[test]
+    fn test_traffic_dashboard_snapshot_has_consistent_counters() {
+        let mut shaper = TrafficShaper::new(TrafficShapingConfig::default(), 0);
+        let req = TrafficRequest::new("backend-c", TrafficPriority::Normal);
+
+        for t in 0..20 {
+            let _ = shaper.admit_request(&req, 0.80, t);
+        }
+
+        let snapshot = get_traffic_dashboard_snapshot();
+        assert!(snapshot.total_requests >= snapshot.allowed_requests + snapshot.dropped_requests);
+        assert!(snapshot.drop_rate >= 0.0);
+        assert!(snapshot.drop_rate <= 1.0);
     }
 }

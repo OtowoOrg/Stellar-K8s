@@ -72,23 +72,15 @@ the critical path by ~35–40% compared to the previous sequential layout.
 
 ## Performance & Benchmark Workflows (#701)
 
-### `benchmark.yml`
-- Build step produces a Docker image saved as a `.tar.gz` artifact.
-- `setup-perf-env` composite action handles k6, kind, kubectl, cluster, RBAC,
-  operator deployment, and port-forwarding — eliminating ~80 lines of duplicated
-  setup across the three benchmark workflows.
-- Baseline comparison uses the same `compare_benchmarks.py` script as
-  `performance-regression.yml`.
-
-### `performance-regression.yml`
-- Removed the now-redundant `setup-cluster` job (consolidated into
-  `performance-test` via `setup-perf-env`).
-- Removed duplicate k6/kind/kubectl install steps.
-
-### `webhook-benchmark.yml`
-- Uses `setup-rust` composite action.
-- Standardised on `actions/upload-artifact@v4` / `actions/download-artifact@v4`
-  (was mixing v7/v8 which don't exist).
+### `performance.yml` (unified pipeline)
+- **Replaces** the former `benchmark.yml`, `performance-regression.yml`, and
+  `webhook-benchmark.yml` with a single matrix-driven workflow.
+- **Shared build job** produces the operator binary and Docker image once; all
+  three suites (operator, regression, webhook) download the same artifact.
+- **Matrix execution** runs operator and regression suites via `setup-perf-env`,
+  and the webhook suite directly (no kind cluster required).
+- **Shared baseline comparison** via `.github/actions/compare-benchmarks`
+  composite action wrapping `compare_benchmarks.py`.
 
 ---
 

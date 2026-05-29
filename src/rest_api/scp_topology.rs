@@ -114,7 +114,7 @@ async fn stream_topology(mut socket: WebSocket, state: Arc<ControllerState>) {
             }
         };
 
-        if socket.send(Message::Text(json.into())).await.is_err() {
+        if socket.send(Message::Text(json)).await.is_err() {
             // Client disconnected — exit cleanly
             debug!("SCP topology WebSocket client disconnected");
             break;

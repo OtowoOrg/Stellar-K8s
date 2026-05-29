@@ -540,7 +540,9 @@ mod tests {
         full.extend_from_slice(args);
         let parsed = Args::try_parse_from(full).unwrap();
         match parsed.command {
-            Commands::Incident { command: stellar_k8s::incident::IncidentCommands::Report(r) } => r,
+            Commands::Incident {
+                command: stellar_k8s::incident::IncidentCommands::Report(r),
+            } => r,
             _ => panic!("expected Incident Report subcommand"),
         }
     }

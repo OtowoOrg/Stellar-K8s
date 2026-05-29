@@ -24,7 +24,9 @@ impl AlertingSystem {
 
         for pattern in patterns {
             // Alert on high frequency errors
-            if pattern.message_template.contains("ERROR") && pattern.count > self.error_threshold_per_min {
+            if pattern.message_template.contains("ERROR")
+                && pattern.count > self.error_threshold_per_min
+            {
                 alerts.push(format!(
                     "High error rate detected for pattern: {}",
                     pattern.message_template
@@ -32,8 +34,13 @@ impl AlertingSystem {
             }
 
             // Alert on specific critical patterns
-            if pattern.message_template.contains("panic") || pattern.message_template.contains("FATAL") {
-                alerts.push(format!("Critical failure detected: {}", pattern.message_template));
+            if pattern.message_template.contains("panic")
+                || pattern.message_template.contains("FATAL")
+            {
+                alerts.push(format!(
+                    "Critical failure detected: {}",
+                    pattern.message_template
+                ));
             }
         }
 

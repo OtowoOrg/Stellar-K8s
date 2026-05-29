@@ -12,13 +12,19 @@ use kube::{api::Api, api::LogParams, api::Patch, api::PatchParams, ResourceExt};
 use tracing::{error, info, instrument};
 
 use crate::controller::{AdminAction, AuditEntry, ControllerState};
-use crate::crd::{NodeType, StellarNetwork, StellarNode};
+use crate::crd::{NodeType, StellarNetwork, StellarNode, StellarNodeSpec};
 use crate::rest_api::auth::RequestIdentity;
 
 use super::dashboard_dto::{
-    ConditionDisplay, ConfigDriftResponse, ConfigImpactResponse, DashboardOverview,
+    CapacityPlanningResponse, ConditionDisplay, ConfigDriftResponse, ConfigImpactResponse,
+    DRStatusResponse, DashboardOverview, LogAnalyticsResponse, LogPatternDto, MetricsSummary,
+    NetworkBreakdown, NodeAction, NodeActionRequest, NodeActionResponse, NodeConditionsResponse,
+    NodeLogsResponse, NodeTypeBreakdown, OperatorLogsResponse, SecurityPostureResponse,
+    WhatIfRequest,
+    CapacityPlanningResponse, ConditionDisplay, ConfigImpactResponse, DashboardOverview,
     LogAnalyticsResponse, LogPatternDto, MetricsSummary, NetworkBreakdown, NodeAction,
     NodeActionRequest, NodeActionResponse, NodeConditionsResponse, NodeLogsResponse,
+    NodeTypeBreakdown, OperatorLogsResponse, SecurityPostureResponse, WhatIfRequest,
     NodeTypeBreakdown, OperatorLogsResponse, SecurityPostureResponse,
     CapacityPlanningResponse, WhatIfRequest, DRStatusResponse,
 };
@@ -41,7 +47,8 @@ pub async fn get_dr_status(
                 namespace,
                 name,
                 dr_enabled: dr_config.map(|c| c.enabled).unwrap_or(false),
-                current_role: dr_status.and_then(|s| s.current_role.as_ref().map(|r| format!("{:?}", r))),
+                current_role: dr_status
+                    .and_then(|s| s.current_role.as_ref().map(|r| format!("{:?}", r))),
                 failover_active: dr_status.map(|s| s.failover_active).unwrap_or(false),
                 last_failover_time: dr_status.and_then(|s| s.last_failover_time.clone()),
                 sync_lag: dr_status.and_then(|s| s.sync_lag),
@@ -71,14 +78,19 @@ pub async fn log_analytics(
     State(state): State<Arc<ControllerState>>,
 ) -> Json<LogAnalyticsResponse> {
     let top_patterns = state.analytics_engine.get_top_patterns(10);
-    
-    let patterns = top_patterns.into_iter().map(|p| LogPatternDto {
-        template: p.message_template,
-        count: p.count,
-        last_seen: format!("{:?}", p.last_seen), // Simplified for now
-    }).collect();
 
-    Json(LogAnalyticsResponse { top_patterns: patterns })
+    let patterns = top_patterns
+        .into_iter()
+        .map(|p| LogPatternDto {
+            template: p.message_template,
+            count: p.count,
+            last_seen: format!("{:?}", p.last_seen), // Simplified for now
+        })
+        .collect();
+
+    Json(LogAnalyticsResponse {
+        top_patterns: patterns,
+    })
 }
 
 /// Analyze configuration impact
@@ -89,7 +101,7 @@ pub async fn analyze_config_impact(
     // For impact analysis, we'd ideally compare against the current spec.
     // Here we use a dummy old spec for demonstration.
     let old_spec = new_spec.clone(); // In reality, fetch from K8s
-    
+
     let impact = crate::config_mgmt::impact::ImpactAnalyzer::analyze(&old_spec, &new_spec);
     let validation_errors = crate::config_mgmt::validation::Validator::validate(&new_spec);
 
@@ -119,14 +131,12 @@ pub async fn capacity_planning(
 ) -> Json<CapacityPlanningResponse> {
     // Mock data for demonstration
     let now = chrono::Utc::now();
-    let forecasts = vec![
-        crate::capacity_planning::GrowthForecast {
-            resource_type: "CPU".to_string(),
-            forecast_points: vec![(now, 1.0), (now + chrono::Duration::days(30), 1.5)],
-            model_used: "Linear".to_string(),
-            growth_rate_pct: 50.0,
-        }
-    ];
+    let forecasts = vec![crate::capacity_planning::GrowthForecast {
+        resource_type: "CPU".to_string(),
+        forecast_points: vec![(now, 1.0), (now + chrono::Duration::days(30), 1.5)],
+        model_used: "Linear".to_string(),
+        growth_rate_pct: 50.0,
+    }];
 
     let engine = crate::capacity_planning::recommendation::RecommendationEngine::new(1.2);
     let recommendations = engine.generate_recommendations(&forecasts);
@@ -134,7 +144,9 @@ pub async fn capacity_planning(
     Json(CapacityPlanningResponse {
         recommendations,
         forecasts,
-        bottlenecks: vec!["Storage growth exceeding 20% per month in 'stellar-mainnet'".to_string()],
+        bottlenecks: vec![
+            "Storage growth exceeding 20% per month in 'stellar-mainnet'".to_string(),
+        ],
     })
 }
 
@@ -145,6 +157,44 @@ pub async fn run_what_if(
 ) -> Json<crate::capacity_planning::WhatIfResult> {
     let analyzer = crate::capacity_planning::analysis::ScenarioAnalyzer;
     Json(analyzer.analyze_scenario(&req.scenario_name, req.scale_factor))
+}
+
+/// Dashboard metrics summary for all nodes
+#[instrument(skip(state))]
+pub async fn dashboard_metrics(
+    State(state): State<Arc<ControllerState>>,
+) -> Result<Json<Vec<MetricsSummary>>, (StatusCode, Json<ErrorResponse>)> {
+    let api: Api<StellarNode> = Api::all(state.client.clone());
+
+    match api.list(&Default::default()).await {
+        Ok(nodes) => {
+            let summaries: Vec<MetricsSummary> = nodes
+                .items
+                .iter()
+                .map(|node| MetricsSummary {
+                    namespace: node.namespace().unwrap_or_else(|| "default".to_string()),
+                    name: node.name_any(),
+                    ledger_sequence: node.status.as_ref().and_then(|s| s.ledger_sequence),
+                    ready_replicas: node.status.as_ref().map(|s| s.ready_replicas).unwrap_or(0),
+                    replicas: node.spec.replicas,
+                    quorum_fragility: node.status.as_ref().and_then(|s| s.quorum_fragility),
+                })
+                .collect();
+            Ok(Json(summaries))
+        }
+        Err(e) => {
+            error!("Failed to list nodes for metrics: {:?}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new("list_failed", &e.to_string())),
+            ))
+        }
+    }
+/// Get real-time traffic shaping dashboard metrics.
+pub async fn traffic_dashboard(
+    State(_state): State<Arc<ControllerState>>,
+) -> Json<crate::controller::traffic::TrafficDashboardSnapshot> {
+    Json(crate::controller::traffic::get_traffic_dashboard_snapshot())
 }
 
 /// Dashboard overview endpoint
@@ -241,6 +291,44 @@ pub async fn dashboard_overview(
                 Json(ErrorResponse::new(
                     "dashboard_failed",
                     &format!("Failed to fetch dashboard data: {e}"),
+                )),
+            ))
+        }
+    }
+}
+
+/// Get metrics summary for all nodes.
+#[instrument(skip(state))]
+pub async fn dashboard_metrics(
+    State(state): State<Arc<ControllerState>>,
+) -> Result<Json<Vec<MetricsSummary>>, (StatusCode, Json<ErrorResponse>)> {
+    let api: Api<StellarNode> = Api::all(state.client.clone());
+
+    match api.list(&Default::default()).await {
+        Ok(nodes) => {
+            let mut summaries = Vec::with_capacity(nodes.items.len());
+            for node in nodes.items {
+                let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+                let name = node.name_any();
+                let status = node.status.as_ref();
+                summaries.push(MetricsSummary {
+                    namespace,
+                    name,
+                    ledger_sequence: status.and_then(|s| s.ledger_sequence),
+                    ready_replicas: status.map(|s| s.ready_replicas).unwrap_or(0),
+                    replicas: status.map(|s| s.replicas).unwrap_or(0),
+                    quorum_fragility: status.and_then(|s| s.quorum_fragility),
+                });
+            }
+            Ok(Json(summaries))
+        }
+        Err(e) => {
+            error!("Failed to list nodes for dashboard metrics: {e:?}");
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(
+                    "dashboard_metrics_failed",
+                    &format!("Failed to fetch dashboard metrics: {e}"),
                 )),
             ))
         }

@@ -10,15 +10,20 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::types::{
-    AutoscalingConfig, CertManagerConfig, Condition, CoreSyncState, CrossClusterConfig,
-    DisasterRecoveryConfig, DisasterRecoveryStatus, ExternalDatabaseConfig, ForensicSnapshotConfig,
-    GasAutoscalingConfig, GlobalDiscoveryConfig, HistoryMode, HorizonConfig, IngressConfig,
-    LabelPropagationConfig, LoadBalancerConfig, LogShipperConfig, ManagedDatabaseConfig,
-    NetworkPolicyConfig, NodeType, OciSnapshotConfig, OperatorRole, PlacementConfig,
+    AuditConfig, AutoscalingConfig, CertManagerConfig, Condition, CoreSyncState,
+    CrossClusterConfig, DisasterRecoveryConfig, DisasterRecoveryStatus, ExternalDatabaseConfig,
+    ForensicSnapshotConfig, GasAutoscalingConfig, GlobalDiscoveryConfig, HistoryMode,
+    HorizonConfig, IngressConfig, LabelPropagationConfig, LoadBalancerConfig, LogShipperConfig,
+    ManagedDatabaseConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig, OperatorRole,
+    PlacementConfig, PodAntiAffinityStrength, PolicyConfig, ProbeConfig, RbacConfig,
+    ResourceRequirements, RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy,
+    SnapshotScheduleConfig, SorobanConfig, StellarNetwork, StorageConfig, SyncStateScalingConfig,
+    ValidatorConfig, VpaConfig,
+    ManagedDatabaseConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig, PlacementConfig,
     PodAntiAffinityStrength, PolicyConfig, ProbeConfig, RbacConfig, ResourceRequirements,
     RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy, SnapshotScheduleConfig,
     SorobanConfig, StellarNetwork, StorageConfig, SyncStateScalingConfig, ValidatorConfig,
-    VpaConfig, AuditConfig,
+    VpaConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`
@@ -1075,7 +1080,13 @@ fn validate_cross_cluster(cc: &CrossClusterConfig, errors: &mut Vec<SpecValidati
         }
 
         if let Some(fed) = &cc.federation {
-            if fed.enabled && peer.kubeconfig_secret_ref.as_deref().unwrap_or("").is_empty() {
+            if fed.enabled
+                && peer
+                    .kubeconfig_secret_ref
+                    .as_deref()
+                    .unwrap_or("")
+                    .is_empty()
+            {
                 errors.push(SpecValidationError::new(
                     format!("spec.crossCluster.peerClusters[{i}].kubeconfigSecretRef"),
                     "crossCluster.peerClusters[].kubeconfigSecretRef is required for federation",

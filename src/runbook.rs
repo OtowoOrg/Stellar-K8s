@@ -85,7 +85,12 @@ pub fn generate_runbook(node: &StellarNode) -> Result<String> {
     runbook.push_str(&generate_common_troubleshooting(&name, &namespace));
 
     // DR section if applicable
-    if spec.dr_config.as_ref().map(|dr| dr.enabled).unwrap_or(false) {
+    if spec
+        .dr_config
+        .as_ref()
+        .map(|dr| dr.enabled)
+        .unwrap_or(false)
+    {
         runbook.push_str(&generate_dr_runbook(node)?);
     }
 

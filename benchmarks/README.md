@@ -117,6 +117,17 @@ Measures end-to-end operator performance including:
 - API endpoints
 - Health checks
 
+### Traffic Shaping Benchmarks
+
+**Script**: `benchmarks/k6/traffic-shaping-load-test.js`
+
+Validates adaptive rate limiting and QoS behavior under sustained and bursty traffic:
+
+- High-priority success-rate thresholds under load
+- Low-priority shedding during pressure events
+- Effective RPS and system load telemetry exposure
+- Circuit-breaker behavior visibility for unhealthy backends
+
 ## Baselines
 
 Baseline files are stored in `benchmarks/baselines/` and contain expected performance metrics for regression detection.

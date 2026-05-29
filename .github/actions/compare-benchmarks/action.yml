@@ -1,0 +1,75 @@
+name: Compare Benchmark Results
+description: >
+  Shared baseline comparison logic used by all performance/benchmark workflows.
+  Wraps benchmarks/scripts/compare_benchmarks.py with consistent inputs/outputs.
+
+inputs:
+  current-file:
+    description: Path to the current benchmark results JSON
+    required: true
+  baseline-file:
+    description: Path to the baseline JSON file
+    required: true
+  threshold:
+    description: Regression threshold percentage
+    required: false
+    default: "10"
+  output-file:
+    description: Path to write the regression report JSON
+    required: false
+    default: results/regression-report.json
+  fail-on-regression:
+    description: Exit with error when regression is detected
+    required: false
+    default: "false"
+
+outputs:
+  overall-passed:
+    description: "true when no regressions exceed the threshold"
+    value: ${{ steps.compare.outputs.overall_passed }}
+
+runs:
+  using: composite
+  steps:
+    - name: Compare with baseline
+      id: compare
+      shell: bash
+      run: |
+        set -euo pipefail
+        CURRENT="${{ inputs.current-file }}"
+        BASELINE="${{ inputs.baseline-file }}"
+        OUTPUT="${{ inputs.output-file }}"
+        THRESHOLD="${{ inputs.threshold }}"
+        FAIL_FLAG=""
+        [[ "${{ inputs.fail-on-regression }}" == "true" ]] && FAIL_FLAG="--fail-on-regression"
+
+        mkdir -p "$(dirname "$OUTPUT")"
+
+        if [[ ! -f "$CURRENT" ]]; then
+          echo "overall_passed=true" >> "$GITHUB_OUTPUT"
+          echo "No current results at $CURRENT — skipping comparison"
+          exit 0
+        fi
+
+        if [[ ! -f "$BASELINE" ]]; then
+          echo "overall_passed=true" >> "$GITHUB_OUTPUT"
+          echo "No baseline at $BASELINE — skipping comparison"
+          exit 0
+        fi
+
+        python3 benchmarks/scripts/compare_benchmarks.py compare \
+          --current "$CURRENT" \
+          --baseline "$BASELINE" \
+          --threshold "$THRESHOLD" \
+          --output "$OUTPUT" \
+          $FAIL_FLAG \
+          --verbose || COMPARE_EXIT=$?
+
+        if [[ -f "$OUTPUT" ]]; then
+          PASSED=$(jq -r '.overall_passed // "true"' "$OUTPUT")
+          echo "overall_passed=$PASSED" >> "$GITHUB_OUTPUT"
+        else
+          echo "overall_passed=true" >> "$GITHUB_OUTPUT"
+        fi
+
+        exit "${COMPARE_EXIT:-0}"

@@ -162,8 +162,7 @@ impl VolumeResizerController {
         let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
         let pvc_name = resource_name(node, "data");
 
-        let pvcs: Api<PersistentVolumeClaim> =
-            Api::namespaced(self.client.clone(), &namespace);
+        let pvcs: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), &namespace);
 
         let pvc = match pvcs.get(&pvc_name).await {
             Ok(p) => p,
@@ -256,15 +255,13 @@ impl VolumeResizerController {
         self.patch_pvc_storage(&pvcs, &pvc_name, new_gi, expansion_count)
             .await?;
 
-        Ok(ExpansionOutcome::Expanded { new_size_gi: new_gi })
+        Ok(ExpansionOutcome::Expanded {
+            new_size_gi: new_gi,
+        })
     }
 
     /// Fetch disk usage metrics from Prometheus for a specific PVC.
-    async fn fetch_disk_usage(
-        &self,
-        pvc_name: &str,
-        namespace: &str,
-    ) -> Result<PvcDiskUsage> {
+    async fn fetch_disk_usage(&self, pvc_name: &str, namespace: &str) -> Result<PvcDiskUsage> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .build()
@@ -297,11 +294,7 @@ impl VolumeResizerController {
     }
 
     /// Execute a Prometheus instant query and return the scalar result.
-    async fn query_prometheus_scalar(
-        &self,
-        client: &reqwest::Client,
-        query: &str,
-    ) -> Option<u64> {
+    async fn query_prometheus_scalar(&self, client: &reqwest::Client, query: &str) -> Option<u64> {
         #[derive(serde::Deserialize)]
         struct PromResponse {
             data: PromData,
@@ -332,10 +325,7 @@ impl VolumeResizerController {
     }
 
     /// Check whether the StorageClass backing a PVC allows volume expansion.
-    async fn storage_class_supports_expansion(
-        &self,
-        pvc: &PersistentVolumeClaim,
-    ) -> Result<bool> {
+    async fn storage_class_supports_expansion(&self, pvc: &PersistentVolumeClaim) -> Result<bool> {
         let sc_name = pvc
             .spec
             .as_ref()
@@ -344,9 +334,7 @@ impl VolumeResizerController {
 
         let scs: Api<StorageClass> = Api::all(self.client.clone());
         match scs.get(sc_name).await {
-            Ok(sc) => Ok(sc
-                .allow_volume_expansion
-                .unwrap_or(false)),
+            Ok(sc) => Ok(sc.allow_volume_expansion.unwrap_or(false)),
             Err(_) => {
                 // If we can't read the StorageClass, assume expansion is allowed
                 // (conservative: let the API server reject it if not).
@@ -398,13 +386,8 @@ impl VolumeResizerController {
     /// Clear the in-flight annotation once the resize has been acknowledged by
     /// the storage provider (called from the reconciliation loop after the PVC
     /// status shows the new capacity).
-    pub async fn clear_in_flight_annotation(
-        &self,
-        namespace: &str,
-        pvc_name: &str,
-    ) -> Result<()> {
-        let pvcs: Api<PersistentVolumeClaim> =
-            Api::namespaced(self.client.clone(), namespace);
+    pub async fn clear_in_flight_annotation(&self, namespace: &str, pvc_name: &str) -> Result<()> {
+        let pvcs: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), namespace);
 
         let patch = json!({
             "metadata": {
@@ -515,7 +498,13 @@ mod tests {
     fn expansion_outcome_variants() {
         let o = ExpansionOutcome::Expanded { new_size_gi: 150 };
         assert!(matches!(o, ExpansionOutcome::Expanded { new_size_gi: 150 }));
-        assert_eq!(ExpansionOutcome::BelowThreshold, ExpansionOutcome::BelowThreshold);
-        assert_eq!(ExpansionOutcome::MaxExpansionsReached, ExpansionOutcome::MaxExpansionsReached);
+        assert_eq!(
+            ExpansionOutcome::BelowThreshold,
+            ExpansionOutcome::BelowThreshold
+        );
+        assert_eq!(
+            ExpansionOutcome::MaxExpansionsReached,
+            ExpansionOutcome::MaxExpansionsReached
+        );
     }
 }

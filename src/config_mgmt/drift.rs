@@ -50,6 +50,8 @@ impl DriftDetector {
 
     /// Determines if automatic remediation should be applied
     pub fn should_remediate(drifts: &[DriftReport]) -> bool {
-        drifts.iter().any(|d| matches!(d.severity, DriftSeverity::Critical | DriftSeverity::Major))
+        drifts
+            .iter()
+            .any(|d| matches!(d.severity, DriftSeverity::Critical | DriftSeverity::Major))
     }
 }

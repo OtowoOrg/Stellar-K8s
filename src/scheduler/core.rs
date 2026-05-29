@@ -29,6 +29,19 @@ impl Scheduler {
     pub async fn run(&self) -> Result<()> {
         info!("Starting scheduler: {}", self.scheduler_name);
 
+        // Spawn latency monitor for dynamic eviction/rescheduling
+        if self.prometheus.is_some() {
+            let prom_url = std::env::var("PROMETHEUS_URL")
+                .unwrap_or_else(|_| "http://prometheus-k8s.monitoring.svc:9090".to_string());
+            let monitor =
+                super::latency_monitor::LatencyMonitor::new(self.client.clone(), prom_url);
+            tokio::spawn(async move {
+                if let Err(e) = monitor.run().await {
+                    error!("Latency monitor exited: {}", e);
+                }
+            });
+        }
+
         loop {
             if let Err(e) = self.schedule_one_cycle().await {
                 error!("Error in scheduler cycle: {}", e);

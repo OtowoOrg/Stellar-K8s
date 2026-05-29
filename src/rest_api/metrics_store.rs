@@ -36,7 +36,7 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 use chrono::{DateTime, Utc};
 use tracing::debug;

@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stellar-default-security-policy-library
+  namespace: gatekeeper-system
+  labels:
+    app.kubernetes.io/name: stellar-default-security-policy-library
+    app.kubernetes.io/part-of: stellar-k8s
+    app.kubernetes.io/component: policy-library
+    app.kubernetes.io/managed-by: stellar-operator
+data:
+  required-labels.yaml: |
+    apiVersion: constraints.gatekeeper.sh/v1beta1
+    kind: K8sRequiredLabels
+    metadata:
+      name: stellar-required-labels
+    spec:
+      match:
+        kinds:
+          - apiGroups: ["stellar.org"]
+            kinds: ["StellarNode"]
+      parameters:
+        labels: ["project-id", "owner"]
+
+  approved-registries.yaml: |
+    apiVersion: constraints.gatekeeper.sh/v1beta1
+    kind: K8sApprovedRegistries
+    metadata:
+      name: stellar-approved-registries
+    spec:
+      match:
+        kinds:
+          - apiGroups: ["stellar.org"]
+            kinds: ["StellarNode"]
+      parameters:
+        registries:
+          - ghcr.io
+          - docker.io/stellar
+
+  resource-limits.yaml: |
+    apiVersion: constraints.gatekeeper.sh/v1beta1
+    kind: K8sRequiredResources
+    metadata:
+      name: stellar-required-resource-limits
+    spec:
+      match:
+        kinds:
+          - apiGroups: ["stellar.org"]
+            kinds: ["StellarNode"]
+      parameters:
+        limits: ["cpu", "memory"]
+
+  stellarnode-cel-rules.txt: |
+    self.nodeType != 'Horizon' || has(self.horizonConfig)
+    self.nodeType != 'Validator' || has(self.validatorConfig)
+    !has(self.customNetworkPassphrase) || self.network == 'Custom'

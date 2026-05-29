@@ -3,19 +3,19 @@
 //! This module provides a consistent schema for structured logs, intelligent
 //! sampling, and hooks for log analytics.
 
+pub mod alerting;
 pub mod analytics;
 pub mod sampling;
-pub mod alerting;
 pub mod storage;
 
 use analytics::AnalyticsEngine;
+use chrono::Utc;
 use sampling::{Sampler, SamplingConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::{layer::Context, registry::LookupSpan, Layer};
-use chrono::Utc;
 
 /// Consistent schema for all logs in Stellar-K8s.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,7 +89,7 @@ where
         // In a real implementation, we'd use a Visitor to get the message field
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
-        
+
         if let Some(msg) = &visitor.message {
             self.engine.observe(msg);
         }
@@ -133,7 +133,10 @@ pub fn build_structured_log(event: &Event<'_>) -> StructuredLog {
         span_id: None,
         k8s_node: std::env::var("K8S_NODE_NAME").ok(),
         k8s_namespace: std::env::var("K8S_NAMESPACE").ok(),
-        reconcile_id: visitor.extras.get("reconcile_id").and_then(|v| v.as_str().map(|s| s.to_string())),
+        reconcile_id: visitor
+            .extras
+            .get("reconcile_id")
+            .and_then(|v| v.as_str().map(|s| s.to_string())),
         extras: visitor.extras,
     }
 }
@@ -149,7 +152,10 @@ impl tracing::field::Visit for FullVisitor {
         if field.name() == "message" {
             self.message = Some(format!("{:?}", value));
         } else {
-            self.extras.insert(field.name().to_string(), serde_json::json!(format!("{:?}", value)));
+            self.extras.insert(
+                field.name().to_string(),
+                serde_json::json!(format!("{:?}", value)),
+            );
         }
     }
 
@@ -157,19 +163,25 @@ impl tracing::field::Visit for FullVisitor {
         if field.name() == "message" {
             self.message = Some(value.to_string());
         } else {
-            self.extras.insert(field.name().to_string(), serde_json::Value::String(value.to_string()));
+            self.extras.insert(
+                field.name().to_string(),
+                serde_json::Value::String(value.to_string()),
+            );
         }
     }
 
     fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
-        self.extras.insert(field.name().to_string(), serde_json::json!(value));
+        self.extras
+            .insert(field.name().to_string(), serde_json::json!(value));
     }
 
     fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
-        self.extras.insert(field.name().to_string(), serde_json::json!(value));
+        self.extras
+            .insert(field.name().to_string(), serde_json::json!(value));
     }
 
     fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
-        self.extras.insert(field.name().to_string(), serde_json::json!(value));
+        self.extras
+            .insert(field.name().to_string(), serde_json::json!(value));
     }
 }

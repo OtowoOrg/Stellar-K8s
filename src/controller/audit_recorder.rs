@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::controller::audit_log::{AuditEntry, AuditLog};
 use crate::controller::audit_sink::AuditSink;
 
-
 /// Records audit entries to the in-memory log and multiple external sinks.
 #[derive(Clone)]
 pub struct AuditRecorder {

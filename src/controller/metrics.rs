@@ -309,6 +309,37 @@ pub static DR_DRILL_EXECUTIONS_TOTAL: Lazy<Family<DRDrillLabels, Counter<u64, At
 pub static DR_DRILL_TIME_TO_RECOVERY_MS: Lazy<Family<DRDrillLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);
 
+/// Labels for traffic shaping metrics.
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct TrafficRequestLabels {
+    pub namespace: String,
+    pub name: String,
+    pub priority: String,
+    pub decision: String,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct TrafficNodeLabels {
+    pub namespace: String,
+    pub name: String,
+}
+
+/// Counter tracking traffic shaping decisions by priority and decision.
+pub static TRAFFIC_REQUESTS_TOTAL: Lazy<Family<TrafficRequestLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking effective adaptive rate limit (RPS).
+pub static TRAFFIC_EFFECTIVE_RPS: Lazy<Family<TrafficNodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking observed system load as percentage (0-100).
+pub static TRAFFIC_SYSTEM_LOAD_PERCENT: Lazy<Family<TrafficNodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
+/// Gauge tracking circuit breaker state (0=closed, 1=open, 2=half-open).
+pub static TRAFFIC_CIRCUIT_BREAKER_STATE: Lazy<Family<TrafficNodeLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
 /// Global metrics registry
 pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
     let mut registry = Registry::default();
@@ -531,6 +562,27 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_snapshot_integrity_check_duration_ms",
         "Duration of snapshot integrity check in milliseconds",
         SNAPSHOT_INTEGRITY_CHECK_DURATION_MS.clone(),
+    );
+
+    registry.register(
+        "stellar_traffic_requests_total",
+        "Total traffic shaping decisions by priority and decision",
+        TRAFFIC_REQUESTS_TOTAL.clone(),
+    );
+    registry.register(
+        "stellar_traffic_effective_rps",
+        "Effective adaptive rate limit in requests per second",
+        TRAFFIC_EFFECTIVE_RPS.clone(),
+    );
+    registry.register(
+        "stellar_traffic_system_load_percent",
+        "Observed system load as a percentage",
+        TRAFFIC_SYSTEM_LOAD_PERCENT.clone(),
+    );
+    registry.register(
+        "stellar_traffic_circuit_breaker_state",
+        "Circuit breaker state (0=closed, 1=open, 2=half-open)",
+        TRAFFIC_CIRCUIT_BREAKER_STATE.clone(),
     );
 
     // Register operator build-info and leader metrics
@@ -765,6 +817,48 @@ pub fn set_ingestion_lag_with_dp(
         hardware_generation: hardware_generation.to_string(),
     };
     INGESTION_LAG.get_or_create(&labels).set(val);
+}
+
+/// Record a traffic shaping decision.
+pub fn observe_traffic_request(namespace: &str, name: &str, priority: &str, decision: &str) {
+    let labels = TrafficRequestLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        priority: priority.to_string(),
+        decision: decision.to_string(),
+    };
+    TRAFFIC_REQUESTS_TOTAL.get_or_create(&labels).inc();
+}
+
+/// Set effective adaptive traffic limit in RPS.
+pub fn set_traffic_effective_rps(namespace: &str, name: &str, value: i64) {
+    let labels = TrafficNodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+    };
+    TRAFFIC_EFFECTIVE_RPS.get_or_create(&labels).set(value);
+}
+
+/// Set observed system load percentage.
+pub fn set_traffic_system_load(namespace: &str, name: &str, value: i64) {
+    let labels = TrafficNodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+    };
+    TRAFFIC_SYSTEM_LOAD_PERCENT
+        .get_or_create(&labels)
+        .set(value);
+}
+
+/// Set current circuit breaker state.
+pub fn set_traffic_circuit_breaker_state(namespace: &str, name: &str, state: i64) {
+    let labels = TrafficNodeLabels {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+    };
+    TRAFFIC_CIRCUIT_BREAKER_STATE
+        .get_or_create(&labels)
+        .set(state);
 }
 
 /// Node phase enumeration for metrics

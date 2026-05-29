@@ -192,7 +192,7 @@ impl GitOpsUpgradeController {
 
         Ok(Some(GitOpsUpgradePlan {
             target_protocol: step.protocol_version,
-            config_ref: step.config_ref,
+            config_ref: step.config_ref.clone(),
             sync_annotations: self.build_sync_annotations(node, &step),
         }))
     }

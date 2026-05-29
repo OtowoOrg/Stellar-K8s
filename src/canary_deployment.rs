@@ -363,11 +363,6 @@ impl CanaryDeploymentController {
 
         deployments
             .values()
-            .filter(|s| match s.state {
-                CanaryState::RolloutComplete
-                | CanaryState::RollbackComplete
-                | CanaryState::Failed => false,
-                _ => true,
             .filter(|s| {
                 !matches!(
                     s.state,

@@ -29,7 +29,6 @@ impl Validator {
         // 1. Resource consistency check
         let req = &spec.resources.requests;
         let lim = &spec.resources.limits;
-        if let (Ok(req_cpu), Ok(lim_cpu)) = (req.cpu.parse::<f64>(), lim.cpu.parse::<f64>()) {
         if let (Some(req_cpu), Some(lim_cpu)) =
             (parse_cpu_cores(&req.cpu), parse_cpu_cores(&lim.cpu))
         {

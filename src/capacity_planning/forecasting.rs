@@ -146,11 +146,5 @@ impl Forecaster {
                 (last_time + Duration::days(day as i64), predicted)
             })
             .collect()
-        _history: &[ResourceUsage],
-        _horizon_days: u32,
-    ) -> Vec<(DateTime<Utc>, f64)> {
-        // Placeholder for more complex seasonal forecasting
-        // In a real implementation, this would use double/triple exponential smoothing
-        Vec::new()
     }
 }

@@ -293,8 +293,7 @@ pub fn export_pdf(
         if current_y < 20.0 {
             break;
         }
-        layer.use_text(format!("  {action}: {count}"), 9.0, Mm(15.0), Mm(y), &font);
-        y -= 6.0;
+
         layer.use_text(
             format!("  {action}: {count}"),
             9.0,

@@ -5590,7 +5590,7 @@ dependencies = [
  "hex",
  "hmac 0.12.1",
  "hostname",
- "json-patch 4.1.0",
+ "json-patch 4.2.0",
  "k8s-openapi 0.26.1",
  "kube",
  "kube-runtime",

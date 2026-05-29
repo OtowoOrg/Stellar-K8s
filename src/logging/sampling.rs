@@ -48,7 +48,12 @@ impl Sampler {
         }
 
         // Check priority targets
-        if self.config.priority_targets.iter().any(|t| metadata.target().starts_with(t)) {
+        if self
+            .config
+            .priority_targets
+            .iter()
+            .any(|t| metadata.target().starts_with(t))
+        {
             return true;
         }
 
@@ -68,7 +73,7 @@ impl Sampler {
         // Deterministic sampling based on a counter
         let count = self.counter.fetch_add(1, Ordering::Relaxed);
         let threshold = (u64::MAX as f64 * rate) as u64;
-        
+
         // Use a simple hash-like approach for the counter to avoid streaks
         let hash = count.wrapping_mul(0x517cc1b727220a95);
         hash < threshold

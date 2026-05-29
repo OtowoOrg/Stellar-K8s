@@ -379,10 +379,7 @@ async fn resolve_live_metric(
 }
 
 /// Scrape a specific metric from the Horizon Prometheus `/metrics` endpoint.
-async fn scrape_horizon_metric(
-    url: &str,
-    metric: &StellarHpaMetric,
-) -> Result<f64, String> {
+async fn scrape_horizon_metric(url: &str, metric: &StellarHpaMetric) -> Result<f64, String> {
     let prom_name = match metric {
         StellarHpaMetric::HorizonTps => "horizon_ingest_ledgers_ingested_total",
         StellarHpaMetric::HorizonQueueLength => "horizon_txsub_queue_size",

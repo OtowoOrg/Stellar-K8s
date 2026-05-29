@@ -1736,7 +1736,8 @@ fn build_pod_template(
     // Add Horizon database migration init container
     if let NodeType::Horizon = node.spec.node_type {
         if let Some(horizon_config) = &node.spec.horizon_config {
-            let blue_green_migration = node.spec.strategy.strategy_type == RolloutStrategyType::BlueGreen;
+            let blue_green_migration =
+                node.spec.strategy.strategy_type == RolloutStrategyType::BlueGreen;
             if horizon_config.auto_migration && !blue_green_migration {
                 let init_containers = pod_spec.init_containers.get_or_insert_with(Vec::new);
                 init_containers.push(build_horizon_migration_container(node));
@@ -2370,9 +2371,7 @@ fn build_pod_template(
                 volumes.push(Volume {
                     name: "soroban-cache".to_string(),
                     empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource {
-                        size_limit: Some(Quantity(
-                            format!("{}", cache_cfg.l2_max_bytes)
-                        )),
+                        size_limit: Some(Quantity(format!("{}", cache_cfg.l2_max_bytes))),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -3298,7 +3297,11 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
                 ..Default::default()
             });
         } else {
-            warn!("Unrecognized custom metric '{}' configured for node {}; skipping.", metric_name, node.name_any());
+            warn!(
+                "Unrecognized custom metric '{}' configured for node {}; skipping.",
+                metric_name,
+                node.name_any()
+            );
         }
     }
 
@@ -4350,7 +4353,11 @@ mod ensure_pvc_tests {
 
         let metric_names: Vec<String> = metrics
             .iter()
-            .filter_map(|spec| spec.object.as_ref().map(|object| object.metric.name.clone()))
+            .filter_map(|spec| {
+                spec.object
+                    .as_ref()
+                    .map(|object| object.metric.name.clone())
+            })
             .collect();
 
         assert!(metric_names.contains(&"stellar_horizon_tps".to_string()));

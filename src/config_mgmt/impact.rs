@@ -18,7 +18,7 @@ pub struct ImpactAnalyzer;
 
 impl ImpactAnalyzer {
     pub fn analyze(old: &StellarNodeSpec, new: &StellarNodeSpec) -> ImpactAnalysis {
-        let mut score = 0.0;
+        let mut score: f32 = 0.0;
         let mut requires_restart = false;
         let mut potential_downtime = false;
 

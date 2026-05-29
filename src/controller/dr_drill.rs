@@ -9,7 +9,9 @@ use std::str::FromStr;
 use std::time::Instant;
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::controller::chaos_engineering::{ChaosExperimentConfig, ChaosExperimentType, ChaosRunner};
+use crate::controller::chaos_engineering::{
+    ChaosExperimentConfig, ChaosExperimentType, ChaosRunner, ExperimentSeverity,
+};
 use crate::crd::{
     DRDrillResult, DRDrillScheduleConfig, DRDrillStatus, DRFailureType, DisasterRecoveryStatus,
     StellarNode,
@@ -247,19 +249,34 @@ async fn simulate_failover(
             namespace: namespace.clone(),
             target_label_selector: format!("app.kubernetes.io/instance={}", name),
             duration_secs: 60,
+            severity: ExperimentSeverity::Medium,
+            slo_recovery_secs: ChaosExperimentConfig::default_slo_secs(experiment_type),
             delay_ms: Some(500),
             jitter_ms: Some(50),
             io_workers: Some(4),
             cpu_workers: None,
             memory_mb: None,
+            disk_fill_bytes: None,
         };
 
         match chaos_runner.run_experiment(chaos_config).await {
             Ok(res) => {
                 if res.system_recovered {
-                    Ok((true, format!("Synthetic failure {:?} successful", drill_config.failure_type)))
+                    Ok((
+                        true,
+                        format!(
+                            "Synthetic failure {:?} successful",
+                            drill_config.failure_type
+                        ),
+                    ))
                 } else {
-                    Ok((false, format!("Synthetic failure {:?} failed to recover", drill_config.failure_type)))
+                    Ok((
+                        false,
+                        format!(
+                            "Synthetic failure {:?} failed to recover",
+                            drill_config.failure_type
+                        ),
+                    ))
                 }
             }
             Err(e) => Err(e),
@@ -354,7 +371,11 @@ async fn verify_application_availability(
 
     // 2. Data Integrity Check (Simplified)
     // We can check if the ledger sequence is advancing
-    let initial_ledger = node.status.as_ref().and_then(|s| s.ledger_sequence).unwrap_or(0);
+    let initial_ledger = node
+        .status
+        .as_ref()
+        .and_then(|s| s.ledger_sequence)
+        .unwrap_or(0);
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
     let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);

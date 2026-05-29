@@ -798,8 +798,8 @@ mod tests {
         let server = WebhookServer::new(runtime);
 
         let valid_object = serde_json::json!({
-            "metadata": { 
-                "name": "my-validator", 
+            "metadata": {
+                "name": "my-validator",
                 "namespace": "default",
                 "labels": {
                     "project-id": "test",
@@ -835,8 +835,8 @@ mod tests {
         let server = WebhookServer::new(runtime);
 
         let invalid_object = serde_json::json!({
-            "metadata": { 
-                "name": "bad", 
+            "metadata": {
+                "name": "bad",
                 "namespace": "default",
                 "labels": {
                     "project-id": "test",
@@ -870,8 +870,8 @@ mod tests {
         let server = WebhookServer::new(runtime);
 
         let missing_required = serde_json::json!({
-            "metadata": { 
-                "name": "no-config", 
+            "metadata": {
+                "name": "no-config",
                 "namespace": "default",
                 "labels": {
                     "project-id": "test",
@@ -910,8 +910,8 @@ mod tests {
         let server = WebhookServer::new(runtime);
 
         let valid_object = serde_json::json!({
-            "metadata": { 
-                "name": "my-validator", 
+            "metadata": {
+                "name": "my-validator",
                 "namespace": "default",
                 "labels": {
                     "project-id": "test",
@@ -980,8 +980,8 @@ mod tests {
         server.add_plugin(config).await.unwrap();
 
         let valid_object = serde_json::json!({
-            "metadata": { 
-                "name": "test", 
+            "metadata": {
+                "name": "test",
                 "namespace": "default",
                 "labels": {
                     "project-id": "test",
@@ -1063,8 +1063,8 @@ mod tests {
         server.add_plugin(config).await.unwrap();
 
         let valid_object = serde_json::json!({
-            "metadata": { 
-                "name": "test", 
+            "metadata": {
+                "name": "test",
                 "namespace": "default",
                 "labels": {
                     "project-id": "test",

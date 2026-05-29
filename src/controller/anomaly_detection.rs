@@ -113,8 +113,7 @@ struct DetectorState {
     seen_queue: VecDeque<String>,
 }
 
-
-use crate::controller::ml_pipeline::{AnomalyModel, EwmaModel, extract_features};
+use crate::controller::ml_pipeline::{extract_features, AnomalyModel, EwmaModel};
 
 #[derive(Clone)]
 pub struct AnomalyDetector {
@@ -215,17 +214,18 @@ impl AnomalyDetector {
     }
 }
 
-pub async fn run_anomaly_detection(
-    state: Arc<ControllerState>,
-    detector: Arc<AnomalyDetector>,
-) {
+pub async fn run_anomaly_detection(state: Arc<ControllerState>, detector: Arc<AnomalyDetector>) {
     if !detector.config.enabled {
         return;
     }
 
     let registry: Arc<JobRegistry> = state.job_registry.clone();
     loop {
-        let handle = registry.register("anomaly-detector", JobKind::Other("anomaly_detector".to_string()), None);
+        let handle = registry.register(
+            "anomaly-detector",
+            JobKind::Other("anomaly_detector".to_string()),
+            None,
+        );
         handle.start();
 
         if let Err(e) = detect_once(&state, &detector).await {
@@ -243,7 +243,7 @@ async fn detect_once(state: &ControllerState, detector: &AnomalyDetector) -> Res
     let window_start = now - chrono::Duration::seconds(detector.config.window_seconds as i64);
 
     let entries = state.audit_log.list(None, None, None, 0);
-    
+
     // Traditional Z-Score based detection
     let mut counts: HashMap<String, u64> = HashMap::new();
     let mut new_ids = Vec::new();
@@ -257,7 +257,11 @@ async fn detect_once(state: &ControllerState, detector: &AnomalyDetector) -> Res
         if detector.is_seen(&entry.id).await {
             continue;
         }
-        let key = format!("{}|{}", entry.actor, serde_json::to_string(&entry.action).unwrap_or_default());
+        let key = format!(
+            "{}|{}",
+            entry.actor,
+            serde_json::to_string(&entry.action).unwrap_or_default()
+        );
         *counts.entry(key).or_insert(0) += 1;
         new_ids.push(entry.id.clone());
     }
@@ -265,10 +269,7 @@ async fn detect_once(state: &ControllerState, detector: &AnomalyDetector) -> Res
     detector.mark_seen(new_ids).await;
 
     for (key, count) in counts {
-        if let Some(event) = detector
-            .update_model(&key, count as f64, now)
-            .await
-        {
+        if let Some(event) = detector.update_model(&key, count as f64, now).await {
             info!(
                 actor = %event.actor,
                 action = %event.action,
@@ -309,15 +310,18 @@ async fn detect_once(state: &ControllerState, detector: &AnomalyDetector) -> Res
 
 async fn perform_remediation(state: &ControllerState, event: &AnomalyEvent) {
     warn!(actor = %event.actor, message = %event.message, "Performing automated remediation");
-    
+
     // In a real implementation, this would:
     // 1. Check a RemediationPolicy CRD
     // 2. Trigger actions like suspending a node, revoking a token, or alerting via PagerDuty
-    
+
     match event.action {
         AdminAction::NodeUpdate | AdminAction::NodeDelete => {
             // Potentially suspicious mass updates/deletes
-            info!("Remediation: throttling administrative actions for {}", event.actor);
+            info!(
+                "Remediation: throttling administrative actions for {}",
+                event.actor
+            );
         }
         _ => {}
     }

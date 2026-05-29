@@ -16,8 +16,13 @@ impl PolicyEnforcer {
         // 2. Ensure only approved registries are used
         if let Some(validator) = &spec.validator_config {
             // Policy: Validators must have history archives enabled in production
-            if spec.network == crate::crd::StellarNetwork::Mainnet && !validator.enable_history_archive {
-                violations.push("Policy Violation: Mainnet validators must have history archives enabled".to_string());
+            if spec.network == crate::crd::StellarNetwork::Mainnet
+                && !validator.enable_history_archive
+            {
+                violations.push(
+                    "Policy Violation: Mainnet validators must have history archives enabled"
+                        .to_string(),
+                );
             }
         }
 

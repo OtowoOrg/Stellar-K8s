@@ -21,7 +21,11 @@ impl CheckStatus {
 
     fn format(&self) -> String {
         let label = if self.passed { "Green" } else { "Red" };
-        format!("[{label}] {name}: {message}", name = self.name, message = self.message)
+        format!(
+            "[{label}] {name}: {message}",
+            name = self.name,
+            message = self.message
+        )
     }
 }
 

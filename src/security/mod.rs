@@ -2,11 +2,11 @@
 //!
 //! Provides automated scanning, runtime monitoring, and automated remediation.
 
-pub mod vulnerability;
-pub mod runtime;
-pub mod remediation;
-pub mod policy;
 pub mod compliance;
+pub mod policy;
+pub mod remediation;
+pub mod runtime;
+pub mod vulnerability;
 
 use serde::{Deserialize, Serialize};
 

@@ -33,10 +33,12 @@
 //! ```
 
 use crate::crd::StellarNode;
-use crate::error::{Result, Error};
+use crate::error::{Error, Result};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::batch::v1::{Job, JobSpec};
-use k8s_openapi::api::core::v1::{Container, PodSpec, PodTemplateSpec, SecretVolumeSource, Service, Volume};
+use k8s_openapi::api::core::v1::{
+    Container, PodSpec, PodTemplateSpec, SecretVolumeSource, Service, Volume,
+};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use kube::api::{Api, Patch, PatchParams, PostParams};
 use kube::Client;
@@ -130,10 +132,10 @@ pub async fn create_green_deployment(
     metadata.name = Some(format!("{node_name}-green"));
     metadata.resource_version = None; // Clear resource version for new creation
     metadata.uid = None;
-    metadata.labels.get_or_insert_with(BTreeMap::new).insert(
-        "deployment-color".to_string(),
-        "green".to_string(),
-    );
+    metadata
+        .labels
+        .get_or_insert_with(BTreeMap::new)
+        .insert("deployment-color".to_string(), "green".to_string());
 
     // Update labels to identify as Green
     if let Some(spec) = &mut green_deployment.spec {
@@ -287,12 +289,24 @@ fn build_horizon_migration_job(node: &StellarNode) -> Job {
     let node_name = node.name_any();
     let job_name = format!("{}-horizon-migration", node_name);
     let mut labels = BTreeMap::new();
-    labels.insert("app.kubernetes.io/name".to_string(), "stellar-node".to_string());
+    labels.insert(
+        "app.kubernetes.io/name".to_string(),
+        "stellar-node".to_string(),
+    );
     labels.insert("app.kubernetes.io/instance".to_string(), node_name.clone());
-    labels.insert("app.kubernetes.io/component".to_string(), "horizon".to_string());
-    labels.insert("app.kubernetes.io/managed-by".to_string(), "stellar-operator".to_string());
+    labels.insert(
+        "app.kubernetes.io/component".to_string(),
+        "horizon".to_string(),
+    );
+    labels.insert(
+        "app.kubernetes.io/managed-by".to_string(),
+        "stellar-operator".to_string(),
+    );
     labels.insert("stellar.org/node-type".to_string(), "Horizon".to_string());
-    labels.insert("stellar.org/horizon-migration".to_string(), "true".to_string());
+    labels.insert(
+        "stellar.org/horizon-migration".to_string(),
+        "true".to_string(),
+    );
 
     let container = crate::controller::resources::build_horizon_migration_container(node);
 
@@ -320,7 +334,9 @@ fn build_horizon_migration_job(node: &StellarNode) -> Job {
                             name: "data".to_string(),
                             persistent_volume_claim: Some(
                                 k8s_openapi::api::core::v1::PersistentVolumeClaimVolumeSource {
-                                    claim_name: crate::controller::resources::resource_name(node, "data"),
+                                    claim_name: crate::controller::resources::resource_name(
+                                        node, "data",
+                                    ),
                                     ..Default::default()
                                 },
                             ),
@@ -329,7 +345,9 @@ fn build_horizon_migration_job(node: &StellarNode) -> Job {
                         Volume {
                             name: "config".to_string(),
                             config_map: Some(k8s_openapi::api::core::v1::ConfigMapVolumeSource {
-                                name: Some(crate::controller::resources::resource_name(node, "config")),
+                                name: Some(crate::controller::resources::resource_name(
+                                    node, "config",
+                                )),
                                 ..Default::default()
                             }),
                             ..Default::default()
@@ -361,7 +379,10 @@ pub async fn ensure_horizon_migration_job(client: &Client, node: &StellarNode) -
 
     match api.get(&job_name).await {
         Ok(_) => {
-            info!("Horizon migration Job {} already exists, skipping", job_name);
+            info!(
+                "Horizon migration Job {} already exists, skipping",
+                job_name
+            );
             Ok(job_name)
         }
         Err(kube::Error::Api(e)) if e.code == 404 => {
@@ -406,10 +427,7 @@ pub async fn wait_for_horizon_migration_job(
                         return Ok(true);
                     }
                     if status.failed.unwrap_or(0) > 0 && status.active.unwrap_or(0) == 0 {
-                        warn!(
-                            "Horizon migration Job {}/{} failed",
-                            namespace, job_name
-                        );
+                        warn!("Horizon migration Job {}/{} failed", namespace, job_name);
                         return Ok(false);
                     }
                 }
@@ -487,12 +505,17 @@ pub async fn orchestrate_horizon_migration(
     }
 
     if let Some(green_dep) = blue_api.get(&format!("{}-green", node_name)).await.ok() {
-        let _ = blue_api.delete(&green_dep.name_any(), &Default::default()).await;
+        let _ = blue_api
+            .delete(&green_dep.name_any(), &Default::default())
+            .await;
     }
 
     let _green = create_green_deployment(client, node, &blue_deployment).await?;
     if !wait_for_green_ready(client, node, config.ready_timeout).await? {
-        warn!("Green deployment failed to become ready for {}/{}", namespace, node_name);
+        warn!(
+            "Green deployment failed to become ready for {}/{}",
+            namespace, node_name
+        );
         cleanup_horizon_migration_job(client, node).await.ok();
         return Ok(false);
     }
@@ -500,7 +523,10 @@ pub async fn orchestrate_horizon_migration(
     if config.enable_smoke_tests {
         if let Some(endpoint) = config.health_check_endpoint.as_deref() {
             if !run_smoke_tests(client, node, endpoint).await? {
-                warn!("Smoke tests failed for green deployment of {}/{}", namespace, node_name);
+                warn!(
+                    "Smoke tests failed for green deployment of {}/{}",
+                    namespace, node_name
+                );
                 cleanup_horizon_migration_job(client, node).await.ok();
                 return Ok(false);
             }
@@ -508,7 +534,10 @@ pub async fn orchestrate_horizon_migration(
     }
 
     if !switch_traffic_to_green(client, node).await? {
-        warn!("Traffic switch to green failed for {}/{}", namespace, node_name);
+        warn!(
+            "Traffic switch to green failed for {}/{}",
+            namespace, node_name
+        );
         rollback_to_blue(client, node).await.ok();
         cleanup_horizon_migration_job(client, node).await.ok();
         return Ok(false);

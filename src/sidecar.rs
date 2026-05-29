@@ -321,7 +321,7 @@ async fn run_ml_anomaly_detector(events: Api<Event>, pod_name: String, namespace
     // 2. Fetch Prometheus metrics
     // 3. Run the ML model (TensorFlow/PyTorch/Tract)
     // 4. Report anomalies via Events
-    
+
     loop {
         // Simulated ML check
         sleep(Duration::from_secs(60)).await;

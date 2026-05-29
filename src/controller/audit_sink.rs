@@ -104,7 +104,6 @@ impl AuditSink for S3AuditSink {
     }
 }
 
-
 /// Audit sink that writes entries to standard output.
 pub struct StdoutAuditSink;
 
@@ -145,11 +144,12 @@ impl AuditSink for FileAuditSink {
 
         let line = serde_json::to_vec(&entry)
             .map_err(|e| Error::InternalError(format!("Failed to serialize audit entry: {e}")))?;
-        
+
         file.write_all(&line)
             .map_err(|e| Error::InternalError(format!("Failed to write to audit file: {e}")))?;
-        file.write_all(b"\n")
-            .map_err(|e| Error::InternalError(format!("Failed to write newline to audit file: {e}")))?;
+        file.write_all(b"\n").map_err(|e| {
+            Error::InternalError(format!("Failed to write newline to audit file: {e}"))
+        })?;
 
         // Rotation logic would go here (checking file size and age)
         Ok(())
@@ -193,7 +193,7 @@ impl AuditSink for ExternalAggregatorAuditSink {
     async fn persist(&self, entry: AuditEntry) -> Result<()> {
         let client = reqwest::Client::new();
         let mut request = client.post(&self.endpoint).json(&entry);
-        
+
         if let Some(token) = &self.token {
             request = request.header("Authorization", format!("Bearer {token}"));
         }
@@ -205,7 +205,9 @@ impl AuditSink for ExternalAggregatorAuditSink {
             }
             Err(e) => {
                 error!(id = %entry.id, error = %e, "Failed to send audit entry to aggregator");
-                Err(Error::InternalError(format!("Aggregator request failed: {e}")))
+                Err(Error::InternalError(format!(
+                    "Aggregator request failed: {e}"
+                )))
             }
         }
     }
@@ -222,10 +224,7 @@ impl AuditSink for NoopAuditSink {
 }
 
 /// Encrypt sensitive fields in an audit entry.
-pub async fn encrypt_audit_entry(
-    mut entry: AuditEntry,
-    kms_key_ref: &str,
-) -> Result<AuditEntry> {
+pub async fn encrypt_audit_entry(mut entry: AuditEntry, kms_key_ref: &str) -> Result<AuditEntry> {
     if let Some(details) = entry.details {
         // Simulate KMS encryption
         let encrypted = format!("ENC[{kms_key_ref}]:{details}");

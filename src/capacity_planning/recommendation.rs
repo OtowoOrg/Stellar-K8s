@@ -2,7 +2,7 @@
 //!
 //! Generates actionable recommendations based on forecasted resource needs.
 
-use crate::capacity_planning::{ResourceUsage, CapacityRecommendation, GrowthForecast};
+use crate::capacity_planning::{CapacityRecommendation, GrowthForecast, ResourceUsage};
 use chrono::{Duration, Utc};
 
 pub struct RecommendationEngine {
@@ -15,13 +15,16 @@ impl RecommendationEngine {
     }
 
     /// Generates recommendations based on growth forecasts
-    pub fn generate_recommendations(&self, forecasts: &[GrowthForecast]) -> Vec<CapacityRecommendation> {
+    pub fn generate_recommendations(
+        &self,
+        forecasts: &[GrowthForecast],
+    ) -> Vec<CapacityRecommendation> {
         let mut recommendations = Vec::new();
 
         for forecast in forecasts {
             if let Some((target_time, predicted_val)) = forecast.forecast_points.last() {
                 let recommended = predicted_val * self.safety_margin;
-                
+
                 // If growth is significant (> 10%), recommend expansion
                 if forecast.growth_rate_pct > 10.0 {
                     recommendations.push(CapacityRecommendation {
@@ -44,9 +47,13 @@ impl RecommendationEngine {
     }
 
     /// Identifies potential bottlenecks before they happen
-    pub fn identify_bottlenecks(&self, history: &[ResourceUsage], thresholds: &ResourceUsage) -> Vec<String> {
+    pub fn identify_bottlenecks(
+        &self,
+        history: &[ResourceUsage],
+        thresholds: &ResourceUsage,
+    ) -> Vec<String> {
         let mut bottlenecks = Vec::new();
-        
+
         if let Some(last) = history.last() {
             if last.cpu_cores > thresholds.cpu_cores * 0.8 {
                 bottlenecks.push("CPU usage is approaching 80% of current capacity".to_string());

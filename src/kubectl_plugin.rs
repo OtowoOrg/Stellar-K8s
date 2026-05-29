@@ -260,9 +260,7 @@ pub enum FederationCommands {
         all_namespaces: bool,
     },
     /// Show federation status for a specific node
-    Status {
-        name: String,
-    },
+    Status { name: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -1656,19 +1654,32 @@ async fn list_federation_clusters(client: &Client) -> Result<()> {
     let api: Api<stellar_k8s::crd::ClusterRegistry> = Api::all(client.clone());
     let registries = match api.list(&Default::default()).await {
         Ok(r) => r,
-        Err(_) => return {
-            println!("No ClusterRegistry found.");
-            Ok(())
+        Err(_) => {
+            return {
+                println!("No ClusterRegistry found.");
+                Ok(())
+            }
         }
     };
-    
-    println!("{:<20} {:<50} {:<15}", "CLUSTER NAME", "API ENDPOINT", "LABELS");
+
+    println!(
+        "{:<20} {:<50} {:<15}",
+        "CLUSTER NAME", "API ENDPOINT", "LABELS"
+    );
     println!("{}", "-".repeat(85));
-    
+
     for registry in registries {
         for cluster in registry.spec.clusters {
-            let labels = cluster.labels.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(",");
-            println!("{:<20} {:<50} {:<15}", cluster.name, cluster.api_endpoint, labels);
+            let labels = cluster
+                .labels
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            println!(
+                "{:<20} {:<50} {:<15}",
+                cluster.name, cluster.api_endpoint, labels
+            );
         }
     }
     Ok(())
@@ -1680,33 +1691,41 @@ async fn list_federated_nodes(client: &Client, namespace: Option<&str>) -> Resul
     } else {
         Api::all(client.clone())
     };
-    
+
     let nodes = match api.list(&Default::default()).await {
         Ok(n) => n,
-        Err(_) => return {
-            println!("No FederatedStellarNode found.");
-            Ok(())
+        Err(_) => {
+            return {
+                println!("No FederatedStellarNode found.");
+                Ok(())
+            }
         }
     };
-    
+
     println!("{:<30} {:<15} {:<30}", "NAME", "REPLICAS", "CLUSTERS");
     println!("{}", "-".repeat(75));
-    
+
     for node in nodes {
         let clusters = node.spec.placement.clusters.join(",");
-        println!("{:<30} {:<15} {:<30}", node.name_any(), node.spec.template.replicas, clusters);
+        println!(
+            "{:<30} {:<15} {:<30}",
+            node.name_any(),
+            node.spec.template.replicas,
+            clusters
+        );
     }
     Ok(())
 }
 
 async fn show_federation_status(client: &Client, namespace: &str, name: &str) -> Result<()> {
-    let api: Api<stellar_k8s::crd::FederatedStellarNode> = Api::namespaced(client.clone(), namespace);
+    let api: Api<stellar_k8s::crd::FederatedStellarNode> =
+        Api::namespaced(client.clone(), namespace);
     let _node = api.get(name).await.map_err(Error::KubeError)?;
-    
+
     println!("Federation status for {name}:");
     // In a real implementation, this would query status from each remote cluster
     println!("  - cluster-east: Synced (v21.0.0)");
     println!("  - cluster-west: Synced (v21.0.0)");
-    
+
     Ok(())
 }

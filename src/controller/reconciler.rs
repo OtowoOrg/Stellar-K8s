@@ -47,9 +47,9 @@ use crate::crd::{
     StellarNodeStatus,
 };
 use crate::error::{Error, Result};
-use crate::plugin_sdk::{HookResult, ReconcileContext};
 #[cfg(feature = "metrics")]
 use crate::infra;
+use crate::plugin_sdk::{HookResult, ReconcileContext};
 
 use super::archive_health::{
     calculate_backoff, check_archive_integrity, check_archive_integrity_random,
@@ -69,7 +69,6 @@ use super::health;
 use super::kms_secret;
 use super::label_propagation::LabelPropagator;
 use super::maintenance;
-use super::spot_drain;
 #[cfg(feature = "metrics")]
 use super::metrics;
 use super::mtls;
@@ -80,6 +79,7 @@ use super::pss;
 use super::remediation;
 use super::resources;
 use super::service_mesh;
+use super::spot_drain;
 use super::sync_scale;
 use super::sync_state_monitor;
 use super::vpa as vpa_controller;

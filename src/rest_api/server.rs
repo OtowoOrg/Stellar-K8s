@@ -27,6 +27,7 @@ use super::dashboard_handlers;
 use super::handlers;
 use super::health_summary;
 use super::job_handlers;
+use super::resource_optimization_handlers;
 use super::scp_topology;
 use super::stellar_metrics_server;
 
@@ -129,6 +130,19 @@ pub async fn run_server(
         .route("/api/v1/security/posture", get(dashboard_handlers::security_posture))
         .route("/api/v1/capacity/plan", get(dashboard_handlers::capacity_planning))
         .route("/api/v1/capacity/what-if", axum::routing::post(dashboard_handlers::run_what_if))
+        // Resource optimization (Issue #734)
+        .route(
+            "/api/v1/optimization/recommendations",
+            get(resource_optimization_handlers::optimization_recommendations),
+        )
+        .route(
+            "/api/v1/optimization/simulate",
+            axum::routing::post(resource_optimization_handlers::optimization_simulate),
+        )
+        .route(
+            "/api/v1/optimization/forecast",
+            get(resource_optimization_handlers::optimization_forecast),
+        )
         .route(
             "/api/v1/dashboard/nodes/:namespace/:name/logs",
             get(dashboard_handlers::get_node_logs),

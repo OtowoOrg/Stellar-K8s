@@ -839,7 +839,10 @@ pub async fn sync_secrets_cross_cluster(
     for ns in &spec.secret_sync.namespaces {
         let api: Api<Secret> = Api::namespaced(client.clone(), ns);
         let lp = kube::api::ListParams::default();
-        let secrets = api.list(&lp).await.map_err(|e| Error::InternalError(format!("Failed to list secrets: {e}")))?;
+        let secrets = api
+            .list(&lp)
+            .await
+            .map_err(|e| Error::InternalError(format!("Failed to list secrets: {e}")))?;
 
         for secret in secrets {
             // Apply label selector if provided

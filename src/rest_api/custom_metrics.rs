@@ -80,13 +80,9 @@ impl StellarMetricType {
             // Ingestion lag
             "stellar_ingestion_lag" | "ingestion_lag" => Some(StellarMetricType::IngestionLag),
             // Requests per second (alias for TPS via different naming convention)
-            "requests_per_second" => {
-                Some(StellarMetricType::RequestsPerSecond)
-            }
+            "requests_per_second" => Some(StellarMetricType::RequestsPerSecond),
             // Horizon-specific queue length
-            "horizon_queue_length" => {
-                Some(StellarMetricType::HorizonQueueLength)
-            }
+            "horizon_queue_length" => Some(StellarMetricType::HorizonQueueLength),
             // Active connections
             "stellar_active_connections" | "active_connections" => {
                 Some(StellarMetricType::ActiveConnections)
@@ -122,12 +118,8 @@ impl StellarMetricType {
                 "Lag in ledgers between the network tip and this node"
             }
             StellarMetricType::ActiveConnections => "Number of active peer or client connections",
-            StellarMetricType::HorizonQueueLength => {
-                "Horizon-specific request queue depth"
-            }
-            StellarMetricType::RequestsPerSecond => {
-                "Requests per second handled by Horizon"
-            }
+            StellarMetricType::HorizonQueueLength => "Horizon-specific request queue depth",
+            StellarMetricType::RequestsPerSecond => "Requests per second handled by Horizon",
         }
     }
 
@@ -259,7 +251,10 @@ fn get_metric_value(
                 store.tps(namespace, name)
             }
             StellarMetricType::RequestsPerSecond => {
-                debug!("Fetching requests_per_second from store for {}/{}", namespace, name);
+                debug!(
+                    "Fetching requests_per_second from store for {}/{}",
+                    namespace, name
+                );
                 store.tps(namespace, name)
             }
             StellarMetricType::QueueLength => {
@@ -408,7 +403,11 @@ pub async fn get_metrics_discovery() -> Response {
 /// The HPA uses this to scale Horizon Deployments based on per-pod metrics.
 /// Fetch a metric value from the Prometheus registry
 /// Returns the metric value as a string, or None if not found
-fn get_metric_from_registry(metric_type: &StellarMetricType, namespace: &str, name: &str) -> Option<i64> {
+fn get_metric_from_registry(
+    metric_type: &StellarMetricType,
+    namespace: &str,
+    name: &str,
+) -> Option<i64> {
     let metric_name = metric_type.prometheus_name();
     let mut buffer = String::new();
     if encode(&mut buffer, &crate::controller::metrics::REGISTRY).is_err() {
@@ -416,7 +415,9 @@ fn get_metric_from_registry(metric_type: &StellarMetricType, namespace: &str, na
         return None;
     }
 
-    buffer.lines().find_map(|line| match_metric_line(line, metric_name, namespace, name))
+    buffer
+        .lines()
+        .find_map(|line| match_metric_line(line, metric_name, namespace, name))
 }
 
 fn match_metric_line(line: &str, metric_name: &str, namespace: &str, name: &str) -> Option<i64> {
@@ -450,7 +451,10 @@ fn extract_label(labels: &str, key: &str) -> Option<String> {
             continue;
         }
 
-        if let Some(stripped) = label_value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
+        if let Some(stripped) = label_value
+            .strip_prefix('"')
+            .and_then(|v| v.strip_suffix('"'))
+        {
             return Some(stripped.replace("\\\"", "\""));
         }
 
@@ -461,10 +465,7 @@ fn extract_label(labels: &str, key: &str) -> Option<String> {
 
 fn parse_metric_value(value_str: &str) -> Option<i64> {
     let value_token = value_str.split_whitespace().next()?;
-    value_token
-        .parse::<f64>()
-        .ok()
-        .map(|value| value as i64)
+    value_token.parse::<f64>().ok().map(|value| value as i64)
 }
 
 /// Handler for custom metrics API: /apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric
@@ -861,7 +862,11 @@ mod tests {
             .set(42);
 
         assert_eq!(
-            get_metric_from_registry(&StellarMetricType::HorizonQueueLength, "test-ns", "horizon-pod-0"),
+            get_metric_from_registry(
+                &StellarMetricType::HorizonQueueLength,
+                "test-ns",
+                "horizon-pod-0"
+            ),
             Some(42)
         );
     }

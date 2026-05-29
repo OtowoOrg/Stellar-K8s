@@ -120,8 +120,14 @@ async fn validate_k8s_token(
 
     let status = result.status;
     Ok(K8sAuthResult {
-        authenticated: status.as_ref().and_then(|s| s.authenticated).unwrap_or(false),
-        username: status.as_ref().and_then(|s| s.user.clone()).and_then(|u| u.username),
+        authenticated: status
+            .as_ref()
+            .and_then(|s| s.authenticated)
+            .unwrap_or(false),
+        username: status
+            .as_ref()
+            .and_then(|s| s.user.clone())
+            .and_then(|u| u.username),
         groups: status
             .as_ref()
             .and_then(|s| s.user.clone())
@@ -166,7 +172,6 @@ pub async fn check_rbac_permission(
 
     Ok(result.status.map(|s| s.allowed).unwrap_or(false))
 }
-
 
 use crate::crd::OperatorRole;
 
@@ -214,17 +219,15 @@ pub async fn api_reader(
         auth_type = "oidc".to_string();
         op_roles.push(OperatorRole::Viewer);
     } else {
-        let auth = validate_k8s_token(&state, &token)
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse::new(
-                        "validation_error",
-                        &format!("Token validation error: {e}"),
-                    )),
-                )
-            })?;
+        let auth = validate_k8s_token(&state, &token).await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(
+                    "validation_error",
+                    &format!("Token validation error: {e}"),
+                )),
+            )
+        })?;
 
         if !auth.authenticated {
             return Err((
@@ -233,14 +236,16 @@ pub async fn api_reader(
             ));
         }
 
-        subject = auth.username.unwrap_or_else(|| "system:unknown".to_string());
+        subject = auth
+            .username
+            .unwrap_or_else(|| "system:unknown".to_string());
         groups = auth.groups;
         roles.push(ApiRole::Reader);
         op_roles.push(OperatorRole::Viewer);
 
-        let namespace = extract_namespace(&request)
-            .unwrap_or_else(|| state.operator_namespace.clone());
-        
+        let namespace =
+            extract_namespace(&request).unwrap_or_else(|| state.operator_namespace.clone());
+
         // Fine-grained RBAC check using custom verbs
         if check_rbac_permission(
             &state,
@@ -293,7 +298,10 @@ pub async fn api_reader(
     if let Err(e) = check_opa_policy(&state, &subject, verb, request.uri().path()).await {
         return Err((
             StatusCode::FORBIDDEN,
-            Json(ErrorResponse::new("forbidden", &format!("OPA Policy Denied: {e}"))),
+            Json(ErrorResponse::new(
+                "forbidden",
+                &format!("OPA Policy Denied: {e}"),
+            )),
         ));
     }
 

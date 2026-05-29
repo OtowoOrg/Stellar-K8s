@@ -1,9 +1,9 @@
 // Byzantine-tolerant consensus monitoring with adaptive alerting
 // Issue #639: Build Byzantine-tolerant consensus monitoring with adaptive alerting
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::Utc;
 
 /// Consensus metrics collected from Stellar Core nodes
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,10 +64,10 @@ pub struct ByzantineFaultDetector {
     pub timestamp: i64,
     pub is_faulty: bool,
     pub fault_type: Option<FaultType>,
-    pub deviation_score: f32,  // 0.0-1.0
+    pub deviation_score: f32, // 0.0-1.0
     pub conflicting_votes_count: u32,
     pub delayed_messages_count: u32,
-    pub confidence_level: f32,  // 0.0-1.0
+    pub confidence_level: f32, // 0.0-1.0
 }
 
 /// Types of Byzantine faults
@@ -84,7 +84,7 @@ pub enum FaultType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsensusHealthScore {
     pub timestamp: i64,
-    pub overall_score: f32,  // 0.0-100.0
+    pub overall_score: f32, // 0.0-100.0
     pub safety_score: f32,
     pub liveness_score: f32,
     pub byzantine_resistance_score: f32,
@@ -143,7 +143,7 @@ pub struct ClusterComposition {
     pub observer_nodes: u32,
     pub faulty_nodes: u32,
     pub quorum_threshold: u32,
-    pub byzantine_fault_tolerance: u32,  // Maximum faults tolerable
+    pub byzantine_fault_tolerance: u32, // Maximum faults tolerable
 }
 
 /// Forensic logging for consensus anomalies
@@ -202,20 +202,14 @@ impl ConsensusMonitoringController {
     }
 
     /// Record consensus metrics from a node
-    pub async fn record_consensus_metrics(
-        &self,
-        metrics: ConsensusMetrics,
-    ) -> Result<(), String> {
+    pub async fn record_consensus_metrics(&self, metrics: ConsensusMetrics) -> Result<(), String> {
         let mut nodes = self.nodes.write().await;
         nodes.insert(metrics.node_id.clone(), metrics);
         Ok(())
     }
 
     /// Verify safety (finality check)
-    pub async fn verify_safety(
-        &self,
-        node_id: &str,
-    ) -> Result<SafetyVerification, String> {
+    pub async fn verify_safety(&self, node_id: &str) -> Result<SafetyVerification, String> {
         let nodes = self.nodes.read().await;
         let metrics = nodes.get(node_id).ok_or("Node not found")?;
 
@@ -235,8 +229,10 @@ impl ConsensusMonitoringController {
 
         let is_safe = conflicting_ballots == 0;
         let failure_reason = if !is_safe {
-            Some(format!("Detected {} conflicting ballots at slot {}", 
-                         conflicting_ballots, metrics.slot_number))
+            Some(format!(
+                "Detected {} conflicting ballots at slot {}",
+                conflicting_ballots, metrics.slot_number
+            ))
         } else {
             None
         };
@@ -258,10 +254,7 @@ impl ConsensusMonitoringController {
     }
 
     /// Monitor liveness
-    pub async fn check_liveness(
-        &self,
-        node_id: &str,
-    ) -> Result<LivenessMonitor, String> {
+    pub async fn check_liveness(&self, node_id: &str) -> Result<LivenessMonitor, String> {
         let nodes = self.nodes.read().await;
         let metrics = nodes.get(node_id).ok_or("Node not found")?;
 
@@ -296,10 +289,17 @@ impl ConsensusMonitoringController {
         // 2. Availability check: Node is validator but not sending messages
         let availability_issue = metrics.is_validator && metrics.messages_sent == 0;
         // 3. Timing check: Network latency too high compared to peers
-        let avg_latency: f64 = nodes.values().map(|n| n.network_latency_ms).sum::<f64>() / nodes.len() as f64;
+        let avg_latency: f64 =
+            nodes.values().map(|n| n.network_latency_ms).sum::<f64>() / nodes.len() as f64;
         let timing_issue = metrics.network_latency_ms > avg_latency * 3.0;
 
-        let deviation_score = if availability_issue { 1.0 } else if timing_issue { 0.6 } else { 0.1 };
+        let deviation_score = if availability_issue {
+            1.0
+        } else if timing_issue {
+            0.6
+        } else {
+            0.1
+        };
         let is_faulty = deviation_score > 0.5;
 
         let fault_detector = ByzantineFaultDetector {
@@ -337,39 +337,41 @@ impl ConsensusMonitoringController {
         let safety_score = if safety_records.is_empty() {
             100.0
         } else {
-            safety_records
-                .iter()
-                .filter(|s| s.is_safe)
-                .count() as f32 / safety_records.len() as f32 * 100.0
+            safety_records.iter().filter(|s| s.is_safe).count() as f32 / safety_records.len() as f32
+                * 100.0
         };
 
         let liveness_score = if liveness_records.is_empty() {
             100.0
         } else {
-            liveness_records
-                .iter()
-                .filter(|l| l.is_live)
-                .count() as f32 / liveness_records.len() as f32 * 100.0
+            liveness_records.iter().filter(|l| l.is_live).count() as f32
+                / liveness_records.len() as f32
+                * 100.0
         };
 
         let byzantine_score = if fault_records.is_empty() {
             100.0
         } else {
-            (1.0 - fault_records.iter().map(|f| f.deviation_score).sum::<f32>() 
-                / fault_records.len() as f32) * 100.0
+            (1.0 - fault_records.iter().map(|f| f.deviation_score).sum::<f32>()
+                / fault_records.len() as f32)
+                * 100.0
         };
 
         let network_score = if nodes.is_empty() {
             100.0
         } else {
-            nodes.values()
+            nodes
+                .values()
                 .map(|n| 100.0 - (n.network_latency_ms / 10.0).min(100.0))
-                .sum::<f64>() as f32 / nodes.len() as f32
+                .sum::<f64>() as f32
+                / nodes.len() as f32
         };
 
-        let overall_score = 
-            (safety_score * 0.3 + liveness_score * 0.3 + 
-             byzantine_score * 0.25 + network_score * 0.15) / 4.0;
+        let overall_score = (safety_score * 0.3
+            + liveness_score * 0.3
+            + byzantine_score * 0.25
+            + network_score * 0.15)
+            / 4.0;
 
         let risk_level = match overall_score {
             s if s >= 90.0 => RiskLevel::Healthy,
@@ -427,10 +429,7 @@ impl ConsensusMonitoringController {
     }
 
     /// Send alert to configured destinations
-    pub async fn send_alert(
-        &self,
-        alert: &AdaptiveAlert,
-    ) -> Result<(), String> {
+    pub async fn send_alert(&self, alert: &AdaptiveAlert) -> Result<(), String> {
         let destinations = self.alert_destinations.read().await;
 
         for dest in destinations.iter().filter(|d| d.enabled) {
@@ -552,9 +551,9 @@ mod tests {
             nomination_count: 1,
             confirmed_ballot: Some("ballot-123".to_string()),
             ballot_protocol_version: 21,
-            messages_sent: 500,  // Many more messages sent than received
+            messages_sent: 500, // Many more messages sent than received
             messages_received: 100,
-            network_latency_ms: 200.0,  // High latency
+            network_latency_ms: 200.0, // High latency
         };
 
         controller.record_consensus_metrics(metrics).await.ok();

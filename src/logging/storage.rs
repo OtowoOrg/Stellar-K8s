@@ -34,7 +34,11 @@ impl Archiver {
         Self { policy, s3_bucket }
     }
 
-    pub fn get_archival_path(&self, node_name: &str, timestamp: chrono::DateTime<chrono::Utc>) -> String {
+    pub fn get_archival_path(
+        &self,
+        node_name: &str,
+        timestamp: chrono::DateTime<chrono::Utc>,
+    ) -> String {
         format!(
             "stellar-logs/{}/{}/{}.log.gz",
             node_name,
@@ -43,7 +47,10 @@ impl Archiver {
         )
     }
 
-    pub fn get_cost_recommendations(&self, patterns: &[crate::logging::analytics::LogPattern]) -> Vec<String> {
+    pub fn get_cost_recommendations(
+        &self,
+        patterns: &[crate::logging::analytics::LogPattern],
+    ) -> Vec<String> {
         let mut recs = Vec::new();
 
         for pattern in patterns {

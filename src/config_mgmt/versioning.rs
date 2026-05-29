@@ -2,9 +2,9 @@
 //!
 //! Tracks changes to configurations and maintains a versioned history.
 
+use crate::crd::StellarNodeSpec;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use crate::crd::StellarNodeSpec;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigVersion {
@@ -30,7 +30,7 @@ impl VersionManager {
     pub fn push(&mut self, spec: StellarNodeSpec) -> u64 {
         let version = (self.history.len() as u64) + 1;
         let hash = self.calculate_hash(&spec);
-        
+
         let new_version = ConfigVersion {
             version,
             timestamp: chrono::Utc::now(),

@@ -3,11 +3,11 @@
 //! Provides validation, versioning, rollback, and drift detection for
 //! StellarNode and Operator configurations.
 
-pub mod validation;
-pub mod versioning;
-pub mod rollback;
 pub mod drift;
 pub mod impact;
+pub mod rollback;
+pub mod validation;
+pub mod versioning;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

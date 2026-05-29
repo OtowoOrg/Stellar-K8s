@@ -2,7 +2,21 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::crd::Condition;
+use crate::crd::{Condition, DRDrillResult};
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DRStatusResponse {
+    pub namespace: String,
+    pub name: String,
+    pub dr_enabled: bool,
+    pub current_role: Option<String>,
+    pub failover_active: bool,
+    pub last_failover_time: Option<String>,
+    pub sync_lag: Option<u64>,
+    pub compliance_status: Option<String>,
+    pub last_drill_result: Option<DRDrillResult>,
+}
 
 /// Dashboard overview response
 #[derive(Debug, Serialize)]
@@ -102,6 +116,20 @@ pub enum ConditionSeverity {
     Info,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogAnalyticsResponse {
+    pub top_patterns: Vec<LogPatternDto>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogPatternDto {
+    pub template: String,
+    pub count: u64,
+    pub last_seen: String,
+}
+
 impl From<&Condition> for ConditionDisplay {
     fn from(c: &Condition) -> Self {
         let severity = match c.type_.as_str() {
@@ -142,4 +170,40 @@ pub struct MetricsSummary {
     pub ready_replicas: i32,
     pub replicas: i32,
     pub quorum_fragility: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigDriftResponse {
+    pub namespace: String,
+    pub name: String,
+    pub drifts: Vec<crate::config_mgmt::drift::DriftReport>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigImpactResponse {
+    pub impact: crate::config_mgmt::impact::ImpactAnalysis,
+    pub validation_errors: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityPostureResponse {
+    pub posture: crate::security::SecurityPosture,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapacityPlanningResponse {
+    pub recommendations: Vec<crate::capacity_planning::CapacityRecommendation>,
+    pub forecasts: Vec<crate::capacity_planning::GrowthForecast>,
+    pub bottlenecks: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WhatIfRequest {
+    pub scenario_name: String,
+    pub scale_factor: f64,
 }

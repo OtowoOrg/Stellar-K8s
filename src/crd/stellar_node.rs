@@ -10,15 +10,20 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::types::{
-    AutoscalingConfig, CertManagerConfig, Condition, CoreSyncState, CrossClusterConfig,
-    DisasterRecoveryConfig, DisasterRecoveryStatus, ExternalDatabaseConfig, ForensicSnapshotConfig,
-    GasAutoscalingConfig, GlobalDiscoveryConfig, HistoryMode, HorizonConfig, IngressConfig,
-    LabelPropagationConfig, LoadBalancerConfig, LogShipperConfig, ManagedDatabaseConfig,
-    NetworkPolicyConfig, NodeType, OciSnapshotConfig, OperatorRole, PlacementConfig,
+    AuditConfig, AutoscalingConfig, CertManagerConfig, Condition, CoreSyncState,
+    CrossClusterConfig, DisasterRecoveryConfig, DisasterRecoveryStatus, ExternalDatabaseConfig,
+    ForensicSnapshotConfig, GasAutoscalingConfig, GlobalDiscoveryConfig, HistoryMode,
+    HorizonConfig, IngressConfig, LabelPropagationConfig, LoadBalancerConfig, LogShipperConfig,
+    ManagedDatabaseConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig, OperatorRole,
+    PlacementConfig, PodAntiAffinityStrength, PolicyConfig, ProbeConfig, RbacConfig,
+    ResourceRequirements, RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy,
+    SnapshotScheduleConfig, SorobanConfig, StellarNetwork, StorageConfig, SyncStateScalingConfig,
+    ValidatorConfig, VpaConfig,
+    ManagedDatabaseConfig, NetworkPolicyConfig, NodeType, OciSnapshotConfig, PlacementConfig,
     PodAntiAffinityStrength, PolicyConfig, ProbeConfig, RbacConfig, ResourceRequirements,
     RestoreFromSnapshotConfig, RetentionPolicy, RolloutStrategy, SnapshotScheduleConfig,
     SorobanConfig, StellarNetwork, StorageConfig, SyncStateScalingConfig, ValidatorConfig,
-    VpaConfig, AuditConfig,
+    VpaConfig,
 };
 
 /// Structured validation error for `StellarNodeSpec`
@@ -68,6 +73,15 @@ pub struct StellarNodeSpec {
     /// Custom network passphrase (required if network is 'Custom').
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_network_passphrase: Option<String>,
+
+    /// Reference to a Kubernetes Secret containing the network passphrase.
+    /// When set, the operator watches this secret and triggers graceful rolling
+    /// restarts when the secret is rotated. The secret must have a key named
+    /// `NETWORK_PASSPHRASE`.
+    ///
+    /// This takes precedence over `custom_network_passphrase` when both are set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub passphrase_secret_ref: Option<String>,
 
     /// Version of the Stellar software to run (e.g., "v21.0.0").
     pub version: String,
@@ -281,6 +295,26 @@ pub struct StellarNodeSpec {
     #[schemars(with = "Option<Vec<serde_json::Value>>")]
     pub sidecars: Option<Vec<k8s_openapi::api::core::v1::Container>>,
 
+    /// Optional init containers to run before the main Stellar container starts.
+    ///
+    /// These run to completion in order before the main container starts.
+    /// Useful for tasks like fetching custom configuration, restoring state,
+    /// or pre-populating volumes.
+    ///
+    /// # Example
+    /// ```yaml
+    /// initContainers:
+    ///   - name: fetch-config
+    ///     image: curlimages/curl:latest
+    ///     command: ["sh", "-c", "curl -o /data/custom.cfg https://config.example.com/stellar.cfg"]
+    ///     volumeMounts:
+    ///       - name: data
+    ///         mountPath: /data
+    /// ```
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Vec<serde_json::Value>>")]
+    pub init_containers: Option<Vec<k8s_openapi::api::core::v1::Container>>,
+
     /// Optional overrides for the liveness, readiness, and startup probes on the main container.
     ///
     /// When set, the specified fields replace the operator's built-in probe defaults.
@@ -414,7 +448,9 @@ impl Default for StellarNodeSpec {
             label_propagation: None,
             resource_meta: None,
             custom_network_passphrase: None,
+            passphrase_secret_ref: None,
             sidecars: None,
+            init_containers: None,
             cert_manager: None,
             probes: None,
             cross_cloud_failover: None,
@@ -910,6 +946,37 @@ fn validate_ingress(ingress: &IngressConfig, errors: &mut Vec<SpecValidationErro
             }
         }
     }
+
+    if let Some(rl) = &ingress.rate_limit {
+        if rl.requests_per_second == Some(0) {
+            errors.push(SpecValidationError::new(
+                "spec.ingress.rateLimit.requestsPerSecond",
+                "ingress.rateLimit.requestsPerSecond must be greater than 0",
+                "Set spec.ingress.rateLimit.requestsPerSecond to a positive integer.",
+            ));
+        }
+        if rl.requests_per_minute == Some(0) {
+            errors.push(SpecValidationError::new(
+                "spec.ingress.rateLimit.requestsPerMinute",
+                "ingress.rateLimit.requestsPerMinute must be greater than 0",
+                "Set spec.ingress.rateLimit.requestsPerMinute to a positive integer.",
+            ));
+        }
+        if rl.connections == Some(0) {
+            errors.push(SpecValidationError::new(
+                "spec.ingress.rateLimit.connections",
+                "ingress.rateLimit.connections must be greater than 0",
+                "Set spec.ingress.rateLimit.connections to a positive integer.",
+            ));
+        }
+        if rl.burst_multiplier == Some(0) {
+            errors.push(SpecValidationError::new(
+                "spec.ingress.rateLimit.burstMultiplier",
+                "ingress.rateLimit.burstMultiplier must be greater than 0",
+                "Set spec.ingress.rateLimit.burstMultiplier to a positive integer.",
+            ));
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -1075,7 +1142,13 @@ fn validate_cross_cluster(cc: &CrossClusterConfig, errors: &mut Vec<SpecValidati
         }
 
         if let Some(fed) = &cc.federation {
-            if fed.enabled && peer.kubeconfig_secret_ref.as_deref().unwrap_or("").is_empty() {
+            if fed.enabled
+                && peer
+                    .kubeconfig_secret_ref
+                    .as_deref()
+                    .unwrap_or("")
+                    .is_empty()
+            {
                 errors.push(SpecValidationError::new(
                     format!("spec.crossCluster.peerClusters[{i}].kubeconfigSecretRef"),
                     "crossCluster.peerClusters[].kubeconfigSecretRef is required for federation",
@@ -1372,6 +1445,22 @@ pub struct StellarNodeStatus {
     /// Status of the history archive pruning process.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pruning_status: Option<super::types::PruningStatus>,
+
+    /// Observed resource version of the passphrase secret (for rotation detection).
+    /// When this differs from the current secret's resourceVersion, the operator
+    /// triggers a graceful rolling restart.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_passphrase_secret_version: Option<String>,
+
+    /// Observed resource version of the validator seed secret (for rotation detection).
+    /// When this differs from the current secret's resourceVersion, the operator
+    /// triggers a graceful rolling restart.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_seed_secret_version: Option<String>,
+
+    /// Timestamp of the last secret rotation (RFC3339).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_secret_rotation_time: Option<String>,
 }
 
 /// BGP advertisement status information

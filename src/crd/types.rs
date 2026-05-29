@@ -949,6 +949,35 @@ pub struct SecretKeyRef {
     pub key: String,
 }
 
+/// NGINX ingress rate-limiting configuration.
+///
+/// Maps directly to the `nginx.ingress.kubernetes.io/limit-*` annotation family.
+/// All fields are optional; omitting a field leaves the corresponding annotation unset.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RateLimitConfig {
+    /// Maximum number of requests per second per client IP.
+    /// Sets `nginx.ingress.kubernetes.io/limit-rps`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requests_per_second: Option<u32>,
+    /// Maximum number of requests per minute per client IP.
+    /// Sets `nginx.ingress.kubernetes.io/limit-rpm`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requests_per_minute: Option<u32>,
+    /// Maximum number of concurrent connections per client IP.
+    /// Sets `nginx.ingress.kubernetes.io/limit-connections`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connections: Option<u32>,
+    /// Burst multiplier applied on top of the per-second limit (NGINX `burst` parameter).
+    /// Sets `nginx.ingress.kubernetes.io/limit-burst-multiplier`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub burst_multiplier: Option<u32>,
+    /// Comma-separated list of CIDRs that are exempt from rate limiting.
+    /// Sets `nginx.ingress.kubernetes.io/limit-whitelist`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub whitelist_cidrs: Option<String>,
+}
+
 /// Ingress configuration
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -967,6 +996,9 @@ pub struct IngressConfig {
     /// ExternalDNS configuration for automated record management
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_dns: Option<ExternalDNSConfig>,
+    /// NGINX rate-limiting configuration for public-facing Horizon/SorobanRpc nodes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_limit: Option<RateLimitConfig>,
 }
 
 /// Ingress host entry
@@ -1510,6 +1542,10 @@ pub struct DisasterRecoveryConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drill_schedule: Option<DRDrillScheduleConfig>,
 
+    /// Reference to a DisasterRecoveryPolicy
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_ref: Option<String>,
+
     /// Configuration for history archive integrity checks
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archive_integrity_config: Option<ArchiveIntegrityConfig>,
@@ -1684,6 +1720,9 @@ pub struct DRDrillScheduleConfig {
     /// Whether to actually perform failover or just simulate it (dry-run)
     #[serde(default)]
     pub dry_run: bool,
+    /// Type of failure to simulate
+    #[serde(default = "default_failure_type")]
+    pub failure_type: DRFailureType,
     /// Maximum time to wait for failover to complete (seconds)
     #[serde(default = "default_drill_timeout")]
     pub timeout_seconds: u32,
@@ -1693,6 +1732,21 @@ pub struct DRDrillScheduleConfig {
     /// Rollback delay after drill completion (seconds)
     #[serde(default = "default_drill_rollback_delay")]
     pub rollback_delay_seconds: u32,
+}
+
+/// Types of synthetic failures for DR drills
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DRFailureType {
+    #[default]
+    PodKill,
+    NetworkLatency,
+    DiskPressure,
+    RegionOutage,
+}
+
+fn default_failure_type() -> DRFailureType {
+    DRFailureType::PodKill
 }
 
 fn default_drill_timeout() -> u32 {

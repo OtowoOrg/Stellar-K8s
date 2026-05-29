@@ -493,7 +493,10 @@ peer-2 = "G..."
             .match_labels
             .as_ref()
             .expect("selector labels must exist");
-        assert_eq!(selector_labels.get("deployment-color"), Some(&"blue".to_string()));
+        assert_eq!(
+            selector_labels.get("deployment-color"),
+            Some(&"blue".to_string())
+        );
 
         let pod_labels = spec
             .template
@@ -501,14 +504,20 @@ peer-2 = "G..."
             .as_ref()
             .and_then(|m| m.labels.as_ref())
             .expect("pod labels must exist");
-        assert_eq!(pod_labels.get("deployment-color"), Some(&"blue".to_string()));
+        assert_eq!(
+            pod_labels.get("deployment-color"),
+            Some(&"blue".to_string())
+        );
 
         let init_containers = spec
             .template
             .spec
             .as_ref()
             .and_then(|ps| ps.init_containers.as_ref());
-        assert!(init_containers.is_none(), "Blue/Green deployments should not use init container migrations");
+        assert!(
+            init_containers.is_none(),
+            "Blue/Green deployments should not use init container migrations"
+        );
     }
 
     #[test]
@@ -767,7 +776,9 @@ peer-2 = "G..."
     fn test_network_policy_stellar_native_egress() {
         let mut node = make_node(NodeType::Validator);
         let vc = ValidatorConfig {
-            known_peers: Some(r#"KNOWN_PEERS = ["1.2.3.4:11625", "example.com:11625"]"#.to_string()),
+            known_peers: Some(
+                r#"KNOWN_PEERS = ["1.2.3.4:11625", "example.com:11625"]"#.to_string(),
+            ),
             quorum_set: Some(
                 r#"[VALIDATORS]
 "5.6.7.8" = "G..."
@@ -926,4 +937,289 @@ fn test_probe_config_validation_accepts_valid_config() {
         ..Default::default()
     };
     assert!(cfg.validate().is_empty());
+}
+
+// -----------------------------------------------------------------------
+// init_containers injection tests
+// -----------------------------------------------------------------------
+
+#[cfg(test)]
+mod init_containers_tests {
+    use k8s_openapi::api::core::v1::Container;
+
+    use crate::controller::resources::{build_deployment_for_test, build_statefulset_for_test};
+    use crate::crd::{
+        types::{ResourceRequirements, ResourceSpec, ValidatorConfig},
+        NodeType, StellarNetwork, StellarNodeSpec,
+    };
+
+    fn make_node(
+        node_type: NodeType,
+        init_containers: Option<Vec<Container>>,
+    ) -> crate::crd::StellarNode {
+        use kube::CustomResourceExt;
+        let spec = StellarNodeSpec {
+            node_type: node_type.clone(),
+            network: StellarNetwork::Testnet,
+            version: "v21.0.0".to_string(),
+            resources: ResourceRequirements {
+                requests: ResourceSpec {
+                    cpu: "500m".to_string(),
+                    memory: "1Gi".to_string(),
+                },
+                limits: ResourceSpec {
+                    cpu: "2".to_string(),
+                    memory: "4Gi".to_string(),
+                },
+            },
+            replicas: 1,
+            validator_config: if node_type == NodeType::Validator {
+                Some(ValidatorConfig {
+                    seed_secret_ref: "my-seed".to_string(),
+                    ..Default::default()
+                })
+            } else {
+                None
+            },
+            init_containers,
+            ..Default::default()
+        };
+
+        let mut node = crate::crd::StellarNode::new("test-node", spec);
+        node.metadata.namespace = Some("default".to_string());
+        node
+    }
+
+    fn make_init_container(name: &str) -> Container {
+        Container {
+            name: name.to_string(),
+            image: Some("busybox:latest".to_string()),
+            command: Some(vec!["sh".to_string(), "-c".to_string(), "echo hello".to_string()]),
+            ..Default::default()
+        }
+    }
+
+    // --- StatefulSet (Validator) tests ---
+
+    #[test]
+    fn test_no_user_init_containers_validator() {
+        let node = make_node(NodeType::Validator, None);
+        let sts = build_statefulset_for_test(&node);
+        let init_containers = sts
+            .spec
+            .unwrap()
+            .template
+            .spec
+            .unwrap()
+            .init_containers
+            .unwrap_or_default();
+        // No user init containers; only operator-managed ones (none for this minimal spec)
+        assert!(
+            init_containers.iter().all(|c| c.name != "user-init"),
+            "no user init containers should be present"
+        );
+    }
+
+    #[test]
+    fn test_single_user_init_container_appended_to_statefulset() {
+        let user_init = make_init_container("fetch-config");
+        let node = make_node(NodeType::Validator, Some(vec![user_init]));
+        let sts = build_statefulset_for_test(&node);
+        let init_containers = sts
+            .spec
+            .unwrap()
+            .template
+            .spec
+            .unwrap()
+            .init_containers
+            .unwrap_or_default();
+
+        let names: Vec<&str> = init_containers.iter().map(|c| c.name.as_str()).collect();
+        assert!(
+            names.contains(&"fetch-config"),
+            "user init container 'fetch-config' must be present, got: {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn test_multiple_user_init_containers_all_appended_to_statefulset() {
+        let containers = vec![
+            make_init_container("step-one"),
+            make_init_container("step-two"),
+        ];
+        let node = make_node(NodeType::Validator, Some(containers));
+        let sts = build_statefulset_for_test(&node);
+        let init_containers = sts
+            .spec
+            .unwrap()
+            .template
+            .spec
+            .unwrap()
+            .init_containers
+            .unwrap_or_default();
+
+        let names: Vec<&str> = init_containers.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"step-one"), "step-one must be present");
+        assert!(names.contains(&"step-two"), "step-two must be present");
+    }
+
+    #[test]
+    fn test_user_init_container_image_preserved_in_statefulset() {
+        let mut container = make_init_container("restore-state");
+        container.image = Some("my-registry/restore:v1.2.3".to_string());
+        let node = make_node(NodeType::Validator, Some(vec![container]));
+        let sts = build_statefulset_for_test(&node);
+        let init_containers = sts
+            .spec
+            .unwrap()
+            .template
+            .spec
+            .unwrap()
+            .init_containers
+            .unwrap_or_default();
+
+        let found = init_containers
+            .iter()
+            .find(|c| c.name == "restore-state")
+            .expect("restore-state init container must be present");
+        assert_eq!(
+            found.image.as_deref(),
+            Some("my-registry/restore:v1.2.3"),
+            "image must be preserved exactly"
+        );
+    }
+
+    // --- Deployment (Horizon) tests ---
+
+    #[test]
+    fn test_single_user_init_container_appended_to_deployment() {
+        let user_init = make_init_container("preflight-check");
+        let node = make_node(NodeType::Horizon, Some(vec![user_init]));
+        let dep = build_deployment_for_test(&node);
+        let init_containers = dep
+            .spec
+            .unwrap()
+            .template
+            .spec
+            .unwrap()
+            .init_containers
+            .unwrap_or_default();
+
+        let names: Vec<&str> = init_containers.iter().map(|c| c.name.as_str()).collect();
+        assert!(
+            names.contains(&"preflight-check"),
+            "user init container 'preflight-check' must be present, got: {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn test_no_user_init_containers_deployment() {
+        let node = make_node(NodeType::Horizon, None);
+        let dep = build_deployment_for_test(&node);
+        let init_containers = dep
+            .spec
+            .unwrap()
+            .template
+            .spec
+            .unwrap()
+            .init_containers
+            .unwrap_or_default();
+        // No user init containers should be injected
+        assert!(
+            init_containers.iter().all(|c| c.name != "fetch-config"),
+            "no user init containers should be present when spec.initContainers is None"
+        );
+    }
+
+    #[test]
+    fn test_user_init_container_order_preserved() {
+        // User init containers must appear in the order specified
+        let containers = vec![
+            make_init_container("first"),
+            make_init_container("second"),
+            make_init_container("third"),
+        ];
+        let node = make_node(NodeType::Horizon, Some(containers));
+        let dep = build_deployment_for_test(&node);
+        let init_containers = dep
+            .spec
+            .unwrap()
+            .template
+            .spec
+            .unwrap()
+            .init_containers
+            .unwrap_or_default();
+
+        // Find the positions of the user containers
+        let pos_first = init_containers.iter().position(|c| c.name == "first");
+        let pos_second = init_containers.iter().position(|c| c.name == "second");
+        let pos_third = init_containers.iter().position(|c| c.name == "third");
+
+        assert!(pos_first.is_some(), "first must be present");
+        assert!(pos_second.is_some(), "second must be present");
+        assert!(pos_third.is_some(), "third must be present");
+        assert!(
+            pos_first < pos_second && pos_second < pos_third,
+            "user init containers must appear in declaration order"
+        );
+    }
+
+    #[test]
+    fn test_user_init_containers_appended_after_operator_managed_ones() {
+        // For Horizon with auto_migration, the operator injects a migration init container.
+        // User init containers must come after it.
+        use crate::crd::types::HorizonConfig;
+        let user_init = make_init_container("my-custom-init");
+        let spec = StellarNodeSpec {
+            node_type: NodeType::Horizon,
+            network: StellarNetwork::Testnet,
+            version: "v21.0.0".to_string(),
+            resources: ResourceRequirements {
+                requests: ResourceSpec {
+                    cpu: "500m".to_string(),
+                    memory: "1Gi".to_string(),
+                },
+                limits: ResourceSpec {
+                    cpu: "2".to_string(),
+                    memory: "4Gi".to_string(),
+                },
+            },
+            replicas: 1,
+            horizon_config: Some(HorizonConfig {
+                database_secret_ref: "db-secret".to_string(),
+                auto_migration: true,
+                ..Default::default()
+            }),
+            init_containers: Some(vec![user_init]),
+            ..Default::default()
+        };
+        let mut node = crate::crd::StellarNode::new("test-node", spec);
+        node.metadata.namespace = Some("default".to_string());
+
+        let dep = build_deployment_for_test(&node);
+        let init_containers = dep
+            .spec
+            .unwrap()
+            .template
+            .spec
+            .unwrap()
+            .init_containers
+            .unwrap_or_default();
+
+        let pos_migration = init_containers
+            .iter()
+            .position(|c| c.name == "horizon-migration");
+        let pos_custom = init_containers
+            .iter()
+            .position(|c| c.name == "my-custom-init");
+
+        assert!(pos_migration.is_some(), "operator migration init container must be present");
+        assert!(pos_custom.is_some(), "user init container must be present");
+        assert!(
+            pos_migration < pos_custom,
+            "operator-managed init containers must come before user-defined ones"
+        );
+    }
 }

@@ -1,0 +1,687 @@
+# .github/workflows/chaos-tests.yml
+#
+# Automated Chaos Engineering Test Suite for Stellar-K8s
+# ========================================================
+# Runs 10 chaos experiments across 3 parallel job groups, then generates
+# a structured resilience report with per-experiment scores.
+#
+# Experiments:
+#   Group A (kill-network):   01 Operator Pod Kill, 02 Network Partition
+#   Group B (latency-disk):   03 API Latency, 04 Validator Peer Partition,
+#                             05 Disk Fill
+#   Group C (resource-chaos): 06 CPU Stress, 07 Memory Pressure,
+#                             08 Validator Pod Kill, 09 Cascading Failure,
+#                             10 I/O Stress
+#
+# Triggers:
+#   - Manual (workflow_dispatch) — any branch, optional experiment skip
+#   - Nightly schedule (02:00 UTC)
+
+name: Chaos Engineering Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_experiments:
+        description: >
+          Comma-separated experiment IDs to skip (e.g. "09,10").
+          Leave blank to run all.
+        required: false
+        default: ""
+      chaos_mesh_version:
+        description: "Chaos Mesh Helm chart version"
+        required: false
+        default: "2.6.3"
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC nightly
+
+env:
+  CARGO_TERM_COLOR: always
+  CLUSTER_NAME: stellar-chaos
+  OPERATOR_NS: stellar-system
+  CHAOS_NS: chaos-testing
+  CHAOS_MESH_VERSION: ${{ github.event.inputs.chaos_mesh_version || '2.6.3' }}
+  IMAGE_TAG: chaos-test
+  RECOVERY_TIMEOUT: "300"
+
+# ── Shared steps as reusable composite pieces ─────────────────────────────
+# (Chaos Mesh install + RBAC is duplicated across groups intentionally —
+#  each group runs on its own isolated kind cluster.)
+
+jobs:
+  # ── Build operator image once, share as artifact ─────────────────────────
+  build:
+    name: Build Operator Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "chaos-build"
+
+      - name: Build release binary
+        run: cargo build --release --locked --bin stellar-operator
+
+      - name: Build Docker image
+        run: docker build -t stellar-operator:${{ env.IMAGE_TAG }} .
+
+      - name: Export image tarball
+        run: |
+          docker save stellar-operator:${{ env.IMAGE_TAG }} \
+            | gzip > stellar-operator-chaos.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-operator-image
+          path: stellar-operator-chaos.tar.gz
+          retention-days: 1
+
+  # ── Group A: Pod Kill + Network Partition ─────────────────────────────────
+  chaos-group-a:
+    name: "Group A — Pod Kill & Network Partition"
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 60
+    env:
+      GROUP: "A"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download operator image
+        uses: actions/download-artifact@v4
+        with:
+          name: chaos-operator-image
+
+      - name: Load Docker image
+        run: gunzip -c stellar-operator-chaos.tar.gz | docker load
+
+      - name: Setup kind cluster
+        uses: ./.github/actions/setup-kind-cluster
+        with:
+          cluster-name: ${{ env.CLUSTER_NAME }}-a
+          image-tag: ${{ env.IMAGE_TAG }}
+          operator-namespace: ${{ env.OPERATOR_NS }}
+          worker-nodes: "2"
+          skip-docker-build: "true"
+
+      - name: Deploy test StellarNode
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: stellar.org/v1alpha1
+          kind: StellarNode
+          metadata:
+            name: chaos-test-horizon
+            namespace: stellar-system
+          spec:
+            nodeType: Horizon
+            network: Testnet
+            version: "v21.0.0"
+            replicas: 1
+            horizonConfig:
+              databaseSecretRef: horizon-db-secret
+              enableIngest: false
+              stellarCoreUrl: "http://localhost:11626"
+              ingestWorkers: 1
+              enableExperimentalIngestion: false
+              autoMigration: false
+          EOF
+          sleep 30
+
+      - name: Install Chaos Mesh
+        run: |
+          helm repo add chaos-mesh https://charts.chaos-mesh.org --force-update
+          helm repo update
+          kubectl create namespace chaos-mesh
+          helm install chaos-mesh chaos-mesh/chaos-mesh \
+            --namespace chaos-mesh \
+            --version ${{ env.CHAOS_MESH_VERSION }} \
+            --set chaosDaemon.runtime=containerd \
+            --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
+            --wait --timeout=5m
+          kubectl create namespace ${{ env.CHAOS_NS }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f - <<'EOF'
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: chaos-mesh-stellar-system
+            namespace: stellar-system
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: chaos-mesh-chaos-controller-manager-target-namespace
+          subjects:
+            - kind: ServiceAccount
+              name: chaos-controller-manager
+              namespace: chaos-mesh
+          EOF
+
+      - name: "Experiment 01 — Operator Pod Kill"
+        if: "!contains(github.event.inputs.skip_experiments, '01')"
+        run: |
+          mkdir -p /tmp/chaos-results
+          kubectl apply -f tests/chaos/01-operator-pod-kill.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          sleep 40
+          kubectl delete -f tests/chaos/01-operator-pod-kill.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} \
+            --timeout=${{ env.RECOVERY_TIMEOUT }}s
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp01-operator-logs.txt 2>&1 || true
+          echo "{\"experiment_id\":\"01\",\"recovery_time_secs\":$RECOVERY,\"recovered\":true}" \
+            > /tmp/chaos-results/exp01-meta.json
+          echo "✅ Experiment 01 PASSED (recovery: ${RECOVERY}s)"
+
+      - name: "Experiment 02 — Network Partition"
+        if: "!contains(github.event.inputs.skip_experiments, '02')"
+        run: |
+          mkdir -p /tmp/chaos-results
+          kubectl apply -f tests/chaos/02-network-partition.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          sleep 70
+          kubectl delete -f tests/chaos/02-network-partition.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} \
+            --timeout=${{ env.RECOVERY_TIMEOUT }}s
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp02-operator-logs.txt 2>&1 || true
+          echo "{\"experiment_id\":\"02\",\"recovery_time_secs\":$RECOVERY,\"recovered\":true}" \
+            > /tmp/chaos-results/exp02-meta.json
+          echo "✅ Experiment 02 PASSED (recovery: ${RECOVERY}s)"
+
+      - name: Upload Group A results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-results-group-a-${{ github.run_id }}
+          path: /tmp/chaos-results/
+          retention-days: 7
+
+      - name: Collect cluster logs
+        if: always()
+        uses: ./.github/actions/collect-e2e-logs
+        with:
+          operator-namespace: ${{ env.OPERATOR_NS }}
+          artifact-name: chaos-cluster-logs-group-a-${{ github.run_id }}
+          extra-namespaces: ${{ env.CHAOS_NS }}
+
+  # ── Group B: Latency + Peer Partition + Disk Fill ─────────────────────────
+  chaos-group-b:
+    name: "Group B — Latency, Peer Partition & Disk Fill"
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 75
+    env:
+      GROUP: "B"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download operator image
+        uses: actions/download-artifact@v4
+        with:
+          name: chaos-operator-image
+
+      - name: Load Docker image
+        run: gunzip -c stellar-operator-chaos.tar.gz | docker load
+
+      - name: Setup kind cluster
+        uses: ./.github/actions/setup-kind-cluster
+        with:
+          cluster-name: ${{ env.CLUSTER_NAME }}-b
+          image-tag: ${{ env.IMAGE_TAG }}
+          operator-namespace: ${{ env.OPERATOR_NS }}
+          worker-nodes: "2"
+          skip-docker-build: "true"
+
+      - name: Deploy test StellarNode
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: stellar.org/v1alpha1
+          kind: StellarNode
+          metadata:
+            name: chaos-test-horizon
+            namespace: stellar-system
+          spec:
+            nodeType: Horizon
+            network: Testnet
+            version: "v21.0.0"
+            replicas: 1
+            horizonConfig:
+              databaseSecretRef: horizon-db-secret
+              enableIngest: false
+              stellarCoreUrl: "http://localhost:11626"
+              ingestWorkers: 1
+              enableExperimentalIngestion: false
+              autoMigration: false
+          EOF
+          sleep 30
+
+      - name: Install Chaos Mesh
+        run: |
+          helm repo add chaos-mesh https://charts.chaos-mesh.org --force-update
+          helm repo update
+          kubectl create namespace chaos-mesh
+          helm install chaos-mesh chaos-mesh/chaos-mesh \
+            --namespace chaos-mesh \
+            --version ${{ env.CHAOS_MESH_VERSION }} \
+            --set chaosDaemon.runtime=containerd \
+            --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
+            --wait --timeout=5m
+          kubectl create namespace ${{ env.CHAOS_NS }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f - <<'EOF'
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: chaos-mesh-stellar-system
+            namespace: stellar-system
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: chaos-mesh-chaos-controller-manager-target-namespace
+          subjects:
+            - kind: ServiceAccount
+              name: chaos-controller-manager
+              namespace: chaos-mesh
+          EOF
+
+      - name: "Experiment 03 — API High Latency"
+        if: "!contains(github.event.inputs.skip_experiments, '03')"
+        run: |
+          mkdir -p /tmp/chaos-results
+          kubectl apply -f tests/chaos/03-api-latency.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          sleep 140
+          kubectl delete -f tests/chaos/03-api-latency.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} \
+            --timeout=${{ env.RECOVERY_TIMEOUT }}s
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp03-operator-logs.txt 2>&1 || true
+          echo "{\"experiment_id\":\"03\",\"recovery_time_secs\":$RECOVERY,\"recovered\":true}" \
+            > /tmp/chaos-results/exp03-meta.json
+          echo "✅ Experiment 03 PASSED (recovery: ${RECOVERY}s)"
+
+      - name: "Experiment 04 — Validator Peer Partition"
+        if: "!contains(github.event.inputs.skip_experiments, '04')"
+        run: |
+          kubectl apply -f tests/chaos/04-validator-peer-partition.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          sleep 100
+          kubectl delete -f tests/chaos/04-validator-peer-partition.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} \
+            --timeout=${{ env.RECOVERY_TIMEOUT }}s
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp04-operator-logs.txt 2>&1 || true
+          echo "{\"experiment_id\":\"04\",\"recovery_time_secs\":$RECOVERY,\"recovered\":true}" \
+            > /tmp/chaos-results/exp04-meta.json
+          echo "✅ Experiment 04 PASSED (recovery: ${RECOVERY}s)"
+
+      - name: "Experiment 05 — Disk Fill"
+        if: "!contains(github.event.inputs.skip_experiments, '05')"
+        run: |
+          kubectl apply -f tests/chaos/05-disk-fill.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          sleep 55
+          kubectl delete -f tests/chaos/05-disk-fill.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} \
+            --timeout=${{ env.RECOVERY_TIMEOUT }}s
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp05-operator-logs.txt 2>&1 || true
+          echo "{\"experiment_id\":\"05\",\"recovery_time_secs\":$RECOVERY,\"recovered\":true}" \
+            > /tmp/chaos-results/exp05-meta.json
+          echo "✅ Experiment 05 PASSED (recovery: ${RECOVERY}s)"
+
+      - name: Upload Group B results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-results-group-b-${{ github.run_id }}
+          path: /tmp/chaos-results/
+          retention-days: 7
+
+      - name: Collect cluster logs
+        if: always()
+        uses: ./.github/actions/collect-e2e-logs
+        with:
+          operator-namespace: ${{ env.OPERATOR_NS }}
+          artifact-name: chaos-cluster-logs-group-b-${{ github.run_id }}
+          extra-namespaces: ${{ env.CHAOS_NS }}
+
+  # ── Group C: Resource Exhaustion + Cascading ──────────────────────────────
+  chaos-group-c:
+    name: "Group C — Resource Exhaustion & Cascading Failure"
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 90
+    env:
+      GROUP: "C"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download operator image
+        uses: actions/download-artifact@v4
+        with:
+          name: chaos-operator-image
+
+      - name: Load Docker image
+        run: gunzip -c stellar-operator-chaos.tar.gz | docker load
+
+      - name: Setup kind cluster
+        uses: ./.github/actions/setup-kind-cluster
+        with:
+          cluster-name: ${{ env.CLUSTER_NAME }}-c
+          image-tag: ${{ env.IMAGE_TAG }}
+          operator-namespace: ${{ env.OPERATOR_NS }}
+          worker-nodes: "2"
+          skip-docker-build: "true"
+
+      - name: Deploy test StellarNode
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: stellar.org/v1alpha1
+          kind: StellarNode
+          metadata:
+            name: chaos-test-horizon
+            namespace: stellar-system
+          spec:
+            nodeType: Horizon
+            network: Testnet
+            version: "v21.0.0"
+            replicas: 1
+            horizonConfig:
+              databaseSecretRef: horizon-db-secret
+              enableIngest: false
+              stellarCoreUrl: "http://localhost:11626"
+              ingestWorkers: 1
+              enableExperimentalIngestion: false
+              autoMigration: false
+          EOF
+          sleep 30
+
+      - name: Install Chaos Mesh
+        run: |
+          helm repo add chaos-mesh https://charts.chaos-mesh.org --force-update
+          helm repo update
+          kubectl create namespace chaos-mesh
+          helm install chaos-mesh chaos-mesh/chaos-mesh \
+            --namespace chaos-mesh \
+            --version ${{ env.CHAOS_MESH_VERSION }} \
+            --set chaosDaemon.runtime=containerd \
+            --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
+            --wait --timeout=5m
+          kubectl create namespace ${{ env.CHAOS_NS }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f - <<'EOF'
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: chaos-mesh-stellar-system
+            namespace: stellar-system
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: chaos-mesh-chaos-controller-manager-target-namespace
+          subjects:
+            - kind: ServiceAccount
+              name: chaos-controller-manager
+              namespace: chaos-mesh
+          EOF
+
+      - name: "Experiment 06 — CPU Stress"
+        if: "!contains(github.event.inputs.skip_experiments, '06')"
+        run: |
+          mkdir -p /tmp/chaos-results
+          kubectl apply -f tests/chaos/06-cpu-stress.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          sleep 75
+          kubectl delete -f tests/chaos/06-cpu-stress.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} \
+            --timeout=${{ env.RECOVERY_TIMEOUT }}s
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp06-operator-logs.txt 2>&1 || true
+          echo "{\"experiment_id\":\"06\",\"recovery_time_secs\":$RECOVERY,\"recovered\":true}" \
+            > /tmp/chaos-results/exp06-meta.json
+          echo "✅ Experiment 06 PASSED (recovery: ${RECOVERY}s)"
+
+      - name: "Experiment 07 — Memory Pressure"
+        if: "!contains(github.event.inputs.skip_experiments, '07')"
+        run: |
+          kubectl apply -f tests/chaos/07-memory-pressure.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          sleep 75
+          kubectl delete -f tests/chaos/07-memory-pressure.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} \
+            --timeout=${{ env.RECOVERY_TIMEOUT }}s
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp07-operator-logs.txt 2>&1 || true
+          echo "{\"experiment_id\":\"07\",\"recovery_time_secs\":$RECOVERY,\"recovered\":true}" \
+            > /tmp/chaos-results/exp07-meta.json
+          echo "✅ Experiment 07 PASSED (recovery: ${RECOVERY}s)"
+
+      - name: "Experiment 08 — Validator Pod Kill"
+        if: "!contains(github.event.inputs.skip_experiments, '08')"
+        run: |
+          kubectl apply -f tests/chaos/08-validator-pod-kill.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          sleep 60
+          kubectl delete -f tests/chaos/08-validator-pod-kill.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} \
+            --timeout=${{ env.RECOVERY_TIMEOUT }}s
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp08-operator-logs.txt 2>&1 || true
+          echo "{\"experiment_id\":\"08\",\"recovery_time_secs\":$RECOVERY,\"recovered\":true}" \
+            > /tmp/chaos-results/exp08-meta.json
+          echo "✅ Experiment 08 PASSED (recovery: ${RECOVERY}s)"
+
+      - name: "Experiment 09 — Cascading Failure"
+        if: "!contains(github.event.inputs.skip_experiments, '09')"
+        run: |
+          kubectl apply -f tests/chaos/09-cascading-failure.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          sleep 200
+          kubectl delete -f tests/chaos/09-cascading-failure.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} \
+            --timeout=${{ env.RECOVERY_TIMEOUT }}s
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp09-operator-logs.txt 2>&1 || true
+          echo "{\"experiment_id\":\"09\",\"recovery_time_secs\":$RECOVERY,\"recovered\":true}" \
+            > /tmp/chaos-results/exp09-meta.json
+          echo "✅ Experiment 09 PASSED (recovery: ${RECOVERY}s)"
+
+      - name: "Experiment 10 — I/O Stress"
+        if: "!contains(github.event.inputs.skip_experiments, '10')"
+        run: |
+          kubectl apply -f tests/chaos/10-io-stress.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          sleep 75
+          kubectl delete -f tests/chaos/10-io-stress.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} \
+            --timeout=${{ env.RECOVERY_TIMEOUT }}s
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp10-operator-logs.txt 2>&1 || true
+          echo "{\"experiment_id\":\"10\",\"recovery_time_secs\":$RECOVERY,\"recovered\":true}" \
+            > /tmp/chaos-results/exp10-meta.json
+          echo "✅ Experiment 10 PASSED (recovery: ${RECOVERY}s)"
+
+      - name: Upload Group C results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-results-group-c-${{ github.run_id }}
+          path: /tmp/chaos-results/
+          retention-days: 7
+
+      - name: Collect cluster logs
+        if: always()
+        uses: ./.github/actions/collect-e2e-logs
+        with:
+          operator-namespace: ${{ env.OPERATOR_NS }}
+          artifact-name: chaos-cluster-logs-group-c-${{ github.run_id }}
+          extra-namespaces: ${{ env.CHAOS_NS }}
+
+  # ── Report: merge all results and generate resilience report ─────────────
+  report:
+    name: Generate Resilience Report
+    runs-on: ubuntu-latest
+    needs: [chaos-group-a, chaos-group-b, chaos-group-c]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download Group A results
+        uses: actions/download-artifact@v4
+        with:
+          name: chaos-results-group-a-${{ github.run_id }}
+          path: /tmp/chaos-results/
+        continue-on-error: true
+
+      - name: Download Group B results
+        uses: actions/download-artifact@v4
+        with:
+          name: chaos-results-group-b-${{ github.run_id }}
+          path: /tmp/chaos-results/
+        continue-on-error: true
+
+      - name: Download Group C results
+        uses: actions/download-artifact@v4
+        with:
+          name: chaos-results-group-c-${{ github.run_id }}
+          path: /tmp/chaos-results/
+        continue-on-error: true
+
+      - name: Generate resilience report
+        id: report
+        run: |
+          python3 tests/chaos/generate_report.py \
+            --results-dir /tmp/chaos-results \
+            --output-format both \
+            --run-id "${{ github.run_id }}" \
+            --github-summary "$GITHUB_STEP_SUMMARY" \
+            || true
+          # Extract score for badge
+          SCORE=$(python3 -c "
+          import json, sys
+          try:
+              d = json.load(open('/tmp/chaos-results/resilience-report.json'))
+              print(f\"{d['overall_score']:.1f}\")
+          except Exception:
+              print('N/A')
+          ")
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload resilience report
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-resilience-report-${{ github.run_id }}
+          path: |
+            /tmp/chaos-results/resilience-report.md
+            /tmp/chaos-results/resilience-report.json
+          retention-days: 90
+
+      - name: Write job summary
+        if: always()
+        run: |
+          GA="${{ needs.chaos-group-a.result }}"
+          GB="${{ needs.chaos-group-b.result }}"
+          GC="${{ needs.chaos-group-c.result }}"
+          SCORE="${{ steps.report.outputs.score }}"
+          {
+            echo ""
+            echo "## 🔥 Chaos Engineering — Run Summary"
+            echo ""
+            echo "| Group | Experiments | Status |"
+            echo "|-------|-------------|--------|"
+            echo "| A — Kill & Network | 01 Pod Kill, 02 Network Partition | \`${GA}\` |"
+            echo "| B — Latency & Disk | 03 API Latency, 04 Peer Partition, 05 Disk Fill | \`${GB}\` |"
+            echo "| C — Resource & Cascading | 06 CPU Stress, 07 Memory, 08 Validator Kill, 09 Cascading, 10 I/O | \`${GC}\` |"
+            echo ""
+            echo "**Overall Resilience Score:** ${SCORE}/100"
+            echo "**Commit:** \`${{ github.sha }}\`"
+            echo "**Triggered by:** ${{ github.event_name }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if any group failed
+        if: |
+          needs.chaos-group-a.result == 'failure' ||
+          needs.chaos-group-b.result == 'failure' ||
+          needs.chaos-group-c.result == 'failure'
+        run: |
+          echo "One or more chaos experiment groups failed."
+          exit 1

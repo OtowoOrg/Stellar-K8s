@@ -45,6 +45,8 @@
 //!   --cert client.crt --key client.key --cacert ca.crt
 //! ```
 
+mod horizon_cache_handlers;
+mod compliance_handlers;
 mod audit_handlers;
 mod auth;
 pub mod custom_metrics;
@@ -56,8 +58,10 @@ mod health_summary;
 mod job_handlers;
 pub mod metrics_store;
 mod oidc;
+mod resource_optimization_handlers;
 mod scp_topology;
 mod server;
+pub mod stellar_metrics_server;
 mod sustainability;
 
 pub use auth::{check_rbac_permission, k8s_rbac_auth};

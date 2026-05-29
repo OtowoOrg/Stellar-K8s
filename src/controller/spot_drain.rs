@@ -113,11 +113,8 @@ impl SpotDrainHandler {
     /// Returns `true` if any cloud provider signals imminent termination.
     async fn is_terminating(&self) -> bool {
         // Run all probes concurrently; first `true` wins.
-        let (aws, gcp, azure) = tokio::join!(
-            self.probe_aws(),
-            self.probe_gcp(),
-            self.probe_azure(),
-        );
+        let (aws, gcp, azure) =
+            tokio::join!(self.probe_aws(), self.probe_gcp(), self.probe_azure(),);
         aws || gcp || azure
     }
 
@@ -145,12 +142,11 @@ impl SpotDrainHandler {
             .send()
             .await
         {
-            Ok(resp) => {
-                resp.text()
-                    .await
-                    .map(|t| t.trim().eq_ignore_ascii_case("true"))
-                    .unwrap_or(false)
-            }
+            Ok(resp) => resp
+                .text()
+                .await
+                .map(|t| t.trim().eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
             Err(_) => false,
         }
     }
@@ -267,9 +263,7 @@ impl SpotDrainHandler {
         ));
         match pods.list(&lp).await {
             Ok(list) => list.items.iter().any(|p| {
-                p.spec
-                    .as_ref()
-                    .and_then(|s| s.node_name.as_deref())
+                p.spec.as_ref().and_then(|s| s.node_name.as_deref())
                     == Some(self.node_name.as_str())
             }),
             Err(_) => false,
@@ -290,7 +284,11 @@ impl SpotDrainHandler {
             let ns = pod.namespace().unwrap_or_else(|| "default".to_string());
             let pod_api: Api<Pod> = Api::namespaced(self.client.clone(), &ns);
 
-            let recorder = Recorder::new(self.client.clone(), self.reporter.clone(), pod.object_ref(&()));
+            let recorder = Recorder::new(
+                self.client.clone(),
+                self.reporter.clone(),
+                pod.object_ref(&()),
+            );
 
             match pod_api.evict(&pod_name, &EvictParams::default()).await {
                 Ok(_) => {
@@ -362,9 +360,9 @@ mod tests {
             .and(wiremock::matchers::path(
                 "/latest/meta-data/spot/termination-time",
             ))
-            .respond_with(wiremock::ResponseTemplate::new(200).set_body_string(
-                "2024-01-01T00:00:00Z",
-            ))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_string("2024-01-01T00:00:00Z"),
+            )
             .mount(&server)
             .await;
 
@@ -372,10 +370,7 @@ mod tests {
             .timeout(PROBE_TIMEOUT)
             .build()
             .unwrap();
-        let url = format!(
-            "{}/latest/meta-data/spot/termination-time",
-            server.uri()
-        );
+        let url = format!("{}/latest/meta-data/spot/termination-time", server.uri());
         let resp = http.get(&url).send().await.unwrap();
         assert!(resp.status().is_success());
     }
@@ -395,10 +390,7 @@ mod tests {
             .timeout(PROBE_TIMEOUT)
             .build()
             .unwrap();
-        let url = format!(
-            "{}/latest/meta-data/spot/termination-time",
-            server.uri()
-        );
+        let url = format!("{}/latest/meta-data/spot/termination-time", server.uri());
         let resp = http.get(&url).send().await.unwrap();
         assert!(!resp.status().is_success());
     }

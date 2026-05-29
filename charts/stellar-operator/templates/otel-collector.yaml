@@ -45,6 +45,15 @@ data:
         tls:
           insecure: true
       {{- end }}
+      {{- if .Values.otel.collector.config.loki.enabled }}
+      loki:
+        endpoint: {{ .Values.otel.collector.config.loki.endpoint | quote }}
+      {{- end }}
+      {{- if .Values.otel.collector.config.elasticsearch.enabled }}
+      elasticsearch:
+        endpoints: [{{ .Values.otel.collector.config.elasticsearch.endpoint | quote }}]
+        index: {{ .Values.otel.collector.config.elasticsearch.index | quote }}
+      {{- end }}
       # Always include a debug exporter so the collector starts even with no
       # backend configured (useful for local development).
       debug:
@@ -65,6 +74,17 @@ data:
             {{- end }}
             {{- if .Values.otel.collector.config.tempo.enabled }}
             - otlp/tempo
+            {{- end }}
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters:
+            - debug
+            {{- if .Values.otel.collector.config.loki.enabled }}
+            - loki
+            {{- end }}
+            {{- if .Values.otel.collector.config.elasticsearch.enabled }}
+            - elasticsearch
             {{- end }}
 ---
 apiVersion: apps/v1

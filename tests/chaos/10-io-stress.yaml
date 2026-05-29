@@ -1,0 +1,41 @@
+# tests/chaos/10-io-stress.yaml
+#
+# Experiment 10: I/O stress on validator pod storage.
+#
+# What this tests:
+#   The validator pod's disk I/O is saturated with concurrent read/write
+#   workers. This simulates a slow storage backend (throttled EBS, degraded
+#   NVMe, or a noisy-neighbour on shared storage). The operator must detect
+#   the degraded I/O, update the StellarNode status, and not attempt
+#   destructive recovery actions (e.g., deleting the PVC).
+#
+# Expected outcome:
+#   - Operator detects I/O degradation via health checks.
+#   - StellarNode may transition to Degraded but must not enter Failed.
+#   - Operator does NOT delete or recreate the PVC.
+#   - After I/O stress ends, StellarNode recovers to Ready within 5 minutes.
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: validator-io-stress
+  namespace: chaos-testing
+  labels:
+    app.kubernetes.io/part-of: stellar-chaos-suite
+    chaos/experiment: "10-io-stress"
+    chaos/category: "storage"
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - stellar-system
+    labelSelectors:
+      stellar.org/node-type: Validator
+  stressors:
+    io:
+      workers: 4
+      size: "1GB"         # Write 1GB of data to stress I/O
+      path: "/data"       # Stellar Core data directory
+  duration: "60s"
+  scheduler:
+    cron: "@once"

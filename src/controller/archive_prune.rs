@@ -501,7 +501,7 @@ pub async fn execute_prune(
     let errors: Arc<tokio::sync::Mutex<Vec<String>>> =
         Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
-    let deletable_count = deletable.len();
+    let _deletable_count = deletable.len();
     let delete_stream = stream::iter(deletable.into_iter())
         .map(|checkpoint| {
             let semaphore = semaphore.clone();

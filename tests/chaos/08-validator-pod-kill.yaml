@@ -1,0 +1,39 @@
+# tests/chaos/08-validator-pod-kill.yaml
+#
+# Experiment 8: Kill Stellar validator pods while the operator is managing them.
+#
+# What this tests:
+#   Validator pods are killed repeatedly while the operator is actively
+#   reconciling them. This simulates node failures, spot-instance evictions,
+#   or OOM kills on the validator workload itself (not the operator).
+#   The operator must detect the pod deaths, trigger re-creation via the
+#   StatefulSet controller, and update StellarNode status accordingly.
+#
+# Expected outcome:
+#   - Operator detects pod failures and logs appropriate events.
+#   - StatefulSet controller recreates validator pods automatically.
+#   - StellarNode transitions through Syncing → Ready after pod restart.
+#   - No duplicate StatefulSets or orphaned PVCs are created.
+#   - Recovery completes within 5 minutes.
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: validator-pod-kill
+  namespace: chaos-testing
+  labels:
+    app.kubernetes.io/part-of: stellar-chaos-suite
+    chaos/experiment: "08-validator-pod-kill"
+    chaos/category: "pod-failure"
+spec:
+  action: pod-kill
+  mode: one                       # Kill one validator at a time
+  selector:
+    namespaces:
+      - stellar-system
+    labelSelectors:
+      stellar.org/node-type: Validator
+  duration: "45s"
+  gracePeriod: 0
+  scheduler:
+    cron: "@every 15s"            # Kill every 15 seconds during duration

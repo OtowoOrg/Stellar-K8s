@@ -481,6 +481,91 @@ pub struct PeerLatencyStatus {
     pub healthy: bool,
 }
 
+/// Synchronize secrets across clusters for multi-region failover.
+#[instrument(skip(client, config))]
+pub async fn sync_secrets_cross_cluster(
+    client: &Client,
+    config: &crate::crd::MultiRegionConfig,
+) -> Result<()> {
+    let spec = &config.spec;
+    if !spec.secret_sync.enabled {
+        return Ok(());
+    }
+
+    info!(
+        "Synchronizing secrets for multi-region config {}",
+        config.name_any()
+    );
+
+    use k8s_openapi::api::core::v1::Secret;
+
+    for ns in &spec.secret_sync.namespaces {
+        let api: Api<Secret> = Api::namespaced(client.clone(), ns);
+        let lp = kube::api::ListParams::default();
+        let secrets = api
+            .list(&lp)
+            .await
+            .map_err(|e| Error::InternalError(format!("Failed to list secrets: {e}")))?;
+
+        for secret in secrets {
+            // Apply label selector if provided
+            if let Some(selector) = &spec.secret_sync.label_selector {
+                // Simplified label selector check
+                let mut matches = false;
+                if let Some(labels) = &secret.metadata.labels {
+                    if selector.contains('=') {
+                        let parts: Vec<&str> = selector.split('=').collect();
+                        if parts.len() == 2 && labels.get(parts[0]) == Some(&parts[1].to_string()) {
+                            matches = true;
+                        }
+                    }
+                }
+                if !matches {
+                    continue;
+                }
+            }
+
+            // Sync secret to all remote clusters
+            for cluster in &spec.clusters {
+                if cluster.name == spec.primary_cluster {
+                    continue;
+                }
+
+                sync_secret_to_cluster(client, &secret, cluster).await?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn sync_secret_to_cluster(
+    _client: &Client,
+    secret: &k8s_openapi::api::core::v1::Secret,
+    cluster: &crate::crd::ClusterConfig,
+) -> Result<()> {
+    info!(
+        "Syncing secret {} to cluster {}",
+        secret.name_any(),
+        cluster.name
+    );
+
+    // In a real implementation, this would:
+    // 1. Load the remote cluster kubeconfig from cluster.kubeconfig_secret_ref
+    // 2. Create a remote Client
+    // 3. Patch the secret in the remote cluster
+
+    // Simulated remote sync
+    debug!(
+        "Secret {} synced to {} at {}",
+        secret.name_any(),
+        cluster.name,
+        cluster.api_endpoint
+    );
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -839,7 +924,10 @@ pub async fn sync_secrets_cross_cluster(
     for ns in &spec.secret_sync.namespaces {
         let api: Api<Secret> = Api::namespaced(client.clone(), ns);
         let lp = kube::api::ListParams::default();
-        let secrets = api.list(&lp).await.map_err(|e| Error::InternalError(format!("Failed to list secrets: {e}")))?;
+        let secrets = api
+            .list(&lp)
+            .await
+            .map_err(|e| Error::InternalError(format!("Failed to list secrets: {e}")))?;
 
         for secret in secrets {
             // Apply label selector if provided

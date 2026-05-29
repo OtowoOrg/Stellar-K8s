@@ -1,9 +1,9 @@
 // Predictive load modeling and dynamic resource autoscaling
 // Issue #640: Implement predictive load modeling and dynamic resource autoscaling
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use chrono::Utc;
 
 /// Historical metric data point
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,15 +28,15 @@ pub struct TimeSeriesFeatures {
     pub mean_memory: f32,
     pub std_memory: f32,
     pub mean_request_rate: f32,
-    pub trend: f32,  // -1.0 to 1.0 indicating trend direction
+    pub trend: f32, // -1.0 to 1.0 indicating trend direction
 }
 
 /// ARIMA model for forecasting
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ARIMAModel {
-    pub p: i32,  // AR order
-    pub d: i32,  // differencing
-    pub q: i32,  // MA order
+    pub p: i32, // AR order
+    pub d: i32, // differencing
+    pub q: i32, // MA order
     pub coefficients: Vec<f32>,
     pub last_values: VecDeque<f32>,
     pub fitted: bool,
@@ -132,7 +132,7 @@ pub struct ScalingFactor {
 pub struct MetricContribution {
     pub metric_name: String,
     pub contribution_percent: f32,
-    pub direction: String,  // "up" or "down"
+    pub direction: String, // "up" or "down"
 }
 
 /// SLA configuration
@@ -235,14 +235,8 @@ impl LoadModelingController {
             / memory_values.len() as f32)
             .sqrt();
 
-        let max_cpu = cpu_values
-            .iter()
-            .copied()
-            .fold(f32::NEG_INFINITY, f32::max);
-        let min_cpu = cpu_values
-            .iter()
-            .copied()
-            .fold(f32::INFINITY, f32::min);
+        let max_cpu = cpu_values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let min_cpu = cpu_values.iter().copied().fold(f32::INFINITY, f32::min);
 
         let mean_request_rate = windowed
             .iter()
@@ -252,13 +246,9 @@ impl LoadModelingController {
 
         // Simple trend calculation
         let trend = if windowed.len() > 1 {
-            let first_half_avg = cpu_values[..cpu_values.len() / 2]
-                .iter()
-                .sum::<f32>()
+            let first_half_avg = cpu_values[..cpu_values.len() / 2].iter().sum::<f32>()
                 / (cpu_values.len() / 2) as f32;
-            let second_half_avg = cpu_values[cpu_values.len() / 2..]
-                .iter()
-                .sum::<f32>()
+            let second_half_avg = cpu_values[cpu_values.len() / 2..].iter().sum::<f32>()
                 / (cpu_values.len() - cpu_values.len() / 2) as f32;
             (second_half_avg - first_half_avg) / 100.0
         } else {
@@ -280,10 +270,7 @@ impl LoadModelingController {
     }
 
     /// Forecast using ARIMA model
-    pub async fn forecast_arima(
-        &self,
-        horizon_minutes: u32,
-    ) -> Result<Forecast, String> {
+    pub async fn forecast_arima(&self, horizon_minutes: u32) -> Result<Forecast, String> {
         let history = self.metrics_history.read().await;
 
         if history.len() < 10 {
@@ -322,10 +309,7 @@ impl LoadModelingController {
     }
 
     /// Forecast using LSTM model
-    pub async fn forecast_lstm(
-        &self,
-        horizon_minutes: u32,
-    ) -> Result<Forecast, String> {
+    pub async fn forecast_lstm(&self, horizon_minutes: u32) -> Result<Forecast, String> {
         let history = self.metrics_history.read().await;
 
         if history.len() < 24 {
@@ -335,14 +319,12 @@ impl LoadModelingController {
         let cpu_values: Vec<f32> = history.iter().map(|dp| dp.cpu_usage_percent).collect();
 
         // Simplified LSTM-like prediction
-        let window_avg = cpu_values[cpu_values.len() - 24..]
-            .iter()
-            .sum::<f32>()
-            / 24.0;
+        let window_avg = cpu_values[cpu_values.len() - 24..].iter().sum::<f32>() / 24.0;
 
         let mut predictions = Vec::new();
         for i in 1..=horizon_minutes {
-            let seasonal_factor = ((i as f32 / 60.0) * 2.0 * 3.14159).sin() * 10.0;
+            let seasonal_factor =
+                ((i as f32 / 60.0) * 2.0 * std::f64::consts::PI as f32).sin() * 10.0;
             let predicted_value = (window_avg + seasonal_factor).max(0.0).min(100.0);
             let lower = (predicted_value - 8.0).max(0.0);
             let upper = (predicted_value + 8.0).min(100.0);
@@ -381,14 +363,18 @@ impl LoadModelingController {
         // Predict-based scaling
         if predicted_load > policy.scale_up_threshold_percent {
             // Scale up proactively
-            target_replicas = ((predicted_load / policy.target_cpu_percent) * current_replicas as f32).ceil() as i32;
+            target_replicas = ((predicted_load / policy.target_cpu_percent)
+                * current_replicas as f32)
+                .ceil() as i32;
             reason = format!(
                 "Predicted load {}% exceeds target {}%. Proactive scale-up.",
                 predicted_load, policy.target_cpu_percent
             );
         } else if predicted_load < policy.scale_down_threshold_percent {
             // Scale down cautiously
-            target_replicas = ((predicted_load / policy.target_cpu_percent) * current_replicas as f32).floor() as i32;
+            target_replicas = ((predicted_load / policy.target_cpu_percent)
+                * current_replicas as f32)
+                .floor() as i32;
             reason = format!(
                 "Predicted load {}% below threshold {}%. Proactive scale-down.",
                 predicted_load, policy.scale_down_threshold_percent
@@ -398,7 +384,7 @@ impl LoadModelingController {
         // Cost optimization: Adjust replicas if over budget
         let cost_per_replica = 0.45; // USD per hour
         let mut estimated_cost = target_replicas as f32 * cost_per_replica;
-        
+
         if policy.cost_optimization_enabled && estimated_cost > sla.cost_budget_per_hour {
             let max_allowed_replicas = (sla.cost_budget_per_hour / cost_per_replica).floor() as i32;
             if target_replicas > max_allowed_replicas {
@@ -409,7 +395,9 @@ impl LoadModelingController {
             estimated_cost = target_replicas as f32 * cost_per_replica;
         }
 
-        target_replicas = target_replicas.max(policy.min_replicas).min(policy.max_replicas);
+        target_replicas = target_replicas
+            .max(policy.min_replicas)
+            .min(policy.max_replicas);
 
         let decision = AutoscalingDecision {
             id: format!("decision-{}", Utc::now().timestamp()),
@@ -502,15 +490,21 @@ impl LoadModelingController {
         let decisions = self.scaling_decisions.read().await;
         let history = self.metrics_history.read().await;
 
-        let scale_ups = decisions.iter().filter(|d| d.target_replicas > d.current_replicas).count();
-        let scale_downs = decisions.iter().filter(|d| d.target_replicas < d.current_replicas).count();
+        let scale_ups = decisions
+            .iter()
+            .filter(|d| d.target_replicas > d.current_replicas)
+            .count();
+        let scale_downs = decisions
+            .iter()
+            .filter(|d| d.target_replicas < d.current_replicas)
+            .count();
 
         Ok(serde_json::json!({
             "total_scaling_decisions": decisions.len(),
             "scale_ups": scale_ups,
             "scale_downs": scale_downs,
             "metrics_collected": history.len(),
-            "avg_cost_estimate": decisions.iter().map(|d| d.cost_estimate).sum::<f32>() 
+            "avg_cost_estimate": decisions.iter().map(|d| d.cost_estimate).sum::<f32>()
                 / decisions.len().max(1) as f32,
         }))
     }
@@ -586,5 +580,3 @@ mod tests {
         assert!(decision.is_ok());
     }
 }
-
-

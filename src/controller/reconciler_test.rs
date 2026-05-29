@@ -386,6 +386,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             #[cfg(feature = "rest-api")]
             metrics_store: Arc::new(StellarMetricsStore::new()),
             plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         });
 
         // Test with a retriable error (network-related)
@@ -439,6 +442,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             #[cfg(feature = "rest-api")]
             metrics_store: Arc::new(StellarMetricsStore::new()),
             plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         });
 
         // Test with validation error (non-retriable)
@@ -491,6 +497,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             #[cfg(feature = "rest-api")]
             metrics_store: Arc::new(StellarMetricsStore::new()),
             plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         });
 
         let errors = vec![
@@ -735,6 +744,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             #[cfg(feature = "rest-api")]
             metrics_store: Arc::new(StellarMetricsStore::new()),
             plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         };
 
         assert_eq!(state.operator_namespace, "test-namespace");
@@ -783,6 +795,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             #[cfg(feature = "rest-api")]
             metrics_store: Arc::new(StellarMetricsStore::new()),
             plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         };
 
         assert!(

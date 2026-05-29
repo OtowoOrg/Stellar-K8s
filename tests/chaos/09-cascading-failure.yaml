@@ -1,0 +1,70 @@
+# tests/chaos/09-cascading-failure.yaml
+#
+# Experiment 9: Cascading failure — simultaneous pod kill + network partition.
+#
+# What this tests:
+#   The worst-case scenario: the operator pod is killed at the same time as
+#   the network to the API server is partitioned. When the operator restarts,
+#   it immediately faces a degraded network. This tests the interaction between
+#   crash recovery and network resilience — the hardest scenario to handle.
+#
+# Expected outcome:
+#   - Operator restarts and eventually reconnects to the API server.
+#   - No StellarNode resources are left in a permanently broken state.
+#   - All StellarNodes converge to Ready within 10 minutes.
+#   - No split-brain or duplicate resource creation.
+#
+# Implementation note:
+#   This is a Chaos Mesh Workflow that sequences two experiments with overlap.
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: cascading-failure
+  namespace: chaos-testing
+  labels:
+    app.kubernetes.io/part-of: stellar-chaos-suite
+    chaos/experiment: "09-cascading-failure"
+    chaos/category: "cascading"
+spec:
+  entry: cascading-entry
+  templates:
+    - name: cascading-entry
+      templateType: Parallel
+      deadline: "3m"
+      children:
+        - kill-operator
+        - partition-network
+
+    - name: kill-operator
+      templateType: PodChaos
+      deadline: "30s"
+      podChaos:
+        action: pod-kill
+        mode: one
+        selector:
+          namespaces:
+            - stellar-system
+          labelSelectors:
+            app: stellar-operator
+        gracePeriod: 0
+
+    - name: partition-network
+      templateType: NetworkChaos
+      deadline: "60s"
+      networkChaos:
+        action: partition
+        mode: one
+        selector:
+          namespaces:
+            - stellar-system
+          labelSelectors:
+            app: stellar-operator
+        direction: both
+        target:
+          mode: all
+          selector:
+            namespaces:
+              - default
+            labelSelectors:
+              component: kube-apiserver

@@ -161,10 +161,58 @@ function ConditionsPanel({ conditions }) {
   );
 }
 
+/* ── DR Panel ── */
+function DRPanel({ dr }) {
+  if (!dr) return <p style={{ color: 'var(--muted)' }}>Loading DR status…</p>;
+  if (!dr.drEnabled) return <p style={{ color: 'var(--muted)' }}>Disaster Recovery is not enabled for this node.</p>;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+        <div style={{ ...css.card, background: 'var(--bg)' }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Current Role</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: dr.currentRole === '"Primary"' ? 'var(--green)' : 'var(--blue)' }}>{dr.currentRole || 'Unknown'}</div>
+        </div>
+        <div style={{ ...css.card, background: 'var(--bg)' }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Failover Status</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: dr.failoverActive ? 'var(--red)' : 'var(--green)' }}>{dr.failoverActive ? 'Active' : 'Inactive'}</div>
+        </div>
+        <div style={{ ...css.card, background: 'var(--bg)' }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Sync Lag</div>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>{dr.syncLag ?? 0} ledgers</div>
+        </div>
+      </div>
+
+      {dr.lastDrillResult && (
+        <div style={{ ...css.card, background: 'var(--bg)' }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Last DR Drill Result</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span>Status:</span>
+            <span style={css.badge(dr.lastDrillResult.status === 'success' ? 'var(--green)' : 'var(--red)')}>{dr.lastDrillResult.status}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span>TTR:</span>
+            <span>{dr.lastDrillResult.timeToRecoveryMs}ms</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span>Takeover Success:</span>
+            <span>{dr.lastDrillResult.standbyTakeoverSuccess ? '✅' : '❌'}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span>Message:</span>
+            <span style={{ color: 'var(--muted)', fontSize: 13 }}>{dr.lastDrillResult.message}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Node Detail Modal ── */
 function NodeDetailModal({ node, onClose, onToast }) {
   const [tab, setTab] = useState('conditions');
   const [conditions, setConditions] = useState(null);
+  const [dr, setDr] = useState(null);
   const [logs, setLogs] = useState(null);
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState(null);
@@ -174,6 +222,10 @@ function NodeDetailModal({ node, onClose, onToast }) {
     get(`/api/v1/dashboard/nodes/${node.namespace}/${node.name}/conditions`)
       .then(d => setConditions(d.conditions))
       .catch(() => setConditions([]));
+    
+    get(`/api/v1/dashboard/nodes/${node.namespace}/${node.name}/dr`)
+      .then(d => setDr(d))
+      .catch(() => setDr(null));
   }, [node]);
 
   const loadLogs = useCallback(() => {
@@ -198,7 +250,7 @@ function NodeDetailModal({ node, onClose, onToast }) {
     }
   };
 
-  const tabs = ['conditions', 'logs', 'actions'];
+  const tabs = ['conditions', 'logs', 'dr', 'actions'];
   const tabStyle = (t) => ({
     padding: '8px 18px', borderRadius: '8px 8px 0 0', fontWeight: 600, fontSize: 14,
     background: tab === t ? 'var(--bg)' : 'transparent',
@@ -211,11 +263,15 @@ function NodeDetailModal({ node, onClose, onToast }) {
   return (
     <Modal title={`${node.namespace} / ${node.name}`} onClose={onClose} wide>
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 20 }}>
-        {tabs.map(t => <button key={t} style={tabStyle(t)} onClick={() => setTab(t)}>{t.charAt(0).toUpperCase() + t.slice(1)}</button>)}
+        {tabs.map(t => <button key={t} style={tabStyle(t)} onClick={() => setTab(t)}>{t === 'dr' ? 'Disaster Recovery' : t.charAt(0).toUpperCase() + t.slice(1)}</button>)}
       </div>
 
       {tab === 'conditions' && (
         conditions ? <ConditionsPanel conditions={conditions} /> : <p style={{ color: 'var(--muted)' }}>Loading…</p>
+      )}
+
+      {tab === 'dr' && (
+        <DRPanel dr={dr} />
       )}
 
       {tab === 'logs' && (

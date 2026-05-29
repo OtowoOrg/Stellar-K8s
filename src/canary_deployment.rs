@@ -1,9 +1,9 @@
 // Zero-downtime operator upgrades with canary deployment strategy
 // Issue #638: Implement zero-downtime operator upgrades with canary deployment strategy
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::Utc;
 
 /// Version negotiation protocol between operator versions
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,7 +25,7 @@ pub struct CanaryConfig {
     pub canary_replicas: i32,
     pub stable_replicas: i32,
     pub max_replicas: i32,
-    pub traffic_shift_percent: i32,  // Initial percentage (0-100)
+    pub traffic_shift_percent: i32, // Initial percentage (0-100)
     pub traffic_increment_percent: i32,
     pub traffic_increment_interval_secs: i32,
     pub rollback_threshold_error_rate: f32, // 0.0-1.0
@@ -78,7 +78,7 @@ pub struct SmokeTest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestCase {
     pub name: String,
-    pub test_type: String,  // "connectivity", "api_compatibility", "webhook", etc
+    pub test_type: String, // "connectivity", "api_compatibility", "webhook", etc
     pub passed: bool,
     pub error_message: Option<String>,
     pub execution_time_ms: i64,
@@ -97,7 +97,7 @@ pub enum TestStatus {
 pub struct DeploymentSnapshot {
     pub id: String,
     pub deployment_id: String,
-    pub snapshot_type: String,  // "pre-upgrade", "post-canary", etc
+    pub snapshot_type: String, // "pre-upgrade", "post-canary", etc
     pub operator_version: String,
     pub operator_config: serde_json::Value,
     pub managed_resources: Vec<ResourceSnapshot>,
@@ -127,7 +127,7 @@ pub struct WebhookVersioning {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebhookRule {
-    pub operations: Vec<String>,  // "CREATE", "UPDATE", "DELETE"
+    pub operations: Vec<String>, // "CREATE", "UPDATE", "DELETE"
     pub resources: Vec<String>,
     pub api_groups: Vec<String>,
     pub versions: Vec<String>,
@@ -149,6 +149,12 @@ pub struct CanaryDeploymentController {
     version_compatibility: std::sync::Arc<tokio::sync::RwLock<HashMap<String, Vec<String>>>>,
 }
 
+impl Default for CanaryDeploymentController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CanaryDeploymentController {
     pub fn new() -> Self {
         Self {
@@ -164,7 +170,7 @@ impl CanaryDeploymentController {
         config: CanaryConfig,
     ) -> Result<CanaryStatus, String> {
         let id = format!("canary-{}", Utc::now().timestamp_nanos_opt().unwrap_or(0));
-        
+
         let status = CanaryStatus {
             id: id.clone(),
             config,
@@ -187,13 +193,13 @@ impl CanaryDeploymentController {
     /// Run smoke tests on canary deployment
     pub async fn run_smoke_tests(&self, canary_id: &str) -> Result<SmokeTest, String> {
         let mut deployments = self.deployments.write().await;
-        
+
         let status = deployments
             .get_mut(canary_id)
             .ok_or("Canary deployment not found")?;
 
         status.state = CanaryState::SmokeTestRunning;
-        
+
         let smoke_test = SmokeTest {
             id: format!("test-{}", Utc::now().timestamp_nanos_opt().unwrap_or(0)),
             canary_id: canary_id.to_string(),
@@ -243,13 +249,9 @@ impl CanaryDeploymentController {
     }
 
     /// Perform progressive traffic shifting
-    pub async fn shift_traffic(
-        &self,
-        canary_id: &str,
-        increment: i32,
-    ) -> Result<(), String> {
+    pub async fn shift_traffic(&self, canary_id: &str, increment: i32) -> Result<(), String> {
         let mut deployments = self.deployments.write().await;
-        
+
         let status = deployments
             .get_mut(canary_id)
             .ok_or("Canary deployment not found")?;
@@ -259,13 +261,16 @@ impl CanaryDeploymentController {
 
         // Update replica counts based on traffic percentage
         let total_target = status.config.max_replicas;
-        status.config.canary_replicas = ((total_target as f32 * status.current_traffic_percent as f32) / 100.0).ceil() as i32;
+        status.config.canary_replicas =
+            ((total_target as f32 * status.current_traffic_percent as f32) / 100.0).ceil() as i32;
         status.config.stable_replicas = total_target - status.config.canary_replicas;
 
         status.last_updated = Utc::now().timestamp();
 
-        info!("Traffic shifted from {}% to {}% for canary {}", 
-              old_traffic, status.current_traffic_percent, canary_id);
+        info!(
+            "Traffic shifted from {}% to {}% for canary {}",
+            old_traffic, status.current_traffic_percent, canary_id
+        );
 
         if status.current_traffic_percent >= 100 {
             status.state = CanaryState::RolloutComplete;
@@ -276,12 +281,9 @@ impl CanaryDeploymentController {
     }
 
     /// Monitor canary deployment health
-    pub async fn check_canary_health(
-        &self,
-        canary_id: &str,
-    ) -> Result<(i32, f32), String> {
+    pub async fn check_canary_health(&self, canary_id: &str) -> Result<(i32, f32), String> {
         let deployments = self.deployments.read().await;
-        
+
         let status = deployments
             .get(canary_id)
             .ok_or("Canary deployment not found")?;
@@ -290,12 +292,9 @@ impl CanaryDeploymentController {
     }
 
     /// Automatic rollback if canary fails
-    pub async fn rollback_if_failed(
-        &self,
-        canary_id: &str,
-    ) -> Result<bool, String> {
+    pub async fn rollback_if_failed(&self, canary_id: &str) -> Result<bool, String> {
         let mut deployments = self.deployments.write().await;
-        
+
         let status = deployments
             .get_mut(canary_id)
             .ok_or("Canary deployment not found")?;
@@ -316,7 +315,7 @@ impl CanaryDeploymentController {
         operator_version: String,
     ) -> Result<String, String> {
         let snapshot_id = format!("snapshot-{}", Utc::now().timestamp_nanos_opt().unwrap_or(0));
-        
+
         let snapshot = DeploymentSnapshot {
             id: snapshot_id.clone(),
             deployment_id: deployment_id.to_string(),
@@ -340,7 +339,7 @@ impl CanaryDeploymentController {
         snapshot_id: &str,
     ) -> Result<DeploymentSnapshot, String> {
         let snapshots = self.snapshots.read().await;
-        
+
         snapshots
             .iter()
             .find(|s| s.id == snapshot_id)
@@ -349,12 +348,9 @@ impl CanaryDeploymentController {
     }
 
     /// Get canary deployment status
-    pub async fn get_canary_status(
-        &self,
-        canary_id: &str,
-    ) -> Result<CanaryStatus, String> {
+    pub async fn get_canary_status(&self, canary_id: &str) -> Result<CanaryStatus, String> {
         let deployments = self.deployments.read().await;
-        
+
         deployments
             .get(canary_id)
             .cloned()
@@ -364,12 +360,21 @@ impl CanaryDeploymentController {
     /// List all active canary deployments
     pub async fn list_active_canaries(&self) -> Vec<CanaryStatus> {
         let deployments = self.deployments.read().await;
-        
+
         deployments
             .values()
             .filter(|s| match s.state {
-                CanaryState::RolloutComplete | CanaryState::RollbackComplete | CanaryState::Failed => false,
+                CanaryState::RolloutComplete
+                | CanaryState::RollbackComplete
+                | CanaryState::Failed => false,
                 _ => true,
+            .filter(|s| {
+                !matches!(
+                    s.state,
+                    CanaryState::RolloutComplete
+                        | CanaryState::RollbackComplete
+                        | CanaryState::Failed
+                )
             })
             .cloned()
             .collect()
@@ -377,10 +382,7 @@ impl CanaryDeploymentController {
 }
 
 /// Version negotiation helper
-pub fn negotiate_versions(
-    current: String,
-    target: String,
-) -> Result<VersionNegotiation, String> {
+pub fn negotiate_versions(current: String, target: String) -> Result<VersionNegotiation, String> {
     // Check if target version is in compatibility list
     let compatible_versions = vec![
         "1.0.0".to_string(),
@@ -390,13 +392,19 @@ pub fn negotiate_versions(
     ];
 
     if !compatible_versions.contains(&target) && !target.contains("-rc") {
-        return Err(format!("Version {} is not compatible with current installation", target));
+        return Err(format!(
+            "Version {} is not compatible with current installation",
+            target
+        ));
     }
 
     let mut schema_changes = HashMap::new();
     if target.starts_with('2') && current.starts_with('1') {
         schema_changes.insert("apiVersion".to_string(), "v1alpha1 -> v1beta1".to_string());
-        schema_changes.insert("deprecatedFields".to_string(), "Removed: spec.oldField".to_string());
+        schema_changes.insert(
+            "deprecatedFields".to_string(),
+            "Removed: spec.oldField".to_string(),
+        );
     }
 
     Ok(VersionNegotiation {
@@ -426,7 +434,7 @@ mod tests {
     #[tokio::test]
     async fn test_canary_deployment_creation() {
         let controller = CanaryDeploymentController::new();
-        
+
         let config = CanaryConfig {
             name: "test-canary".to_string(),
             namespace: "default".to_string(),
@@ -455,7 +463,7 @@ mod tests {
     #[tokio::test]
     async fn test_smoke_tests() {
         let controller = CanaryDeploymentController::new();
-        
+
         let config = CanaryConfig {
             name: "test-canary".to_string(),
             namespace: "default".to_string(),

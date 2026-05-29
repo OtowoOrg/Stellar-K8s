@@ -1588,6 +1588,39 @@ fn build_ingress(node: &StellarNode, config: &IngressConfig) -> Ingress {
         }
     }
 
+    if let Some(rl) = &config.rate_limit {
+        if let Some(rps) = rl.requests_per_second {
+            annotations.insert(
+                "nginx.ingress.kubernetes.io/limit-rps".to_string(),
+                rps.to_string(),
+            );
+        }
+        if let Some(rpm) = rl.requests_per_minute {
+            annotations.insert(
+                "nginx.ingress.kubernetes.io/limit-rpm".to_string(),
+                rpm.to_string(),
+            );
+        }
+        if let Some(conns) = rl.connections {
+            annotations.insert(
+                "nginx.ingress.kubernetes.io/limit-connections".to_string(),
+                conns.to_string(),
+            );
+        }
+        if let Some(burst) = rl.burst_multiplier {
+            annotations.insert(
+                "nginx.ingress.kubernetes.io/limit-burst-multiplier".to_string(),
+                burst.to_string(),
+            );
+        }
+        if let Some(whitelist) = &rl.whitelist_cidrs {
+            annotations.insert(
+                "nginx.ingress.kubernetes.io/limit-whitelist".to_string(),
+                whitelist.clone(),
+            );
+        }
+    }
+
     let rules: Vec<IngressRule> = config
         .hosts
         .iter()
@@ -1736,7 +1769,8 @@ fn build_pod_template(
     // Add Horizon database migration init container
     if let NodeType::Horizon = node.spec.node_type {
         if let Some(horizon_config) = &node.spec.horizon_config {
-            let blue_green_migration = node.spec.strategy.strategy_type == RolloutStrategyType::BlueGreen;
+            let blue_green_migration =
+                node.spec.strategy.strategy_type == RolloutStrategyType::BlueGreen;
             if horizon_config.auto_migration && !blue_green_migration {
                 let init_containers = pod_spec.init_containers.get_or_insert_with(Vec::new);
                 init_containers.push(build_horizon_migration_container(node));
@@ -2019,6 +2053,16 @@ fn build_pod_template(
     // ==========================================================================
     if let Some(sidecars) = &node.spec.sidecars {
         pod_spec.containers.extend(sidecars.iter().cloned());
+    }
+
+    // ==========================================================================
+    // Append user-defined init containers after all operator-managed ones
+    // ==========================================================================
+    if let Some(user_init_containers) = &node.spec.init_containers {
+        pod_spec
+            .init_containers
+            .get_or_insert_with(Vec::new)
+            .extend(user_init_containers.iter().cloned());
     }
 
     // ==========================================================================
@@ -2370,9 +2414,7 @@ fn build_pod_template(
                 volumes.push(Volume {
                     name: "soroban-cache".to_string(),
                     empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource {
-                        size_limit: Some(Quantity(
-                            format!("{}", cache_cfg.l2_max_bytes)
-                        )),
+                        size_limit: Some(Quantity(format!("{}", cache_cfg.l2_max_bytes))),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -3298,7 +3340,11 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
                 ..Default::default()
             });
         } else {
-            warn!("Unrecognized custom metric '{}' configured for node {}; skipping.", metric_name, node.name_any());
+            warn!(
+                "Unrecognized custom metric '{}' configured for node {}; skipping.",
+                metric_name,
+                node.name_any()
+            );
         }
     }
 
@@ -3513,44 +3559,38 @@ fn extract_peers_from_config(node: &StellarNode) -> Vec<String> {
 
     // 1. Parse KNOWN_PEERS if present
     if let Some(known_peers_toml) = &config.known_peers {
-        match known_peers_toml.parse::<toml::Value>() {
-            Ok(value) => {
-                if let Some(kp_array) = value.as_array() {
-                    for v in kp_array {
-                        if let Some(s) = v.as_str() {
-                            // Extract IP/Hostname from "IP:PORT"
-                            let peer = s.split(':').next().unwrap_or(s);
-                            peers.push(peer.to_string());
-                        }
+        if let Ok(value) = known_peers_toml.parse::<toml::Value>() {
+            if let Some(kp_array) = value.as_array() {
+                for v in kp_array {
+                    if let Some(s) = v.as_str() {
+                        // Extract IP/Hostname from "IP:PORT"
+                        let peer = s.split(':').next().unwrap_or(s);
+                        peers.push(peer.to_string());
                     }
-                } else if let Some(kp_table) = value.get("KNOWN_PEERS").and_then(|v| v.as_array()) {
-                    for v in kp_table {
-                        if let Some(s) = v.as_str() {
-                            let peer = s.split(':').next().unwrap_or(s);
-                            peers.push(peer.to_string());
-                        }
+                }
+            } else if let Some(kp_table) = value.get("KNOWN_PEERS").and_then(|v| v.as_array()) {
+                for v in kp_table {
+                    if let Some(s) = v.as_str() {
+                        let peer = s.split(':').next().unwrap_or(s);
+                        peers.push(peer.to_string());
                     }
                 }
             }
-            Err(_) => {} // Silently skip unparseable KNOWN_PEERS
         }
     }
 
     // 2. Parse QUORUM_SET for any direct IP references (rare but possible in custom setups)
     if let Some(qs_toml) = &config.quorum_set {
-        match qs_toml.parse::<toml::Value>() {
-            Ok(value) => {
-                // Check for [VALIDATORS] section with IP-like keys
-                if let Some(validators) = value.get("VALIDATORS").and_then(|v| v.as_table()) {
-                    for key in validators.keys() {
-                        // If key looks like an IP or hostname (not a public key), add it
-                        if !key.starts_with('G') && key.contains('.') {
-                            peers.push(key.clone());
-                        }
+        if let Ok(value) = qs_toml.parse::<toml::Value>() {
+            // Check for [VALIDATORS] section with IP-like keys
+            if let Some(validators) = value.get("VALIDATORS").and_then(|v| v.as_table()) {
+                for key in validators.keys() {
+                    // If key looks like an IP or hostname (not a public key), add it
+                    if !key.starts_with('G') && key.contains('.') {
+                        peers.push(key.clone());
                     }
                 }
             }
-            Err(_) => {} // Silently skip unparseable QUORUM_SET
         }
     }
 
@@ -4350,7 +4390,11 @@ mod ensure_pvc_tests {
 
         let metric_names: Vec<String> = metrics
             .iter()
-            .filter_map(|spec| spec.object.as_ref().map(|object| object.metric.name.clone()))
+            .filter_map(|spec| {
+                spec.object
+                    .as_ref()
+                    .map(|object| object.metric.name.clone())
+            })
             .collect();
 
         assert!(metric_names.contains(&"stellar_horizon_tps".to_string()));

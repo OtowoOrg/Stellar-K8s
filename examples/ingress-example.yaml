@@ -63,8 +63,15 @@ spec:
     # Additional annotations for ingress controller
     annotations:
       cert-manager.io/issue-temporary-certificate: "true"
-      nginx.ingress.kubernetes.io/rate-limit: "1000"
       nginx.ingress.kubernetes.io/ssl-redirect: "true"
+
+    # Configurable rate limiting for public-facing Horizon nodes (NGINX ingress)
+    rateLimit:
+      requestsPerSecond: 50      # max 50 req/s per client IP
+      requestsPerMinute: 1000    # max 1000 req/min per client IP
+      connections: 20            # max 20 concurrent connections per client IP
+      burstMultiplier: 5         # allow bursts up to 5x the per-second limit
+      whitelistCidrs: "10.0.0.0/8,192.168.0.0/16"  # internal CIDRs exempt from limiting
 
 ---
 # Example: Soroban RPC node with Ingress and mTLS setup

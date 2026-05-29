@@ -1,16 +1,19 @@
 // WebSocket-based real-time operator status streaming API
 // Issue #637: Build WebSocket-based real-time operator status streaming API
 
-use axum::extract::{ws::{WebSocket, WebSocketUpgrade}, Query, State};
+use axum::extract::{
+    ws::{WebSocket, WebSocketUpgrade},
+    Query, State,
+};
 use axum::response::IntoResponse;
 use axum::Json;
+use chrono::Utc;
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
-use chrono::Utc;
 
 /// Represents different event types streamed via WebSocket
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -94,7 +97,7 @@ impl StreamingState {
         filter: SubscriptionFilter,
     ) -> Result<(), String> {
         let mut connections = self.connections.write().await;
-        
+
         connections.insert(
             connection_id.clone(),
             ConnectionMetadata {
@@ -107,8 +110,10 @@ impl StreamingState {
         let mut metrics = self.metrics.write().await;
         metrics.active_connections = connections.len();
 
-        info!("WebSocket connection registered, total connections: {}", 
-              metrics.active_connections);
+        info!(
+            "WebSocket connection registered, total connections: {}",
+            metrics.active_connections
+        );
         Ok(())
     }
 
@@ -120,8 +125,10 @@ impl StreamingState {
         let mut metrics = self.metrics.write().await;
         metrics.active_connections = connections.len();
 
-        info!("WebSocket connection unregistered, total connections: {}", 
-              metrics.active_connections);
+        info!(
+            "WebSocket connection unregistered, total connections: {}",
+            metrics.active_connections
+        );
     }
 
     /// Buffer a new event message
@@ -191,8 +198,7 @@ impl StreamingState {
     pub async fn update_metrics(&self, bytes_sent: u64, latency_ms: f64) {
         let mut metrics = self.metrics.write().await;
         metrics.total_bytes_sent += bytes_sent;
-        metrics.avg_latency_ms = 
-            (metrics.avg_latency_ms * 0.9) + (latency_ms * 0.1);
+        metrics.avg_latency_ms = (metrics.avg_latency_ms * 0.9) + (latency_ms * 0.1);
     }
 
     /// Authenticate a request
@@ -219,24 +225,26 @@ pub async fn websocket_handler(
     State(streaming_state): State<Arc<StreamingState>>,
 ) -> impl IntoResponse {
     let token = params.get("token").cloned().unwrap_or_default();
-    
+
     // Authenticate
     match streaming_state.authenticate(&token).await {
         Ok(user_id) => {
             let filter = parse_subscription_filter(&params);
-            
+
             // Check authorization for namespaces in filter
             if let Some(ref namespaces) = filter.namespaces {
                 for ns in namespaces {
                     if !streaming_state.authorize(&user_id, ns).await {
-                        return (axum::http::StatusCode::FORBIDDEN, "Unauthorized for namespace").into_response();
+                        return (
+                            axum::http::StatusCode::FORBIDDEN,
+                            "Unauthorized for namespace",
+                        )
+                            .into_response();
                     }
                 }
             }
 
-            ws.on_upgrade(|socket| {
-                handle_websocket(socket, streaming_state, filter)
-            })
+            ws.on_upgrade(|socket| handle_websocket(socket, streaming_state, filter))
         }
         Err(_) => (axum::http::StatusCode::UNAUTHORIZED, "Invalid token").into_response(),
     }
@@ -250,7 +258,7 @@ async fn handle_websocket(
 ) {
     let (mut sender, mut receiver) = socket.split();
     let connection_id = generate_uuid();
-    
+
     // Register connection
     if let Err(e) = streaming_state
         .register_connection(connection_id.clone(), filter.clone())
@@ -269,15 +277,13 @@ async fn handle_websocket(
     });
 
     if let Ok(msg_str) = serde_json::to_string(&handshake) {
-        let _ = sender
-            .send(axum::extract::ws::Message::Text(msg_str.into()))
-            .await;
+        let _ = sender.send(axum::extract::ws::Message::Text(msg_str)).await;
     }
 
     // Stream messages to client
     let streaming_state_clone = streaming_state.clone();
     let conn_id = connection_id.clone();
-    
+
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -288,7 +294,11 @@ async fn handle_websocket(
 
             for message in messages {
                 if let Ok(msg_str) = serde_json::to_string(&message) {
-                    if let Err(e) = sender.send(axum::extract::ws::Message::Text(msg_str.into())).await {
+                    if let Err(e) = sender
+                        .send(axum::extract::ws::Message::Text(msg_str.into()))
+                        .await
+                    {
+                    if let Err(e) = sender.send(axum::extract::ws::Message::Text(msg_str)).await {
                         error!("Failed to send message: {}", e);
                         break;
                     }
@@ -318,9 +328,7 @@ async fn handle_websocket(
     }
 
     // Unregister connection on disconnect
-    streaming_state
-        .unregister_connection(&connection_id)
-        .await;
+    streaming_state.unregister_connection(&connection_id).await;
 }
 
 /// Parse subscription filter from query parameters
@@ -350,7 +358,6 @@ pub async fn sse_fallback_handler(
     State(streaming_state): State<Arc<StreamingState>>,
 ) -> impl IntoResponse {
     use axum::response::sse::{Event, Sse};
-    use futures::stream::{self, Stream};
 
     let filter = parse_subscription_filter(&params);
 
@@ -359,9 +366,15 @@ pub async fn sse_fallback_handler(
         let messages = state.get_filtered_messages(&filter, 5).await;
         if let Some(msg) = messages.first() {
             let event = Event::default().data(serde_json::to_string(msg).unwrap_or_default());
-            Some((Ok::<Event, std::convert::Infallible>(event), (state, filter)))
+            Some((
+                Ok::<Event, std::convert::Infallible>(event),
+                (state, filter),
+            ))
         } else {
-            Some((Ok::<Event, std::convert::Infallible>(Event::default().comment("keep-alive")), (state, filter)))
+            Some((
+                Ok::<Event, std::convert::Infallible>(Event::default().comment("keep-alive")),
+                (state, filter),
+            ))
         }
     });
 
@@ -374,6 +387,11 @@ pub async fn get_metrics_handler(
 ) -> Json<StreamingMetrics> {
     let metrics = streaming_state.get_metrics().await;
     Json(metrics)
+}
+
+// Use real uuid if available, otherwise use a simple generator
+fn generate_uuid() -> String {
+    format!("ws-{}", Utc::now().timestamp_nanos_opt().unwrap_or(0))
 }
 
 #[cfg(test)]
@@ -392,10 +410,7 @@ mod tests {
             filter.namespaces,
             Some(vec!["default".to_string(), "kube-system".to_string()])
         );
-        assert_eq!(
-            filter.resource_types,
-            Some(vec!["StellarNode".to_string()])
-        );
+        assert_eq!(filter.resource_types, Some(vec!["StellarNode".to_string()]));
     }
 
     #[tokio::test]
@@ -437,9 +452,4 @@ mod tests {
         let buffer_len = state.message_buffer.read().await.len();
         assert_eq!(buffer_len, 5); // Should not exceed max buffer size
     }
-}
-
-// Use real uuid if available, otherwise use a simple generator
-fn generate_uuid() -> String {
-    format!("ws-{}", Utc::now().timestamp_nanos_opt().unwrap_or(0))
 }

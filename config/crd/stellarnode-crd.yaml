@@ -945,11 +945,12 @@ spec:
                     nullable: true
                     type: object
                   enabled:
-                    default: false
+                    default: true
                     type: boolean
                   metricsNamespace:
                     default: monitoring
                     type: string
+
                 type: object
               nodeType:
                 description: Supported Stellar node types

@@ -124,6 +124,16 @@ mod stellar_node_spec_validation {
         }
     }
 
+    #[test]
+    fn test_default_stellar_node_spec_enables_network_policy() {
+        let spec = StellarNodeSpec::default();
+        let policy = spec
+            .network_policy
+            .expect("default StellarNodeSpec should include network_policy");
+
+        assert!(policy.enabled, "default network_policy should be enabled");
+    }
+
     fn valid_soroban_spec() -> StellarNodeSpec {
         StellarNodeSpec {
             node_type: NodeType::SorobanRpc,

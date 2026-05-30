@@ -392,6 +392,10 @@ pub struct StellarNodeSpec {
     pub policy: Option<PolicyConfig>,
 }
 
+fn default_network_policy() -> Option<NetworkPolicyConfig> {
+    Some(Default::default())
+}
+
 fn default_replicas() -> i32 {
     1
 }
@@ -425,7 +429,7 @@ impl Default for StellarNodeSpec {
             strategy: Default::default(),
             maintenance_mode: false,
             proximity_aware: false,
-            network_policy: None,
+            network_policy: default_network_policy(),
             dr_config: None,
             replication_config: None,
             pod_anti_affinity: Default::default(),

@@ -837,6 +837,31 @@ peer-2 = "G..."
             "must have peer egress rule for IPs 1.2.3.4 and 5.6.7.8"
         );
     }
+
+    #[test]
+    fn test_horizon_network_policy_allows_external_http_ingress() {
+        let mut node = make_node(NodeType::Horizon);
+        let config = crate::crd::types::NetworkPolicyConfig {
+            enabled: true,
+            ..Default::default()
+        };
+
+        let netpol = build_network_policy(&node, &config);
+        let spec = netpol.spec.expect("spec must be present");
+        let ingress = spec.ingress.expect("ingress rules must be present");
+
+        let has_public_http = ingress.iter().any(|rule| {
+            rule.from.is_none()
+                && rule.ports.as_ref().is_some_and(|ports| {
+                    ports.iter().any(|p| {
+                        p.port.as_ref()
+                            == Some(&k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(8000))
+                    })
+                })
+        });
+
+        assert!(has_public_http, "Horizon must allow port 8000 ingress from external sources");
+    }
 }
 
 // -----------------------------------------------------------------------

@@ -25,7 +25,9 @@ pub struct AuditCollector {
 
 impl AuditCollector {
     pub fn new() -> Self {
-        Self { trail: AuditTrail::default() }
+        Self {
+            trail: AuditTrail::default(),
+        }
     }
 
     pub fn record_event(
@@ -48,11 +50,7 @@ impl AuditCollector {
         });
     }
 
-    pub fn export_for_period(
-        &self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Vec<AuditEntry> {
+    pub fn export_for_period(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> Vec<AuditEntry> {
         self.trail
             .entries
             .iter()

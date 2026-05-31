@@ -46,7 +46,10 @@ pub struct AlertDetector {
 
 impl AlertDetector {
     pub fn new(manager: Arc<IncidentManager>, alertmanager_url: String) -> Self {
-        Self { manager, alertmanager_url }
+        Self {
+            manager,
+            alertmanager_url,
+        }
     }
 
     /// Process a batch of alerts from Alertmanager webhook payload.
@@ -54,7 +57,12 @@ impl AlertDetector {
         let mut created = Vec::new();
         for alert in alerts {
             // Skip resolved alerts
-            if alert.labels.get("status").map(|s| s == "resolved").unwrap_or(false) {
+            if alert
+                .labels
+                .get("status")
+                .map(|s| s == "resolved")
+                .unwrap_or(false)
+            {
                 continue;
             }
             let severity = alert.to_severity();
@@ -80,7 +88,10 @@ impl AlertDetector {
 
     /// Poll Alertmanager for firing alerts and create incidents.
     pub async fn poll_once(&self) -> anyhow::Result<Vec<Incident>> {
-        let url = format!("{}/api/v2/alerts?active=true&silenced=false", self.alertmanager_url);
+        let url = format!(
+            "{}/api/v2/alerts?active=true&silenced=false",
+            self.alertmanager_url
+        );
         let resp = reqwest::get(&url).await;
         match resp {
             Ok(r) if r.status().is_success() => {

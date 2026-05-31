@@ -33,10 +33,10 @@ pub struct SeverityMetrics {
 /// SLA thresholds in seconds per severity level.
 pub fn default_sla_thresholds() -> HashMap<String, i64> {
     let mut m = HashMap::new();
-    m.insert("critical".to_string(), 3600);   // 1h
-    m.insert("high".to_string(), 14400);       // 4h
-    m.insert("medium".to_string(), 86400);     // 24h
-    m.insert("low".to_string(), 259200);       // 72h
+    m.insert("critical".to_string(), 3600); // 1h
+    m.insert("high".to_string(), 14400); // 4h
+    m.insert("medium".to_string(), 86400); // 24h
+    m.insert("low".to_string(), 259200); // 72h
     m
 }
 
@@ -59,11 +59,15 @@ impl SlaTracker {
         let total = incidents.len() as u64;
         let resolved: Vec<_> = incidents
             .iter()
-            .filter(|i| i.status == IncidentStatus::Resolved || i.status == IncidentStatus::PostMortem)
+            .filter(|i| {
+                i.status == IncidentStatus::Resolved || i.status == IncidentStatus::PostMortem
+            })
             .collect();
         let active = incidents
             .iter()
-            .filter(|i| i.status != IncidentStatus::Resolved && i.status != IncidentStatus::PostMortem)
+            .filter(|i| {
+                i.status != IncidentStatus::Resolved && i.status != IncidentStatus::PostMortem
+            })
             .count() as u64;
 
         let mttr = if resolved.is_empty() {
@@ -76,10 +80,7 @@ impl SlaTracker {
         let mtta = {
             let acked: Vec<_> = incidents
                 .iter()
-                .filter_map(|i| {
-                    i.acknowledged_at
-                        .map(|a| (a - i.detected_at).num_seconds())
-                })
+                .filter_map(|i| i.acknowledged_at.map(|a| (a - i.detected_at).num_seconds()))
                 .collect();
             if acked.is_empty() {
                 None
@@ -109,8 +110,7 @@ impl SlaTracker {
             let sev_resolved: Vec<_> = incidents
                 .iter()
                 .filter(|i| {
-                    format!("{:?}", i.severity).to_lowercase() == *key
-                        && i.resolved_at.is_some()
+                    format!("{:?}", i.severity).to_lowercase() == *key && i.resolved_at.is_some()
                 })
                 .collect();
             if !sev_resolved.is_empty() {

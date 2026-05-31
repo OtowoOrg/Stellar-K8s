@@ -137,6 +137,116 @@ fn apply_probe_override(
     Some(probe)
 }
 
+/// Default liveness probe per node type.
+///
+/// - Validator: TCP socket on port 11625 (Stellar Core peer port)
+/// - Horizon / SorobanRpc: HTTP GET /health on port 8000
+fn default_liveness_probe(node_type: &crate::crd::NodeType) -> k8s_openapi::api::core::v1::Probe {
+    use k8s_openapi::api::core::v1::{HTTPGetAction, Probe, TCPSocketAction};
+    use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
+    match node_type {
+        crate::crd::NodeType::Validator => Probe {
+            tcp_socket: Some(TCPSocketAction {
+                port: IntOrString::Int(11625),
+                ..Default::default()
+            }),
+            initial_delay_seconds: Some(30),
+            period_seconds: Some(15),
+            timeout_seconds: Some(5),
+            failure_threshold: Some(3),
+            success_threshold: Some(1),
+            ..Default::default()
+        },
+        _ => Probe {
+            http_get: Some(HTTPGetAction {
+                path: Some("/health".to_string()),
+                port: IntOrString::Int(8000),
+                ..Default::default()
+            }),
+            initial_delay_seconds: Some(20),
+            period_seconds: Some(15),
+            timeout_seconds: Some(5),
+            failure_threshold: Some(3),
+            success_threshold: Some(1),
+            ..Default::default()
+        },
+    }
+}
+
+/// Default readiness probe per node type.
+///
+/// - Validator: HTTP GET /info on port 11626 (Stellar Core HTTP port)
+/// - Horizon / SorobanRpc: HTTP GET /health on port 8000
+fn default_readiness_probe(node_type: &crate::crd::NodeType) -> k8s_openapi::api::core::v1::Probe {
+    use k8s_openapi::api::core::v1::{HTTPGetAction, Probe};
+    use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
+    match node_type {
+        crate::crd::NodeType::Validator => Probe {
+            http_get: Some(HTTPGetAction {
+                path: Some("/info".to_string()),
+                port: IntOrString::Int(11626),
+                ..Default::default()
+            }),
+            initial_delay_seconds: Some(15),
+            period_seconds: Some(10),
+            timeout_seconds: Some(5),
+            failure_threshold: Some(3),
+            success_threshold: Some(1),
+            ..Default::default()
+        },
+        _ => Probe {
+            http_get: Some(HTTPGetAction {
+                path: Some("/health".to_string()),
+                port: IntOrString::Int(8000),
+                ..Default::default()
+            }),
+            initial_delay_seconds: Some(10),
+            period_seconds: Some(10),
+            timeout_seconds: Some(5),
+            failure_threshold: Some(3),
+            success_threshold: Some(1),
+            ..Default::default()
+        },
+    }
+}
+
+/// Default startup probe per node type.
+///
+/// Allows extra time for initial ledger sync before liveness kicks in.
+/// - Validator: 30 × 10s = 5 minutes max startup time
+/// - Horizon / SorobanRpc: 30 × 10s = 5 minutes max startup time
+fn default_startup_probe(node_type: &crate::crd::NodeType) -> k8s_openapi::api::core::v1::Probe {
+    use k8s_openapi::api::core::v1::{HTTPGetAction, Probe, TCPSocketAction};
+    use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
+    match node_type {
+        crate::crd::NodeType::Validator => Probe {
+            tcp_socket: Some(TCPSocketAction {
+                port: IntOrString::Int(11625),
+                ..Default::default()
+            }),
+            initial_delay_seconds: Some(10),
+            period_seconds: Some(10),
+            timeout_seconds: Some(5),
+            failure_threshold: Some(30),
+            success_threshold: Some(1),
+            ..Default::default()
+        },
+        _ => Probe {
+            http_get: Some(HTTPGetAction {
+                path: Some("/health".to_string()),
+                port: IntOrString::Int(8000),
+                ..Default::default()
+            }),
+            initial_delay_seconds: Some(10),
+            period_seconds: Some(10),
+            timeout_seconds: Some(5),
+            failure_threshold: Some(30),
+            success_threshold: Some(1),
+            ..Default::default()
+        },
+    }
+}
+
 /// Create PostParams with dry-run support
 fn post_params(dry_run: bool) -> PostParams {
     if dry_run {
@@ -1755,6 +1865,7 @@ fn build_pod_template(
             }),
             ..Default::default()
         }),
+        priority_class_name: node.spec.priority_class_name.clone(),
         ..Default::default()
     };
 
@@ -2983,15 +3094,15 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
         }),
         volume_mounts: Some(volume_mounts),
         liveness_probe: apply_probe_override(
-            None,
+            Some(default_liveness_probe(&node.spec.node_type)),
             node.spec.probes.as_ref().and_then(|p| p.liveness.as_ref()),
         ),
         readiness_probe: apply_probe_override(
-            None,
+            Some(default_readiness_probe(&node.spec.node_type)),
             node.spec.probes.as_ref().and_then(|p| p.readiness.as_ref()),
         ),
         startup_probe: apply_probe_override(
-            None,
+            Some(default_startup_probe(&node.spec.node_type)),
             node.spec.probes.as_ref().and_then(|p| p.startup.as_ref()),
         ),
         ..Default::default()

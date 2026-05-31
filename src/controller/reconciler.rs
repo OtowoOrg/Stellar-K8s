@@ -2701,7 +2701,80 @@ pub(crate) fn apply_stellar_node(
             super::audit::patch_audit_annotations(&client, &node, action).await;
         }
 
-        // 14. Update status to Running with ready replica count
+        // 14. GitOps protocol upgrade — check if a timeline annotation is present and
+        //     drive the next due upgrade step via ArgoCD or Flux.
+        {
+            use super::gitops_upgrade::{
+                GitOpsEngine, GitOpsUpgradeController, ProtocolUpgradeTimeline,
+            };
+
+            let timeline_json = node
+                .metadata
+                .annotations
+                .as_ref()
+                .and_then(|a| a.get("stellar.org/protocol-upgrade-timeline"))
+                .cloned();
+
+            if let Some(json_str) = timeline_json {
+                match serde_json::from_str::<ProtocolUpgradeTimeline>(&json_str) {
+                    Ok(timeline) => {
+                        let engine_str = node
+                            .metadata
+                            .annotations
+                            .as_ref()
+                            .and_then(|a| a.get("stellar.org/gitops-engine"))
+                            .map(|s| s.as_str())
+                            .unwrap_or("argocd");
+                        let engine = if engine_str == "flux" {
+                            GitOpsEngine::Flux
+                        } else {
+                            GitOpsEngine::ArgoCd
+                        };
+                        let controller = GitOpsUpgradeController::new(
+                            engine,
+                            std::time::Duration::from_secs(300),
+                            0.95,
+                        );
+                        let current_protocol: u32 = node
+                            .metadata
+                            .annotations
+                            .as_ref()
+                            .and_then(|a| a.get("stellar.org/current-protocol"))
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(0);
+                        let now_unix = chrono::Utc::now().timestamp();
+                        match controller
+                            .plan_and_sync(&client, &node, &timeline, current_protocol, now_unix)
+                            .await
+                        {
+                            Ok(Some(plan)) => {
+                                info!(
+                                    "GitOps upgrade planned for {}/{}: protocol v{} via {}",
+                                    namespace, name, plan.target_protocol, engine_str
+                                );
+                            }
+                            Ok(None) => {
+                                debug!("No GitOps upgrade step due for {}/{}", namespace, name);
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "GitOps upgrade planning failed for {}/{}: {}",
+                                    namespace, name, e
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse protocol-upgrade-timeline annotation for {}/{}: {}",
+                            namespace, name, e
+                        );
+                    }
+                }
+            }
+        }
+
+        // 15. Update status to Running with ready replica count
         // Use configured requeue interval for healthy reconciliation
         let requeue_interval = ctx.operator_config.reconciler.requeue_interval;
 

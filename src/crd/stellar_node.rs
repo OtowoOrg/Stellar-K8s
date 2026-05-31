@@ -390,6 +390,23 @@ pub struct StellarNodeSpec {
     /// Policy-based authorization configuration (OPA).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy: Option<PolicyConfig>,
+
+    /// PriorityClass name to assign to all pods managed by this StellarNode.
+    ///
+    /// Controls scheduling priority and preemption behaviour in resource-constrained
+    /// clusters. The referenced PriorityClass must already exist in the cluster.
+    ///
+    /// Recommended values:
+    /// - `stellar-validator-critical` – highest priority, for mainnet validators
+    /// - `stellar-rpc-high`           – high priority, for Soroban RPC nodes
+    /// - `stellar-default`            – standard priority, for Horizon / testnet
+    ///
+    /// # Example
+    /// ```yaml
+    /// priorityClassName: stellar-validator-critical
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority_class_name: Option<String>,
 }
 
 fn default_replicas() -> i32 {
@@ -459,6 +476,7 @@ impl Default for StellarNodeSpec {
             rbac: None,
             audit: None,
             policy: None,
+            priority_class_name: None,
         }
     }
 }
@@ -837,6 +855,17 @@ impl StellarNodeSpec {
                     "spec.probes",
                     msg,
                     "Ensure all probe fields are positive integers (initialDelaySeconds >= 0, others >= 1).",
+                ));
+            }
+        }
+
+        // 6. PriorityClass name validation
+        if let Some(ref pcn) = self.priority_class_name {
+            if pcn.is_empty() {
+                errors.push(SpecValidationError::new(
+                    "spec.priorityClassName",
+                    "priorityClassName must not be empty when set",
+                    "Provide a valid PriorityClass name or remove the field entirely.",
                 ));
             }
         }

@@ -184,7 +184,10 @@ pub fn check_compatibility(
             // New required fields must exist in old schema.
             for field in &new_required {
                 if !old_props.contains(field) {
-                    issues.push(format!("Forward incompatible: new required field '{}' not in old schema", field));
+                    issues.push(format!(
+                        "Forward incompatible: new required field '{}' not in old schema",
+                        field
+                    ));
                 }
             }
         }
@@ -196,7 +199,10 @@ pub fn check_compatibility(
             }
             for field in &new_required {
                 if !old_props.contains(field) {
-                    issues.push(format!("Full incompatible: new required field '{}' not in old schema", field));
+                    issues.push(format!(
+                        "Full incompatible: new required field '{}' not in old schema",
+                        field
+                    ));
                 }
             }
         }
@@ -214,7 +220,11 @@ fn required_fields(schema: &serde_json::Value) -> Vec<String> {
     schema
         .get("required")
         .and_then(|r| r.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -296,7 +306,10 @@ pub fn generate_migration_plan(
 // ── Documentation generator ───────────────────────────────────────────────────
 
 pub fn generate_docs(subject: &SchemaSubject) -> String {
-    let mut doc = format!("# Schema: {}\n\nNamespace: `{}`\n\n", subject.name, subject.namespace);
+    let mut doc = format!(
+        "# Schema: {}\n\nNamespace: `{}`\n\n",
+        subject.name, subject.namespace
+    );
     doc.push_str(&format!("Compatibility: `{:?}`\n\n", subject.compatibility));
     doc.push_str("## Versions\n\n");
     for v in &subject.versions {
@@ -322,7 +335,9 @@ pub struct SchemaRegistry {
 
 impl SchemaRegistry {
     pub fn new() -> Self {
-        Self { subjects: HashMap::new() }
+        Self {
+            subjects: HashMap::new(),
+        }
     }
 
     // ── Subject management ────────────────────────────────────────────────────
@@ -357,12 +372,10 @@ impl SchemaRegistry {
 
         // Compatibility check against latest approved version
         if let Some(latest) = subject.latest_approved() {
-            let result = check_compatibility(&latest.definition, &definition, &subject.compatibility);
+            let result =
+                check_compatibility(&latest.definition, &definition, &subject.compatibility);
             if !result.compatible {
-                return Err(format!(
-                    "Schema incompatible: {}",
-                    result.issues.join("; ")
-                ));
+                return Err(format!("Schema incompatible: {}", result.issues.join("; ")));
             }
         }
 
@@ -370,13 +383,21 @@ impl SchemaRegistry {
         let schema_id = format!("{}-v{}", subject_name, version_num);
         let version = SchemaVersion::new(version_num, schema_id, definition, format, author);
         subject.versions.push(version);
-        info!("Registered schema version {} for subject '{}'", version_num, subject_name);
+        info!(
+            "Registered schema version {} for subject '{}'",
+            version_num, subject_name
+        );
         Ok(version_num)
     }
 
     // ── Approval workflow ─────────────────────────────────────────────────────
 
-    pub fn approve_version(&mut self, subject: &str, version: u32, approver: impl Into<String>) -> bool {
+    pub fn approve_version(
+        &mut self,
+        subject: &str,
+        version: u32,
+        approver: impl Into<String>,
+    ) -> bool {
         let approver = approver.into();
         if let Some(s) = self.subjects.get_mut(subject) {
             if let Some(v) = s.versions.iter_mut().find(|v| v.version == version) {
@@ -534,7 +555,12 @@ mod tests {
     fn test_register_and_approve() {
         let mut reg = make_registry();
         let v = reg
-            .register_version("user-events", base_schema(), SchemaFormat::JsonSchema, "alice")
+            .register_version(
+                "user-events",
+                base_schema(),
+                SchemaFormat::JsonSchema,
+                "alice",
+            )
             .unwrap();
         assert_eq!(v, 1);
         assert!(reg.approve_version("user-events", 1, "bob"));
@@ -547,19 +573,41 @@ mod tests {
     #[test]
     fn test_backward_compatible_evolution() {
         let mut reg = make_registry();
-        reg.register_version("user-events", base_schema(), SchemaFormat::JsonSchema, "alice").unwrap();
+        reg.register_version(
+            "user-events",
+            base_schema(),
+            SchemaFormat::JsonSchema,
+            "alice",
+        )
+        .unwrap();
         reg.approve_version("user-events", 1, "bob");
         // Adding optional field is backward compatible
-        let v2 = reg.register_version("user-events", extended_schema(), SchemaFormat::JsonSchema, "alice");
+        let v2 = reg.register_version(
+            "user-events",
+            extended_schema(),
+            SchemaFormat::JsonSchema,
+            "alice",
+        );
         assert!(v2.is_ok());
     }
 
     #[test]
     fn test_backward_incompatible_rejected() {
         let mut reg = make_registry();
-        reg.register_version("user-events", base_schema(), SchemaFormat::JsonSchema, "alice").unwrap();
+        reg.register_version(
+            "user-events",
+            base_schema(),
+            SchemaFormat::JsonSchema,
+            "alice",
+        )
+        .unwrap();
         reg.approve_version("user-events", 1, "bob");
-        let result = reg.register_version("user-events", breaking_schema(), SchemaFormat::JsonSchema, "alice");
+        let result = reg.register_version(
+            "user-events",
+            breaking_schema(),
+            SchemaFormat::JsonSchema,
+            "alice",
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("incompatible"));
     }
@@ -586,9 +634,21 @@ mod tests {
     #[test]
     fn test_migration_plan() {
         let mut reg = make_registry();
-        reg.register_version("user-events", base_schema(), SchemaFormat::JsonSchema, "alice").unwrap();
+        reg.register_version(
+            "user-events",
+            base_schema(),
+            SchemaFormat::JsonSchema,
+            "alice",
+        )
+        .unwrap();
         reg.approve_version("user-events", 1, "bob");
-        reg.register_version("user-events", extended_schema(), SchemaFormat::JsonSchema, "alice").unwrap();
+        reg.register_version(
+            "user-events",
+            extended_schema(),
+            SchemaFormat::JsonSchema,
+            "alice",
+        )
+        .unwrap();
         reg.approve_version("user-events", 2, "bob");
 
         let plan = reg.migration_plan("user-events", 1, 2).unwrap();
@@ -600,7 +660,13 @@ mod tests {
     #[test]
     fn test_docs_generation() {
         let mut reg = make_registry();
-        reg.register_version("user-events", base_schema(), SchemaFormat::JsonSchema, "alice").unwrap();
+        reg.register_version(
+            "user-events",
+            base_schema(),
+            SchemaFormat::JsonSchema,
+            "alice",
+        )
+        .unwrap();
         let docs = reg.docs("user-events").unwrap();
         assert!(docs.contains("# Schema: user-events"));
         assert!(docs.contains("v1"));
@@ -609,7 +675,13 @@ mod tests {
     #[test]
     fn test_deprecate_version() {
         let mut reg = make_registry();
-        reg.register_version("user-events", base_schema(), SchemaFormat::JsonSchema, "alice").unwrap();
+        reg.register_version(
+            "user-events",
+            base_schema(),
+            SchemaFormat::JsonSchema,
+            "alice",
+        )
+        .unwrap();
         reg.approve_version("user-events", 1, "bob");
         assert!(reg.deprecate_version("user-events", 1));
         // latest_approved should now be None since only version is deprecated
@@ -618,7 +690,8 @@ mod tests {
 
     #[test]
     fn test_compatibility_full_mode() {
-        let result = check_compatibility(&base_schema(), &extended_schema(), &CompatibilityMode::Full);
+        let result =
+            check_compatibility(&base_schema(), &extended_schema(), &CompatibilityMode::Full);
         // extended adds optional field, doesn't remove required ones -> compatible
         assert!(result.compatible);
     }

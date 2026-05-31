@@ -65,7 +65,9 @@ impl Soc2ReportGenerator {
                 id: "CC6".to_string(),
                 name: "Logical and Physical Access Controls".to_string(),
                 description: "Access to systems is restricted to authorized users".to_string(),
-                compliant: !soc2_violations.iter().any(|v| v.policy_id.contains("access")),
+                compliant: !soc2_violations
+                    .iter()
+                    .any(|v| v.policy_id.contains("access")),
                 findings: soc2_violations
                     .iter()
                     .filter(|v| v.policy_id.contains("access"))
@@ -87,7 +89,9 @@ impl Soc2ReportGenerator {
                 id: "CC8".to_string(),
                 name: "Change Management".to_string(),
                 description: "Changes to systems are authorized and tested".to_string(),
-                compliant: !soc2_violations.iter().any(|v| v.policy_id.contains("resource")),
+                compliant: !soc2_violations
+                    .iter()
+                    .any(|v| v.policy_id.contains("resource")),
                 findings: soc2_violations
                     .iter()
                     .filter(|v| v.policy_id.contains("resource"))
@@ -127,13 +131,17 @@ impl Iso27001ReportGenerator {
             IsoControl {
                 id: "A.9".to_string(),
                 name: "Access Control".to_string(),
-                compliant: !iso_violations.iter().any(|v| v.policy_id.contains("access")),
+                compliant: !iso_violations
+                    .iter()
+                    .any(|v| v.policy_id.contains("access")),
                 notes: "Network policies and RBAC controls".to_string(),
             },
             IsoControl {
                 id: "A.12".to_string(),
                 name: "Operations Security".to_string(),
-                compliant: !iso_violations.iter().any(|v| v.policy_id.contains("network")),
+                compliant: !iso_violations
+                    .iter()
+                    .any(|v| v.policy_id.contains("network")),
                 notes: "Network policy enforcement".to_string(),
             },
             IsoControl {

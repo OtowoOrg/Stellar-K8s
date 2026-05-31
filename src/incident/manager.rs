@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
@@ -115,10 +115,10 @@ pub struct IncidentManager {
 impl IncidentManager {
     pub fn new() -> Self {
         let mut sla = HashMap::new();
-        sla.insert("critical".to_string(), 3600);   // 1h
-        sla.insert("high".to_string(), 14400);       // 4h
-        sla.insert("medium".to_string(), 86400);     // 24h
-        sla.insert("low".to_string(), 259200);       // 72h
+        sla.insert("critical".to_string(), 3600); // 1h
+        sla.insert("high".to_string(), 14400); // 4h
+        sla.insert("medium".to_string(), 86400); // 24h
+        sla.insert("low".to_string(), 259200); // 72h
         Self {
             incidents: Arc::new(RwLock::new(HashMap::new())),
             counter: Arc::new(AtomicU64::new(1)),
@@ -205,7 +205,9 @@ impl IncidentManager {
             .read()
             .await
             .values()
-            .filter(|i| i.status != IncidentStatus::Resolved && i.status != IncidentStatus::PostMortem)
+            .filter(|i| {
+                i.status != IncidentStatus::Resolved && i.status != IncidentStatus::PostMortem
+            })
             .cloned()
             .collect()
     }
@@ -218,18 +220,19 @@ impl IncidentManager {
         let store = self.incidents.read().await;
         let active: Vec<_> = store
             .values()
-            .filter(|i| i.status != IncidentStatus::Resolved && i.status != IncidentStatus::PostMortem)
+            .filter(|i| {
+                i.status != IncidentStatus::Resolved && i.status != IncidentStatus::PostMortem
+            })
             .collect();
 
         let mut by_severity: HashMap<String, usize> = HashMap::new();
         for inc in &active {
-            *by_severity.entry(format!("{:?}", inc.severity).to_lowercase()).or_default() += 1;
+            *by_severity
+                .entry(format!("{:?}", inc.severity).to_lowercase())
+                .or_default() += 1;
         }
 
-        let resolved: Vec<_> = store
-            .values()
-            .filter(|i| i.resolved_at.is_some())
-            .collect();
+        let resolved: Vec<_> = store.values().filter(|i| i.resolved_at.is_some()).collect();
 
         let mttr = if resolved.is_empty() {
             None

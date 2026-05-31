@@ -53,17 +53,9 @@ pub async fn regulatory_compliance_report(
                 ComplianceExportFormat::Csv => "text/csv",
                 ComplianceExportFormat::Json => "application/json",
             };
-            (
-                [(axum::http::header::CONTENT_TYPE, content_type)],
-                bytes,
-            )
-                .into_response()
+            ([(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response()
         }
-        Err(e) => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            e.to_string(),
-        )
-            .into_response(),
+        Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 

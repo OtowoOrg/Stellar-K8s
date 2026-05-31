@@ -52,11 +52,9 @@ impl PolicyTestRunner {
         let mut results = Vec::new();
 
         for case in cases {
-            let violations = self.engine.evaluate_all(
-                "test-resource",
-                "StellarNode",
-                &case.input_json,
-            );
+            let violations =
+                self.engine
+                    .evaluate_all("test-resource", "StellarNode", &case.input_json);
             let policy_violated = violations.iter().any(|v| v.policy_id == case.policy_id);
             let actual_pass = !policy_violated;
             let test_passed = actual_pass == case.expected_pass;

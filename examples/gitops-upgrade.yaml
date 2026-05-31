@@ -1,0 +1,103 @@
+# Example: GitOps pipeline for zero-touch network upgrades (#681)
+#
+# The operator reads a protocol upgrade timeline from the annotation
+# "stellar.org/protocol-upgrade-timeline" and automatically applies the next
+# due upgrade step via ArgoCD or Flux.
+#
+# Rollback is triggered automatically when consensus health drops below the
+# configured threshold (default: 95%) after an upgrade.
+#
+# Workflow:
+#   1. Operator reads the timeline annotation on each reconcile cycle.
+#   2. Finds the lowest protocol version > current that is past its activate_at_unix.
+#   3. Patches the StellarNode with GitOps sync annotations (ArgoCD sync-wave /
+#      Flux reconcile trigger).
+#   4. ArgoCD / Flux picks up the annotations and deploys the new config.
+#   5. If consensus health degrades, the operator rolls back to the previous version.
+
+---
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-gitops-upgrade
+  namespace: stellar
+  annotations:
+    # GitOps engine: "argocd" (default) or "flux"
+    stellar.org/gitops-engine: "argocd"
+
+    # Current protocol version — updated by the operator after each successful upgrade
+    stellar.org/current-protocol: "21"
+
+    # Protocol upgrade timeline (JSON array of steps).
+    # Each step specifies:
+    #   protocolVersion  — target Stellar protocol version
+    #   activateAtUnix   — Unix timestamp when this step becomes eligible
+    #   configRef        — Git ref (branch/tag/commit) to sync for this version
+    stellar.org/protocol-upgrade-timeline: |
+      {
+        "steps": [
+          {
+            "protocolVersion": 22,
+            "activateAtUnix": 1800000000,
+            "configRef": "refs/tags/protocol-22"
+          },
+          {
+            "protocolVersion": 23,
+            "activateAtUnix": 1900000000,
+            "configRef": "refs/tags/protocol-23"
+          }
+        ]
+      }
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  storage:
+    storageClass: "gp3"
+    size: "500Gi"
+  validatorConfig:
+    seedSecretRef: "mainnet-validator-seed"
+
+---
+# ArgoCD Application that the operator's sync annotations target.
+# The operator sets argocd.argoproj.io/sync-wave and sync-options on the
+# StellarNode; ArgoCD then syncs the Application in the correct wave order.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: stellar-validator-upgrade
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/OtowoOrg/Stellar-K8s
+    targetRevision: HEAD   # overridden per-step by the operator's configRef annotation
+    path: config/mainnet
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: stellar
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true
+
+---
+# Flux Kustomization alternative (use stellar.org/gitops-engine: "flux")
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: stellar-validator-upgrade
+  namespace: flux-system
+spec:
+  interval: 5m
+  path: ./config/mainnet
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: stellar-k8s
+  targetNamespace: stellar
+  # The operator sets reconcile.fluxcd.io/requestedAt and
+  # kustomize.toolkit.fluxcd.io/force=enabled to trigger immediate reconciliation.

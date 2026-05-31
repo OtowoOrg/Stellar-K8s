@@ -41,7 +41,14 @@ impl RcaGenerator {
         let timeline_summary: Vec<String> = incident
             .timeline
             .iter()
-            .map(|e| format!("[{}] {}: {}", e.timestamp.format("%H:%M:%S"), e.actor, e.action))
+            .map(|e| {
+                format!(
+                    "[{}] {}: {}",
+                    e.timestamp.format("%H:%M:%S"),
+                    e.actor,
+                    e.action
+                )
+            })
             .collect();
 
         let sections = vec![
@@ -72,11 +79,13 @@ impl RcaGenerator {
             },
             RcaSection {
                 title: "Root Cause".to_string(),
-                content: "TODO: Fill in root cause analysis based on collected evidence.".to_string(),
+                content: "TODO: Fill in root cause analysis based on collected evidence."
+                    .to_string(),
             },
             RcaSection {
                 title: "Contributing Factors".to_string(),
-                content: "TODO: List contributing factors identified during investigation.".to_string(),
+                content: "TODO: List contributing factors identified during investigation."
+                    .to_string(),
             },
             RcaSection {
                 title: "Detection".to_string(),
@@ -115,7 +124,8 @@ impl RcaGenerator {
                 priority: "high".to_string(),
             },
             ActionItem {
-                description: "Add monitoring/alerting to detect this class of issue earlier".to_string(),
+                description: "Add monitoring/alerting to detect this class of issue earlier"
+                    .to_string(),
                 owner: None,
                 due_date: Some(
                     (Utc::now() + chrono::Duration::days(7))

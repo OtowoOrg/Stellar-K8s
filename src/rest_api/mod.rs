@@ -45,16 +45,16 @@
 //!   --cert client.crt --key client.key --cacert ca.crt
 //! ```
 
-mod horizon_cache_handlers;
-mod compliance_handlers;
 mod audit_handlers;
 mod auth;
+mod compliance_handlers;
 pub mod custom_metrics;
 mod dashboard_dto;
 mod dashboard_handlers;
 mod dto;
 mod handlers;
 mod health_summary;
+mod horizon_cache_handlers;
 mod job_handlers;
 pub mod metrics_store;
 mod oidc;

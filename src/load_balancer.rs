@@ -236,7 +236,10 @@ impl LoadBalancer {
     // ── Backend registry ──────────────────────────────────────────────────────
 
     pub fn register_backend(&mut self, backend: Backend) {
-        info!("Registering backend {} ({}:{})", backend.id, backend.address, backend.port);
+        info!(
+            "Registering backend {} ({}:{})",
+            backend.id, backend.address, backend.port
+        );
         self.backends.retain(|b| b.id != backend.id);
         self.backends.push(backend);
     }
@@ -303,10 +306,12 @@ impl LoadBalancer {
             id
         } else {
             // 3. Algorithm-based selection
-            let available: Vec<&Backend> = self.backends.iter().filter(|b| b.is_available()).collect();
+            let available: Vec<&Backend> =
+                self.backends.iter().filter(|b| b.is_available()).collect();
             if available.is_empty() {
                 warn!("No available backends");
-                self.metrics.no_backend_available = self.metrics.no_backend_available.saturating_add(1);
+                self.metrics.no_backend_available =
+                    self.metrics.no_backend_available.saturating_add(1);
                 return None;
             }
 
@@ -339,7 +344,11 @@ impl LoadBalancer {
             },
         );
 
-        *self.metrics.requests_per_backend.entry(id.clone()).or_insert(0) += 1;
+        *self
+            .metrics
+            .requests_per_backend
+            .entry(id.clone())
+            .or_insert(0) += 1;
         self.bump_connections(&id);
         Some(id)
     }
@@ -372,9 +381,15 @@ impl LoadBalancer {
                 .filter(|b| b.is_available())
                 .filter(|b| {
                     if use_b {
-                        b.tags.get(&tag_key).map(|v| v == &tag_value).unwrap_or(false)
+                        b.tags
+                            .get(&tag_key)
+                            .map(|v| v == &tag_value)
+                            .unwrap_or(false)
                     } else {
-                        !b.tags.get(&tag_key).map(|v| v == &tag_value).unwrap_or(false)
+                        !b.tags
+                            .get(&tag_key)
+                            .map(|v| v == &tag_value)
+                            .unwrap_or(false)
                     }
                 })
                 .collect();
@@ -442,7 +457,10 @@ impl LoadBalancer {
     }
 
     pub fn healthy_backend_count(&self) -> usize {
-        self.backends.iter().filter(|b| b.health == BackendHealth::Healthy).count()
+        self.backends
+            .iter()
+            .filter(|b| b.health == BackendHealth::Healthy)
+            .count()
     }
 
     /// Evict expired sessions.
@@ -476,10 +494,7 @@ pub async fn run_health_checker(lb: SharedLoadBalancer) {
     loop {
         let (backends_snapshot, config) = {
             let guard = lb.read().await;
-            (
-                guard.backends().to_vec(),
-                guard.config.health_check.clone(),
-            )
+            (guard.backends().to_vec(), guard.config.health_check.clone())
         };
 
         let client = reqwest::Client::builder()
@@ -590,9 +605,7 @@ mod tests {
         };
         let mut lb = LoadBalancer::new(config);
         lb.register_backend(Backend::new("a1", "10.0.0.1", 8080));
-        lb.register_backend(
-            Backend::new("b1", "10.0.0.2", 8080).with_tag("group", "b"),
-        );
+        lb.register_backend(Backend::new("b1", "10.0.0.2", 8080).with_tag("group", "b"));
         let id = lb.select("any-client", 0).unwrap();
         assert_eq!(id, "b1");
     }

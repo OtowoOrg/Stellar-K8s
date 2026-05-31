@@ -1,0 +1,100 @@
+# Example: PriorityClass support for pod scheduling priority (#840)
+#
+# PriorityClass resources must be created in the cluster before referencing them.
+# The operator validates that priorityClassName is non-empty when set, but does
+# NOT verify the PriorityClass exists at admission time — Kubernetes will reject
+# the pod if the class is missing.
+#
+# Recommended priority tiers:
+#   stellar-validator-critical  2000000000  Mainnet validators — highest priority
+#   stellar-rpc-high            1000000000  Soroban RPC nodes
+#   stellar-default              500000000  Horizon / testnet nodes
+
+---
+# Step 1: Create the PriorityClass resources (cluster-scoped, one-time setup)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: stellar-validator-critical
+value: 2000000000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "Highest priority for mainnet Stellar validator nodes. Preempts all lower-priority workloads."
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: stellar-rpc-high
+value: 1000000000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "High priority for Soroban RPC nodes."
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: stellar-default
+value: 500000000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "Standard priority for Horizon and testnet nodes."
+
+---
+# Step 2: Reference the PriorityClass in your StellarNode
+
+# Mainnet validator — critical priority
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-mainnet-critical
+  namespace: stellar
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  priorityClassName: stellar-validator-critical
+  storage:
+    storageClass: "gp3"
+    size: "500Gi"
+  validatorConfig:
+    seedSecretRef: "mainnet-validator-seed"
+
+---
+# Soroban RPC — high priority
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: soroban-rpc-high
+  namespace: stellar
+spec:
+  nodeType: SorobanRpc
+  network: Mainnet
+  version: "v21.0.0"
+  priorityClassName: stellar-rpc-high
+  storage:
+    storageClass: "gp3"
+    size: "200Gi"
+  sorobanConfig:
+    captiveCoreConfig:
+      stellarCoreImage: "stellar/stellar-core:v21.0.0"
+
+---
+# Testnet Horizon — default priority
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-testnet-default
+  namespace: stellar
+spec:
+  nodeType: Horizon
+  network: Testnet
+  version: "v21.0.0"
+  priorityClassName: stellar-default
+  storage:
+    storageClass: "standard"
+    size: "100Gi"
+  horizonConfig:
+    databaseSecretRef: "horizon-db-secret"
+    stellarCoreUrl: "http://validator-testnet:11626"

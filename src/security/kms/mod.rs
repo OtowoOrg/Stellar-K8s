@@ -68,7 +68,11 @@ impl KmsBackend for AwsKmsBackend {
     }
 
     async fn rotate_key(&self) -> Result<String> {
-        Ok(format!("aws-{}-v{}", self.config.key_id, chrono::Utc::now().timestamp()))
+        Ok(format!(
+            "aws-{}-v{}",
+            self.config.key_id,
+            chrono::Utc::now().timestamp()
+        ))
     }
 }
 
@@ -108,7 +112,11 @@ impl KmsBackend for AzureKmsBackend {
     }
 
     async fn rotate_key(&self) -> Result<String> {
-        Ok(format!("azure-{}-v{}", self.config.key_name, chrono::Utc::now().timestamp()))
+        Ok(format!(
+            "azure-{}-v{}",
+            self.config.key_name,
+            chrono::Utc::now().timestamp()
+        ))
     }
 }
 
@@ -132,7 +140,10 @@ impl KmsBackend for GcpKmsBackend {
     async fn encrypt(&self, plaintext: &[u8]) -> Result<EncryptedSecret> {
         let key_ref = format!(
             "projects/{}/locations/{}/keyRings/{}/cryptoKeys/{}",
-            self.config.project_id, self.config.location, self.config.key_ring, self.config.crypto_key
+            self.config.project_id,
+            self.config.location,
+            self.config.key_ring,
+            self.config.crypto_key
         );
         let ciphertext = aes_envelope_encrypt(plaintext, &key_ref);
         Ok(EncryptedSecret {
@@ -152,7 +163,11 @@ impl KmsBackend for GcpKmsBackend {
     }
 
     async fn rotate_key(&self) -> Result<String> {
-        Ok(format!("gcp-{}-v{}", self.config.crypto_key, chrono::Utc::now().timestamp()))
+        Ok(format!(
+            "gcp-{}-v{}",
+            self.config.crypto_key,
+            chrono::Utc::now().timestamp()
+        ))
     }
 }
 

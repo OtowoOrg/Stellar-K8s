@@ -8,10 +8,21 @@ use super::manager::{Incident, IncidentSeverity};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum NotificationChannel {
-    Slack { webhook_url: String, channel: String },
-    PagerDuty { routing_key: String },
-    Email { smtp_url: String, recipients: Vec<String> },
-    Webhook { url: String, secret: Option<String> },
+    Slack {
+        webhook_url: String,
+        channel: String,
+    },
+    PagerDuty {
+        routing_key: String,
+    },
+    Email {
+        smtp_url: String,
+        recipients: Vec<String>,
+    },
+    Webhook {
+        url: String,
+        secret: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,7 +125,10 @@ impl NotificationManager {
         incident: &Incident,
     ) -> anyhow::Result<()> {
         match channel {
-            NotificationChannel::Slack { webhook_url, channel: ch } => {
+            NotificationChannel::Slack {
+                webhook_url,
+                channel: ch,
+            } => {
                 let payload = SlackPayload {
                     text: message.to_string(),
                     channel: ch.clone(),
@@ -163,7 +177,10 @@ impl NotificationManager {
                 req.send().await?;
                 info!(url = %url, "Webhook notification sent");
             }
-            NotificationChannel::Email { smtp_url: _, recipients } => {
+            NotificationChannel::Email {
+                smtp_url: _,
+                recipients,
+            } => {
                 // Email sending requires an SMTP library; log intent
                 info!(
                     recipients = ?recipients,

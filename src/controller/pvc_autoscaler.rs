@@ -14,7 +14,9 @@
 //! tokio::spawn(run_pvc_autoscaler(client.clone(), config));
 //! ```
 
-use crate::controller::volume_resizer::{ExpansionOutcome, VolumeResizerConfig, VolumeResizerController};
+use crate::controller::volume_resizer::{
+    ExpansionOutcome, VolumeResizerConfig, VolumeResizerController,
+};
 use crate::crd::StellarNode;
 use crate::error::Result;
 use k8s_openapi::api::core::v1::Event;
@@ -51,17 +53,17 @@ pub async fn run_pvc_autoscaler(client: Client, config: VolumeResizerConfig) {
 }
 
 /// Iterate over every StellarNode and attempt PVC expansion where needed.
-async fn reconcile_all_pvcs(
-    client: &Client,
-    controller: &VolumeResizerController,
-) -> Result<()> {
+async fn reconcile_all_pvcs(client: &Client, controller: &VolumeResizerController) -> Result<()> {
     let nodes: Api<StellarNode> = Api::all(client.clone());
     let node_list = nodes
         .list(&ListParams::default())
         .await
         .map_err(crate::error::Error::KubeError)?;
 
-    debug!("PVC autoscaler: checking {} StellarNode(s)", node_list.items.len());
+    debug!(
+        "PVC autoscaler: checking {} StellarNode(s)",
+        node_list.items.len()
+    );
 
     for node in &node_list.items {
         let name = node.name_any();
@@ -76,7 +78,10 @@ async fn reconcile_all_pvcs(
                 emit_expansion_event(client, node, new_size_gi).await;
             }
             Ok(ExpansionOutcome::BelowThreshold) => {
-                debug!("{}/{}: disk usage below threshold, no action", namespace, name);
+                debug!(
+                    "{}/{}: disk usage below threshold, no action",
+                    namespace, name
+                );
             }
             Ok(ExpansionOutcome::InFlight) => {
                 debug!("{}/{}: expansion already in-flight", namespace, name);
@@ -188,7 +193,10 @@ async fn emit_expansion_event(client: &Client, node: &StellarNode, new_size_gi: 
 
     if let Ok(ev) = serde_json::from_value(event) {
         if let Err(e) = events.create(&PostParams::default(), &ev).await {
-            warn!("Failed to emit expansion event for {}: {e}", node.name_any());
+            warn!(
+                "Failed to emit expansion event for {}: {e}",
+                node.name_any()
+            );
         }
     }
 }
@@ -202,8 +210,14 @@ mod tests {
 
     #[test]
     fn default_poll_interval_is_reasonable() {
-        assert!(DEFAULT_POLL_INTERVAL_SECS >= 60, "poll interval should be at least 60s");
-        assert!(DEFAULT_POLL_INTERVAL_SECS <= 3600, "poll interval should be at most 1h");
+        assert!(
+            DEFAULT_POLL_INTERVAL_SECS >= 60,
+            "poll interval should be at least 60s"
+        );
+        assert!(
+            DEFAULT_POLL_INTERVAL_SECS <= 3600,
+            "poll interval should be at most 1h"
+        );
     }
 
     #[test]

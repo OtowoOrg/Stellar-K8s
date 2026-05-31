@@ -70,7 +70,10 @@ impl PerformanceAnalyzer {
         }
     }
 
-    pub fn identify_bottlenecks(flows: &[NetworkFlow], latency_threshold_ms: f64) -> Vec<Bottleneck> {
+    pub fn identify_bottlenecks(
+        flows: &[NetworkFlow],
+        latency_threshold_ms: f64,
+    ) -> Vec<Bottleneck> {
         use std::collections::HashMap;
 
         let mut pair_latencies: HashMap<(String, String), Vec<f64>> = HashMap::new();

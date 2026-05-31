@@ -67,13 +67,7 @@ impl SecretRotator {
         store: &mut SecretVersionStore,
         plaintext: &[u8],
     ) -> Result<u32> {
-        let new_version = store
-            .versions
-            .iter()
-            .map(|v| v.version)
-            .max()
-            .unwrap_or(0)
-            + 1;
+        let new_version = store.versions.iter().map(|v| v.version).max().unwrap_or(0) + 1;
 
         let encrypted = backend.encrypt(plaintext).await?;
         let key_version = backend.rotate_key().await?;
@@ -133,7 +127,9 @@ mod tests {
         let policy = RotationPolicy::default();
         let mut store = SecretVersionStore::default();
 
-        let v = SecretRotator::rotate(&backend, &policy, &mut store, b"seed").await.unwrap();
+        let v = SecretRotator::rotate(&backend, &policy, &mut store, b"seed")
+            .await
+            .unwrap();
         assert_eq!(v, 1);
         assert!(store.current().is_some());
     }

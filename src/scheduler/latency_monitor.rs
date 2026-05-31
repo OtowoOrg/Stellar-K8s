@@ -324,3 +324,4 @@ mod tests {
         let above = samples.iter().filter(|&&l| l > threshold).count();
         assert_eq!(above, 2);
     }
+}

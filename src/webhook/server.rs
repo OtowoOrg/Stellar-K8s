@@ -505,6 +505,11 @@ async fn validate_handler(
     // Execute validation
     let result = state.validate(input).await;
 
+    if !result.allowed {
+        let reason = result.message.as_deref().unwrap_or("Validation failed");
+        log_validation_rejection(&req, reason);
+    }
+
     // Build response
     let mut response = if result.allowed {
         AdmissionResponse::from(&req)
@@ -527,6 +532,80 @@ async fn validate_handler(
     );
 
     (StatusCode::OK, Json(response.into_review()))
+}
+
+fn log_validation_rejection(req: &AdmissionRequest<StellarNode>, reason: &str) {
+    let name = if req.name.is_empty() {
+        req.object
+            .as_ref()
+            .and_then(|node| node.metadata.name.as_deref())
+            .unwrap_or("<unknown>")
+    } else {
+        req.name.as_str()
+    };
+    let namespace = req.namespace.as_deref().unwrap_or("<cluster>");
+    let sanitized_reason = sanitize_validation_log_message(reason);
+
+    warn!(
+        resource_name = %name,
+        namespace = %namespace,
+        operation = ?req.operation,
+        validation_error = %sanitized_reason,
+        "Admission request rejected for StellarNode validation"
+    );
+}
+
+fn sanitize_validation_log_message(message: &str) -> String {
+    const MAX_LOGGED_REASON_LEN: usize = 2048;
+    const SENSITIVE_KEYS: [&str; 13] = [
+        "secret",
+        "api_key",
+        "apikey",
+        "access_key",
+        "accesskey",
+        "password",
+        "passwd",
+        "token",
+        "credential",
+        "privatekey",
+        "private_key",
+        "mnemonic",
+        "secretvalue",
+    ];
+
+    let normalized = message.replace(['\n', '\r'], " ");
+    let sanitized = normalized
+        .split_whitespace()
+        .map(|token| sanitize_log_token(token, &SENSITIVE_KEYS))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if sanitized.len() > MAX_LOGGED_REASON_LEN {
+        let truncated = sanitized
+            .chars()
+            .take(MAX_LOGGED_REASON_LEN)
+            .collect::<String>();
+        format!("{truncated}...<truncated>")
+    } else {
+        sanitized
+    }
+}
+
+fn sanitize_log_token(token: &str, sensitive_keys: &[&str]) -> String {
+    let lower = token.to_ascii_lowercase();
+    let Some(separator_index) = token.find('=').or_else(|| token.find(':')) else {
+        return token.to_string();
+    };
+
+    let key = &lower[..separator_index];
+    if sensitive_keys
+        .iter()
+        .any(|sensitive| key.contains(sensitive))
+    {
+        format!("{}=<redacted>", &token[..separator_index])
+    } else {
+        token.to_string()
+    }
 }
 
 #[instrument(
@@ -554,6 +633,11 @@ async fn validate_policy_handler(
     let req: AdmissionRequest<StellarNode> = request;
     let input = build_validation_input(&req);
     let delegated = state.delegate_policy_check(&input).await;
+
+    if !delegated.allowed {
+        let reason = delegated.message.as_deref().unwrap_or("Denied by policy");
+        log_validation_rejection(&req, reason);
+    }
 
     let mut response = if delegated.allowed {
         AdmissionResponse::from(&req)
@@ -1323,5 +1407,31 @@ mod tests {
             policies.iter().any(|p| p.engine == "cel"),
             "expected at least one CEL policy"
         );
+    }
+
+    #[test]
+    fn validation_log_sanitizer_preserves_field_errors() {
+        let message =
+            "[spec.nodeType] nodeType must be one of Validator, Horizon, SorobanRpc - Hint: fix it";
+
+        let sanitized = sanitize_validation_log_message(message);
+
+        assert!(sanitized.contains("spec.nodeType"));
+        assert!(sanitized.contains("nodeType must be one of"));
+    }
+
+    #[test]
+    fn validation_log_sanitizer_redacts_inline_sensitive_values() {
+        let message = "validation failed: token=abc123 password:super-secret clientSecret=secret-value field=spec.version";
+
+        let sanitized = sanitize_validation_log_message(message);
+
+        assert!(sanitized.contains("token=<redacted>"));
+        assert!(sanitized.contains("password=<redacted>"));
+        assert!(sanitized.contains("clientSecret=<redacted>"));
+        assert!(sanitized.contains("field=spec.version"));
+        assert!(!sanitized.contains("abc123"));
+        assert!(!sanitized.contains("super-secret"));
+        assert!(!sanitized.contains("secret-value"));
     }
 }

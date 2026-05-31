@@ -78,7 +78,10 @@ impl SecretSynchronizer {
                     actual = s.version,
                     "Secret sync drift detected"
                 );
-                format!("{}: version {} != primary {}", s.cluster, s.version, primary_version)
+                format!(
+                    "{}: version {} != primary {}",
+                    s.cluster, s.version, primary_version
+                )
             })
             .collect()
     }
@@ -95,16 +98,10 @@ mod tests {
             sync_interval: "5m".to_string(),
             conflict_resolution: SyncConflictResolution::PrimaryWins,
         };
-        let statuses = SecretSynchronizer::sync(
-            &config,
-            "validator-seed",
-            "stellar",
-            b"encrypted",
-            3,
-            true,
-        )
-        .await
-        .unwrap();
+        let statuses =
+            SecretSynchronizer::sync(&config, "validator-seed", "stellar", b"encrypted", 3, true)
+                .await
+                .unwrap();
         assert_eq!(statuses.len(), 2);
         assert!(statuses.iter().all(|s| s.synced));
     }

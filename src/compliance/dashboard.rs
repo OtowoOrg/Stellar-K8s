@@ -29,7 +29,9 @@ pub struct DashboardService {
 
 impl DashboardService {
     pub fn new() -> Self {
-        Self { history: Vec::new() }
+        Self {
+            history: Vec::new(),
+        }
     }
 
     pub fn record_scan(&mut self, violations: Vec<PolicyViolation>) {
@@ -77,7 +79,10 @@ impl DashboardService {
             } else {
                 "Other"
             };
-            framework_violations.entry(fw.to_string()).or_default().push(v);
+            framework_violations
+                .entry(fw.to_string())
+                .or_default()
+                .push(v);
         }
 
         let framework_scores: HashMap<String, f64> = ["SOC2", "ISO27001", "PCI-DSS"]

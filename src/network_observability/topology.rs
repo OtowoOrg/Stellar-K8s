@@ -44,24 +44,33 @@ impl TopologyGraph {
 
         for flow in flows {
             // Source node
-            nodes.entry(flow.pod_name.clone()).or_insert_with(|| TopologyNode {
-                name: flow.pod_name.clone(),
-                kind: "pod".to_string(),
-                namespace: flow.namespace.clone(),
-                ip: flow.src_ip.clone(),
-            });
+            nodes
+                .entry(flow.pod_name.clone())
+                .or_insert_with(|| TopologyNode {
+                    name: flow.pod_name.clone(),
+                    kind: "pod".to_string(),
+                    namespace: flow.namespace.clone(),
+                    ip: flow.src_ip.clone(),
+                });
 
             // Destination node (use service name if available, else IP)
             let dst_name = flow
                 .service_name
                 .clone()
                 .unwrap_or_else(|| flow.dst_ip.clone());
-            nodes.entry(dst_name.clone()).or_insert_with(|| TopologyNode {
-                name: dst_name.clone(),
-                kind: if flow.service_name.is_some() { "service" } else { "external" }.to_string(),
-                namespace: flow.namespace.clone(),
-                ip: flow.dst_ip.clone(),
-            });
+            nodes
+                .entry(dst_name.clone())
+                .or_insert_with(|| TopologyNode {
+                    name: dst_name.clone(),
+                    kind: if flow.service_name.is_some() {
+                        "service"
+                    } else {
+                        "external"
+                    }
+                    .to_string(),
+                    namespace: flow.namespace.clone(),
+                    ip: flow.dst_ip.clone(),
+                });
 
             // Edge
             let key = (flow.pod_name.clone(), dst_name.clone());

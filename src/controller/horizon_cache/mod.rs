@@ -15,7 +15,7 @@ pub mod optimizer;
 pub mod prefetch;
 pub mod streaming;
 
-pub use cache::{HorizonCache, HorizonCacheConfig, CacheStats};
+pub use cache::{CacheStats, HorizonCache, HorizonCacheConfig};
 pub use invalidation::{InvalidationEvent, LedgerInvalidator};
 pub use optimizer::{QueryOptimizer, QueryPlan, QueryType};
 pub use prefetch::{PrefetchEngine, PrefetchPrediction};

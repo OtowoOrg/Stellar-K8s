@@ -21,11 +21,13 @@ pub struct NodeResources {
 
 impl NodeResources {
     pub fn free_cpu(&self) -> u64 {
-        self.allocatable_cpu_milli.saturating_sub(self.used_cpu_milli)
+        self.allocatable_cpu_milli
+            .saturating_sub(self.used_cpu_milli)
     }
 
     pub fn free_memory_mb(&self) -> u64 {
-        self.allocatable_memory_mb.saturating_sub(self.used_memory_mb)
+        self.allocatable_memory_mb
+            .saturating_sub(self.used_memory_mb)
     }
 
     pub fn utilization_pct(&self) -> f64 {
@@ -99,7 +101,9 @@ impl MultiObjectiveOptimizer {
                         return false;
                     }
                 }
-                SchedulingConstraint::CostBudget { max_hourly_cost_usd } => {
+                SchedulingConstraint::CostBudget {
+                    max_hourly_cost_usd,
+                } => {
                     if node.hourly_cost_usd > *max_hourly_cost_usd {
                         return false;
                     }

@@ -20,14 +20,14 @@ use tracing::info;
 use crate::controller::ControllerState;
 use crate::{Error, Result};
 
-use super::horizon_cache_handlers;
-use super::compliance_handlers;
 use super::audit_handlers;
 use super::auth;
+use super::compliance_handlers;
 use super::custom_metrics;
 use super::dashboard_handlers;
 use super::handlers;
 use super::health_summary;
+use super::horizon_cache_handlers;
 use super::job_handlers;
 use super::resource_optimization_handlers;
 use super::scp_topology;

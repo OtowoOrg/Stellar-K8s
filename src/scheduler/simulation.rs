@@ -68,7 +68,10 @@ impl SchedulingSimulator {
                     score: best.total_score,
                 });
                 // Update node utilization for next iteration
-                if let Some(node) = available_nodes.iter_mut().find(|n| n.name == best.node_name) {
+                if let Some(node) = available_nodes
+                    .iter_mut()
+                    .find(|n| n.name == best.node_name)
+                {
                     node.used_cpu_milli += workload.cpu_request_milli;
                     node.used_memory_mb += workload.memory_request_mb;
                 }
@@ -78,7 +81,10 @@ impl SchedulingSimulator {
         }
 
         let total_cost: f64 = available_nodes.iter().map(|n| n.hourly_cost_usd).sum();
-        let total_cpu: u64 = available_nodes.iter().map(|n| n.allocatable_cpu_milli).sum();
+        let total_cpu: u64 = available_nodes
+            .iter()
+            .map(|n| n.allocatable_cpu_milli)
+            .sum();
         let used_cpu: u64 = available_nodes.iter().map(|n| n.used_cpu_milli).sum();
         let utilization = if total_cpu > 0 {
             used_cpu as f64 / total_cpu as f64 * 100.0

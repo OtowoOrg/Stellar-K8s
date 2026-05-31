@@ -22,19 +22,16 @@ pub struct SecretPolicyLabels {
 }
 
 #[cfg(feature = "metrics")]
-pub static SECRET_ROTATIONS_TOTAL: Lazy<
-    Family<SecretPolicyLabels, Counter<u64, AtomicU64>>,
-> = Lazy::new(Family::default);
+pub static SECRET_ROTATIONS_TOTAL: Lazy<Family<SecretPolicyLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
 
 #[cfg(feature = "metrics")]
-pub static SECRET_SYNC_DRIFT: Lazy<
-    Family<SecretPolicyLabels, Gauge<i64, AtomicI64>>,
-> = Lazy::new(Family::default);
+pub static SECRET_SYNC_DRIFT: Lazy<Family<SecretPolicyLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
 
 #[cfg(feature = "metrics")]
-pub static SECRET_ACCESS_ANOMALIES: Lazy<
-    Family<SecretPolicyLabels, Counter<u64, AtomicU64>>,
-> = Lazy::new(Family::default);
+pub static SECRET_ACCESS_ANOMALIES: Lazy<Family<SecretPolicyLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
 
 #[cfg(feature = "metrics")]
 pub fn record_secret_rotation(namespace: &str, policy: &str, provider: &str) {

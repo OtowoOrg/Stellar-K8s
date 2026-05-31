@@ -177,9 +177,7 @@ fn default_liveness_probe(node_type: &crate::crd::NodeType) -> k8s_openapi::api:
 ///
 /// - Validator: HTTP GET /info on port 11626 (Stellar Core HTTP port)
 /// - Horizon / SorobanRpc: HTTP GET /health on port 8000
-fn default_readiness_probe(
-    node_type: &crate::crd::NodeType,
-) -> k8s_openapi::api::core::v1::Probe {
+fn default_readiness_probe(node_type: &crate::crd::NodeType) -> k8s_openapi::api::core::v1::Probe {
     use k8s_openapi::api::core::v1::{HTTPGetAction, Probe};
     use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
     match node_type {

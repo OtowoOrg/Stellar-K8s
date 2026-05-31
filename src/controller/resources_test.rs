@@ -994,7 +994,11 @@ mod init_containers_tests {
         Container {
             name: name.to_string(),
             image: Some("busybox:latest".to_string()),
-            command: Some(vec!["sh".to_string(), "-c".to_string(), "echo hello".to_string()]),
+            command: Some(vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "echo hello".to_string(),
+            ]),
             ..Default::default()
         }
     }
@@ -1215,7 +1219,10 @@ mod init_containers_tests {
             .iter()
             .position(|c| c.name == "my-custom-init");
 
-        assert!(pos_migration.is_some(), "operator migration init container must be present");
+        assert!(
+            pos_migration.is_some(),
+            "operator migration init container must be present"
+        );
         assert!(pos_custom.is_some(), "user init container must be present");
         assert!(
             pos_migration < pos_custom,
@@ -1230,15 +1237,21 @@ mod init_containers_tests {
 
 #[test]
 fn test_validator_has_tcp_liveness_probe() {
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
     use crate::crd::types::{ResourceRequirements, ResourceSpec, ValidatorConfig};
+    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
     let spec = StellarNodeSpec {
         node_type: NodeType::Validator,
         network: StellarNetwork::Testnet,
         version: "v21.0.0".to_string(),
         resources: ResourceRequirements {
-            requests: ResourceSpec { cpu: "500m".to_string(), memory: "1Gi".to_string() },
-            limits: ResourceSpec { cpu: "2".to_string(), memory: "4Gi".to_string() },
+            requests: ResourceSpec {
+                cpu: "500m".to_string(),
+                memory: "1Gi".to_string(),
+            },
+            limits: ResourceSpec {
+                cpu: "2".to_string(),
+                memory: "4Gi".to_string(),
+            },
         },
         replicas: 1,
         validator_config: Some(ValidatorConfig {
@@ -1250,23 +1263,46 @@ fn test_validator_has_tcp_liveness_probe() {
     let mut node = crate::crd::StellarNode::new("test", spec);
     node.metadata.namespace = Some("default".to_string());
     let sts = crate::controller::resources::build_statefulset_for_test(&node);
-    let container = sts.spec.unwrap().template.spec.unwrap().containers.into_iter().next().unwrap();
-    let liveness = container.liveness_probe.expect("validator must have a liveness probe");
-    assert!(liveness.tcp_socket.is_some(), "validator liveness probe must use TCP socket");
-    assert_eq!(liveness.tcp_socket.unwrap().port, k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(11625));
+    let container = sts
+        .spec
+        .unwrap()
+        .template
+        .spec
+        .unwrap()
+        .containers
+        .into_iter()
+        .next()
+        .unwrap();
+    let liveness = container
+        .liveness_probe
+        .expect("validator must have a liveness probe");
+    assert!(
+        liveness.tcp_socket.is_some(),
+        "validator liveness probe must use TCP socket"
+    );
+    assert_eq!(
+        liveness.tcp_socket.unwrap().port,
+        k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(11625)
+    );
 }
 
 #[test]
 fn test_horizon_has_http_liveness_probe() {
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
     use crate::crd::types::{HorizonConfig, ResourceRequirements, ResourceSpec};
+    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
     let spec = StellarNodeSpec {
         node_type: NodeType::Horizon,
         network: StellarNetwork::Testnet,
         version: "v21.0.0".to_string(),
         resources: ResourceRequirements {
-            requests: ResourceSpec { cpu: "500m".to_string(), memory: "1Gi".to_string() },
-            limits: ResourceSpec { cpu: "2".to_string(), memory: "4Gi".to_string() },
+            requests: ResourceSpec {
+                cpu: "500m".to_string(),
+                memory: "1Gi".to_string(),
+            },
+            limits: ResourceSpec {
+                cpu: "2".to_string(),
+                memory: "4Gi".to_string(),
+            },
         },
         replicas: 1,
         horizon_config: Some(HorizonConfig {
@@ -1278,23 +1314,45 @@ fn test_horizon_has_http_liveness_probe() {
     let mut node = crate::crd::StellarNode::new("test", spec);
     node.metadata.namespace = Some("default".to_string());
     let dep = crate::controller::resources::build_deployment_for_test(&node);
-    let container = dep.spec.unwrap().template.spec.unwrap().containers.into_iter().next().unwrap();
-    let liveness = container.liveness_probe.expect("horizon must have a liveness probe");
-    assert!(liveness.http_get.is_some(), "horizon liveness probe must use HTTP GET");
+    let container = dep
+        .spec
+        .unwrap()
+        .template
+        .spec
+        .unwrap()
+        .containers
+        .into_iter()
+        .next()
+        .unwrap();
+    let liveness = container
+        .liveness_probe
+        .expect("horizon must have a liveness probe");
+    assert!(
+        liveness.http_get.is_some(),
+        "horizon liveness probe must use HTTP GET"
+    );
     assert_eq!(liveness.http_get.unwrap().path.as_deref(), Some("/health"));
 }
 
 #[test]
 fn test_probe_override_replaces_default_period() {
+    use crate::crd::types::{
+        ProbeConfig, ProbeOverride, ResourceRequirements, ResourceSpec, ValidatorConfig,
+    };
     use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
-    use crate::crd::types::{ProbeConfig, ProbeOverride, ResourceRequirements, ResourceSpec, ValidatorConfig};
     let spec = StellarNodeSpec {
         node_type: NodeType::Validator,
         network: StellarNetwork::Testnet,
         version: "v21.0.0".to_string(),
         resources: ResourceRequirements {
-            requests: ResourceSpec { cpu: "500m".to_string(), memory: "1Gi".to_string() },
-            limits: ResourceSpec { cpu: "2".to_string(), memory: "4Gi".to_string() },
+            requests: ResourceSpec {
+                cpu: "500m".to_string(),
+                memory: "1Gi".to_string(),
+            },
+            limits: ResourceSpec {
+                cpu: "2".to_string(),
+                memory: "4Gi".to_string(),
+            },
         },
         replicas: 1,
         validator_config: Some(ValidatorConfig {
@@ -1314,12 +1372,32 @@ fn test_probe_override_replaces_default_period() {
     let mut node = crate::crd::StellarNode::new("test", spec);
     node.metadata.namespace = Some("default".to_string());
     let sts = crate::controller::resources::build_statefulset_for_test(&node);
-    let container = sts.spec.unwrap().template.spec.unwrap().containers.into_iter().next().unwrap();
+    let container = sts
+        .spec
+        .unwrap()
+        .template
+        .spec
+        .unwrap()
+        .containers
+        .into_iter()
+        .next()
+        .unwrap();
     let liveness = container.liveness_probe.expect("must have liveness probe");
-    assert_eq!(liveness.period_seconds, Some(60), "override period_seconds must be applied");
-    assert_eq!(liveness.failure_threshold, Some(5), "override failure_threshold must be applied");
+    assert_eq!(
+        liveness.period_seconds,
+        Some(60),
+        "override period_seconds must be applied"
+    );
+    assert_eq!(
+        liveness.failure_threshold,
+        Some(5),
+        "override failure_threshold must be applied"
+    );
     // TCP socket from default must still be present
-    assert!(liveness.tcp_socket.is_some(), "default TCP socket must be preserved");
+    assert!(
+        liveness.tcp_socket.is_some(),
+        "default TCP socket must be preserved"
+    );
 }
 
 // -----------------------------------------------------------------------
@@ -1328,15 +1406,21 @@ fn test_probe_override_replaces_default_period() {
 
 #[test]
 fn test_priority_class_name_applied_to_statefulset() {
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
     use crate::crd::types::{ResourceRequirements, ResourceSpec, ValidatorConfig};
+    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
     let spec = StellarNodeSpec {
         node_type: NodeType::Validator,
         network: StellarNetwork::Testnet,
         version: "v21.0.0".to_string(),
         resources: ResourceRequirements {
-            requests: ResourceSpec { cpu: "500m".to_string(), memory: "1Gi".to_string() },
-            limits: ResourceSpec { cpu: "2".to_string(), memory: "4Gi".to_string() },
+            requests: ResourceSpec {
+                cpu: "500m".to_string(),
+                memory: "1Gi".to_string(),
+            },
+            limits: ResourceSpec {
+                cpu: "2".to_string(),
+                memory: "4Gi".to_string(),
+            },
         },
         replicas: 1,
         validator_config: Some(ValidatorConfig {
@@ -1359,15 +1443,21 @@ fn test_priority_class_name_applied_to_statefulset() {
 
 #[test]
 fn test_priority_class_name_applied_to_deployment() {
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
     use crate::crd::types::{HorizonConfig, ResourceRequirements, ResourceSpec};
+    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
     let spec = StellarNodeSpec {
         node_type: NodeType::Horizon,
         network: StellarNetwork::Testnet,
         version: "v21.0.0".to_string(),
         resources: ResourceRequirements {
-            requests: ResourceSpec { cpu: "500m".to_string(), memory: "1Gi".to_string() },
-            limits: ResourceSpec { cpu: "2".to_string(), memory: "4Gi".to_string() },
+            requests: ResourceSpec {
+                cpu: "500m".to_string(),
+                memory: "1Gi".to_string(),
+            },
+            limits: ResourceSpec {
+                cpu: "2".to_string(),
+                memory: "4Gi".to_string(),
+            },
         },
         replicas: 1,
         horizon_config: Some(HorizonConfig {
@@ -1390,15 +1480,21 @@ fn test_priority_class_name_applied_to_deployment() {
 
 #[test]
 fn test_no_priority_class_name_when_unset() {
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
     use crate::crd::types::{ResourceRequirements, ResourceSpec, ValidatorConfig};
+    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
     let spec = StellarNodeSpec {
         node_type: NodeType::Validator,
         network: StellarNetwork::Testnet,
         version: "v21.0.0".to_string(),
         resources: ResourceRequirements {
-            requests: ResourceSpec { cpu: "500m".to_string(), memory: "1Gi".to_string() },
-            limits: ResourceSpec { cpu: "2".to_string(), memory: "4Gi".to_string() },
+            requests: ResourceSpec {
+                cpu: "500m".to_string(),
+                memory: "1Gi".to_string(),
+            },
+            limits: ResourceSpec {
+                cpu: "2".to_string(),
+                memory: "4Gi".to_string(),
+            },
         },
         replicas: 1,
         validator_config: Some(ValidatorConfig {
@@ -1419,15 +1515,21 @@ fn test_no_priority_class_name_when_unset() {
 
 #[test]
 fn test_priority_class_name_empty_string_fails_validation() {
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
     use crate::crd::types::{ResourceRequirements, ResourceSpec, ValidatorConfig};
+    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
     let spec = StellarNodeSpec {
         node_type: NodeType::Validator,
         network: StellarNetwork::Testnet,
         version: "v21.0.0".to_string(),
         resources: ResourceRequirements {
-            requests: ResourceSpec { cpu: "500m".to_string(), memory: "1Gi".to_string() },
-            limits: ResourceSpec { cpu: "2".to_string(), memory: "4Gi".to_string() },
+            requests: ResourceSpec {
+                cpu: "500m".to_string(),
+                memory: "1Gi".to_string(),
+            },
+            limits: ResourceSpec {
+                cpu: "2".to_string(),
+                memory: "4Gi".to_string(),
+            },
         },
         replicas: 1,
         validator_config: Some(ValidatorConfig {
@@ -1438,7 +1540,10 @@ fn test_priority_class_name_empty_string_fails_validation() {
         ..Default::default()
     };
     let result = spec.validate();
-    assert!(result.is_err(), "empty priorityClassName must fail validation");
+    assert!(
+        result.is_err(),
+        "empty priorityClassName must fail validation"
+    );
     let errs = result.unwrap_err();
     assert!(
         errs.iter().any(|e| e.field.contains("priorityClassName")),

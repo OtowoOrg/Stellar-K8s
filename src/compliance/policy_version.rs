@@ -22,7 +22,9 @@ pub struct PolicyVersionStore {
 
 impl PolicyVersionStore {
     pub fn new() -> Self {
-        Self { history: HashMap::new() }
+        Self {
+            history: HashMap::new(),
+        }
     }
 
     pub fn commit_version(&mut self, policy: &Policy, changed_by: &str, diff_summary: &str) {

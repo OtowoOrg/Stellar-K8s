@@ -104,8 +104,8 @@ impl FlowStore {
         }
         let total_bytes: u64 = flows.iter().map(|f| f.bytes).sum();
         let total_packets: u64 = flows.iter().map(|f| f.packets).sum();
-        let avg_duration = flows.iter().map(|f| f.duration_ms as f64).sum::<f64>()
-            / flows.len() as f64;
+        let avg_duration =
+            flows.iter().map(|f| f.duration_ms as f64).sum::<f64>() / flows.len() as f64;
 
         let mut talker_map: std::collections::HashMap<String, u64> =
             std::collections::HashMap::new();

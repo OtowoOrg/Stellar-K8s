@@ -53,14 +53,14 @@ pub mod federation;
 pub mod multi_region;
 pub mod read_replica;
 pub mod schema_utils;
+pub mod secret_policy;
 pub mod seed_secret;
 pub mod service_mesh;
 pub mod stellar_benchmark;
-pub mod secret_policy;
 mod stellar_node;
+pub mod tenant;
 pub mod traffic_policy;
 pub mod types;
-pub mod tenant;
 
 #[cfg(test)]
 mod tests;
@@ -79,6 +79,11 @@ pub use multi_region::{
     MultiRegionSpec, MultiRegionStatus, SecretSyncConfig,
 };
 pub use read_replica::{ReadReplicaConfig, ReadReplicaStrategy};
+pub use secret_policy::{
+    AwsKmsConfig, AzureKeyVaultConfig, GcpKmsConfig, KmsProvider, RotationPolicy,
+    SecretAuditConfig, SecretPolicy, SecretPolicyCondition, SecretPolicyPhase, SecretPolicySpec,
+    SecretPolicyStatus, SecretPolicySyncConfig, SyncConflictResolution,
+};
 pub use service_mesh::{
     CircuitBreakerConfig, IstioMeshConfig, LinkerdMeshConfig, MtlsMode, RetryConfig,
     ServiceMeshConfig,
@@ -88,11 +93,6 @@ pub use stellar_benchmark::{
     BenchmarkReportStatus, BenchmarkResourceRequirements, BenchmarkSummary,
     EnvVar as BenchmarkEnvVar, PodResult, ResultStorage, StellarBenchmark, StellarBenchmarkSpec,
     StellarBenchmarkStatus, Toleration as BenchmarkToleration,
-};
-pub use secret_policy::{
-    AwsKmsConfig, AzureKeyVaultConfig, GcpKmsConfig, KmsProvider, RotationPolicy,
-    SecretAuditConfig, SecretPolicy, SecretPolicyCondition, SecretPolicyPhase,
-    SecretPolicySpec, SecretPolicyStatus, SecretPolicySyncConfig, SyncConflictResolution,
 };
 pub use stellar_node::{
     BGPStatus, SnapshotBootstrapStatus, SpecValidationError, StellarNode, StellarNodeSpec,

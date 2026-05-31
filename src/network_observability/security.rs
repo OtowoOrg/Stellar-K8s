@@ -43,7 +43,9 @@ impl SecurityMonitor {
     }
 
     fn is_internal(&self, ip: &str) -> bool {
-        self.internal_prefixes.iter().any(|p| ip.starts_with(p.as_str()))
+        self.internal_prefixes
+            .iter()
+            .any(|p| ip.starts_with(p.as_str()))
     }
 
     pub fn check_policy_violations(&self, flows: &[NetworkFlow]) -> Vec<SecurityAlert> {

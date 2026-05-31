@@ -321,7 +321,10 @@ mod tests {
         let controller = GitOpsUpgradeController::default();
         // current_protocol == 22 means both steps are already applied
         let step = controller.next_due_step(&sample_timeline(), 22, 1_900_000_000);
-        assert!(step.is_none(), "no step should be returned when all are already applied");
+        assert!(
+            step.is_none(),
+            "no step should be returned when all are already applied"
+        );
     }
 
     #[test]

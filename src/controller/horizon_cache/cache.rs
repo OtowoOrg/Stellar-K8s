@@ -245,7 +245,11 @@ impl HorizonCache {
             if let Some(data) = self.l2.get(key) {
                 self.stats.lock().unwrap().l2_hits += 1;
                 // Promote to L1
-                self.put_l1(key, data.clone(), Duration::from_secs(self.config.l1_ttl_secs));
+                self.put_l1(
+                    key,
+                    data.clone(),
+                    Duration::from_secs(self.config.l1_ttl_secs),
+                );
                 return Some((data, CacheLayer::L2Redis));
             }
             self.stats.lock().unwrap().l2_misses += 1;
@@ -255,7 +259,11 @@ impl HorizonCache {
         if self.config.l3_cdn_enabled {
             if let Some(data) = self.l3.get(key) {
                 self.stats.lock().unwrap().l3_hits += 1;
-                self.put_l1(key, data.clone(), Duration::from_secs(self.config.l1_ttl_secs));
+                self.put_l1(
+                    key,
+                    data.clone(),
+                    Duration::from_secs(self.config.l1_ttl_secs),
+                );
                 if self.config.l2_redis_enabled {
                     self.l2.put(
                         key,
@@ -279,8 +287,11 @@ impl HorizonCache {
             Duration::from_secs(self.config.l1_ttl_secs),
         );
         if self.config.l2_redis_enabled {
-            self.l2
-                .put(key, data.clone(), Duration::from_secs(self.config.l2_ttl_secs));
+            self.l2.put(
+                key,
+                data.clone(),
+                Duration::from_secs(self.config.l2_ttl_secs),
+            );
         }
         if self.config.l3_cdn_enabled {
             self.l3

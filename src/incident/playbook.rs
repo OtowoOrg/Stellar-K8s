@@ -15,9 +15,18 @@ pub enum PlaybookStep {
     /// Wait for a condition (poll URL)
     WaitForHealthy { url: String, timeout_secs: u64 },
     /// Scale a Kubernetes deployment
-    Scale { namespace: String, deployment: String, replicas: i32 },
+    Scale {
+        namespace: String,
+        deployment: String,
+        replicas: i32,
+    },
     /// Annotate a Kubernetes resource
-    Annotate { namespace: String, resource: String, key: String, value: String },
+    Annotate {
+        namespace: String,
+        resource: String,
+        key: String,
+        value: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,7 +198,10 @@ impl PlaybookExecutor {
 
     async fn execute_step(&self, step: &PlaybookStep) -> (bool, String) {
         match step {
-            PlaybookStep::Shell { command, timeout_secs } => {
+            PlaybookStep::Shell {
+                command,
+                timeout_secs,
+            } => {
                 info!(command = %command, "Executing shell step");
                 let result = tokio::time::timeout(
                     tokio::time::Duration::from_secs(*timeout_secs),
@@ -213,8 +225,8 @@ impl PlaybookExecutor {
                 (true, format!("Notified {channel}: {message}"))
             }
             PlaybookStep::WaitForHealthy { url, timeout_secs } => {
-                let deadline = std::time::Instant::now()
-                    + std::time::Duration::from_secs(*timeout_secs);
+                let deadline =
+                    std::time::Instant::now() + std::time::Duration::from_secs(*timeout_secs);
                 loop {
                     if std::time::Instant::now() > deadline {
                         return (false, format!("Timeout waiting for {url}"));
@@ -227,17 +239,25 @@ impl PlaybookExecutor {
                     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 }
             }
-            PlaybookStep::Scale { namespace, deployment, replicas } => {
+            PlaybookStep::Scale {
+                namespace,
+                deployment,
+                replicas,
+            } => {
                 let cmd = format!(
                     "kubectl scale deployment/{deployment} --replicas={replicas} -n {namespace}"
                 );
                 info!(cmd = %cmd, "Scale step");
                 (true, format!("Scaled {deployment} to {replicas}"))
             }
-            PlaybookStep::Annotate { namespace, resource, key, value } => {
-                let cmd = format!(
-                    "kubectl annotate {resource} {key}={value} --overwrite -n {namespace}"
-                );
+            PlaybookStep::Annotate {
+                namespace,
+                resource,
+                key,
+                value,
+            } => {
+                let cmd =
+                    format!("kubectl annotate {resource} {key}={value} --overwrite -n {namespace}");
                 info!(cmd = %cmd, "Annotate step");
                 (true, format!("Annotated {resource}"))
             }

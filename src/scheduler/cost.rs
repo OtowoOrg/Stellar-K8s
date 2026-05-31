@@ -30,7 +30,11 @@ impl CostAwareScheduler {
             node_name: node.name.clone(),
             hourly_cost_usd: node.hourly_cost_usd,
             monthly_cost_usd: node.hourly_cost_usd * 730.0,
-            is_spot: node.labels.get("node.kubernetes.io/lifecycle").map(|v| v == "spot").unwrap_or(false),
+            is_spot: node
+                .labels
+                .get("node.kubernetes.io/lifecycle")
+                .map(|v| v == "spot")
+                .unwrap_or(false),
             savings_vs_on_demand_pct: 0.0,
         }
     }
@@ -53,11 +57,7 @@ impl CostAwareScheduler {
             })
             .collect();
 
-        viable.sort_by(|a, b| {
-            a.hourly_cost_usd
-                .partial_cmp(&b.hourly_cost_usd)
-                .unwrap()
-        });
+        viable.sort_by(|a, b| a.hourly_cost_usd.partial_cmp(&b.hourly_cost_usd).unwrap());
         viable.into_iter().next()
     }
 

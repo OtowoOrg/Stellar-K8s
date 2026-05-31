@@ -5,12 +5,29 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum SchedulingConstraint {
-    ResourceLimit { cpu_milli: u64, memory_mb: u64 },
-    NodeAffinity { key: String, values: Vec<String> },
-    PodAntiAffinity { label_selector: String },
-    Topology { spread_key: String, max_skew: i32 },
-    CostBudget { max_hourly_cost_usd: f64 },
-    NodeTaint { key: String, value: String, effect: String },
+    ResourceLimit {
+        cpu_milli: u64,
+        memory_mb: u64,
+    },
+    NodeAffinity {
+        key: String,
+        values: Vec<String>,
+    },
+    PodAntiAffinity {
+        label_selector: String,
+    },
+    Topology {
+        spread_key: String,
+        max_skew: i32,
+    },
+    CostBudget {
+        max_hourly_cost_usd: f64,
+    },
+    NodeTaint {
+        key: String,
+        value: String,
+        effect: String,
+    },
 }
 
 /// Weights for multi-objective scoring (must sum to ~1.0).

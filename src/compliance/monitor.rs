@@ -3,7 +3,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::frameworks::{ClusterComplianceState, ComplianceFramework, RuleResult, ValidationPipeline};
+use super::frameworks::{
+    ClusterComplianceState, ComplianceFramework, RuleResult, ValidationPipeline,
+};
 
 /// Overall compliance status for a framework.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,7 +138,10 @@ mod tests {
         };
         let monitor = ComplianceMonitor::new(state.clone());
         let statuses = monitor.evaluate(&state);
-        let soc2 = statuses.iter().find(|s| s.framework == ComplianceFramework::Soc2).unwrap();
+        let soc2 = statuses
+            .iter()
+            .find(|s| s.framework == ComplianceFramework::Soc2)
+            .unwrap();
         assert!(soc2.compliant);
         assert_eq!(soc2.score_pct, 100.0);
     }

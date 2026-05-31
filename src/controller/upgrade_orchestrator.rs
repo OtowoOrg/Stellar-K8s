@@ -171,9 +171,7 @@ impl UpgradeOrchestrator {
         // ── Phase 5: Health gate ──────────────────────────────────────────────
         info!("Phase 5: Waiting for operator to become ready");
         let operator_healthy = self
-            .wait_for_operator_ready(Duration::from_secs(
-                self.config.operator_ready_timeout_secs,
-            ))
+            .wait_for_operator_ready(Duration::from_secs(self.config.operator_ready_timeout_secs))
             .await;
 
         if !operator_healthy {
@@ -205,10 +203,13 @@ impl UpgradeOrchestrator {
 
         // ── Phase 6: Cleanup ──────────────────────────────────────────────────
         self.clear_upgrade_annotation().await?;
-        self.emit_upgrade_event("UpgradeSucceeded", &format!(
-            "Operator upgraded from {previous_image} to {}",
-            self.config.target_image
-        ))
+        self.emit_upgrade_event(
+            "UpgradeSucceeded",
+            &format!(
+                "Operator upgraded from {previous_image} to {}",
+                self.config.target_image
+            ),
+        )
         .await?;
 
         info!(
@@ -237,17 +238,17 @@ impl UpgradeOrchestrator {
         }
 
         // 2. Operator Deployment must exist.
-        let deployments: Api<Deployment> = Api::namespaced(
-            self.client.clone(),
-            &self.config.operator_namespace,
-        );
+        let deployments: Api<Deployment> =
+            Api::namespaced(self.client.clone(), &self.config.operator_namespace);
         deployments
             .get(OPERATOR_DEPLOYMENT)
             .await
             .map_err(|e| format!("Operator Deployment not found: {e}"))?;
 
         // 3. No upgrade already in progress.
-        let deploy = deployments.get(OPERATOR_DEPLOYMENT).await
+        let deploy = deployments
+            .get(OPERATOR_DEPLOYMENT)
+            .await
             .map_err(|e| format!("Cannot read operator Deployment: {e}"))?;
         if deploy
             .metadata
@@ -293,7 +294,10 @@ impl UpgradeOrchestrator {
     /// Export current StellarNode specs to a ConfigMap as a lightweight backup.
     async fn create_backup(&self, current_image: &str) -> Result<()> {
         let nodes: Api<StellarNode> = Api::all(self.client.clone());
-        let node_list = nodes.list(&ListParams::default()).await.map_err(Error::KubeError)?;
+        let node_list = nodes
+            .list(&ListParams::default())
+            .await
+            .map_err(Error::KubeError)?;
 
         let backup_data: serde_json::Value = json!({
             "timestamp": chrono::Utc::now().to_rfc3339(),

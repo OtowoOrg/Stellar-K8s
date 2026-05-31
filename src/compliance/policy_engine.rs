@@ -62,7 +62,10 @@ impl PolicyEngine {
             message: if passed {
                 "Policy check passed".to_string()
             } else {
-                format!("Policy '{}' violated: {}", policy.name, policy.rego_expression)
+                format!(
+                    "Policy '{}' violated: {}",
+                    policy.name, policy.rego_expression
+                )
             },
         }
     }
@@ -157,10 +160,16 @@ fn severity_for_framework(framework: &str) -> ViolationSeverity {
 
 fn remediation_hint(policy_id: &str) -> Option<String> {
     match policy_id {
-        "soc2-tls-required" => Some("Set spec.tls.enabled: true in your StellarNode manifest".to_string()),
+        "soc2-tls-required" => {
+            Some("Set spec.tls.enabled: true in your StellarNode manifest".to_string())
+        }
         "soc2-resource-limits" => Some("Add resource limits to spec.resources.limits".to_string()),
-        "iso27001-network-policy" => Some("Add network-policy annotation to resource metadata".to_string()),
-        "iso27001-image-pinned" => Some("Pin spec.version to a specific semver tag (e.g. v21.0.0)".to_string()),
+        "iso27001-network-policy" => {
+            Some("Add network-policy annotation to resource metadata".to_string())
+        }
+        "iso27001-image-pinned" => {
+            Some("Pin spec.version to a specific semver tag (e.g. v21.0.0)".to_string())
+        }
         "pci-encryption-at-rest" => Some("Set spec.storage.encrypted: true".to_string()),
         _ => None,
     }

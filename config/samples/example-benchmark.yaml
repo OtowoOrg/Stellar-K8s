@@ -1,0 +1,57 @@
+# Example StellarBenchmark resource
+#
+# This triggers a 60-second load test against a local Horizon node,
+# targeting 200 TPS with 2 concurrent load-generator pods.
+# Results are stored in a BenchmarkReport CR named "my-benchmark-report".
+#
+# Usage:
+#   kubectl apply -f config/samples/example-benchmark.yaml
+#   kubectl get stellarbenchmark my-benchmark -n stellar-system
+#   kubectl get benchmarkreport my-benchmark-report -n stellar-system
+#   kubectl describe benchmarkreport my-benchmark-report -n stellar-system
+apiVersion: stellar.org/v1alpha1
+kind: StellarBenchmark
+metadata:
+  name: my-benchmark
+  namespace: stellar-system
+spec:
+  # Target Horizon or Soroban RPC endpoint
+  targetEndpoint: "http://my-horizon.stellar-system.svc.cluster.local:8000"
+
+  # Run for 60 seconds
+  durationSeconds: 60
+
+  # Attempt 200 TPS total (100 TPS per pod)
+  targetTps: 200
+
+  # Spin up 2 load-generator pods
+  concurrency: 2
+
+  # Stellar Testnet
+  networkPassphrase: "Test SDF Network ; September 2015"
+
+  # Load generator image (replace with your own image if needed)
+  loadGeneratorImage: "stellar/load-generator:latest"
+  imagePullPolicy: IfNotPresent
+
+  # Resource requirements per pod
+  resources:
+    cpuRequest: "250m"
+    memoryRequest: "256Mi"
+    cpuLimit: "1"
+    memoryLimit: "512Mi"
+
+  # Store results in a BenchmarkReport CR (default)
+  resultStorage: BenchmarkReport
+
+  # Optional: inject signing keys from a Secret
+  # secretRef: "my-benchmark-keys"
+
+  # Optional: extra environment variables
+  # extraEnv:
+  #   - name: LOG_LEVEL
+  #     value: debug
+
+  # Optional: restrict pods to specific nodes
+  # nodeSelector:
+  #   kubernetes.io/arch: amd64

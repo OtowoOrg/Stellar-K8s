@@ -93,3 +93,21 @@ tests:
       - equal:
           path: metadata.name
           value: my-operator
+
+  - it: applies extraAnnotations to service metadata
+    set:
+      extraAnnotations:
+        custom.io/env: production
+        custom.io/team: platform
+    asserts:
+      - equal:
+          path: metadata.annotations["custom.io/env"]
+          value: production
+      - equal:
+          path: metadata.annotations["custom.io/team"]
+          value: platform
+
+  - it: applies empty extraAnnotations by default
+    asserts:
+      - isNull:
+          path: metadata.annotations

@@ -178,9 +178,34 @@ Webhook validation prevents invalid configurations, resource exhaustion, and pri
 ### REST API
 The optional REST API should be protected by network policies and ingress authentication. Do not expose it publicly without authentication.
 
----
+## Security Scanning & Testing
 
-## Compliance References
+Our CI/CD pipeline includes comprehensive automated security testing:
+
+### Vulnerability Scanning
+- **Trivy** - Container/FS/dependency scanning (CRITICAL/HIGH alerts)
+- **Cargo Audit** - Rust crates.io advisories
+- **SBOM Generation** - CycloneDX supply chain transparency
+- **CodeQL** - Semantic code analysis (GitHub Advanced Security)
+
+### Penetration Testing
+- **k6** - API load/penetration scenarios (DDoS, slowloris sim)
+- **OWASP ZAP** - Baseline DAST for operator REST API
+- **Nuclei** - Template-based vulnerability scanning
+
+### Compliance Testing
+- **kube-bench** - CIS Kubernetes Benchmark automation
+- **Checkov** - IaC scanning for Helm charts/manifests
+- **kube-score** - K8s resource scoring
+
+Run locally: `make security-all`
+
+## Runtime Security Monitoring
+
+- **Prometheus + Grafana** - Security metrics dashboard
+- **Falco** - Behavioral runtime security (planned integration)
+- **Audit Logs** - API/server audit trails
+- **CVE Auto-remediation** - Controller-based patching (src/controller/cve.rs)
 
 - [CIS Kubernetes Benchmark](https://www.cisecurity.org/benchmark/kubernetes)
 - [NIST SP 800-190 — Container Security](https://csrc.nist.gov/publications/detail/sp/800-190/final)

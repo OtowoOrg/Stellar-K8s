@@ -28,10 +28,13 @@ kubeconfig*.yaml
 *~
 
 # Build artifacts
-target/
+target/*
+!target/release/
+target/release/*
+!target/release/stellar-operator
+!target/release/kubectl-stellar
 debug/
 release/
-Cargo.lock
 
 # Test files
 tests/

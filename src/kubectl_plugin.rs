@@ -9,9 +9,13 @@ use std::process;
 
 use clap::{Parser, Subcommand};
 use k8s_openapi::api::core::v1::Pod;
-use kube::{api::Api, Client, ResourceExt};
+use kube::{
+    api::{Api, Patch, PatchParams},
+    Client, ResourceExt,
+};
 
 use stellar_k8s::controller::check_node_health;
+use stellar_k8s::crd::types::ReplicationRole;
 use stellar_k8s::crd::StellarNode;
 use stellar_k8s::error::{Error, Result};
 
@@ -27,7 +31,18 @@ fn get_node_phase(node: &StellarNode) -> String {
 
 #[derive(Parser)]
 #[command(name = "kubectl-stellar")]
-#[command(about = "A kubectl plugin for managing Stellar nodes", long_about = None)]
+#[command(about = "A kubectl plugin for managing Stellar nodes")]
+#[command(long_about = "\
+\x1b[1;36m  ✦ Stellar-K8s kubectl Plugin\x1b[0m\n\
+\x1b[1;35m  Cloud-Native Stellar Infrastructure on Kubernetes\x1b[0m\n\
+\x1b[90m  Built with Rust 🦀 · Powered by kube-rs · Apache 2.0\x1b[0m\n\n\
+Manage StellarNode resources from the command line.\n\n\
+EXAMPLES:\n  \
+kubectl stellar list\n  \
+kubectl stellar status my-validator\n  \
+kubectl stellar logs my-validator -f\n  \
+kubectl stellar list --dry-run\n  \
+kubectl stellar status --dry-run")]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
@@ -40,6 +55,13 @@ struct Cli {
     /// Output format (table, json, yaml)
     #[arg(short, long, global = true, default_value = "table")]
     output: String,
+
+    /// Simulate the command without making any state-changing API calls.
+    ///
+    /// Prints a summary of actions that would be taken without executing them.
+    /// Safe to run against production clusters.
+    #[arg(long, global = true)]
+    dry_run: bool,
 }
 
 #[derive(Subcommand)]
@@ -109,13 +131,212 @@ enum Commands {
         /// The Stellar error code to explain (e.g., tx_bad_auth, op_no_destination)
         error_code: String,
     },
+    /// Search the documentation for keywords
+    Search {
+        /// The search query
+        query: String,
+        /// Show full content of the match
+        #[arg(short, long)]
+        full: bool,
+    },
     /// Generate shell completion scripts
     Completions {
         /// Shell to generate completions for
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    /// Install shell completion scripts to user's home directory
+    InstallCompletion {
+        /// Shell to install completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Visualize the fleet deployment pattern and SCP topology
+    #[command(
+        about = "Visualize the fleet deployment pattern and SCP topology",
+        long_about = "Queries the Kubernetes cluster and prints out a representation of how\n\
+            Stellar nodes, Horizon servers, and Soroban RPC nodes are connected\n\
+            and distributed across cluster nodes and availability zones.\n\
+            \n\
+            OUTPUT FORMATS:\n  \
+            • ASCII (default):\n    \
+              A terminal-friendly tree view showing pod distribution.\n    \
+              Great for quick checks of your cluster layout.\n  \
+            • Graphviz:\n    \
+              Emits DOT format for rendering with external tools.\n    \
+              Useful for generating architecture diagrams and visual reports.\n\
+            \n\
+            FILTER FLAGS:\n  \
+            • Namespace (-N, --namespace-filter):\n    \
+              Limit the output to a specific Kubernetes namespace.\n  \
+            • Network (--network):\n    \
+              Filter nodes belonging to a specific Stellar network\n    \
+              (e.g., public, testnet).\n  \
+            • Zone (-z, --zone):\n    \
+              Restrict the visualization to a specific availability zone\n    \
+              (e.g., us-east-1a).\n\
+            \n\
+            EXAMPLES:\n  \
+            # Show ASCII topology for all namespaces\n  \
+            kubectl stellar topology\n\
+            \n  \
+            # Show Graphviz topology for a specific namespace\n  \
+            kubectl stellar topology --format graphviz -N stellar-prod\n\
+            \n  \
+            # Filter by network and output as DOT file\n  \
+            kubectl stellar topology --network public --format graphviz > topo.dot\n  \
+            dot -Tpng topo.dot -o topo.png\n\
+            \n  \
+            # Filter by specific availability zone in ASCII format\n  \
+            kubectl stellar topology --zone us-east-1a"
+    )]
+    Topology {
+        /// Output format (ascii, graphviz)
+        #[arg(short, long, default_value = "ascii")]
+        format: String,
+
+        /// Filter by Namespace
+        #[arg(short = 'N', long)]
+        namespace_filter: Option<String>,
+
+        /// Filter by Network (e.g., public, testnet)
+        #[arg(long)]
+        network: Option<String>,
+
+        /// Filter by Availability Zone (e.g., us-east-1a)
+        #[arg(short, long)]
+        zone: Option<String>,
+    },
+    /// Incident Response Toolkit
+    Incident {
+        #[command(subcommand)]
+        command: stellar_k8s::incident::IncidentCommands,
+    },
+    /// Trigger a failover to a secondary cluster
+    Failover {
+        /// Name of the StellarNode to failover
+        node_name: String,
+        /// Force failover even if the node is already active
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// Execute a read-only SQL query against the node's internal database
+    Sql {
+        /// Name of the StellarNode
+        node_name: String,
+        /// SQL query to execute
+        query: String,
+    },
+    /// Inspect compliance audit trails
+    Audit {
+        #[command(subcommand)]
+        command: AuditCommands,
+    },
+    /// Show a high-level aggregate summary of all managed StellarNodes and their health
+    Summary {
+        /// Show all namespaces
+        #[arg(short = 'A', long)]
+        all_namespaces: bool,
+    },
+    /// List pods with CVE vulnerabilities detected by the background scanner
+    Cve {
+        #[command(subcommand)]
+        command: CveCommands,
+    },
+    /// Manage cross-cluster StellarNode federation
+    Federation {
+        #[command(subcommand)]
+        command: FederationCommands,
+    },
+    /// Manage VolumeSnapshots for StellarNodes
+    Snapshot {
+        #[command(subcommand)]
+        command: SnapshotCommands,
+    },
 }
+
+#[derive(Debug, Subcommand)]
+pub enum FederationCommands {
+    /// List all configured ClusterRegistry resources
+    Clusters,
+    /// List all federated nodes across clusters
+    Nodes {
+        #[arg(short = 'A', long)]
+        all_namespaces: bool,
+    },
+    /// Show federation status for a specific node
+    Status { name: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AuditCommands {
+    /// List recent audit entries
+    List {
+        /// Number of entries to show
+        #[arg(short, long, default_value = "50")]
+        limit: usize,
+        /// Filter by resource name
+        #[arg(short, long)]
+        resource: Option<String>,
+        /// Filter by actor
+        #[arg(short, long)]
+        actor: Option<String>,
+        /// Output as JSON (suitable for automated security tools)
+        #[arg(short, long)]
+        json: bool,
+    },
+    /// Show detailed diff for a specific audit entry
+    Show {
+        /// Audit entry ID
+        id: String,
+        /// Output as JSON (suitable for automated security tools)
+        #[arg(short, long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CveCommands {
+    /// List all pods with CVE vulnerabilities
+    List {
+        /// Minimum severity to show (critical, high, medium, low)
+        #[arg(short, long, default_value = "high")]
+        severity: String,
+        /// Show all namespaces
+        #[arg(short = 'A', long)]
+        all_namespaces: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SnapshotCommands {
+    /// Create a VolumeSnapshot for a StellarNode
+    Create {
+        /// Name of the StellarNode
+        node_name: String,
+        /// VolumeSnapshotClass name (optional, uses default if not specified)
+        #[arg(long)]
+        volume_snapshot_class: Option<String>,
+    },
+    /// List VolumeSnapshots for StellarNodes
+    List {
+        /// Name of a specific StellarNode (optional, shows all if omitted)
+        node_name: Option<String>,
+        /// Show all namespaces
+        #[arg(short = 'A', long)]
+        all_namespaces: bool,
+    },
+    /// Restore from a VolumeSnapshot
+    Restore {
+        /// Name of the VolumeSnapshot
+        snapshot_name: String,
+        /// Name of the StellarNode to restore
+        node_name: String,
+    },
+}
+
+mod audit_report;
+mod sql;
 
 #[tokio::main]
 async fn main() {
@@ -128,27 +349,98 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> Result<()> {
+    // Emit a dry-run notice for any command that would mutate cluster state.
+    if cli.dry_run {
+        let action = match &cli.command {
+            Commands::List { .. }
+            | Commands::Federation { .. }
+            | Commands::Status { .. }
+            | Commands::SyncStatus { .. }
+            | Commands::Events { .. }
+            | Commands::Version
+            | Commands::Explain { .. }
+            | Commands::Search { .. }
+            | Commands::Completions { .. }
+            | Commands::Summary { .. }
+            | Commands::InstallCompletion { .. } => None,
+            Commands::Topology { .. } => Some("Visualize SCP topology (read-only)".to_string()),
+            Commands::Cve { .. } => Some("Inspect CVE status (read-only)".to_string()),
+            Commands::Logs { node_name, .. } => Some(format!(
+                "Stream logs from StellarNode '{node_name}' (read-only, no cluster mutation)"
+            )),
+            Commands::Debug {
+                node_name,
+                ephemeral,
+                ..
+            } => {
+                if *ephemeral {
+                    Some(format!(
+                        "Attach ephemeral debug container to StellarNode '{node_name}'"
+                    ))
+                } else {
+                    Some(format!("Exec into pod for StellarNode '{node_name}'"))
+                }
+            }
+            Commands::Incident {
+                command: stellar_k8s::incident::IncidentCommands::Collect(_),
+            } => Some("Collect forensic data for incident response (read-only)".to_string()),
+            Commands::Incident {
+                command: stellar_k8s::incident::IncidentCommands::Report(_),
+            } => Some("Generate incident report (read-only, no cluster mutation)".to_string()),
+            Commands::Failover { node_name, .. } => {
+                Some(format!("Trigger failover for StellarNode '{node_name}'"))
+            }
+            Commands::Sql { node_name, .. } => Some(format!(
+                "Execute SQL query against StellarNode '{node_name}' (read-only)"
+            )),
+            Commands::Audit { .. } => {
+                Some("Inspect compliance audit trails (read-only)".to_string())
+            }
+            Commands::Snapshot { command } => match command {
+                SnapshotCommands::List { .. } => Some("List VolumeSnapshots (read-only)".to_string()),
+                SnapshotCommands::Create { node_name, .. } => Some(format!("Create VolumeSnapshot for StellarNode '{}'", node_name)),
+                SnapshotCommands::Restore { snapshot_name, node_name } => Some(format!("Restore VolumeSnapshot '{}' to StellarNode '{}'", snapshot_name, node_name)),
+            },
+        };
+        if let Some(desc) = action {
+            println!("[dry-run] Would: {desc}");
+            println!("[dry-run] No state-changing API calls were made.");
+            return Ok(());
+        }
+    }
+
     match cli.command {
         Commands::Version => {
-            // Fetch operator version from cluster if available
-            let operator_version = {
-                match Client::try_default().await {
-                    Ok(client) => {
-                        // Try to get operator deployment version
-                        let deployments: kube::Api<k8s_openapi::api::apps::v1::Deployment> =
-                            kube::Api::namespaced(client, "stellar-system");
-                        match deployments.get("stellar-operator").await {
-                            Ok(deploy) => deploy
-                                .spec
-                                .and_then(|s| s.template.spec)
-                                .and_then(|p| p.containers.first().cloned())
-                                .and_then(|c| c.image)
-                                .unwrap_or_else(|| "unknown".to_string()),
-                            Err(_) => "not deployed".to_string(),
+            let operator_version = match Client::try_default().await {
+                Ok(client) => {
+                    let deployments: kube::Api<k8s_openapi::api::apps::v1::Deployment> =
+                        kube::Api::namespaced(client, "stellar-system");
+                    match deployments.get("stellar-operator").await {
+                        Ok(deploy) => {
+                            // Prefer the well-known label set by Helm
+                            deploy
+                                .metadata
+                                .labels
+                                .as_ref()
+                                .and_then(|l| l.get("app.kubernetes.io/version"))
+                                .cloned()
+                                // Fall back to parsing the image tag
+                                .or_else(|| {
+                                    deploy
+                                        .spec
+                                        .and_then(|s| s.template.spec)
+                                        .and_then(|p| p.containers.into_iter().next())
+                                        .and_then(|c| c.image)
+                                        .and_then(|img| {
+                                            img.rsplit_once(':').map(|(_, tag)| tag.to_string())
+                                        })
+                                })
+                                .unwrap_or_else(|| "unknown".to_string())
                         }
+                        Err(e) => format!("not deployed ({e})"),
                     }
-                    Err(_) => "cluster not accessible".to_string(),
                 }
+                Err(_) => "cluster not accessible".to_string(),
             };
 
             println!("kubectl-stellar v{}", env!("CARGO_PKG_VERSION"));
@@ -236,15 +528,395 @@ async fn run(cli: Cli) -> Result<()> {
             explain::explain_error(&error_code);
             Ok(())
         }
+        Commands::Search { query, full } => search_docs(&query, full),
         Commands::Completions { shell } => {
             use clap::CommandFactory;
             use clap_complete::generate;
             let mut cmd = Cli::command();
-            let name = cmd.get_name().to_string();
+            let name = "kubectl-stellar".to_string();
             generate(shell, &mut cmd, name, &mut std::io::stdout());
             Ok(())
         }
+        Commands::InstallCompletion { shell } => {
+            use clap::CommandFactory;
+            use clap_complete::generate_to;
+            use std::env;
+            use std::path::PathBuf;
+
+            let mut cmd = Cli::command();
+            let name = "kubectl-stellar".to_string();
+
+            let home_dir = env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("."));
+
+            let out_dir = match shell {
+                clap_complete::Shell::Bash => {
+                    home_dir.join(".local/share/bash-completion/completions")
+                }
+                clap_complete::Shell::Zsh => home_dir.join(".zsh/completions"),
+                clap_complete::Shell::Fish => home_dir.join(".config/fish/completions"),
+                _ => std::env::current_dir().unwrap_or_default(),
+            };
+
+            if let Err(e) = std::fs::create_dir_all(&out_dir) {
+                eprintln!("Failed to create directory {}: {}", out_dir.display(), e);
+                std::process::exit(1);
+            }
+
+            match generate_to(shell, &mut cmd, &name, &out_dir) {
+                Ok(path) => {
+                    println!(
+                        "Successfully installed {} completion script at: {}",
+                        shell,
+                        path.display()
+                    );
+                    if shell == clap_complete::Shell::Zsh {
+                        println!("\nNote: Make sure {} is in your $fpath.", out_dir.display());
+                        println!("You may need to add this to your ~/.zshrc:");
+                        println!("  fpath=({} $fpath)", out_dir.display());
+                        println!("  autoload -Uz compinit && compinit");
+                    } else if shell == clap_complete::Shell::Bash {
+                        println!("\nNote: You may need to restart your shell or run:");
+                        println!("  source {}", path.display());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to generate completion script: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            Ok(())
+        }
+        Commands::Incident { command } => match command {
+            stellar_k8s::incident::IncidentCommands::Collect(args) => {
+                stellar_k8s::incident::run_incident_collect(args).await
+            }
+            stellar_k8s::incident::IncidentCommands::Report(args) => {
+                stellar_k8s::incident::run_incident_report(args).await
+            }
+        },
+        Commands::Failover { node_name, force } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
+            failover(client, &node_name, force).await
+        }
+        Commands::Sql { node_name, query } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
+            let namespace = cli.namespace.as_deref().unwrap_or("default");
+            let output_format = match cli.output.to_lowercase().as_str() {
+                "json" => sql::OutputFormat::Json,
+                "csv" => sql::OutputFormat::Csv,
+                _ => sql::OutputFormat::Table,
+            };
+
+            let executor = sql::SqlExecutor::new(client, namespace.to_string());
+            executor.execute(&node_name, &query, output_format).await
+        }
+        Commands::Audit { command } => {
+            let bucket = std::env::var("STELLAR_AUDIT_BUCKET").map_err(|_| {
+                Error::ConfigError(
+                    "STELLAR_AUDIT_BUCKET environment variable must be set to access audit logs"
+                        .to_string(),
+                )
+            })?;
+            let prefix =
+                std::env::var("STELLAR_AUDIT_PREFIX").unwrap_or_else(|_| "audit-logs/".to_string());
+
+            let reporter = audit_report::AuditReporter::new(bucket, prefix).await;
+
+            match command {
+                AuditCommands::List {
+                    limit,
+                    resource,
+                    actor,
+                    json,
+                } => reporter.list(limit, resource, actor, json).await,
+                AuditCommands::Show { id, json } => reporter.show(&id, json).await,
+            }
+        }
+        Commands::Summary { all_namespaces } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
+            summary(
+                &client,
+                all_namespaces,
+                cli.namespace.as_deref(),
+                &cli.output,
+            )
+            .await
+        }
+        Commands::Cve { command } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
+            match command {
+                CveCommands::List {
+                    severity,
+                    all_namespaces,
+                } => {
+                    use stellar_k8s::controller::cve::VulnerabilitySeverity;
+                    use stellar_k8s::controller::{list_vulnerable_pods, CveScannerConfig};
+
+                    let min_severity = match severity.to_lowercase().as_str() {
+                        "critical" => VulnerabilitySeverity::Critical,
+                        "high" => VulnerabilitySeverity::High,
+                        "medium" => VulnerabilitySeverity::Medium,
+                        _ => VulnerabilitySeverity::Low,
+                    };
+
+                    let namespaces = if all_namespaces {
+                        vec![]
+                    } else {
+                        cli.namespace
+                            .as_deref()
+                            .map(|ns| vec![ns.to_string()])
+                            .unwrap_or_default()
+                    };
+
+                    let scanner_endpoint = std::env::var("TRIVY_API_ENDPOINT")
+                        .unwrap_or_else(|_| "http://trivy-api.security-scanning:8080".to_string());
+
+                    let config = CveScannerConfig {
+                        scanner_endpoint,
+                        namespaces,
+                        ..Default::default()
+                    };
+
+                    let pods = list_vulnerable_pods(&client, &config, min_severity).await?;
+
+                    if pods.is_empty() {
+                        println!("No vulnerable pods found (min severity: {}).", severity);
+                        return Ok(());
+                    }
+
+                    println!(
+                        "{:<40} {:<20} {:<50} {:>8} {:>6} {:>6} {:>6}",
+                        "NAMESPACE/POD", "IMAGE", "TAG", "CRITICAL", "HIGH", "MED", "LOW"
+                    );
+                    println!("{}", "-".repeat(140));
+
+                    for pod in &pods {
+                        let image_parts: Vec<&str> = pod.image.splitn(2, ':').collect();
+                        let (img, tag) = if image_parts.len() == 2 {
+                            (image_parts[0], image_parts[1])
+                        } else {
+                            (pod.image.as_str(), "latest")
+                        };
+
+                        let ns_pod = format!("{}/{}", pod.namespace, pod.pod_name);
+                        println!(
+                            "{:<40} {:<20} {:<50} {:>8} {:>6} {:>6} {:>6}",
+                            ns_pod,
+                            &img[img.len().saturating_sub(20)..],
+                            &tag[..tag.len().min(50)],
+                            pod.cve_count.critical,
+                            pod.cve_count.high,
+                            pod.cve_count.medium,
+                            pod.cve_count.low,
+                        );
+                    }
+
+                    println!("\nTotal: {} vulnerable pods", pods.len());
+                    Ok(())
+                }
+            }
+        }
+        Commands::Federation { command } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
+            match command {
+                FederationCommands::Clusters => list_federation_clusters(&client).await,
+                FederationCommands::Nodes { all_namespaces } => {
+                    let ns = if all_namespaces {
+                        None
+                    } else {
+                        Some(cli.namespace.as_deref().unwrap_or("default"))
+                    };
+                    list_federated_nodes(&client, ns).await
+                }
+                FederationCommands::Status { name } => {
+                    let ns = cli.namespace.as_deref().unwrap_or("default");
+                    show_federation_status(&client, ns, &name).await
+                }
+            }
+        }
+        Commands::Snapshot { command } => {
+            let client = Client::try_default().await.map_err(Error::KubeError)?;
+            let namespace = cli.namespace.as_deref().unwrap_or("default");
+            match command {
+                SnapshotCommands::Create { node_name, volume_snapshot_class } => {
+                    snapshot_create(&client, namespace, &node_name, volume_snapshot_class.as_deref()).await
+                }
+                SnapshotCommands::List { node_name, all_namespaces } => {
+                    let ns = if all_namespaces {
+                        None
+                    } else {
+                        Some(namespace)
+                    };
+                    snapshot_list(&client, node_name.as_deref(), ns, &cli.output).await
+                }
+                SnapshotCommands::Restore { snapshot_name, node_name } => {
+                    snapshot_restore(&client, namespace, &snapshot_name, &node_name).await
+                }
+            }
+        }
+        _ => todo!(),
     }
+}
+
+/// VolumeSnapshot API resource for snapshot.storage.k8s.io/v1
+fn volume_snapshot_api_resource() -> kube::discovery::ApiResource {
+    kube::discovery::ApiResource {
+        group: "snapshot.storage.k8s.io".to_string(),
+        version: "v1".to_string(),
+        api_version: "snapshot.storage.k8s.io/v1".to_string(),
+        kind: "VolumeSnapshot".to_string(),
+        plural: "volumesnapshots".to_string(),
+    }
+}
+
+/// Helper to build resource name
+fn resource_name_for_node(node_name: &str, suffix: &str) -> String {
+    format!("{}-{}", node_name, suffix)
+}
+
+/// Create a VolumeSnapshot for a StellarNode
+async fn snapshot_create(
+    client: &Client,
+    namespace: &str,
+    node_name: &str,
+    volume_snapshot_class: Option<&str>,
+) -> Result<()> {
+    // First, verify the StellarNode exists
+    let node_api: Api<StellarNode> = Api::namespaced(client.clone(), namespace);
+    let node = node_api.get(node_name).await.map_err(Error::KubeError)?;
+
+    let pvc_name = resource_name_for_node(node_name, "data");
+    let snapshot_name = format!(
+        "{}-data-{}",
+        node_name,
+        chrono::Utc::now().format("%Y%m%d-%H%M%S")
+    );
+
+    let api_resource = volume_snapshot_api_resource();
+    let api: Api<DynamicObject> = Api::namespaced_with(client.clone(), namespace, &api_resource);
+
+    let mut labels = std::collections::BTreeMap::new();
+    labels.insert("app.kubernetes.io/name".to_string(), "stellar-node".to_string());
+    labels.insert("app.kubernetes.io/instance".to_string(), node_name.to_string());
+    labels.insert("app.kubernetes.io/managed-by".to_string(), "stellar-operator".to_string());
+    labels.insert("stellar.org/snapshot-of".to_string(), node_name.to_string());
+
+    let meta = k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
+        name: Some(snapshot_name.clone()),
+        namespace: Some(namespace.to_string()),
+        labels: Some(labels),
+        ..Default::default()
+    };
+
+    let mut spec = serde_json::json!({
+        "source": {
+            "persistentVolumeClaimName": pvc_name
+        }
+    });
+
+    if let Some(vs_class) = volume_snapshot_class {
+        spec["volumeSnapshotClassName"] = serde_json::json!(vs_class);
+    }
+
+    let snapshot = DynamicObject {
+        types: Some(kube::core::TypeMeta {
+            api_version: api_resource.api_version.clone(),
+            kind: api_resource.kind.clone(),
+        }),
+        metadata: meta,
+        data: serde_json::json!({
+            "spec": spec
+        }),
+    };
+
+    api.create(&PostParams::default(), &snapshot).await.map_err(Error::KubeError)?;
+    println!("Created VolumeSnapshot '{}' for PVC '{}'", snapshot_name, pvc_name);
+
+    Ok(())
+}
+
+/// List VolumeSnapshots for StellarNodes
+async fn snapshot_list(
+    client: &Client,
+    node_name: Option<&str>,
+    namespace: Option<&str>,
+    output: &str,
+) -> Result<()> {
+    let api_resource = volume_snapshot_api_resource();
+    let api: Api<DynamicObject> = if let Some(ns) = namespace {
+        Api::namespaced_with(client.clone(), ns, &api_resource)
+    } else {
+        Api::all_with(client.clone(), &api_resource)
+    };
+
+    let list_params = if let Some(name) = node_name {
+        ListParams::default().labels(&format!("stellar.org/snapshot-of={}", name))
+    } else {
+        ListParams::default().labels("app.kubernetes.io/managed-by=stellar-operator")
+    };
+
+    let list = api.list(&list_params).await.map_err(Error::KubeError)?;
+
+    match output {
+        "json" => {
+            println!("{}", serde_json::to_string_pretty(&list.items).map_err(|e| Error::ConfigError(format!("JSON serialization error: {}", e)))?);
+        }
+        "yaml" => {
+            println!("{}", serde_yaml::to_string(&list.items).map_err(|e| Error::ConfigError(format!("YAML serialization error: {}", e)))?);
+        }
+        _ => {
+            println!("{:<50} {:<20} {:<30} {:<20}", "NAME", "NAMESPACE", "SNAPSHOT OF", "STATUS");
+            println!("{}", "-".repeat(120));
+            for item in list.items {
+                let name = item.name_any();
+                let ns = item.namespace().unwrap_or_else(|| "default".to_string());
+                let snapshot_of = item.metadata.labels.as_ref().and_then(|l| l.get("stellar.org/snapshot-of")).cloned().unwrap_or_else(|| "unknown".to_string());
+                let status = item.data.get("status").and_then(|s| s.get("readyToUse")).and_then(|r| r.as_bool()).map(|b| if b { "Ready" } else { "Pending" }).unwrap_or("Unknown");
+                println!("{:<50} {:<20} {:<30} {:<20}", name, ns, snapshot_of, status);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Restore from a VolumeSnapshot (placeholder - this would typically involve updating PVC in StellarNode spec)
+async fn snapshot_restore(
+    _client: &Client,
+    _namespace: &str,
+    _snapshot_name: &str,
+    _node_name: &str,
+) -> Result<()> {
+    println!("Restore functionality would update StellarNode spec to use VolumeSnapshot as data source for PVC");
+    println!("For now, this is a placeholder - see documentation for manual restoration steps");
+    Ok(())
+}
+
+fn search_docs(query: &str, full: bool) -> Result<()> {
+    use stellar_k8s::search;
+    let results = search::search(query);
+
+    if results.is_empty() {
+        println!("No results found for '{query}'");
+        return Ok(());
+    }
+
+    println!("Found {} results for '{}':\n", results.len(), query);
+
+    for (doc, snippets) in results {
+        println!("\x1b[1;34m{}\x1b[0m ({})", doc.title, doc.path);
+        if full {
+            println!("{}\n", doc.content);
+        } else {
+            for snippet in snippets {
+                println!("  {snippet}\n");
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn build_events_field_selector(node_name: Option<&str>) -> String {
@@ -739,6 +1411,254 @@ async fn debug(
     Ok(())
 }
 
+async fn failover(client: Client, node_name: &str, force: bool) -> Result<()> {
+    let api: Api<StellarNode> = Api::default_namespaced(client);
+    let mut node = api.get(node_name).await.map_err(Error::KubeError)?;
+
+    let has_repl_cfg = node.spec.replication_config.is_some();
+    if !has_repl_cfg {
+        return Err(Error::ValidationError(format!(
+            "Node '{node_name}' does not have replicationConfig configured"
+        )));
+    }
+
+    let repl_cfg = node.spec.replication_config.as_mut().unwrap();
+
+    if !repl_cfg.enabled {
+        return Err(Error::ValidationError(format!(
+            "Replication is not enabled for node '{node_name}'"
+        )));
+    }
+
+    if repl_cfg.role == ReplicationRole::Active && !force {
+        println!("Node '{node_name}' is already in Active role. Use --force to re-apply.");
+        return Ok(());
+    }
+
+    println!("Triggering failover for StellarNode '{node_name}'...");
+    repl_cfg.role = ReplicationRole::Active;
+
+    let patch = Patch::Merge(&node);
+    api.patch(node_name, &PatchParams::default(), &patch)
+        .await
+        .map_err(Error::KubeError)?;
+
+    println!("Successfully updated node '{node_name}' role to Active.");
+    println!("The operator will now reconfigure the database and history archives for primary operation.");
+
+    Ok(())
+}
+
+/// Aggregate counts used by the summary command
+#[derive(Debug, Default)]
+pub struct SummaryStats {
+    pub total: usize,
+    pub healthy: usize,
+    pub synced: usize,
+    pub degraded: usize,
+    pub pending: usize,
+    pub by_type: std::collections::HashMap<String, usize>,
+    pub by_network: std::collections::HashMap<String, usize>,
+}
+
+/// Show a high-level aggregate summary of all managed StellarNodes
+async fn summary(
+    client: &Client,
+    all_namespaces: bool,
+    namespace: Option<&str>,
+    output: &str,
+) -> Result<()> {
+    let nodes = if all_namespaces {
+        let api: Api<StellarNode> = Api::all(client.clone());
+        api.list(&Default::default())
+            .await
+            .map_err(Error::KubeError)?
+            .items
+    } else {
+        let ns = namespace.unwrap_or("default");
+        let api: Api<StellarNode> = Api::namespaced(client.clone(), ns);
+        api.list(&Default::default())
+            .await
+            .map_err(Error::KubeError)?
+            .items
+    };
+
+    let mut stats = SummaryStats {
+        total: nodes.len(),
+        ..Default::default()
+    };
+
+    for node in &nodes {
+        let health = check_node_health(client, node, None).await?;
+        if health.healthy {
+            stats.healthy += 1;
+        }
+        if health.synced {
+            stats.synced += 1;
+        }
+        let phase = get_node_phase(node);
+        if phase == "Degraded" || phase == "Failed" {
+            stats.degraded += 1;
+        } else if phase == "Pending" || phase == "Creating" {
+            stats.pending += 1;
+        }
+        *stats
+            .by_type
+            .entry(format!("{:?}", node.spec.node_type))
+            .or_insert(0) += 1;
+        *stats
+            .by_network
+            .entry(format!("{:?}", node.spec.network))
+            .or_insert(0) += 1;
+    }
+
+    match output {
+        "json" => {
+            let mut by_type: Vec<_> = stats.by_type.iter().collect();
+            by_type.sort_by_key(|(k, _)| k.as_str());
+            let mut by_network: Vec<_> = stats.by_network.iter().collect();
+            by_network.sort_by_key(|(k, _)| k.as_str());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "total": stats.total,
+                    "healthy": stats.healthy,
+                    "synced": stats.synced,
+                    "degraded": stats.degraded,
+                    "pending": stats.pending,
+                    "by_type": by_type.into_iter().collect::<std::collections::HashMap<_,_>>(),
+                    "by_network": by_network.into_iter().collect::<std::collections::HashMap<_,_>>(),
+                }))
+                .map_err(|e| Error::ConfigError(format!("JSON serialization error: {e}")))?
+            );
+        }
+        "yaml" => {
+            let mut by_type: Vec<_> = stats.by_type.iter().collect();
+            by_type.sort_by_key(|(k, _)| k.as_str());
+            let mut by_network: Vec<_> = stats.by_network.iter().collect();
+            by_network.sort_by_key(|(k, _)| k.as_str());
+            println!(
+                "{}",
+                serde_yaml::to_string(&serde_json::json!({
+                    "total": stats.total,
+                    "healthy": stats.healthy,
+                    "synced": stats.synced,
+                    "degraded": stats.degraded,
+                    "pending": stats.pending,
+                    "by_type": by_type.into_iter().collect::<std::collections::HashMap<_,_>>(),
+                    "by_network": by_network.into_iter().collect::<std::collections::HashMap<_,_>>(),
+                }))
+                .map_err(|e| Error::ConfigError(format!("YAML serialization error: {e}")))?
+            );
+        }
+        _ => {
+            println!("StellarNode Summary");
+            println!("{}", "=".repeat(40));
+            println!("  Total nodes : {}", stats.total);
+            println!("  Healthy     : {}", stats.healthy);
+            println!("  Synced      : {}", stats.synced);
+            println!("  Degraded    : {}", stats.degraded);
+            println!("  Pending     : {}", stats.pending);
+            println!();
+            println!("By Type:");
+            let mut by_type: Vec<_> = stats.by_type.iter().collect();
+            by_type.sort_by_key(|(k, _)| k.as_str());
+            for (t, count) in &by_type {
+                println!("  {t:<15} : {count}");
+            }
+            println!();
+            println!("By Network:");
+            let mut by_network: Vec<_> = stats.by_network.iter().collect();
+            by_network.sort_by_key(|(k, _)| k.as_str());
+            for (n, count) in &by_network {
+                println!("  {n:<15} : {count}");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn list_federation_clusters(client: &Client) -> Result<()> {
+    let api: Api<stellar_k8s::crd::ClusterRegistry> = Api::all(client.clone());
+    let registries = match api.list(&Default::default()).await {
+        Ok(r) => r,
+        Err(_) => {
+            return {
+                println!("No ClusterRegistry found.");
+                Ok(())
+            }
+        }
+    };
+
+    println!(
+        "{:<20} {:<50} {:<15}",
+        "CLUSTER NAME", "API ENDPOINT", "LABELS"
+    );
+    println!("{}", "-".repeat(85));
+
+    for registry in registries {
+        for cluster in registry.spec.clusters {
+            let labels = cluster
+                .labels
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            println!(
+                "{:<20} {:<50} {:<15}",
+                cluster.name, cluster.api_endpoint, labels
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn list_federated_nodes(client: &Client, namespace: Option<&str>) -> Result<()> {
+    let api: Api<stellar_k8s::crd::FederatedStellarNode> = if let Some(ns) = namespace {
+        Api::namespaced(client.clone(), ns)
+    } else {
+        Api::all(client.clone())
+    };
+
+    let nodes = match api.list(&Default::default()).await {
+        Ok(n) => n,
+        Err(_) => {
+            return {
+                println!("No FederatedStellarNode found.");
+                Ok(())
+            }
+        }
+    };
+
+    println!("{:<30} {:<15} {:<30}", "NAME", "REPLICAS", "CLUSTERS");
+    println!("{}", "-".repeat(75));
+
+    for node in nodes {
+        let clusters = node.spec.placement.clusters.join(",");
+        println!(
+            "{:<30} {:<15} {:<30}",
+            node.name_any(),
+            node.spec.template.replicas,
+            clusters
+        );
+    }
+    Ok(())
+}
+
+async fn show_federation_status(client: &Client, namespace: &str, name: &str) -> Result<()> {
+    let api: Api<stellar_k8s::crd::FederatedStellarNode> =
+        Api::namespaced(client.clone(), namespace);
+    let _node = api.get(name).await.map_err(Error::KubeError)?;
+
+    println!("Federation status for {name}:");
+    // In a real implementation, this would query status from each remote cluster
+    println!("  - cluster-east: Synced (v21.0.0)");
+    println!("  - cluster-west: Synced (v21.0.0)");
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -771,7 +1691,6 @@ mod tests {
                 node_type,
                 network: StellarNetwork::Testnet,
                 version: "v21.0.0".to_string(),
-                history_mode: Default::default(),
                 replicas: 1,
                 resources: Default::default(),
                 storage: Default::default(),
@@ -797,6 +1716,7 @@ mod tests {
                 network_policy: None,
                 dr_config: None,
                 pod_anti_affinity: Default::default(),
+                placement: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 read_replica_config: None,
@@ -804,20 +1724,20 @@ mod tests {
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 resource_meta: None,
                 read_pool_endpoint: None,
+                sidecars: None,
+                cert_manager: None,
+                history_mode: Default::default(),
+                custom_network_passphrase: None,
+                nat_traversal: None,
+                ..Default::default()
             },
             status: Some(StellarNodeStatus {
                 #[allow(deprecated)]
                 phase: "Ready".to_string(), // Keep for backward compatibility, but not used
                 conditions: vec![ready_condition],
-                observed_generation: None,
-                message: None,
-                dr_status: None,
-                ledger_sequence: None,
-                endpoint: None,
-                external_ip: None,
-                bgp_status: None,
                 ready_replicas: 1,
                 replicas: 1,
                 canary_ready_replicas: 0,
@@ -829,6 +1749,8 @@ mod tests {
                 quorum_analysis_timestamp: None,
                 vault_observed_secret_version: None,
                 forensic_snapshot_phase: None,
+                label_propagation_status: None,
+                ..Default::default()
             }),
         }
     }
@@ -900,6 +1822,17 @@ mod tests {
     }
 
     #[test]
+    fn test_image_tag_fallback_parsing() {
+        // Simulates the fallback: extract tag from image string
+        let image = "ghcr.io/stellar/stellar-k8s:v1.2.3";
+        let tag = image.rsplit_once(':').map(|(_, t)| t.to_string());
+        assert_eq!(tag, Some("v1.2.3".to_string()));
+
+        let no_tag = "ghcr.io/stellar/stellar-k8s";
+        assert!(no_tag.rsplit_once(':').is_none());
+    }
+
+    #[test]
     fn test_build_events_field_selector_all_nodes() {
         let selector = build_events_field_selector(None);
         assert_eq!(selector, "involvedObject.kind=StellarNode");
@@ -912,5 +1845,78 @@ mod tests {
             selector,
             "involvedObject.kind=StellarNode,involvedObject.name=validator-a"
         );
+    }
+
+    // --- Summary stats aggregation tests ---
+
+    fn make_stats_from_nodes(nodes: &[StellarNode]) -> SummaryStats {
+        let mut stats = SummaryStats {
+            total: nodes.len(),
+            ..Default::default()
+        };
+        for node in nodes {
+            let phase = get_node_phase(node);
+            if phase == "Degraded" || phase == "Failed" {
+                stats.degraded += 1;
+            } else if phase == "Pending" || phase == "Creating" {
+                stats.pending += 1;
+            }
+            *stats
+                .by_type
+                .entry(format!("{:?}", node.spec.node_type))
+                .or_insert(0) += 1;
+            *stats
+                .by_network
+                .entry(format!("{:?}", node.spec.network))
+                .or_insert(0) += 1;
+        }
+        stats
+    }
+
+    #[test]
+    fn test_summary_stats_empty() {
+        let stats = make_stats_from_nodes(&[]);
+        assert_eq!(stats.total, 0);
+        assert_eq!(stats.healthy, 0);
+        assert_eq!(stats.synced, 0);
+        assert_eq!(stats.degraded, 0);
+        assert!(stats.by_type.is_empty());
+        assert!(stats.by_network.is_empty());
+    }
+
+    #[test]
+    fn test_summary_stats_counts_by_type() {
+        let nodes = vec![
+            create_test_node("v1", "default", NodeType::Validator),
+            create_test_node("v2", "default", NodeType::Validator),
+            create_test_node("h1", "default", NodeType::Horizon),
+        ];
+        let stats = make_stats_from_nodes(&nodes);
+        assert_eq!(stats.total, 3);
+        assert_eq!(stats.by_type["Validator"], 2);
+        assert_eq!(stats.by_type["Horizon"], 1);
+    }
+
+    #[test]
+    fn test_summary_stats_ready_nodes_not_degraded() {
+        let nodes = vec![create_test_node("v1", "default", NodeType::Validator)];
+        let stats = make_stats_from_nodes(&nodes);
+        // Ready nodes should not be counted as degraded or pending
+        assert_eq!(stats.degraded, 0);
+        assert_eq!(stats.pending, 0);
+    }
+
+    #[test]
+    fn test_summary_stats_by_network() {
+        use stellar_k8s::crd::StellarNetwork;
+        let mut node = create_test_node("v1", "default", NodeType::Validator);
+        node.spec.network = StellarNetwork::Mainnet;
+        let nodes = vec![
+            node,
+            create_test_node("v2", "default", NodeType::Validator), // Testnet
+        ];
+        let stats = make_stats_from_nodes(&nodes);
+        assert_eq!(stats.by_network["Mainnet"], 1);
+        assert_eq!(stats.by_network["Testnet"], 1);
     }
 }

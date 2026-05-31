@@ -1,0 +1,18 @@
+name: Support Question
+description: Need help? Please use GitHub Discussions to keep the issue tracker focused on bugs and features.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 👋 Looking for help?
+
+        The issue tracker is reserved for **bugs** and **feature requests**.
+        For questions, troubleshooting, and general discussion please use one of the channels below:
+
+        | Channel | Link |
+        |---------|------|
+        | 💬 GitHub Discussions | [Start a discussion](https://github.com/Dami24-hub/Stellar-K8s/discussions) |
+        | 📖 Documentation | [Read the docs](https://github.com/Dami24-hub/Stellar-K8s/tree/main/docs) |
+        | 🔒 Security issue? | [Report privately](https://github.com/Dami24-hub/Stellar-K8s/security/advisories/new) |
+
+        Please close this issue and open a discussion instead. Thank you! 🙏

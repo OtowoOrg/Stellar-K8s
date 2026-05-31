@@ -1,0 +1,72 @@
+## Example: Bootstrap a Validator from a Compressed DB Backup (S3)
+##
+## This uses spec.storage.snapshotRef.backupUrl to inject a snapshot-restore
+## init container that downloads and extracts a .tar.gz archive from S3 before
+## Stellar Core starts.
+##
+## Use this when:
+##   - You don't have CSI VolumeSnapshot support in your cluster, OR
+##   - You want to bootstrap from a backup stored in S3/HTTPS
+##
+## Prerequisites:
+##   - A Secret named "s3-backup-credentials" with keys:
+##       AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
+##   - A .tar.gz backup at s3://my-stellar-backups/mainnet/latest.tar.gz
+##     (created by the auto-snapshot worker or manually)
+##
+## Expected outcome:
+##   - Init container downloads and extracts the archive (~2-5 minutes)
+##   - Stellar Core starts with pre-populated ledger data
+##   - Node reaches Synced state within ~10 minutes
+##   - status.snapshotBootstrap.secondsToSync ≤ 600
+##
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-from-backup
+  namespace: stellar-system
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+
+  storage:
+    storageClass: "standard"
+    size: "500Gi"
+    retentionPolicy: Retain
+
+    # Bootstrap from a compressed DB backup stored in S3.
+    # An init container (snapshot-restore) will download and extract the archive.
+    snapshotRef:
+      backupUrl: "s3://my-stellar-backups/mainnet/latest.tar.gz"
+      credentialsSecretRef: "s3-backup-credentials"
+      # restoreImage: "amazon/aws-cli:latest"  # default for S3 URLs
+
+  validatorConfig:
+    seedSecretRef: "validator-mainnet-seed"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+
+  # Schedule periodic snapshots to keep the backup fresh
+  snapshotSchedule:
+    schedule: "0 */6 * * *"        # Every 6 hours
+    volumeSnapshotClassName: "csi-snapclass"
+    flushBeforeSnapshot: true
+    retentionCount: 4
+---
+## Secret for S3 credentials (apply separately with real values)
+## kubectl create secret generic s3-backup-credentials \
+##   --from-literal=AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
+##   --from-literal=AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
+##   --from-literal=AWS_DEFAULT_REGION=us-east-1 \
+##   -n stellar-system

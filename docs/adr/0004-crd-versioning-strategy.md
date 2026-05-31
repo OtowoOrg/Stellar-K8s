@@ -187,21 +187,21 @@ impl From<StellarNodeV1Beta1> for StellarNodeV1 {
 
 ### Single Version Strategy
 **Pros**: Simpler implementation, less testing overhead
-**Cons**: 
+**Cons**:
 - Breaking changes for every modification
 - No beta testing for new features
 - Difficult to maintain backward compatibility
 
 ### External Versioning
 **Pros**: Separate versioning from Kubernetes API
-**Cons**: 
+**Cons**:
 - Not idiomatic Kubernetes
 - Poor tooling support
 - Confusing for users
 
 ### Webhook-Only Conversion
 **Pros**: Maximum flexibility in conversions
-**Cons**: 
+**Cons**:
 - Performance overhead
 - Complex deployment
 - Single point of failure

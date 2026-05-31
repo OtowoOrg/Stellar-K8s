@@ -1,0 +1,143 @@
+groups:
+  - name: stellar_observability_pipeline
+    interval: 30s
+    rules:
+      # ── Anomaly Detection ──────────────────────────────────────────────────
+      - alert: StellarAnomalyDetected
+        expr: |
+          increase(stellar_observability_anomalies_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Anomaly detected in Stellar node metrics"
+          description: >
+            The ML-based anomaly detector has flagged an unusual pattern.
+            Check the observability dashboard for details.
+          runbook_url: "https://docs.stellar.org/runbooks/anomaly-detection"
+
+      - alert: StellarHighAnomalyRate
+        expr: |
+          rate(stellar_observability_anomalies_total[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "High anomaly rate in Stellar observability pipeline"
+          description: >
+            More than 1 anomaly per 10 seconds detected. This may indicate
+            a systemic issue. Investigate immediately.
+
+      # ── Alert Noise Reduction ──────────────────────────────────────────────
+      - alert: StellarAlertStorm
+        expr: |
+          increase(stellar_observability_alerts_total[5m]) > 20
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Alert storm detected — possible noise"
+          description: >
+            More than 20 alerts fired in 5 minutes. The deduplication engine
+            may be overwhelmed. Review alert suppression rules.
+
+      # ── Incident MTTR ─────────────────────────────────────────────────────
+      - alert: StellarHighMTTR
+        expr: |
+          stellar_observability_incident_mttr_seconds > 3600
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Mean Time to Resolve exceeds 1 hour"
+          description: >
+            Incident MTTR is {{ $value | humanizeDuration }}.
+            Review root cause analysis reports to identify systemic issues.
+
+      # ── Predictive Alerts ─────────────────────────────────────────────────
+      - alert: StellarPredictedCapacityExhaustion
+        expr: |
+          stellar_observability_predicted_issue_probability{issue_type="capacity"} > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Predicted capacity exhaustion within {{ $labels.horizon_minutes }} minutes"
+          description: >
+            The predictive alerting engine has detected a strong upward trend
+            in resource usage. Probability: {{ $value | humanizePercentage }}.
+            Take action before the issue materialises.
+
+      # ── Correlation Engine ────────────────────────────────────────────────
+      - alert: StellarCorrelationEngineBacklog
+        expr: |
+          stellar_observability_correlation_queue_depth > 1000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Correlation engine queue depth is high"
+          description: >
+            The event correlation engine has {{ $value }} events queued.
+            This may delay anomaly detection and root cause analysis.
+
+      # ── Pipeline Health ───────────────────────────────────────────────────
+      - alert: StellarObservabilityPipelineDown
+        expr: |
+          absent(stellar_observability_pipeline_up) == 1
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Observability pipeline is not reporting"
+          description: >
+            The stellar_observability_pipeline_up metric is absent.
+            The monitoring pipeline may be down. Investigate immediately.
+
+      - alert: StellarObservabilityEventIngestionLag
+        expr: |
+          stellar_observability_event_ingestion_lag_seconds > 60
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Observability event ingestion is lagging"
+          description: >
+            Events are {{ $value }}s behind real-time. The pipeline may be
+            under load or experiencing issues.
+
+  - name: stellar_root_cause_analysis
+    rules:
+      - alert: StellarRCAConfidenceLow
+        expr: |
+          stellar_observability_rca_confidence < 0.5
+        for: 0m
+        labels:
+          severity: info
+          team: platform
+        annotations:
+          summary: "Root cause analysis confidence is low"
+          description: >
+            RCA for incident {{ $labels.incident_id }} has confidence
+            {{ $value | humanizePercentage }}. Manual investigation recommended.
+
+      - alert: StellarOpenIncidentTooLong
+        expr: |
+          (time() - stellar_observability_incident_start_timestamp) > 7200
+        for: 0m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Incident {{ $labels.incident_id }} has been open for over 2 hours"
+          description: >
+            Incident started {{ $value | humanizeDuration }} ago.
+            Escalate if not already resolved.

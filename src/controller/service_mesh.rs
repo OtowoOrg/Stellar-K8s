@@ -314,6 +314,147 @@ pub async fn ensure_virtual_service(client: &Client, node: &StellarNode) -> Resu
     Ok(())
 }
 
+/// Ensure Linkerd Server and ServerAuthorization for mTLS enforcement
+///
+/// Creates Linkerd Server and ServerAuthorization resources that enforce
+/// mutual TLS and restrict traffic to the pods based on service mesh configuration.
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_linkerd_resources(client: &Client, node: &StellarNode) -> Result<()> {
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let Some(ref mesh_config) = node.spec.service_mesh else {
+        return Ok(());
+    };
+    let Some(ref linkerd_config) = mesh_config.linkerd else {
+        return Ok(());
+    };
+
+    if !mesh_config.sidecar_injection {
+        return Ok(());
+    }
+
+    let server_name = format!("{}-server", node.name_any());
+    let auth_name = format!("{}-auth", node.name_any());
+
+    // 1. Create Linkerd Server resource
+    let server = json!({
+        "apiVersion": "policy.linkerd.io/v1beta1",
+        "kind": "Server",
+        "metadata": {
+            "name": server_name,
+            "namespace": namespace,
+            "labels": {
+                "stellar.org/node": node.name_any()
+            },
+            "ownerReferences": [{
+                "apiVersion": "stellar.org/v1alpha1",
+                "kind": "StellarNode",
+                "name": node.name_any(),
+                "uid": node.metadata.uid.as_ref().unwrap_or(&"".to_string()),
+                "controller": true,
+                "blockOwnerDeletion": true
+            }]
+        },
+        "spec": {
+            "podSelector": {
+                "matchLabels": {
+                    "stellar.org/node": node.name_any()
+                }
+            },
+            "port": 11625, // Default Stellar Core P2P port
+            "proxyProtocol": "opaque"
+        }
+    });
+
+    let server_api_resource = ApiResource {
+        group: "policy.linkerd.io".to_string(),
+        version: "v1beta1".to_string(),
+        api_version: "policy.linkerd.io/v1beta1".to_string(),
+        kind: "Server".to_string(),
+        plural: "servers".to_string(),
+    };
+
+    let server_obj = DynamicObject::new(&server_name, &server_api_resource)
+        .within(&namespace)
+        .data(server);
+
+    let server_api: Api<DynamicObject> =
+        Api::namespaced_with(client.clone(), &namespace, &server_api_resource);
+    server_api
+        .patch(
+            &server_name,
+            &PatchParams::apply("stellar-operator").force(),
+            &Patch::Apply(&server_obj),
+        )
+        .await?;
+
+    // 2. Create Linkerd ServerAuthorization resource
+    // Enforce STRICT mTLS by requiring unauthenticated clients to be denied
+    let mut auth_spec = json!({
+        "server": {
+            "name": server_name
+        },
+        "client": {
+            "meshTLS": {
+                "serviceAccounts": [
+                    { "name": "*" } // Allow all mesh identities in strict mode
+                ]
+            }
+        }
+    });
+
+    // If policy_mode is "deny", we could restrict even further
+    if linkerd_config.policy_mode == "deny" {
+        auth_spec["client"]["unauthenticated"] = json!(false);
+    }
+
+    let auth = json!({
+        "apiVersion": "policy.linkerd.io/v1alpha1",
+        "kind": "ServerAuthorization",
+        "metadata": {
+            "name": auth_name,
+            "namespace": namespace,
+            "ownerReferences": [{
+                "apiVersion": "stellar.org/v1alpha1",
+                "kind": "StellarNode",
+                "name": node.name_any(),
+                "uid": node.metadata.uid.as_ref().unwrap_or(&"".to_string()),
+                "controller": true,
+                "blockOwnerDeletion": true
+            }]
+        },
+        "spec": auth_spec
+    });
+
+    let auth_api_resource = ApiResource {
+        group: "policy.linkerd.io".to_string(),
+        version: "v1alpha1".to_string(),
+        api_version: "policy.linkerd.io/v1alpha1".to_string(),
+        kind: "ServerAuthorization".to_string(),
+        plural: "serverauthorizations".to_string(),
+    };
+
+    let auth_obj = DynamicObject::new(&auth_name, &auth_api_resource)
+        .within(&namespace)
+        .data(auth);
+
+    let auth_api: Api<DynamicObject> =
+        Api::namespaced_with(client.clone(), &namespace, &auth_api_resource);
+    auth_api
+        .patch(
+            &auth_name,
+            &PatchParams::apply("stellar-operator").force(),
+            &Patch::Apply(&auth_obj),
+        )
+        .await?;
+
+    info!(
+        "Ensured Linkerd mTLS resources for node {} in namespace {}",
+        node.name_any(),
+        namespace
+    );
+    Ok(())
+}
+
 /// Ensure RequestAuthentication for JWT validation (future extension)
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn ensure_request_authentication(client: &Client, node: &StellarNode) -> Result<()> {

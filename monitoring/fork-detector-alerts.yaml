@@ -1,0 +1,118 @@
+---
+# Fork Detection Sidecar — PrometheusRule
+#
+# Fires alerts when the local Stellar Core node's ledger hash diverges from
+# the public anchor majority, indicating a potential network fork.
+#
+# Deploy to the same namespace as your Prometheus instance:
+#   kubectl apply -f monitoring/fork-detector-alerts.yaml -n monitoring
+#
+# Prerequisites:
+#   - Prometheus Operator (kube-prometheus-stack or standalone)
+#   - stellar-fork-detector sidecar deployed and scraped by Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-fork-detector
+  namespace: monitoring
+  labels:
+    app: stellar-operator
+    component: fork-detector
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: stellar.fork_detector.alerts
+      rules:
+        # ── CRITICAL: Fork confirmed ──────────────────────────────────────────
+        # Fires when divergence has persisted for 3+ consecutive ledgers.
+        - alert: StellarForkDetected
+          expr: |
+            stellar_fork_detector_consecutive_diverging_ledgers >= 3
+          for: 0m
+          labels:
+            severity: critical
+            team: stellar-infra
+            component: fork-detector
+          annotations:
+            summary: "Potential network fork detected on {{ $labels.network }} node {{ $labels.node_id }}"
+            description: |
+              The local Stellar Core node ({{ $labels.node_id }}) on network
+              {{ $labels.network }} has had a ledger hash that diverges from the
+              public anchor majority for {{ $value }} consecutive ledger cycles.
+
+              This is a strong signal of a network fork, eclipse attack, or
+              misconfigured quorum set.
+
+              Immediate actions:
+              1. Check local Stellar Core /info: curl http://localhost:11626/info
+              2. Compare ledger hash with public explorers (stellar.expert, stellarbeat.io)
+              3. Check quorum set configuration
+              4. Review network connectivity and peer list
+              5. Check Stellar network status: https://dashboard.stellar.org
+            runbook_url: "https://github.com/stellar/stellar-k8s/blob/main/docs/QUICK_START_PEER_DISCOVERY.md"
+
+        # ── WARNING: Divergence starting ─────────────────────────────────────
+        - alert: StellarForkDivergenceWarning
+          expr: |
+            stellar_fork_detector_consecutive_diverging_ledgers >= 1
+            and
+            stellar_fork_detector_consecutive_diverging_ledgers < 3
+          for: 0m
+          labels:
+            severity: warning
+            team: stellar-infra
+            component: fork-detector
+          annotations:
+            summary: "Ledger hash divergence detected on {{ $labels.network }} node {{ $labels.node_id }}"
+            description: |
+              The local Stellar Core node ({{ $labels.node_id }}) has a ledger
+              hash that differs from the anchor majority for {{ $value }} ledger(s).
+              Monitoring for persistence (alert fires at 3 consecutive ledgers).
+
+        # ── WARNING: Low sync confidence ─────────────────────────────────────
+        - alert: StellarForkLowSyncConfidence
+          expr: |
+            stellar_fork_detector_sync_confidence < 500
+          for: 2m
+          labels:
+            severity: warning
+            team: stellar-infra
+            component: fork-detector
+          annotations:
+            summary: "Low sync confidence on {{ $labels.network }} node {{ $labels.node_id }}"
+            description: |
+              Sync confidence is {{ $value | humanize }}‰ (below 50%).
+              Fewer than half of the anchor nodes agree with the local ledger hash.
+              This may indicate anchor connectivity issues or a developing fork.
+
+        # ── WARNING: No anchors responding ───────────────────────────────────
+        - alert: StellarForkNoAnchorsResponding
+          expr: |
+            stellar_fork_detector_responding_anchors == 0
+          for: 5m
+          labels:
+            severity: warning
+            team: stellar-infra
+            component: fork-detector
+          annotations:
+            summary: "No anchor nodes responding for {{ $labels.network }} node {{ $labels.node_id }}"
+            description: |
+              The fork detector cannot reach any public anchor nodes.
+              Fork detection is degraded — cannot confirm or deny divergence.
+              Check network egress connectivity from the pod.
+
+        # ── INFO: Critical CVE alert ──────────────────────────────────────────
+        - alert: StellarCriticalCVEDetected
+          expr: |
+            increase(stellar_cve_critical_alerts_total[1h]) > 0
+          for: 0m
+          labels:
+            severity: critical
+            team: stellar-infra
+            component: cve-scanner
+          annotations:
+            summary: "Critical CVE detected in operator-managed pods"
+            description: |
+              The CVE scanner has detected one or more critical vulnerabilities
+              in images used by operator-managed pods in the last hour.
+              Run 'kubectl stellar cve list --severity critical' to see affected pods.

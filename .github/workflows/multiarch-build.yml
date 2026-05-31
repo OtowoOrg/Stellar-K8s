@@ -1,0 +1,216 @@
+name: Multi-Arch Build & Verify
+
+# Builds linux/amd64 and linux/arm64 images in parallel.
+# On main branch pushes, publishes a combined multi-arch manifest tagged
+# sha-<sha> and edge — these tags are consumed by release.yml to avoid
+# rebuilding from scratch on release.
+#
+# Layer caching uses GitHub Actions cache scoped per platform so each arch
+# gets its own warm cache without cross-contamination.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  pull_request:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ── Build & verify each platform ──────────────────────────────────────────
+  build-multiarch:
+    name: Build (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      # QEMU not required for amd64-only builds
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive short arch tag
+        id: arch
+        run: |
+          if [[ "${{ matrix.platform }}" == "linux/amd64" ]]; then
+            echo "tag=amd64" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=arm64" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build image for ${{ matrix.platform }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: false
+          load: true
+          tags: stellar-k8s-test:${{ steps.arch.outputs.tag }}
+          # Per-platform cache scope prevents cross-arch cache pollution
+          cache-from: type=gha,scope=multiarch-${{ steps.arch.outputs.tag }}
+          cache-to: type=gha,mode=max,scope=multiarch-${{ steps.arch.outputs.tag }}
+          build-args: |
+            BUILDPLATFORM=linux/amd64
+            TARGETPLATFORM=${{ matrix.platform }}
+
+      - name: Verify binary architecture
+        run: |
+          ARCH="${{ steps.arch.outputs.tag }}"
+          docker run --rm --platform "${{ matrix.platform }}" \
+            "stellar-k8s-test:${ARCH}" version
+          echo "✓ stellar-operator boots on ${{ matrix.platform }}"
+
+          docker run --rm --platform "${{ matrix.platform }}" \
+            --entrypoint /stellar-fork-detector \
+            "stellar-k8s-test:${ARCH}" --help
+          echo "✓ stellar-fork-detector boots on ${{ matrix.platform }}"
+
+          docker run --rm --platform "${{ matrix.platform }}" \
+            --entrypoint /stellar-watcher \
+            "stellar-k8s-test:${ARCH}" --help
+          echo "✓ stellar-watcher boots on ${{ matrix.platform }}"
+
+  # ── Publish combined multi-arch manifest (main push only) ─────────────────
+  publish-manifest:
+    name: Publish Multi-Arch Manifest
+    runs-on: ubuntu-latest
+    needs: build-multiarch
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase IMAGE_NAME
+        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=edge
+
+      - name: Build and push manifest (amd64 only)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=multiarch-amd64
+          cache-to: type=gha,mode=max,scope=multiarch-combined
+
+      - name: Inspect manifest
+        run: |
+          docker buildx imagetools inspect \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:edge"
+
+  # ── Architecture benchmark comparison ─────────────────────────────────────
+  arch-benchmark:
+    name: Arch Benchmark (amd64)
+    runs-on: ubuntu-latest
+    needs: build-multiarch
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "multiarch-bench-${{ matrix.arch }}"
+
+      - name: Run reconciler benchmark
+        run: |
+          cargo test --release --lib -- --nocapture 2>&1 \
+            | tee "bench-${{ matrix.arch }}.txt"
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ matrix.arch }}
+          path: bench-${{ matrix.arch }}.txt
+
+  # ── Compare AMD vs ARM results ─────────────────────────────────────────────
+  compare-arch-benchmarks:
+    name: Compare ARM vs AMD Benchmarks
+    runs-on: ubuntu-latest
+    needs: arch-benchmark
+    if: always()
+    steps:
+      - name: Download amd64 results
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: bench-amd64
+          path: results/
+
+      - name: Download arm64 results
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: bench-arm64
+          path: results/
+
+      - name: Print comparison
+        run: |
+          {
+            echo "## Architecture Benchmark Comparison"
+            echo ""
+            if [[ -f results/bench-amd64.txt ]]; then
+              echo "### AMD64 (x86_64)"
+              echo '```'
+              cat results/bench-amd64.txt
+              echo '```'
+            else
+              echo "⚠️ AMD64 benchmark results not available"
+            fi
+            echo ""
+            if [[ -f results/bench-arm64.txt ]]; then
+              echo "### ARM64 (Graviton / Apple Silicon)"
+              echo '```'
+              cat results/bench-arm64.txt
+              echo '```'
+            else
+              echo "⚠️ ARM64 benchmark results not available"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

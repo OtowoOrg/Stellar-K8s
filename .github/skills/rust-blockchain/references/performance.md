@@ -12,10 +12,10 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion, Benchmark
 
 fn benchmark_transaction_validation(c: &mut Criterion) {
     let mut group = c.benchmark_group("transaction_validation");
-    
+
     for size in [10, 100, 1000].iter() {
         let txs = generate_transactions(*size);
-        
+
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| {
                 for tx in &txs {
@@ -52,7 +52,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 async fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
-    
+
     run_blockchain().await;
 }
 ```
@@ -73,15 +73,15 @@ impl BatchWriter {
     pub fn write(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         self.batch.put(key, value);
         self.size += key.len() + value.len();
-        
+
         // Auto-flush when batch gets large
         if self.size >= self.max_batch_size {
             self.flush()?;
         }
-        
+
         Ok(())
     }
-    
+
     pub fn flush(&mut self) -> Result<()> {
         if !self.batch.is_empty() {
             self.db.write(self.batch)?;
@@ -95,13 +95,13 @@ impl BatchWriter {
 // Usage
 pub async fn store_block(&self, block: &Block) -> Result<()> {
     let mut writer = BatchWriter::new(self.db.clone());
-    
+
     // Store block header
     writer.write(
         format!("block:{}", block.height).as_bytes(),
         &bincode::serialize(&block.header)?,
     )?;
-    
+
     // Store transactions
     for (idx, tx) in block.transactions.iter().enumerate() {
         writer.write(
@@ -109,7 +109,7 @@ pub async fn store_block(&self, block: &Block) -> Result<()> {
             &bincode::serialize(tx)?,
         )?;
     }
-    
+
     writer.flush()?;
     Ok(())
 }
@@ -133,24 +133,24 @@ impl TransactionIndex {
             bloom: RwLock::new(bloom),
         }
     }
-    
+
     pub async fn contains(&self, tx_hash: &[u8; 32]) -> Result<bool> {
         // Quick check with bloom filter
         if !self.bloom.read().await.check(tx_hash) {
             return Ok(false);  // Definitely not present
         }
-        
+
         // Confirm with database
         let key = format!("tx:{}", hex::encode(tx_hash));
         Ok(self.db.get(key.as_bytes())?.is_some())
     }
-    
+
     pub async fn insert(&self, tx_hash: [u8; 32], tx: &Transaction) -> Result<()> {
         self.bloom.write().await.set(&tx_hash);
-        
+
         let key = format!("tx:{}", hex::encode(tx_hash));
         self.db.put(key.as_bytes(), bincode::serialize(tx)?)?;
-        
+
         Ok(())
     }
 }
@@ -173,13 +173,13 @@ impl CachedStateDB {
             cache: RwLock::new(LruCache::new(cache_size.try_into().unwrap())),
         }
     }
-    
+
     pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         // Check cache first
         if let Some(value) = self.cache.write().await.get(key) {
             return Ok(Some(value.clone()));
         }
-        
+
         // Load from database
         if let Some(value) = self.db.get(key)? {
             // Update cache
@@ -189,14 +189,14 @@ impl CachedStateDB {
             Ok(None)
         }
     }
-    
+
     pub async fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         // Update cache
         self.cache.write().await.put(key.to_vec(), value.to_vec());
-        
+
         // Write to database
         self.db.put(key, value)?;
-        
+
         Ok(())
     }
 }
@@ -218,9 +218,9 @@ impl ParallelExecutor {
     pub async fn execute_block(&self, transactions: &[Transaction]) -> Result<Vec<Receipt>> {
         // Analyze dependencies
         let groups = self.partition_transactions(transactions);
-        
+
         let mut receipts = Vec::with_capacity(transactions.len());
-        
+
         for group in groups {
             // Execute independent transactions in parallel
             let group_receipts: Vec<_> = group
@@ -230,21 +230,21 @@ impl ParallelExecutor {
                     self.execute_transaction(tx)
                 })
                 .collect::<Result<Vec<_>>>()?;
-            
+
             receipts.extend(group_receipts);
         }
-        
+
         Ok(receipts)
     }
-    
+
     fn partition_transactions(&self, txs: &[Transaction]) -> Vec<Vec<usize>> {
         let mut groups = vec![];
         let mut current_group = vec![];
         let mut touched_accounts = HashSet::new();
-        
+
         for (idx, tx) in txs.iter().enumerate() {
             let accounts = vec![tx.from, tx.to];
-            
+
             // Check if any account in this tx conflicts with current group
             if accounts.iter().any(|a| touched_accounts.contains(a)) {
                 // Start new group
@@ -252,15 +252,15 @@ impl ParallelExecutor {
                 current_group = vec![];
                 touched_accounts.clear();
             }
-            
+
             current_group.push(idx);
             touched_accounts.extend(accounts);
         }
-        
+
         if !current_group.is_empty() {
             groups.push(current_group);
         }
-        
+
         groups
     }
 }
@@ -275,12 +275,12 @@ pub fn verify_block_parallel(block: &Block) -> Result<()> {
         .par_iter()
         .map(|tx| verify_signature(tx))
         .collect();
-    
+
     // Check for any failures
     for result in results {
         result?;
     }
-    
+
     Ok(())
 }
 
@@ -292,20 +292,20 @@ pub fn verify_block_batch(block: &Block) -> Result<()> {
         .iter()
         .map(|tx| bincode::serialize(tx).unwrap())
         .collect();
-    
+
     let signatures: Vec<_> = block.transactions
         .iter()
         .map(|tx| &tx.signature)
         .collect();
-    
+
     let public_keys: Vec<_> = block.transactions
         .iter()
         .map(|tx| &tx.from)
         .collect();
-    
+
     verify_batch(&messages, &signatures, &public_keys)
         .map_err(|_| Error::BatchVerificationFailed)?;
-    
+
     Ok(())
 }
 ```
@@ -331,11 +331,11 @@ impl BlockHeader {
     pub fn to_bytes(&self) -> &[u8] {
         self.as_bytes()
     }
-    
+
     pub fn from_bytes(bytes: &[u8]) -> Result<&Self> {
         Self::read_from(bytes).ok_or(Error::InvalidHeader)
     }
-    
+
     pub fn hash(&self) -> [u8; 32] {
         blake3::hash(self.as_bytes()).into()
     }
@@ -355,11 +355,11 @@ impl<'arena> BlockProcessor<'arena> {
     pub fn process_block(&self, block: &Block) -> Result<Receipt> {
         // Allocate temporary data in arena
         let temp_state = self.arena.alloc(State::new());
-        
+
         for tx in &block.transactions {
             self.process_transaction(tx, temp_state)?;
         }
-        
+
         // Arena automatically freed when dropped
         Ok(Receipt::default())
     }
@@ -369,13 +369,13 @@ impl<'arena> BlockProcessor<'arena> {
 pub fn process_blocks(blocks: &[Block]) -> Result<Vec<Receipt>> {
     let arena = Bump::new();
     let processor = BlockProcessor { arena: &arena };
-    
+
     let mut receipts = vec![];
     for block in blocks {
         receipts.push(processor.process_block(block)?);
         arena.reset();  // Reuse arena for next block
     }
-    
+
     Ok(receipts)
 }
 ```
@@ -408,7 +408,7 @@ impl PeerPool {
     pub async fn get_connection(&self) -> Result<PeerConnection> {
         self.pool.get().await.map_err(Into::into)
     }
-    
+
     pub async fn broadcast(&self, message: &NetworkMessage) -> Result<()> {
         let futures: Vec<_> = (0..self.pool.status().size)
             .map(|_| async {
@@ -416,7 +416,7 @@ impl PeerPool {
                 conn.send(message).await
             })
             .collect();
-        
+
         futures::future::try_join_all(futures).await?;
         Ok(())
     }
@@ -436,29 +436,29 @@ pub struct MessageBatcher {
 impl MessageBatcher {
     pub async fn add_message(&mut self, msg: NetworkMessage) -> Result<()> {
         self.pending.push(msg);
-        
+
         let should_flush = self.pending.len() >= self.max_batch_size
             || self.last_flush.elapsed() >= self.flush_interval;
-        
+
         if should_flush {
             self.flush().await?;
         }
-        
+
         Ok(())
     }
-    
+
     async fn flush(&mut self) -> Result<()> {
         if self.pending.is_empty() {
             return Ok(());
         }
-        
+
         let batch = BatchMessage {
             messages: std::mem::take(&mut self.pending),
         };
-        
+
         self.network.broadcast(&batch).await?;
         self.last_flush = Instant::now();
-        
+
         Ok(())
     }
 }
@@ -493,9 +493,9 @@ pub fn decompress_block(data: &[u8]) -> Result<Block> {
 // Avoid spawning too many tasks
 pub async fn process_transactions_optimized(txs: &[Transaction]) -> Result<Vec<Receipt>> {
     const BATCH_SIZE: usize = 100;
-    
+
     let mut handles = vec![];
-    
+
     for chunk in txs.chunks(BATCH_SIZE) {
         let chunk = chunk.to_vec();
         let handle = tokio::spawn(async move {
@@ -505,12 +505,12 @@ pub async fn process_transactions_optimized(txs: &[Transaction]) -> Result<Vec<R
         });
         handles.push(handle);
     }
-    
+
     let mut results = vec![];
     for handle in handles {
         results.extend(handle.await??);
     }
-    
+
     Ok(results)
 }
 ```
@@ -588,13 +588,13 @@ impl BlockchainMetrics {
     pub fn new(registry: &Registry) -> Result<Self> {
         let blocks_processed = Counter::new("blocks_processed_total", "Total blocks")?;
         registry.register(Box::new(blocks_processed.clone()))?;
-        
+
         let transaction_latency = Histogram::with_opts(
             HistogramOpts::new("tx_latency_seconds", "Transaction latency")
                 .buckets(vec![0.001, 0.01, 0.1, 1.0, 10.0])
         )?;
         registry.register(Box::new(transaction_latency.clone()))?;
-        
+
         Ok(Self {
             blocks_processed,
             transaction_latency,
@@ -605,12 +605,12 @@ impl BlockchainMetrics {
 // Usage
 pub async fn process_block(&self, block: Block) -> Result<()> {
     let start = Instant::now();
-    
+
     // Process block...
-    
+
     self.metrics.blocks_processed.inc();
     self.metrics.transaction_latency.observe(start.elapsed().as_secs_f64());
-    
+
     Ok(())
 }
 ```

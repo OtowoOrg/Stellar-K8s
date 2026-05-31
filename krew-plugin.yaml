@@ -8,12 +8,12 @@ spec:
   description: |
     A kubectl plugin for managing StellarNode resources in Kubernetes clusters.
     Provides commands to list nodes, view logs, and check sync status.
-    
+
     Features:
     - List all StellarNode resources across namespaces
     - View logs from pods associated with StellarNode resources
     - Check sync status and health of Stellar nodes
-    
+
     Requires the Stellar-K8s operator to be installed in your cluster.
   homepage: https://github.com/stellar/stellar-k8s
   # NOTE: SHA256 placeholders must be replaced with actual hashes before publishing to Krew.
@@ -65,7 +65,7 @@ spec:
     1. The Stellar-K8s operator to be installed in your cluster
     2. StellarNode CRD to be available
     3. kubectl to be installed and configured
-    
+
     To install the operator:
       helm repo add stellar-k8s https://stellar.github.io/stellar-k8s
       helm install stellar-operator stellar-k8s/stellar-operator --namespace stellar-system --create-namespace

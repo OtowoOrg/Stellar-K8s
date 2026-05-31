@@ -1,0 +1,27 @@
+id: stellar-operator-api-exposure
+
+info:
+  name: Stellar-K8s Operator API Exposure
+  author: blackboxai
+  severity: medium
+  description: Detects exposed Stellar-K8s operator REST API endpoints
+  tags: k8s,operator,api,stellar
+
+http:
+  - method: GET
+    path:
+      - \"{{BaseURL}}/metrics\"
+      - \"{{BaseURL}}/healthz\"
+      - \"{{BaseURL}}/debug/pprof/heap\"
+      - \"{{BaseURL}}/status\"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - \"stellar-operator\"
+          - \"kube.rs\"
+        part: body
+      - type: status
+        status:
+          - 200

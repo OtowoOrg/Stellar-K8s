@@ -1,0 +1,49 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-operator-security-alerts
+  namespace: stellar-system
+spec:
+  groups:
+  - name: security.rules
+    rules:
+    - alert: OperatorHighCPU
+      expr: operator_cpu_usage > 0.8
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High CPU usage on operator pod {{ $labels.pod }}"
+        description: "Operator CPU > 80% for 5m - potential DoS or resource exhaustion"
+    
+    - alert: OperatorMemoryLeak
+      expr: operator_memory_usage > 0.9
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High memory on operator {{ $labels.pod }}"
+    
+    - alert: WebhookSlowResponse
+      expr: webhook_request_duration > 1
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Webhook slow (p95 >1s)"
+    
+    - alert: CVEHighVulnOpen
+      expr: cve_high_count > 0
+      for: 1h
+      labels:
+        severity: critical
+      annotations:
+        summary: "High severity CVE detected"
+    
+    - alert: FailedReconciliationsHigh
+      expr: reconciliation_failures_rate > 10
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High reconciliation failures - potential security misconfig"

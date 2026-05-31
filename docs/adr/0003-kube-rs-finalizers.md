@@ -99,7 +99,7 @@ The cleanup function follows dependency order:
 
 ### Owner References
 **Pros**: Native Kubernetes mechanism, automatic cleanup
-**Cons**: 
+**Cons**:
 - Limited to same namespace
 - Cannot handle cross-namespace resources
 - Less granular control over cleanup order

@@ -1,0 +1,197 @@
+---
+# Byzantine Monitoring — PrometheusRule
+#
+# This rule aggregates ledger hash observations from all deployed stellar-watcher
+# instances and fires an alert when more than 20% of watchers disagree on the
+# current ledger hash — a strong signal of a Byzantine network partition.
+#
+# Deploy to the same namespace as your Prometheus instance:
+#   kubectl apply -f monitoring/byzantine-alerts.yaml -n monitoring
+#
+# Prerequisites:
+#   - Prometheus Operator (kube-prometheus-stack or standalone)
+#   - stellar-watcher instances deployed and scraped by Prometheus
+#   - All watchers must have the label: app=stellar-watcher
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-byzantine-monitoring
+  namespace: monitoring
+  labels:
+    app: stellar-operator
+    component: byzantine-monitoring
+    # Required by kube-prometheus-stack to pick up this rule:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    # -------------------------------------------------------------------------
+    # Group 1: Recording rules — pre-compute divergence ratio for efficiency
+    # -------------------------------------------------------------------------
+    - name: stellar.byzantine.recording
+      interval: 15s
+      rules:
+        # Count how many watchers are active per network (reported in last 60s).
+        - record: stellar:watcher:active_count
+          expr: |
+            count by (network) (
+              (time() - stellar_watcher_last_poll_timestamp_seconds) < 60
+            )
+
+        # Count watchers per (network, hash) combination — only active watchers.
+        - record: stellar:watcher:hash_votes
+          expr: |
+            count by (network, hash) (
+              stellar_watcher_ledger_hash == 1
+            )
+
+        # Identify the majority hash per network (the hash with the most votes).
+        # We use topk(1, ...) to get the single most-voted hash per network.
+        - record: stellar:watcher:majority_hash_votes
+          expr: |
+            max by (network) (
+              stellar:watcher:hash_votes
+            )
+
+        # Count watchers that are NOT on the majority hash.
+        # A watcher is diverging if its hash vote count is less than the majority.
+        - record: stellar:watcher:diverging_count
+          expr: |
+            (
+              count by (network) (stellar_watcher_ledger_hash == 1)
+              -
+              max by (network) (stellar:watcher:hash_votes)
+            )
+
+        # Divergence ratio: fraction of watchers on a non-majority hash.
+        - record: stellar:watcher:divergence_ratio
+          expr: |
+            (
+              stellar:watcher:diverging_count
+              /
+              count by (network) (stellar_watcher_ledger_hash == 1)
+            )
+
+    # -------------------------------------------------------------------------
+    # Group 2: Alerting rules
+    # -------------------------------------------------------------------------
+    - name: stellar.byzantine.alerts
+      rules:
+        # ── PRIMARY ALERT ────────────────────────────────────────────────────
+        # Fires when >20% of watchers see a different ledger hash than the
+        # majority. This indicates a Byzantine partition: some vantage points
+        # are seeing a different consensus state than others.
+        - alert: StellarByzantinePartitionDetected
+          expr: |
+            stellar:watcher:divergence_ratio > 0.20
+          for: 1m
+          labels:
+            severity: critical
+            team: stellar-infra
+            component: byzantine-monitoring
+          annotations:
+            summary: "Byzantine partition detected on {{ $labels.network }}"
+            description: |
+              {{ $value | humanizePercentage }} of watchers on the
+              {{ $labels.network }} network see a different ledger hash than
+              the majority. This may indicate a network partition, eclipse
+              attack, or consensus failure.
+
+              Divergence ratio: {{ $value | humanizePercentage }}
+              Threshold: 20%
+
+              Immediate actions:
+              1. Check watcher logs: kubectl logs -l app=stellar-watcher -n stellar-system
+              2. Compare ledger hashes across regions in Grafana
+              3. Check Stellar Core /info on each validator
+              4. Verify network connectivity between regions
+              5. Check Stellar network status: https://dashboard.stellar.org
+            runbook_url: "https://github.com/stellar/stellar-k8s/blob/main/docs/byzantine-monitoring.md#runbook"
+            dashboard_url: "https://grafana.example.com/d/byzantine-monitoring"
+
+        # ── WARNING: Approaching threshold ───────────────────────────────────
+        # Early warning at 10% divergence — investigate before it escalates.
+        - alert: StellarByzantinePartitionWarning
+          expr: |
+            stellar:watcher:divergence_ratio > 0.10
+            and
+            stellar:watcher:divergence_ratio <= 0.20
+          for: 2m
+          labels:
+            severity: warning
+            team: stellar-infra
+            component: byzantine-monitoring
+          annotations:
+            summary: "Possible Byzantine partition forming on {{ $labels.network }}"
+            description: |
+              {{ $value | humanizePercentage }} of watchers on the
+              {{ $labels.network }} network see a different ledger hash.
+              This is below the 20% alert threshold but warrants investigation.
+
+              Divergence ratio: {{ $value | humanizePercentage }}
+            runbook_url: "https://github.com/stellar/stellar-k8s/blob/main/docs/byzantine-monitoring.md#runbook"
+
+        # ── Watcher availability ──────────────────────────────────────────────
+        # Alert if fewer than 3 watchers are active — insufficient coverage
+        # to reliably detect Byzantine partitions.
+        - alert: StellarByzantineWatcherCoverageInsufficient
+          expr: |
+            stellar:watcher:active_count < 3
+          for: 5m
+          labels:
+            severity: warning
+            team: stellar-infra
+            component: byzantine-monitoring
+          annotations:
+            summary: "Insufficient Byzantine watcher coverage on {{ $labels.network }}"
+            description: |
+              Only {{ $value }} watcher(s) are active on the {{ $labels.network }}
+              network. At least 3 geographically dispersed watchers are required
+              for reliable Byzantine partition detection.
+
+              Deploy additional watchers using the Helm chart:
+                helm upgrade stellar-operator charts/stellar-operator \
+                  --set byzantineWatcher.enabled=true \
+                  --set byzantineWatcher.regions[0].cloud=aws \
+                  --set byzantineWatcher.regions[0].region=us-east-1
+            runbook_url: "https://github.com/stellar/stellar-k8s/blob/main/docs/byzantine-monitoring.md#deployment"
+
+        # ── Watcher stale ─────────────────────────────────────────────────────
+        # Alert if a watcher has not polled successfully in the last 2 minutes.
+        - alert: StellarByzantineWatcherStale
+          expr: |
+            (time() - stellar_watcher_last_poll_timestamp_seconds) > 120
+          for: 0m
+          labels:
+            severity: warning
+            team: stellar-infra
+            component: byzantine-monitoring
+          annotations:
+            summary: "Byzantine watcher {{ $labels.watcher_id }} is stale"
+            description: |
+              Watcher {{ $labels.watcher_id }} ({{ $labels.region }}/{{ $labels.cloud }})
+              has not successfully polled its Stellar Core endpoint in
+              {{ $value | humanizeDuration }}.
+
+              Check the watcher pod:
+                kubectl logs -l app=stellar-watcher,watcher-id={{ $labels.watcher_id }}
+            runbook_url: "https://github.com/stellar/stellar-k8s/blob/main/docs/byzantine-monitoring.md#troubleshooting"
+
+        # ── Watcher poll errors ───────────────────────────────────────────────
+        # Alert if a watcher is experiencing a high rate of poll errors.
+        - alert: StellarByzantineWatcherPollErrors
+          expr: |
+            rate(stellar_watcher_poll_errors_total[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            team: stellar-infra
+            component: byzantine-monitoring
+          annotations:
+            summary: "Byzantine watcher {{ $labels.watcher_id }} has high poll error rate"
+            description: |
+              Watcher {{ $labels.watcher_id }} ({{ $labels.region }}/{{ $labels.cloud }})
+              is failing to poll its Stellar Core endpoint at a rate of
+              {{ $value | humanize }} errors/second.
+
+              This may indicate the Stellar Core node is unreachable or unhealthy.
+            runbook_url: "https://github.com/stellar/stellar-k8s/blob/main/docs/byzantine-monitoring.md#troubleshooting"

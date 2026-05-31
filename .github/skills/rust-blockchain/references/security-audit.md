@@ -32,10 +32,10 @@ pub fn add_reward(&mut self, amount: u128) {
 // ❌ BAD: State updated after external call
 pub fn withdraw(&mut self, amount: u128) -> Result<()> {
     let balance = self.balances.get(&sender)?;
-    
+
     // External call before state update
     self.call_external(sender, amount)?;
-    
+
     // State update after - vulnerable to reentrancy!
     self.balances.insert(sender, balance - amount);
     Ok(())
@@ -48,10 +48,10 @@ pub fn withdraw(&mut self, amount: u128) -> Result<()> {
     if balance < amount {
         return Err(Error::InsufficientBalance);
     }
-    
+
     // Effects
     self.balances.insert(sender, balance - amount);
-    
+
     // Interactions
     self.call_external(sender, amount)?;
     Ok(())
@@ -74,7 +74,7 @@ impl ReentrancyGuard {
 
 pub fn withdraw(&mut self, amount: u128) -> Result<()> {
     let _guard = self.reentrancy_guard.lock()?;
-    
+
     let balance = self.balances.get(&sender)?;
     self.balances.insert(sender, balance - amount);
     self.call_external(sender, amount)?;
@@ -105,13 +105,13 @@ pub fn commit_bid(&mut self, commitment: [u8; 32]) {
 
 pub fn reveal_bid(&mut self, nft_id: u64, price: u128, nonce: [u8; 32]) -> Result<()> {
     let commitment = self.commitments.get(&sender)?;
-    
+
     // Verify commitment
     let expected_hash = blake3::hash(&bincode::serialize(&(nft_id, price, nonce))?);
     if commitment.hash != expected_hash {
         return Err(Error::InvalidCommitment);
     }
-    
+
     // Process bid
     self.process_bid(nft_id, price)?;
     Ok(())
@@ -173,17 +173,17 @@ pub fn propose_config_change(&mut self, config: Config) -> Result<[u8; 32]> {
 
 pub fn approve_proposal(&mut self, proposal_id: [u8; 32]) -> Result<()> {
     let proposal = self.proposals.get_mut(&proposal_id)?;
-    
+
     if !self.signers.contains(&sender) {
         return Err(Error::NotSigner);
     }
-    
+
     proposal.approvals.push(sender);
-    
+
     if proposal.approvals.len() >= self.threshold {
         self.execute_proposal(proposal_id)?;
     }
-    
+
     Ok(())
 }
 ```
@@ -205,12 +205,12 @@ pub fn distribute_rewards(
     batch_size: usize,
 ) -> Result<bool> {
     let end_index = (start_index + batch_size).min(self.recipients.len());
-    
+
     for i in start_index..end_index {
         let recipient = self.recipients[i];
         self.transfer(recipient, self.reward_amount)?;
     }
-    
+
     Ok(end_index >= self.recipients.len())  // Returns true if done
 }
 
@@ -280,19 +280,19 @@ pub fn execute_transaction(&mut self, tx: SignedTransaction, sig: Signature) -> 
     if tx.chain_id != self.chain_id {
         return Err(Error::WrongChain);
     }
-    
+
     // Verify nonce
     let expected_nonce = self.get_nonce(&tx.from)?;
     if tx.nonce != expected_nonce {
         return Err(Error::InvalidNonce);
     }
-    
+
     // Verify signature
     self.verify_signature(&tx, &sig)?;
-    
+
     // Increment nonce to prevent replay
     self.set_nonce(&tx.from, expected_nonce + 1)?;
-    
+
     self.apply_transaction(tx)?;
     Ok(())
 }
@@ -334,7 +334,7 @@ impl RateLimiter {
     pub fn check_rate_limit(&mut self, peer: PeerId) -> Result<()> {
         let now = Instant::now();
         let requests = self.requests.entry(peer).or_default();
-        
+
         // Remove old requests outside window
         while requests.front()
             .map(|t| now.duration_since(*t) > self.window)
@@ -342,12 +342,12 @@ impl RateLimiter {
         {
             requests.pop_front();
         }
-        
+
         // Check limit
         if requests.len() >= self.max_requests {
             return Err(Error::RateLimitExceeded);
         }
-        
+
         requests.push_back(now);
         Ok(())
     }
@@ -365,19 +365,19 @@ pub fn handle_network_message(&mut self, msg: NetworkMessage) -> Result<()> {
             if block.transactions.len() > MAX_TXS_PER_BLOCK {
                 return Err(Error::TooManyTransactions);
             }
-            
+
             if bincode::serialize(&block)?.len() > MAX_BLOCK_SIZE {
                 return Err(Error::BlockTooLarge);
             }
-            
+
             // Validate block header
             if block.height == 0 || block.height > self.current_height + 1 {
                 return Err(Error::InvalidBlockHeight);
             }
-            
+
             // Verify signatures
             self.verify_block_signature(&block)?;
-            
+
             self.process_block(block)?;
         }
         _ => {}
@@ -403,17 +403,17 @@ impl PeerManager {
                 if self.inbound_peers.len() >= self.max_inbound {
                     return Err(Error::TooManyInboundPeers);
                 }
-                
+
                 // Limit peers from same subnet
                 let subnet = self.get_subnet(&peer);
                 let same_subnet_count = self.inbound_peers.iter()
                     .filter(|p| self.get_subnet(p) == subnet)
                     .count();
-                
+
                 if same_subnet_count >= MAX_PEERS_PER_SUBNET {
                     return Err(Error::SubnetLimitExceeded);
                 }
-                
+
                 self.inbound_peers.insert(peer);
             }
             Direction::Outbound => {
@@ -445,17 +445,17 @@ pub fn validate_state_transition(
     if computed_root != new_state.root {
         return Err(Error::InvalidStateRoot);
     }
-    
+
     // Verify all transactions were applied correctly
     let mut simulated_state = old_state.clone();
     for tx in transactions {
         self.apply_transaction(&mut simulated_state, tx)?;
     }
-    
+
     if simulated_state != *new_state {
         return Err(Error::StateTransitionMismatch);
     }
-    
+
     Ok(())
 }
 ```
@@ -477,11 +477,11 @@ impl<'a> StateTransaction<'a> {
             committed: false,
         }
     }
-    
+
     pub fn set(&mut self, key: Key, value: Value) {
         self.changes.push(StateChange::Set { key, value });
     }
-    
+
     pub fn commit(mut self) -> Result<()> {
         for change in &self.changes {
             match change {
@@ -516,7 +516,7 @@ impl<'a> Drop for StateTransaction<'a> {
 #[cfg(test)]
 mod security_tests {
     use proptest::prelude::*;
-    
+
     proptest! {
         #[test]
         fn test_no_overflow_in_arithmetic(
@@ -524,14 +524,14 @@ mod security_tests {
             b in 0u128..u128::MAX / 2,
         ) {
             let account = Account { balance: a };
-            
+
             // All operations should either succeed or return error
             let result = account.add_balance(b);
             assert!(result.is_ok() || result.is_err());
-            
+
             // Should never panic
         }
-        
+
         #[test]
         fn test_signature_always_verifiable(
             nonce in any::<u64>(),
@@ -540,7 +540,7 @@ mod security_tests {
             let keypair = Keypair::generate(&mut OsRng);
             let tx = Transaction { nonce, value, /* ... */ };
             let signature = keypair.sign(&tx);
-            
+
             // Signature must verify
             assert!(verify_signature(&tx, &signature, &keypair.public()).is_ok());
         }
@@ -558,7 +558,7 @@ use libfuzzer_sys::fuzz_target;
 fuzz_target!(|data: &[u8]| {
     if let Ok(tx) = bincode::deserialize::<Transaction>(data) {
         let mut blockchain = Blockchain::new_test();
-        
+
         // Should never panic, even with malicious input
         let _ = blockchain.validate_transaction(&tx);
     }

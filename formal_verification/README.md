@@ -4,9 +4,9 @@
 
 This directory contains TLA+ formal models and documentation for formal verification of the StellarNode Kubernetes operator reconciler. The specifications prove critical correctness properties including **safety** (invalid states cannot occur) and **liveness** (valid operations eventually complete).
 
-**Status**: ✅ Verification Complete  
-**All Safety Properties**: ✅ Proven  
-**All Liveness Properties**: ✅ Proven  
+**Status**: ✅ Verification Complete
+**All Safety Properties**: ✅ Proven
+**All Liveness Properties**: ✅ Proven
 **Edge Cases Covered**: ✅ 12/12
 
 ## Quick Start
@@ -210,7 +210,7 @@ Location: [src/crd/stellar_node.rs](../src/crd/stellar_node.rs#L691)
 ```rust
 pub fn validate_service_mesh(service_mesh: &ServiceMeshConfig) -> Result<(), Vec<SpecValidationError>> {
     let mut errors = Vec::new();
-    
+
     if let Some(ref istio) = service_mesh.istio {
         if let Some(ref cb) = istio.circuit_breaker {
             if cb.consecutive_errors < 1 {
@@ -222,7 +222,7 @@ pub fn validate_service_mesh(service_mesh: &ServiceMeshConfig) -> Result<(), Vec
             }
         }
     }
-    
+
     if errors.is_empty() { Ok(()) } else { Err(errors) }
 }
 ```
@@ -336,7 +336,7 @@ It **proves** the **architectural design** is sound.
 
 ### Q: Why use TLA+ instead of QuickCheck/property testing?
 
-**A**: 
+**A**:
 - TLA+ proves properties for **all possible behaviors**, not just sampled executions
 - Property testing only finds bugs present in test scenarios
 - TLA+ finds bugs in corner cases humans don't think to test (like our 12 edge cases)
@@ -354,7 +354,7 @@ If a change affects these, update both the model and the code.
 
 ### Q: How often should we re-verify?
 
-**A**: 
+**A**:
 - Re-verify after **major architectural changes**
 - Re-verify if **adding new resource types**
 - Re-verify if **changing reconciliation order**
@@ -362,7 +362,7 @@ If a change affects these, update both the model and the code.
 
 ### Q: What if TLC finds a counterexample?
 
-**A**: 
+**A**:
 1. Analyze the trace (TLC produces detailed execution path)
 2. Determine if it's a real bug or model limitation
 3. Fix the code or relax the property
@@ -418,7 +418,7 @@ For questions about the formal verification:
 
 ---
 
-**Last Updated**: February 26, 2026  
-**Verification Status**: ✅ Complete  
-**All Properties**: ✅ Proven  
+**Last Updated**: February 26, 2026
+**Verification Status**: ✅ Complete
+**All Properties**: ✅ Proven
 **TLC Configuration**: Safe & Liveness ready

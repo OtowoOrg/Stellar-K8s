@@ -37,7 +37,10 @@ impl InfraSummary {
 
         match generations.len() {
             0 => "unknown".to_string(),
-            1 => generations.into_iter().next().unwrap_or_else(|| "unknown".to_string()),
+            1 => generations
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| "unknown".to_string()),
             _ => "mixed".to_string(),
         }
     }
@@ -47,7 +50,10 @@ impl InfraSummary {
     }
 }
 
-pub async fn resolve_stellar_node_infra(client: &Client, node: &StellarNode) -> Result<InfraSummary> {
+pub async fn resolve_stellar_node_infra(
+    client: &Client,
+    node: &StellarNode,
+) -> Result<InfraSummary> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let label_selector = format!(
         "app.kubernetes.io/instance={},app.kubernetes.io/name=stellar-node",
@@ -157,7 +163,12 @@ pub fn infer_hardware_generation(feature_labels: &BTreeMap<String, String>) -> S
         (Some("arm") | Some("0x41"), _, _) => "ARM (generation unknown)".to_string(),
         _ => match (vendor, family, model) {
             (Some(vendor), Some(family), Some(model)) => {
-                format!("{} family {} model {}", normalize_vendor(&vendor), family, model)
+                format!(
+                    "{} family {} model {}",
+                    normalize_vendor(&vendor),
+                    family,
+                    model
+                )
             }
             _ => "unknown".to_string(),
         },

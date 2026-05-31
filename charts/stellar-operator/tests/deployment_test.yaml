@@ -186,3 +186,41 @@ tests:
           path: spec.template.spec.imagePullSecrets
           content:
             name: my-registry-secret
+
+  - it: applies extraAnnotations to deployment metadata
+    set:
+      extraAnnotations:
+        custom.io/env: production
+        custom.io/team: platform
+    asserts:
+      - equal:
+          path: metadata.annotations["custom.io/env"]
+          value: production
+      - equal:
+          path: metadata.annotations["custom.io/team"]
+          value: platform
+
+  - it: applies extraAnnotations to pod spec template metadata
+    set:
+      extraAnnotations:
+        custom.io/env: production
+        custom.io/team: platform
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["custom.io/env"]
+          value: production
+      - equal:
+          path: spec.template.metadata.annotations["custom.io/team"]
+          value: platform
+
+  - it: merges podAnnotations and extraAnnotations in pod spec
+    set:
+      extraAnnotations:
+        custom.io/env: production
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/scrape"]
+          value: "true"
+      - equal:
+          path: spec.template.metadata.annotations["custom.io/env"]
+          value: production

@@ -34,16 +34,16 @@ log_error() {
 
 check_dependencies() {
     log_info "Checking dependencies..."
-    
+
     local missing=()
-    
+
     command -v kind >/dev/null 2>&1 || missing+=("kind")
     command -v kubectl >/dev/null 2>&1 || missing+=("kubectl")
     command -v k6 >/dev/null 2>&1 || missing+=("k6")
     command -v docker >/dev/null 2>&1 || missing+=("docker")
     command -v jq >/dev/null 2>&1 || missing+=("jq")
     command -v python3 >/dev/null 2>&1 || missing+=("python3")
-    
+
     if [ ${#missing[@]} -gt 0 ]; then
         log_error "Missing dependencies: ${missing[*]}"
         log_info "Install them with:"
@@ -58,13 +58,13 @@ check_dependencies() {
         done
         exit 1
     fi
-    
+
     log_info "✅ All dependencies installed"
 }
 
 setup_cluster() {
     log_info "Setting up kind cluster..."
-    
+
     # Check if cluster already exists
     if kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
         log_warn "Cluster '${CLUSTER_NAME}' already exists. Delete it? (y/n)"
@@ -76,7 +76,7 @@ setup_cluster() {
             return 0
         fi
     fi
-    
+
     # Create kind cluster
     cat > /tmp/kind-config.yaml <<EOF
 kind: Cluster
@@ -90,31 +90,31 @@ nodes:
   - role: worker
   - role: worker
 EOF
-    
+
     kind create cluster --name "$CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 5m
-    
+
     log_info "✅ Kind cluster created"
 }
 
 build_and_deploy() {
     log_info "Building operator..."
-    
+
     cd "$PROJECT_ROOT"
     cargo build --release
-    
+
     log_info "Building Docker image..."
     docker build -t stellar-operator:local .
-    
+
     log_info "Loading image into kind..."
     kind load docker-image stellar-operator:local --name "$CLUSTER_NAME"
-    
+
     log_info "Installing CRDs..."
     kubectl apply -f config/crd/stellarnode-crd.yaml
     kubectl wait --for condition=established --timeout=60s crd/stellarnodes.stellar.org
-    
+
     log_info "Creating operator namespace..."
     kubectl create namespace stellar-system || true
-    
+
     log_info "Deploying operator..."
     cat > /tmp/operator-deployment.yaml <<EOF
 apiVersion: v1
@@ -205,44 +205,44 @@ spec:
       port: 9090
       targetPort: 9090
 EOF
-    
+
     kubectl apply -f /tmp/operator-deployment.yaml
-    
+
     log_info "Waiting for operator to be ready..."
     kubectl wait --for=condition=available deployment/stellar-operator \
         -n stellar-system --timeout=180s
-    
+
     sleep 10
-    
+
     log_info "✅ Operator deployed and ready"
 }
 
 run_benchmarks() {
     log_info "Running performance benchmarks..."
-    
+
     mkdir -p "$PROJECT_ROOT/results"
-    
+
     # Setup port forwarding
     log_info "Setting up port forwarding..."
     kubectl port-forward -n stellar-system svc/stellar-operator 8080:8080 &
     PF_PID=$!
-    
+
     kubectl proxy --port=8001 &
     PROXY_PID=$!
-    
+
     sleep 5
-    
+
     # Verify connectivity
     if ! curl -sf http://localhost:8080/healthz > /dev/null; then
         log_error "Cannot reach operator health endpoint"
         kill $PF_PID $PROXY_PID 2>/dev/null || true
         exit 1
     fi
-    
+
     log_info "Running k6 benchmarks..."
-    
+
     BASELINE_FILE="$PROJECT_ROOT/benchmarks/baselines/${BASELINE_VERSION}.json"
-    
+
     k6 run \
         --env BASE_URL=http://localhost:8080 \
         --env K8S_API_URL=http://localhost:8001 \
@@ -253,38 +253,38 @@ run_benchmarks() {
         --env BASELINE_FILE="$BASELINE_FILE" \
         --out json="$PROJECT_ROOT/results/operator-benchmark-raw.json" \
         "$PROJECT_ROOT/benchmarks/k6/operator-load-test.js" || true
-    
+
     # Cleanup port forwarding
     kill $PF_PID $PROXY_PID 2>/dev/null || true
-    
+
     log_info "✅ Benchmarks completed"
 }
 
 analyze_results() {
     log_info "Analyzing results..."
-    
+
     BASELINE_FILE="$PROJECT_ROOT/benchmarks/baselines/${BASELINE_VERSION}.json"
     CURRENT_FILE="$PROJECT_ROOT/results/benchmark-summary.json"
     REPORT_FILE="$PROJECT_ROOT/results/regression-report.json"
-    
+
     if [[ ! -f "$CURRENT_FILE" ]]; then
         log_error "Benchmark results not found: $CURRENT_FILE"
         exit 1
     fi
-    
+
     if [[ ! -f "$BASELINE_FILE" ]]; then
         log_warn "Baseline not found: $BASELINE_FILE"
         log_info "Skipping regression analysis"
         return 0
     fi
-    
+
     python3 "$PROJECT_ROOT/benchmarks/scripts/compare_benchmarks.py" compare \
         --current "$CURRENT_FILE" \
         --baseline "$BASELINE_FILE" \
         --threshold "$THRESHOLD" \
         --output "$REPORT_FILE" \
         --verbose
-    
+
     # Check if regression was detected
     if [[ -f "$REPORT_FILE" ]]; then
         OVERALL_PASSED=$(jq -r '.overall_passed' "$REPORT_FILE")
@@ -299,32 +299,32 @@ analyze_results() {
 
 cleanup() {
     log_info "Cleaning up..."
-    
+
     # Kill port forwarding processes
     pkill -f "kubectl port-forward" || true
     pkill -f "kubectl proxy" || true
-    
+
     # Delete kind cluster
     if kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
         log_info "Deleting kind cluster..."
         kind delete cluster --name "$CLUSTER_NAME"
     fi
-    
+
     log_info "✅ Cleanup completed"
 }
 
 show_results() {
     log_info "Performance Test Results:"
     echo ""
-    
+
     if [[ -f "$PROJECT_ROOT/results/benchmark-summary.json" ]]; then
         cat "$PROJECT_ROOT/results/benchmark-summary.json" | jq '.'
     else
         log_warn "No results found"
     fi
-    
+
     echo ""
-    
+
     if [[ -f "$PROJECT_ROOT/results/regression-report.json" ]]; then
         log_info "Regression Report:"
         cat "$PROJECT_ROOT/results/regression-report.json" | jq '.'

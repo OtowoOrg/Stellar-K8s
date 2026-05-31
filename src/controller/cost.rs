@@ -215,8 +215,8 @@ mod tests {
     fn test_estimate_monthly_cost_positive() {
         use crate::crd::StellarNode;
         use crate::crd::{
-            HistoryMode, HorizonConfig, NodeType, ResourceRequirements, ResourceSpec,
-            StellarNetwork, StellarNodeSpec, StorageConfig,
+            HorizonConfig, NodeType, ResourceRequirements, ResourceSpec, StellarNetwork,
+            StellarNodeSpec, StorageConfig,
         };
         use kube::api::ObjectMeta;
 
@@ -230,7 +230,6 @@ mod tests {
                 node_type: NodeType::Horizon,
                 network: StellarNetwork::Testnet,
                 version: "v2.30.0".to_string(),
-                history_mode: HistoryMode::default(),
                 resources: ResourceRequirements {
                     requests: ResourceSpec {
                         cpu: "500m".to_string(),
@@ -246,7 +245,6 @@ mod tests {
                     ..Default::default()
                 },
                 replicas: 1,
-                suspended: false,
                 horizon_config: Some(HorizonConfig {
                     database_secret_ref: "s".to_string(),
                     enable_ingest: true,
@@ -273,6 +271,7 @@ mod tests {
                 network_policy: None,
                 dr_config: None,
                 pod_anti_affinity: Default::default(),
+                placement: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -282,8 +281,16 @@ mod tests {
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 read_pool_endpoint: None,
                 resource_meta: None,
+                sidecars: None,
+                cert_manager: None,
+                nat_traversal: None,
+                custom_network_passphrase: None,
+                cross_cloud_failover: None,
+                hitless_upgrade: None,
+                ..Default::default()
             },
             status: None,
         };
@@ -380,6 +387,7 @@ mod tests {
             network_policy: None,
             dr_config: None,
             pod_anti_affinity: Default::default(),
+            placement: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
             snapshot_schedule: None,
@@ -391,6 +399,14 @@ mod tests {
             forensic_snapshot: None,
             read_pool_endpoint: None,
             resource_meta: None,
+            label_propagation: None,
+            sidecars: None,
+            cert_manager: None,
+            nat_traversal: None,
+            custom_network_passphrase: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
+            ..Default::default()
         }
     }
 }

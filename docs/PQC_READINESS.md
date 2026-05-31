@@ -15,7 +15,7 @@ While PQC algorithms like Dilithium are generally fast in terms of CPU cycles fo
 ### C. Transition Strategy (Hybrid Signatures)
 A sudden cutover to PQC is highly risky. Stellar will likely employ a hybrid approach during the transition: requiring both an Ed25519 signature and a PQC signature (e.g., Dilithium). This ensures that prior to the realization of a cryptographically relevant quantum computer (CRQC), the system remains as secure as it is today, while preparing for the post-quantum era.
 
-## 2. K8s Operator Internal Communication 
+## 2. K8s Operator Internal Communication
 The Stellar-K8s operator framework benefits from starting structural migrations to PQC today. We have introduced an optional sidecar capable of providing PQC-safe primitives for internal communications (e.g., securely distributing secrets or rotating K8s-managed certificates). Next steps for the operator include standardizing PQC certificate issuance for the admission webhook.
 
 ## 3. Performance Benchmark of PQC Algorithms

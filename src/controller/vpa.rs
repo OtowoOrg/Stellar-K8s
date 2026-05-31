@@ -84,13 +84,17 @@ pub fn build_vpa(node: &StellarNode, config: &VpaConfig) -> DynamicObject {
     let (target_kind, target_name) = target_ref(node);
     let mode = update_mode_str(&config.update_mode);
 
-    // Build container policies array (may be empty → VPA uses its defaults).
-    let container_policies: Vec<serde_json::Value> = config
+    // Build container policies array.
+    // If no user policies are provided, derive a safe default guardrail from
+    // the StellarNode resource requests/limits to enable right-sizing.
+    let mut container_policies: Vec<serde_json::Value> = config
         .container_policies
         .iter()
         .map(|p| {
             let mut policy = json!({
                 "containerName": p.container_name,
+                "controlledResources": ["cpu", "memory"],
+                "controlledValues": "RequestsAndLimits",
             });
             if let Some(min) = &p.min_allowed {
                 policy["minAllowed"] = json!(min);
@@ -102,33 +106,36 @@ pub fn build_vpa(node: &StellarNode, config: &VpaConfig) -> DynamicObject {
         })
         .collect();
 
+    if container_policies.is_empty() {
+        container_policies.push(json!({
+            "containerName": "stellar-node",
+            "controlledResources": ["cpu", "memory"],
+            "controlledValues": "RequestsAndLimits",
+            "minAllowed": {
+                "cpu": node.spec.resources.requests.cpu,
+                "memory": node.spec.resources.requests.memory,
+            },
+            "maxAllowed": {
+                "cpu": node.spec.resources.limits.cpu,
+                "memory": node.spec.resources.limits.memory,
+            }
+        }));
+    }
+
     // Build the full spec.
-    let spec = if container_policies.is_empty() {
-        json!({
-            "targetRef": {
-                "apiVersion": "apps/v1",
-                "kind":       target_kind,
-                "name":       target_name,
-            },
-            "updatePolicy": {
-                "updateMode": mode,
-            },
-        })
-    } else {
-        json!({
-            "targetRef": {
-                "apiVersion": "apps/v1",
-                "kind":       target_kind,
-                "name":       target_name,
-            },
-            "updatePolicy": {
-                "updateMode": mode,
-            },
-            "resourcePolicy": {
-                "containerPolicies": container_policies,
-            },
-        })
-    };
+    let spec = json!({
+        "targetRef": {
+            "apiVersion": "apps/v1",
+            "kind":       target_kind,
+            "name":       target_name,
+        },
+        "updatePolicy": {
+            "updateMode": mode,
+        },
+        "resourcePolicy": {
+            "containerPolicies": container_policies,
+        },
+    });
 
     // Owner reference so the VPA is garbage-collected when the StellarNode
     // is deleted.
@@ -237,9 +244,7 @@ pub async fn delete_vpa(client: &Client, node: &StellarNode) -> Result<()> {
 mod tests {
     use super::*;
     use crate::crd::{
-        types::{
-            ResourceRequirements, StorageConfig, VpaConfig, VpaContainerPolicy, VpaUpdateMode,
-        },
+        types::{VpaConfig, VpaContainerPolicy, VpaUpdateMode},
         NodeType, StellarNetwork, StellarNodeSpec,
     };
     use kube::core::ObjectMeta as KObjectMeta;
@@ -259,41 +264,8 @@ mod tests {
                 node_type,
                 network: StellarNetwork::Testnet,
                 version: "v21.0.0".to_string(),
-                history_mode: Default::default(),
-                resources: ResourceRequirements::default(),
-                storage: StorageConfig::default(),
-                validator_config: None,
-                horizon_config: None,
-                soroban_config: None,
                 replicas: 1,
-                min_available: None,
-                max_unavailable: None,
-                suspended: false,
-                alerting: false,
-                database: None,
-                managed_database: None,
-                autoscaling: None,
-                vpa_config: None,
-                ingress: None,
-                load_balancer: None,
-                global_discovery: None,
-                cross_cluster: None,
-                strategy: Default::default(),
-                maintenance_mode: false,
-                network_policy: None,
-                dr_config: None,
-                pod_anti_affinity: Default::default(),
-                topology_spread_constraints: None,
-                cve_handling: None,
-                snapshot_schedule: None,
-                restore_from_snapshot: None,
-                read_replica_config: None,
-                db_maintenance_config: None,
-                oci_snapshot: None,
-                service_mesh: None,
-                forensic_snapshot: None,
-                resource_meta: None,
-                read_pool_endpoint: None,
+                ..Default::default()
             },
             status: None,
         }
@@ -378,8 +350,11 @@ mod tests {
         // updateMode
         assert_eq!(vpa.data["updatePolicy"]["updateMode"], "Initial");
 
-        // No resourcePolicy when no policies given
-        assert!(vpa.data.get("resourcePolicy").is_none());
+        // Default right-sizing policy is synthesized from StellarNode requests/limits
+        let policies = &vpa.data["resourcePolicy"]["containerPolicies"];
+        assert!(policies.is_array());
+        assert_eq!(policies[0]["containerName"], "stellar-node");
+        assert_eq!(policies[0]["controlledValues"], "RequestsAndLimits");
     }
 
     #[test]
@@ -432,6 +407,7 @@ mod tests {
         assert!(policies.is_array());
         let first = &policies[0];
         assert_eq!(first["containerName"], "stellar-horizon");
+        assert_eq!(first["controlledValues"], "RequestsAndLimits");
         assert_eq!(first["minAllowed"]["cpu"], "200m");
         assert_eq!(first["maxAllowed"]["memory"], "8Gi");
     }

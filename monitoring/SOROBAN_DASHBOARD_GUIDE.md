@@ -214,7 +214,7 @@ groups:
           severity: critical
         annotations:
           summary: "Soroban RPC is down"
-          
+
       - alert: HighTransactionFailureRate
         expr: |
           sum(rate(soroban_rpc_transaction_result_total{result="failed"}[5m])) /
@@ -236,7 +236,7 @@ groups:
           severity: warning
         annotations:
           summary: "Wasm execution p99 > 100ms"
-          
+
       - alert: HighLedgerIngestionLag
         expr: soroban_rpc_ingest_ledger_lag > 10
         for: 5m
@@ -244,7 +244,7 @@ groups:
           severity: warning
         annotations:
           summary: "Ledger ingestion lagging > 10 ledgers"
-          
+
       - alert: HighDatabaseLatency
         expr: soroban_rpc_db_round_trip_time_seconds > 0.5
         for: 5m

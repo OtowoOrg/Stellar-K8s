@@ -1,5 +1,5 @@
 # Development Dockerfile with cargo-watch for hot-reloading
-FROM rust:1.93-bookworm
+FROM rust:1.94-bookworm
 
 WORKDIR /app
 

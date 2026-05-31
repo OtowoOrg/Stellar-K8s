@@ -1,0 +1,101 @@
+# .github/workflows/soak-test.yml
+#
+# 1-hour memory soak test for the stellar-operator.
+#
+# Cluster provisioning uses the shared .github/actions/setup-kind-cluster
+# composite action. Logs are gathered via .github/actions/collect-e2e-logs.
+#
+# Triggers:
+#   - Manual (workflow_dispatch)
+#   - Weekly schedule (Saturday 02:00 UTC)
+
+name: Memory Soak Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      soak_duration:
+        description: "Soak duration in seconds (default: 3600)"
+        required: false
+        default: "3600"
+      threshold_kb:
+        description: "Max allowed RSS growth in kB (default: 5120 = 5 MB)"
+        required: false
+        default: "5120"
+      cleanup_timeout_seconds:
+        description: "Cleanup wait timeout in seconds (default: 120)"
+        required: false
+        default: "120"
+  schedule:
+    - cron: "0 2 * * 6"
+
+env:
+  CARGO_TERM_COLOR: always
+  CLUSTER_NAME: stellar-soak
+  OPERATOR_NAMESPACE: stellar-system
+  IMAGE_TAG: soak-test
+
+jobs:
+  soak-test:
+    name: Operator Memory Soak (1 h)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Build binary ──────────────────────────────────────────────────────
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "soak-build"
+
+      - name: Build operator binary
+        run: cargo build --release --locked --bin stellar-operator
+
+      # ── Build Docker image ────────────────────────────────────────────────
+      - name: Build Docker image
+        run: docker build -t stellar-operator:${{ env.IMAGE_TAG }} .
+
+      # ── Provision cluster (shared composite action, image already built) ──
+      - name: Setup kind cluster
+        uses: ./.github/actions/setup-kind-cluster
+        with:
+          cluster-name: ${{ env.CLUSTER_NAME }}
+          image-tag: ${{ env.IMAGE_TAG }}
+          operator-namespace: ${{ env.OPERATOR_NAMESPACE }}
+          worker-nodes: "1"
+          operator-cpu-request: "200m"
+          operator-memory-request: "128Mi"
+          operator-cpu-limit: "500m"
+          operator-memory-limit: "512Mi"
+          skip-docker-build: "true"
+
+      # ── Run soak test ─────────────────────────────────────────────────────
+      - name: Run soak test
+        env:
+          OPERATOR_NAMESPACE: ${{ env.OPERATOR_NAMESPACE }}
+          SOAK_DURATION: ${{ github.event.inputs.soak_duration || '3600' }}
+          THRESHOLD_KB: ${{ github.event.inputs.threshold_kb || '5120' }}
+          CLEANUP_TIMEOUT_SECONDS: ${{ github.event.inputs.cleanup_timeout_seconds || '120' }}
+          TEST_NAMESPACE: soak-test
+          RESULTS_FILE: /tmp/soak-memory.log
+        run: bash scripts/soak-test.sh
+
+      # ── Upload results ────────────────────────────────────────────────────
+      - name: Upload memory samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-memory-samples-${{ github.run_id }}
+          path: /tmp/soak-memory.log
+          retention-days: 30
+
+      # ── Consolidated log collection ───────────────────────────────────────
+      - name: Collect logs on failure
+        if: failure()
+        uses: ./.github/actions/collect-e2e-logs
+        with:
+          operator-namespace: ${{ env.OPERATOR_NAMESPACE }}
+          artifact-name: soak-debug-logs-${{ github.run_id }}
+          extra-namespaces: "soak-test"

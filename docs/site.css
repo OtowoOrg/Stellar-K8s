@@ -1,0 +1,112 @@
+/* Stellar-K8s Documentation Site — Stellar Wave Color Palette
+ * Issue #514: Apply Stellar-K8s Branding and Logo to Documentation Site
+ *
+ * Primary gradient: vibrant blue (#4f8ef7) → purple (#a855f7)
+ * Accent: teal (#06b6d4), gold (#f59e0b)
+ */
+
+:root {
+  --stellar-blue:   #4f8ef7;
+  --stellar-purple: #a855f7;
+  --stellar-teal:   #06b6d4;
+  --stellar-gold:   #f59e0b;
+  --stellar-dark:   #0f172a;
+  --stellar-mid:    #1e293b;
+  --stellar-light:  #f8fafc;
+  --stellar-muted:  #94a3b8;
+}
+
+/* ── Site header ─────────────────────────────────────────────────────────── */
+.site-header,
+header,
+nav.navbar {
+  background: linear-gradient(135deg, var(--stellar-dark) 0%, var(--stellar-mid) 100%);
+  border-bottom: 2px solid var(--stellar-blue);
+}
+
+.site-header .logo,
+.navbar-brand {
+  background: linear-gradient(90deg, var(--stellar-blue), var(--stellar-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 800;
+  font-size: 1.4rem;
+  letter-spacing: 0.02em;
+}
+
+/* ── Navigation links ────────────────────────────────────────────────────── */
+nav a,
+.nav-link {
+  color: var(--stellar-muted);
+  transition: color 0.2s;
+}
+
+nav a:hover,
+.nav-link:hover {
+  color: var(--stellar-blue);
+}
+
+/* ── Page headings ───────────────────────────────────────────────────────── */
+h1 {
+  background: linear-gradient(90deg, var(--stellar-blue), var(--stellar-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+h2 {
+  color: var(--stellar-blue);
+  border-bottom: 1px solid var(--stellar-blue);
+  padding-bottom: 0.25rem;
+}
+
+h3 {
+  color: var(--stellar-purple);
+}
+
+/* ── Code blocks ─────────────────────────────────────────────────────────── */
+pre,
+code {
+  background: var(--stellar-mid);
+  color: var(--stellar-light);
+  border-radius: 6px;
+}
+
+pre {
+  border-left: 3px solid var(--stellar-blue);
+  padding: 1rem;
+}
+
+/* ── Badges / pills ──────────────────────────────────────────────────────── */
+.badge-blue   { background: var(--stellar-blue);   color: #fff; border-radius: 4px; padding: 2px 8px; }
+.badge-purple { background: var(--stellar-purple); color: #fff; border-radius: 4px; padding: 2px 8px; }
+.badge-teal   { background: var(--stellar-teal);   color: #fff; border-radius: 4px; padding: 2px 8px; }
+
+/* ── Callout boxes ───────────────────────────────────────────────────────── */
+blockquote {
+  border-left: 4px solid var(--stellar-purple);
+  background: rgba(168, 85, 247, 0.08);
+  padding: 0.75rem 1rem;
+  border-radius: 0 6px 6px 0;
+}
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+table thead {
+  background: linear-gradient(90deg, var(--stellar-blue), var(--stellar-purple));
+  color: #fff;
+}
+
+table tbody tr:nth-child(even) {
+  background: rgba(79, 142, 247, 0.05);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+footer {
+  background: var(--stellar-dark);
+  color: var(--stellar-muted);
+  border-top: 1px solid var(--stellar-mid);
+  text-align: center;
+  padding: 1.5rem;
+  font-size: 0.875rem;
+}

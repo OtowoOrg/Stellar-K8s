@@ -1,0 +1,63 @@
+## Example: Bootstrap a Validator from a CSI VolumeSnapshot
+##
+## This uses spec.storage.snapshotRef.volumeSnapshotName to provision the PVC
+## directly from an existing VolumeSnapshot (zero-copy, near-instant).
+## No init container is needed — the CSI driver handles the data population.
+##
+## Prerequisites:
+##   - A VolumeSnapshot named "validator-mainnet-20260423-020000" must exist
+##     in the same namespace.
+##   - The storage class must support CSI VolumeSnapshots.
+##
+## Expected outcome:
+##   - PVC is provisioned from the snapshot (seconds, not hours)
+##   - Stellar Core starts with pre-populated ledger data
+##   - Node reaches Synced state within ~10 minutes
+##   - status.snapshotBootstrap.secondsToSync ≤ 600
+##
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-from-snapshot
+  namespace: stellar-system
+  annotations:
+    # Optional: trigger a one-shot snapshot of this node once it's synced
+    # stellar.org/request-snapshot: "true"
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+
+  storage:
+    storageClass: "csi-fast-ssd"
+    size: "500Gi"
+    retentionPolicy: Retain
+
+    # Bootstrap from a pre-existing CSI VolumeSnapshot.
+    # The PVC will be provisioned with this snapshot as its dataSource.
+    snapshotRef:
+      volumeSnapshotName: "validator-mainnet-20260423-020000"
+      # volumeSnapshotNamespace: "stellar-snapshots"  # only if cross-namespace
+
+  validatorConfig:
+    seedSecretRef: "validator-mainnet-seed"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+      - "https://history.stellar.org/prd/core-live/core_live_002"
+
+  # Schedule periodic snapshots so future nodes can bootstrap from this one
+  snapshotSchedule:
+    schedule: "0 2 * * *"          # Daily at 02:00 UTC
+    volumeSnapshotClassName: "csi-snapclass"
+    flushBeforeSnapshot: true
+    retentionCount: 7               # Keep 7 daily snapshots

@@ -44,6 +44,40 @@ Add `snapshotSchedule` to a Validator StellarNode to have the operator create Vo
 
 Set `retentionCount` to a positive number to keep only the N most recent snapshots per node. The operator lists VolumeSnapshots with label `stellar.org/snapshot-of=<node-name>` and deletes the oldest when over the limit.
 
+### Snapshot Encryption (Cloud KMS)
+
+To comply with data protection regulations, you can encrypt your automated snapshots at rest using provider-managed keys (AWS KMS, GCP KMS).
+
+#### Configuration
+
+Add `encryptionKeyRef` to your `snapshotSchedule`:
+
+```yaml
+spec:
+  snapshotSchedule:
+    schedule: "0 2 * * *"
+    retentionCount: 7
+    encryptionKeyRef: "arn:aws:kms:us-east-1:123456789012:key/your-key-id" # AWS ARN or GCP Key Name
+```
+
+The operator will include this key reference in the `VolumeSnapshot` spec. The underlying CSI driver and storage provider will then use this key to encrypt the snapshot.
+
+#### Required IAM Permissions
+
+To allow the CSI driver to use your KMS key, you must grant it the necessary permissions.
+
+**AWS (EBS CSI Driver):**
+The EBS CSI driver's IAM role needs the following permissions on the KMS key:
+- `kms:CreateGrant`
+- `kms:Decrypt`
+- `kms:DescribeKey`
+- `kms:Encrypt`
+- `kms:GenerateDataKey*`
+- `kms:ReEncrypt*`
+
+**GCP (GCE PD CSI Driver):**
+The service account used by the GCE PD CSI driver needs the `cloudkms.cryptoKeyEncrypterDecrypter` role on the specific KMS key.
+
 ### Example (schedule + on-demand)
 
 ```yaml

@@ -89,3 +89,22 @@ pub struct ProbeResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
+
+/// Request to change log level
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogLevelRequest {
+    /// New log level (e.g., "debug", "info", "warn", "error", "trace")
+    pub level: String,
+    /// Optional duration in minutes for which this level should apply
+    pub duration_minutes: Option<u64>,
+}
+
+/// Response for log level change
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogLevelResponse {
+    pub current_level: String,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub message: String,
+}

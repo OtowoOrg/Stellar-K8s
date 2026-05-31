@@ -18,19 +18,11 @@ mod stellar_node_spec_validation {
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
             history_mode: Default::default(),
-            resources: default_resources(),
-            storage: default_storage(),
+            resources: Default::default(),
+            storage: Default::default(),
             validator_config: Some(ValidatorConfig {
                 seed_secret_ref: "validator-seed".to_string(),
-                seed_secret_source: Default::default(),
-                quorum_set: None,
-                enable_history_archive: false,
-                history_archive_urls: vec![],
-                catchup_complete: false,
-                key_source: Default::default(),
-                kms_config: None,
-                vl_source: None,
-                hsm_config: None,
+                ..Default::default()
             }),
             horizon_config: None,
             soroban_config: None,
@@ -51,6 +43,7 @@ mod stellar_node_spec_validation {
             network_policy: None,
             dr_config: None,
             pod_anti_affinity: Default::default(),
+            placement: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
             snapshot_schedule: None,
@@ -60,29 +53,34 @@ mod stellar_node_spec_validation {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            sidecars: None,
+            cert_manager: None,
+            custom_network_passphrase: None,
+            nat_traversal: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
+            ..Default::default()
         }
     }
 
-    /// Helper to create a minimal valid StellarNodeSpec for Horizon
     fn valid_horizon_spec() -> StellarNodeSpec {
         StellarNodeSpec {
             node_type: NodeType::Horizon,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
             history_mode: Default::default(),
-            resources: default_resources(),
-            storage: default_storage(),
+            resources: Default::default(),
+            storage: Default::default(),
             validator_config: None,
             horizon_config: Some(HorizonConfig {
                 database_secret_ref: "horizon-db".to_string(),
                 enable_ingest: true,
                 stellar_core_url: "http://stellar-core:11626".to_string(),
-                ingest_workers: 1,
-                enable_experimental_ingestion: false,
-                auto_migration: false,
+                ..Default::default()
             }),
             soroban_config: None,
             replicas: 2,
@@ -102,6 +100,7 @@ mod stellar_node_spec_validation {
             network_policy: None,
             dr_config: None,
             pod_anti_affinity: Default::default(),
+            placement: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
             snapshot_schedule: None,
@@ -111,30 +110,33 @@ mod stellar_node_spec_validation {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            sidecars: None,
+            cert_manager: None,
+            custom_network_passphrase: None,
+            nat_traversal: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
+            ..Default::default()
         }
     }
 
-    /// Helper to create a minimal valid StellarNodeSpec for SorobanRpc
     fn valid_soroban_spec() -> StellarNodeSpec {
         StellarNodeSpec {
             node_type: NodeType::SorobanRpc,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
             history_mode: Default::default(),
-            resources: default_resources(),
-            storage: default_storage(),
+            resources: Default::default(),
+            storage: Default::default(),
             validator_config: None,
             horizon_config: None,
             soroban_config: Some(SorobanConfig {
                 stellar_core_url: "http://stellar-core:11626".to_string(),
-                #[allow(deprecated)]
-                captive_core_config: None,
-                captive_core_structured_config: None,
-                enable_preflight: true,
-                max_events_per_request: 10000,
+                ..Default::default()
             }),
             replicas: 2,
             min_available: None,
@@ -153,6 +155,7 @@ mod stellar_node_spec_validation {
             network_policy: None,
             dr_config: None,
             pod_anti_affinity: Default::default(),
+            placement: Default::default(),
             topology_spread_constraints: None,
             cve_handling: None,
             snapshot_schedule: None,
@@ -162,12 +165,21 @@ mod stellar_node_spec_validation {
             oci_snapshot: None,
             service_mesh: None,
             forensic_snapshot: None,
+            label_propagation: None,
             resource_meta: None,
             vpa_config: None,
             read_pool_endpoint: None,
+            sidecars: None,
+            cert_manager: None,
+            custom_network_passphrase: None,
+            nat_traversal: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
+            ..Default::default()
         }
     }
 
+    #[allow(dead_code)]
     fn default_resources() -> ResourceRequirements {
         ResourceRequirements {
             requests: ResourceSpec {
@@ -181,6 +193,7 @@ mod stellar_node_spec_validation {
         }
     }
 
+    #[allow(dead_code)]
     fn default_storage() -> StorageConfig {
         StorageConfig {
             storage_class: "standard".to_string(),
@@ -261,6 +274,8 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(80),
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
+            ..Default::default()
         });
 
         let result = spec.validate();
@@ -291,6 +306,7 @@ mod stellar_node_spec_validation {
             cert_manager_issuer: None,
             cert_manager_cluster_issuer: None,
             annotations: None,
+            ..Default::default()
         });
 
         let result = spec.validate();
@@ -380,6 +396,8 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(80),
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
+            ..Default::default()
         });
 
         assert!(spec.validate().is_ok());
@@ -394,6 +412,8 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(80),
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
+            ..Default::default()
         });
 
         let result = spec.validate();
@@ -417,6 +437,8 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(80),
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
+            ..Default::default()
         });
 
         let result = spec.validate();
@@ -447,6 +469,7 @@ mod stellar_node_spec_validation {
             cert_manager_issuer: None,
             cert_manager_cluster_issuer: None,
             annotations: None,
+            ..Default::default()
         });
 
         assert!(spec.validate().is_ok());
@@ -462,6 +485,7 @@ mod stellar_node_spec_validation {
             cert_manager_issuer: None,
             cert_manager_cluster_issuer: None,
             annotations: None,
+            ..Default::default()
         });
 
         let result = spec.validate();
@@ -492,6 +516,7 @@ mod stellar_node_spec_validation {
             cert_manager_issuer: None,
             cert_manager_cluster_issuer: None,
             annotations: None,
+            ..Default::default()
         });
 
         let result = spec.validate();
@@ -519,6 +544,7 @@ mod stellar_node_spec_validation {
             cert_manager_issuer: None,
             cert_manager_cluster_issuer: None,
             annotations: None,
+            ..Default::default()
         });
 
         let result = spec.validate();
@@ -549,6 +575,7 @@ mod stellar_node_spec_validation {
             cert_manager_issuer: None,
             cert_manager_cluster_issuer: None,
             annotations: None,
+            ..Default::default()
         });
 
         let result = spec.validate();
@@ -579,6 +606,7 @@ mod stellar_node_spec_validation {
             cert_manager_issuer: None,
             cert_manager_cluster_issuer: None,
             annotations: None,
+            ..Default::default()
         });
 
         let result = spec.validate();
@@ -609,6 +637,7 @@ mod stellar_node_spec_validation {
             cert_manager_issuer: None,
             cert_manager_cluster_issuer: None,
             annotations: None,
+            ..Default::default()
         });
 
         assert!(spec.validate().is_ok());
@@ -657,6 +686,8 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(70),
             custom_metrics: vec!["rpc_requests_per_second".to_string()],
             behavior: None,
+            predictive_scaling: None,
+            ..Default::default()
         });
 
         assert!(spec.validate().is_ok());
@@ -671,6 +702,8 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
+            ..Default::default()
         });
 
         let result = spec.validate();
@@ -694,6 +727,8 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(80),
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
+            ..Default::default()
         });
 
         let result = spec.validate();
@@ -724,6 +759,7 @@ mod stellar_node_spec_validation {
             cert_manager_issuer: None,
             cert_manager_cluster_issuer: Some("letsencrypt-prod".to_string()),
             annotations: None,
+            ..Default::default()
         });
 
         assert!(spec.validate().is_ok());
@@ -750,8 +786,133 @@ mod stellar_node_spec_validation {
     #[test]
     fn test_validator_custom_network_passes() {
         let mut spec = valid_validator_spec();
-        spec.network = StellarNetwork::Custom("My Private Network".to_string());
+        spec.network = StellarNetwork::Custom("my-private-network".to_string());
         assert!(spec.validate().is_ok());
+    }
+
+    // =========================================================================
+    // Custom Network Name Validation Tests (#366)
+    // =========================================================================
+
+    #[test]
+    fn test_custom_network_valid_alphanumeric_passes() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("my-private-net".to_string());
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_custom_network_single_char_passes() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("a".to_string());
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_custom_network_63_chars_passes() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("a".repeat(63));
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_custom_network_empty_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("".to_string());
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "spec.network.customName" && e.message.contains("empty")));
+    }
+
+    #[test]
+    fn test_custom_network_exceeds_63_chars_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("a".repeat(64));
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "spec.network.customName" && e.message.contains("63")));
+    }
+
+    #[test]
+    fn test_custom_network_special_chars_fails() {
+        for bad in &["; drop table", "my@network", "net$name!", "net name"] {
+            let mut spec = valid_validator_spec();
+            spec.network = StellarNetwork::Custom(bad.to_string());
+            let result = spec.validate();
+            assert!(
+                result.is_err(),
+                "Expected validation failure for customName: '{bad}'"
+            );
+            let errors = result.unwrap_err();
+            assert!(
+                errors.iter().any(|e| e.field == "spec.network.customName"),
+                "Expected spec.network.customName error for '{bad}'"
+            );
+        }
+    }
+
+    #[test]
+    fn test_custom_network_leading_hyphen_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("-bad-name".to_string());
+        let result = spec.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.field == "spec.network.customName"));
+    }
+
+    #[test]
+    fn test_custom_network_trailing_hyphen_fails() {
+        let mut spec = valid_validator_spec();
+        spec.network = StellarNetwork::Custom("bad-name-".to_string());
+        let result = spec.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.field == "spec.network.customName"));
+    }
+
+    #[test]
+    fn test_non_custom_networks_skip_name_validation() {
+        for network in [
+            StellarNetwork::Mainnet,
+            StellarNetwork::Testnet,
+            StellarNetwork::Futurenet,
+        ] {
+            let mut spec = valid_validator_spec();
+            spec.network = network;
+            assert!(spec.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn test_custom_network_uppercase_fails() {
+        // DNS-1123 requires lowercase; uppercase must be rejected
+        for bad in &["MyNetwork", "My-Net", "MYNET"] {
+            let mut spec = valid_validator_spec();
+            spec.network = StellarNetwork::Custom(bad.to_string());
+            let result = spec.validate();
+            assert!(
+                result.is_err(),
+                "Expected validation failure for uppercase customName: '{bad}'"
+            );
+            assert!(
+                result
+                    .unwrap_err()
+                    .iter()
+                    .any(|e| e.field == "spec.network.customName"),
+                "Expected spec.network.customName error for '{bad}'"
+            );
+        }
     }
 
     // =========================================================================
@@ -774,6 +935,8 @@ mod stellar_node_spec_validation {
             target_cpu_utilization_percentage: Some(80),
             custom_metrics: vec![],
             behavior: None,
+            predictive_scaling: None,
+            ..Default::default()
         });
 
         assert!(spec.validate().is_ok());
@@ -825,6 +988,7 @@ mod stellar_node_spec_validation {
             cert_manager_issuer: None,
             cert_manager_cluster_issuer: None,
             annotations: None,
+            ..Default::default()
         });
 
         assert!(spec.validate().is_ok());
@@ -852,6 +1016,7 @@ mod stellar_node_spec_validation {
             cert_manager_issuer: None,
             cert_manager_cluster_issuer: None,
             annotations: None,
+            ..Default::default()
         });
 
         assert!(spec.validate().is_ok());
@@ -932,6 +1097,239 @@ mod stellar_node_spec_validation {
         assert!(spec.validate().is_ok());
     }
 
+    // =========================================================================
+    // GasAutoscalingConfig Validation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_gas_autoscaling_min_gt_max_rejected() {
+        use crate::crd::GasAutoscalingConfig;
+
+        let mut spec = valid_soroban_spec();
+        spec.autoscaling = Some(AutoscalingConfig {
+            min_replicas: 1,
+            max_replicas: 10,
+            target_cpu_utilization_percentage: None,
+            custom_metrics: vec![],
+            behavior: None,
+            predictive_scaling: None,
+            gas_autoscaling: Some(GasAutoscalingConfig {
+                enabled: true,
+                min_replicas: 5,
+                max_replicas: 2,
+                scale_up_threshold: 2_000_000.0,
+                scale_down_threshold: 500_000.0,
+                ewma_alpha: 0.3,
+                ..Default::default()
+            }),
+        });
+
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.autoscaling.gasAutoscaling.minReplicas",
+                "gasAutoscaling.minReplicas must be <= maxReplicas",
+                "Set spec.autoscaling.gasAutoscaling.minReplicas to a value less than or equal to maxReplicas.",
+            )
+        }));
+    }
+
+    #[test]
+    fn test_gas_autoscaling_alpha_zero_rejected() {
+        use crate::crd::GasAutoscalingConfig;
+
+        let mut spec = valid_soroban_spec();
+        spec.autoscaling = Some(AutoscalingConfig {
+            min_replicas: 1,
+            max_replicas: 10,
+            target_cpu_utilization_percentage: None,
+            custom_metrics: vec![],
+            behavior: None,
+            predictive_scaling: None,
+            gas_autoscaling: Some(GasAutoscalingConfig {
+                enabled: true,
+                min_replicas: 1,
+                max_replicas: 5,
+                scale_up_threshold: 2_000_000.0,
+                scale_down_threshold: 500_000.0,
+                ewma_alpha: 0.0,
+                ..Default::default()
+            }),
+        });
+
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.autoscaling.gasAutoscaling.ewmaAlpha",
+                "gasAutoscaling.ewmaAlpha must be in range (0.0, 1.0) exclusive",
+                "Set spec.autoscaling.gasAutoscaling.ewmaAlpha to a value strictly between 0.0 and 1.0 (e.g. 0.3).",
+            )
+        }));
+    }
+
+    #[test]
+    fn test_gas_autoscaling_alpha_one_rejected() {
+        use crate::crd::GasAutoscalingConfig;
+
+        let mut spec = valid_soroban_spec();
+        spec.autoscaling = Some(AutoscalingConfig {
+            min_replicas: 1,
+            max_replicas: 10,
+            target_cpu_utilization_percentage: None,
+            custom_metrics: vec![],
+            behavior: None,
+            predictive_scaling: None,
+            gas_autoscaling: Some(GasAutoscalingConfig {
+                enabled: true,
+                min_replicas: 1,
+                max_replicas: 5,
+                scale_up_threshold: 2_000_000.0,
+                scale_down_threshold: 500_000.0,
+                ewma_alpha: 1.0,
+                ..Default::default()
+            }),
+        });
+
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.autoscaling.gasAutoscaling.ewmaAlpha",
+                "gasAutoscaling.ewmaAlpha must be in range (0.0, 1.0) exclusive",
+                "Set spec.autoscaling.gasAutoscaling.ewmaAlpha to a value strictly between 0.0 and 1.0 (e.g. 0.3).",
+            )
+        }));
+    }
+
+    #[test]
+    fn test_gas_autoscaling_alpha_valid() {
+        use crate::crd::GasAutoscalingConfig;
+
+        let mut spec = valid_soroban_spec();
+        spec.autoscaling = Some(AutoscalingConfig {
+            min_replicas: 1,
+            max_replicas: 10,
+            target_cpu_utilization_percentage: None,
+            custom_metrics: vec![],
+            behavior: None,
+            predictive_scaling: None,
+            gas_autoscaling: Some(GasAutoscalingConfig {
+                enabled: true,
+                min_replicas: 1,
+                max_replicas: 5,
+                scale_up_threshold: 2_000_000.0,
+                scale_down_threshold: 500_000.0,
+                ewma_alpha: 0.3,
+                ..Default::default()
+            }),
+        });
+
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_gas_autoscaling_threshold_ordering_rejected() {
+        use crate::crd::GasAutoscalingConfig;
+
+        let mut spec = valid_soroban_spec();
+        spec.autoscaling = Some(AutoscalingConfig {
+            min_replicas: 1,
+            max_replicas: 10,
+            target_cpu_utilization_percentage: None,
+            custom_metrics: vec![],
+            behavior: None,
+            predictive_scaling: None,
+            gas_autoscaling: Some(GasAutoscalingConfig {
+                enabled: true,
+                min_replicas: 1,
+                max_replicas: 5,
+                // scale_up_threshold <= scale_down_threshold — invalid
+                scale_up_threshold: 500_000.0,
+                scale_down_threshold: 500_000.0,
+                ewma_alpha: 0.3,
+                ..Default::default()
+            }),
+        });
+
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.autoscaling.gasAutoscaling.scaleUpThreshold",
+                "gasAutoscaling.scaleUpThreshold must be greater than scaleDownThreshold",
+                "Set spec.autoscaling.gasAutoscaling.scaleUpThreshold to a value strictly greater than scaleDownThreshold.",
+            )
+        }));
+    }
+
+    #[test]
+    fn test_gas_autoscaling_non_soroban_rejected() {
+        use crate::crd::GasAutoscalingConfig;
+
+        // Use a Horizon node — gas autoscaling should be rejected
+        let mut spec = valid_horizon_spec();
+        spec.autoscaling = Some(AutoscalingConfig {
+            min_replicas: 1,
+            max_replicas: 10,
+            target_cpu_utilization_percentage: None,
+            custom_metrics: vec![],
+            behavior: None,
+            predictive_scaling: None,
+            gas_autoscaling: Some(GasAutoscalingConfig {
+                enabled: true,
+                min_replicas: 1,
+                max_replicas: 5,
+                scale_up_threshold: 2_000_000.0,
+                scale_down_threshold: 500_000.0,
+                ewma_alpha: 0.3,
+                ..Default::default()
+            }),
+        });
+
+        let result = spec.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e == &SpecValidationError::new(
+                "spec.autoscaling.gasAutoscaling",
+                "gasAutoscaling is only supported for SorobanRPC nodes",
+                "Remove spec.autoscaling.gasAutoscaling or set enabled: false for Horizon nodes; gas-based autoscaling is only supported for SorobanRpc.",
+            )
+        }));
+    }
+
+    #[test]
+    fn test_gas_autoscaling_valid_config() {
+        use crate::crd::GasAutoscalingConfig;
+
+        let mut spec = valid_soroban_spec();
+        spec.autoscaling = Some(AutoscalingConfig {
+            min_replicas: 2,
+            max_replicas: 10,
+            target_cpu_utilization_percentage: None,
+            custom_metrics: vec![],
+            behavior: None,
+            predictive_scaling: None,
+            gas_autoscaling: Some(GasAutoscalingConfig {
+                enabled: true,
+                min_replicas: 2,
+                max_replicas: 8,
+                scale_up_threshold: 2_000_000.0,
+                scale_down_threshold: 500_000.0,
+                ewma_alpha: 0.3,
+                ..Default::default()
+            }),
+        });
+
+        assert!(spec.validate().is_ok());
+    }
+
     #[test]
     fn test_soroban_config_serialization_roundtrip() {
         use crate::crd::{CaptiveCoreConfig, SorobanConfig};
@@ -953,6 +1351,7 @@ mod stellar_node_spec_validation {
             }),
             enable_preflight: true,
             max_events_per_request: 10000,
+            cache_config: None,
         };
 
         // Test JSON serialization

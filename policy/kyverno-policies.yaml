@@ -1,0 +1,285 @@
+---
+# Kyverno ClusterPolicy Suite for Stellar-K8s
+# These policies enforce operational and security best practices for StellarNode resources
+# Install with: kubectl apply -f policy/kyverno-policies.yaml
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-image-tag
+      match:
+        resources:
+          kinds:
+            - StellarNode
+      validate:
+        message: "Using 'latest' tag for container images is not allowed. Specify an explicit version tag."
+        pattern:
+          spec:
+            version: "!latest"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-stellar-labels
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-required-labels
+      match:
+        resources:
+          kinds:
+            - StellarNode
+      validate:
+        message: "StellarNode resources must have required organizational labels: cost-center, owner, and environment"
+        pattern:
+          metadata:
+            labels:
+              cost-center: "?*"
+              owner: "?*"
+              environment: "?*"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-storage-for-validators
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-validator-storage
+      match:
+        resources:
+          kinds:
+            - StellarNode
+      validate:
+        message: "Validator nodes must not use ephemeral emptyDir storage. Configure persistent storage with a storageClass."
+        pattern:
+          spec:
+            nodeType: "Validator"
+            storage:
+              storageClass: "?*"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-resource-limits
+      match:
+        resources:
+          kinds:
+            - StellarNode
+      validate:
+        message: "StellarNode resources must specify CPU and memory limits for predictable resource management"
+        pattern:
+          spec:
+            resources:
+              limits:
+                cpu: "?*"
+                memory: "?*"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-requests
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-resource-requests
+      match:
+        resources:
+          kinds:
+            - StellarNode
+      validate:
+        message: "StellarNode resources must specify CPU and memory requests for proper scheduling"
+        pattern:
+          spec:
+            resources:
+              requests:
+                cpu: "?*"
+                memory: "?*"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-network-specification
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-network
+      match:
+        resources:
+          kinds:
+            - StellarNode
+      validate:
+        message: "StellarNode resources must explicitly specify the target network (Mainnet, Testnet, Futurenet, or Custom)"
+        pattern:
+          spec:
+            network: "?*"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-node-type
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-node-type
+      match:
+        resources:
+          kinds:
+            - StellarNode
+      validate:
+        message: "StellarNode resources must specify a valid nodeType (Validator, Horizon, or SorobanRpc)"
+        pattern:
+          spec:
+            nodeType: "?*"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-version-specification
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-version
+      match:
+        resources:
+          kinds:
+            - StellarNode
+      validate:
+        message: "StellarNode resources must specify an explicit version (e.g., 'v21.0.0')"
+        pattern:
+          spec:
+            version: "?*"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-replica-count
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-replicas
+      match:
+        resources:
+          kinds:
+            - StellarNode
+      validate:
+        message: "StellarNode resources should specify replica count for high availability"
+        pattern:
+          spec:
+            replicas: "?*"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-privileged
+      match:
+        resources:
+          kinds:
+            - Pod
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: stellar-node
+      validate:
+        message: "Privileged containers are not allowed for security reasons"
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  privileged: false
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-security-context
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-security-context
+      match:
+        resources:
+          kinds:
+            - Pod
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: stellar-node
+      validate:
+        message: "Pods must define a security context with runAsNonRoot"
+        pattern:
+          spec:
+            securityContext:
+              runAsNonRoot: true
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-pod-disruption-budget
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-pdb
+      match:
+        resources:
+          kinds:
+            - StellarNode
+      validate:
+        message: "StellarNode resources should define minAvailable or maxUnavailable for pod disruption budgets"
+        pattern:
+          spec:
+            |(min_available | max_unavailable): "?*"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-storage-retention-policy
+  namespace: kyverno
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-retention-policy
+      match:
+        resources:
+          kinds:
+            - StellarNode
+      validate:
+        message: "StellarNode resources must specify a storage retention policy (Retain, Delete, or Recycle)"
+        pattern:
+          spec:
+            storage:
+              retentionPolicy: "?*"

@@ -365,12 +365,15 @@ fn store_cached_vsl(url: &str, quorum_set: QuorumSet) {
 }
 
 fn http_client() -> Result<&'static Client> {
-    HTTP_CLIENT.get_or_try_init(|| {
-        Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()
-            .map_err(|e| Error::ConfigError(format!("Failed to build HTTP client: {e}")))
-    })
+    if let Some(client) = HTTP_CLIENT.get() {
+        return Ok(client);
+    }
+    let client = Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| Error::ConfigError(format!("Failed to build HTTP client: {e}")))?;
+    // If another thread raced us, discard our client and use theirs.
+    Ok(HTTP_CLIENT.get_or_init(|| client))
 }
 
 // ---------------------------------------------------------------------------
@@ -395,12 +398,11 @@ pub async fn fetch_vsl(url: &str) -> Result<QuorumSet> {
         .get(url)
         .send()
         .await
-        .map_err(Error::HttpError)?;
+        .map_err(|e| Error::ConfigError(format!("Failed to fetch VSL from {url}: {e}")))?;
 
     if !response.status().is_success() {
         return Err(Error::ConfigError(format!(
-            "Failed to fetch VSL from {}: HTTP {}",
-            url,
+            "Failed to fetch VSL from {url}: HTTP {}",
             response.status()
         )));
     }

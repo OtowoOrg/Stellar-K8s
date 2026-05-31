@@ -1,0 +1,40 @@
+# tests/chaos/06-cpu-stress.yaml
+#
+# Experiment 6: CPU stress on the operator pod.
+#
+# What this tests:
+#   All CPU cores on the operator pod are saturated with worker threads.
+#   This simulates a noisy-neighbour scenario, a runaway goroutine, or a
+#   cloud instance that is CPU-throttled by the hypervisor.
+#   The operator must continue reconciling (possibly slower) and must not
+#   crash, deadlock, or corrupt cluster state.
+#
+# Expected outcome:
+#   - Operator pod stays Running throughout (no OOMKill, no CrashLoopBackOff).
+#   - Reconciliation loop continues — may be slower but must not stop.
+#   - All StellarNodes converge to Ready within 10 minutes.
+#   - No duplicate resources or stuck finalizers.
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: operator-cpu-stress
+  namespace: chaos-testing
+  labels:
+    app.kubernetes.io/part-of: stellar-chaos-suite
+    chaos/experiment: "06-cpu-stress"
+    chaos/category: "resource-exhaustion"
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - stellar-system
+    labelSelectors:
+      app: stellar-operator
+  stressors:
+    cpu:
+      workers: 4          # Saturate 4 CPU workers
+      load: 90            # 90% CPU load per worker
+  duration: "60s"
+  scheduler:
+    cron: "@once"

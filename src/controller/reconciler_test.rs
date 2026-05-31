@@ -10,18 +10,32 @@
 #[cfg(test)]
 mod tests {
     use super::super::reconciler::*;
+    use crate::controller::{AnomalyDetector, AuditLog, AuditRecorder, JobRegistry};
     use crate::crd::{
-        CaptiveCoreConfig, HorizonConfig, ManagedDatabaseConfig, NodeType, ResourceRequirements,
-        ResourceSpec, SorobanConfig, StellarNetwork, StellarNode, StellarNodeSpec, StorageConfig,
-        ValidatorConfig,
+        CaptiveCoreConfig, Condition, HorizonConfig, ManagedDatabaseConfig, NodeType,
+        ResourceRequirements, ResourceSpec, SorobanConfig, StellarNetwork, StellarNode,
+        StellarNodeSpec, StorageConfig, ValidatorConfig,
     };
     use crate::error::Error;
+    #[cfg(feature = "rest-api")]
+    use crate::rest_api::metrics_store::StellarMetricsStore;
     use kube::api::ObjectMeta;
     use kube::runtime::controller::Action;
     use kube::Client;
+    use proptest::prelude::*;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use std::time::Duration;
+    use tracing_subscriber::{EnvFilter, Registry};
+
+    fn make_reload_handle() -> tracing_subscriber::reload::Handle<EnvFilter, Registry> {
+        let env_filter = EnvFilter::new("info");
+        let (_layer, handle): (
+            tracing_subscriber::reload::Layer<EnvFilter, Registry>,
+            tracing_subscriber::reload::Handle<EnvFilter, Registry>,
+        ) = tracing_subscriber::reload::Layer::new(env_filter);
+        handle
+    }
 
     /// Helper to create a minimal test StellarNode for Validator
     fn create_test_validator_node(name: &str, namespace: &str) -> StellarNode {
@@ -74,6 +88,10 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                     kms_config: None,
                     vl_source: None,
                     hsm_config: None,
+                    external_dns: None,
+                    known_peers: None,
+                    quorum_optimization: None,
+                    ..Default::default()
                 }),
                 horizon_config: None,
                 soroban_config: None,
@@ -94,6 +112,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 network_policy: None,
                 dr_config: None,
                 pod_anti_affinity: Default::default(),
+                placement: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -103,9 +122,20 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 read_pool_endpoint: None,
+                sidecars: None,
+                cert_manager: None,
                 resource_meta: None,
                 vpa_config: None,
+                custom_network_passphrase: None,
+                nat_traversal: None,
+                cross_cloud_failover: None,
+                hitless_upgrade: None,
+                probes: None,
+                proximity_aware: false,
+                replication_config: None,
+                ..Default::default()
             },
             status: None,
         }
@@ -172,6 +202,8 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                     backup: None,
                     pooling: None,
                     postgres_version: "16".to_string(),
+                    database_name: None,
+                    username: None,
                 }),
                 autoscaling: None,
                 ingress: None,
@@ -183,6 +215,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 network_policy: None,
                 dr_config: None,
                 pod_anti_affinity: Default::default(),
+                placement: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -192,9 +225,17 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 read_pool_endpoint: None,
+                sidecars: None,
+                cert_manager: None,
                 resource_meta: None,
                 vpa_config: None,
+                custom_network_passphrase: None,
+                nat_traversal: None,
+                cross_cloud_failover: None,
+                hitless_upgrade: None,
+                ..Default::default()
             },
             status: None,
         }
@@ -252,6 +293,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                     }),
                     enable_preflight: true,
                     max_events_per_request: 10000,
+                    cache_config: None,
                 }),
                 replicas: 3,
                 min_available: None,
@@ -270,6 +312,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 network_policy: None,
                 dr_config: None,
                 pod_anti_affinity: Default::default(),
+                placement: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 snapshot_schedule: None,
@@ -279,9 +322,17 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 read_pool_endpoint: None,
+                sidecars: None,
+                cert_manager: None,
                 resource_meta: None,
                 vpa_config: None,
+                custom_network_passphrase: None,
+                nat_traversal: None,
+                cross_cloud_failover: None,
+                hitless_upgrade: None,
+                ..Default::default()
             },
             status: None,
         }
@@ -303,13 +354,19 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
         let state = Arc::new(ControllerState {
-            client,
+            client: client.clone(),
             enable_mtls: false,
             operator_namespace: "stellar-operator".to_string(),
             watch_namespace: None,
             mtls_config: None,
             dry_run: true,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 60,
+            retry_budget_max_attempts: 3,
             is_leader: Arc::new(AtomicBool::new(true)),
             event_reporter: kube::runtime::events::Reporter {
                 controller: "stellar-operator".to_string(),
@@ -318,6 +375,20 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             operator_config: Arc::new(Default::default()),
             reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
             last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
+            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         });
 
         // Test with a retriable error (network-related)
@@ -339,13 +410,19 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
         let state = Arc::new(ControllerState {
-            client,
+            client: client.clone(),
             enable_mtls: false,
             operator_namespace: "stellar-operator".to_string(),
             watch_namespace: None,
             mtls_config: None,
             dry_run: true,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 60,
+            retry_budget_max_attempts: 3,
             is_leader: Arc::new(AtomicBool::new(true)),
             event_reporter: kube::runtime::events::Reporter {
                 controller: "stellar-operator".to_string(),
@@ -354,6 +431,20 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             operator_config: Arc::new(Default::default()),
             reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
             last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
+            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         });
 
         // Test with validation error (non-retriable)
@@ -374,13 +465,19 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
         let state = Arc::new(ControllerState {
-            client,
+            client: client.clone(),
             enable_mtls: false,
             operator_namespace: "stellar-operator".to_string(),
             watch_namespace: None,
             mtls_config: None,
             dry_run: true,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 60,
+            retry_budget_max_attempts: 3,
             is_leader: Arc::new(AtomicBool::new(true)),
             event_reporter: kube::runtime::events::Reporter {
                 controller: "stellar-operator".to_string(),
@@ -389,6 +486,20 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             operator_config: Arc::new(Default::default()),
             reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
             last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
+            log_reload_handle: make_reload_handle(),
+            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         });
 
         let errors = vec![
@@ -525,27 +636,28 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         // Test Testnet
         node.spec.network = StellarNetwork::Testnet;
         assert_eq!(
-            node.spec.network.passphrase(),
+            node.spec.network_passphrase(),
             "Test SDF Network ; September 2015"
         );
 
         // Test Mainnet
         node.spec.network = StellarNetwork::Mainnet;
         assert_eq!(
-            node.spec.network.passphrase(),
+            node.spec.network_passphrase(),
             "Public Global Stellar Network ; September 2015"
         );
 
         // Test Futurenet
         node.spec.network = StellarNetwork::Futurenet;
         assert_eq!(
-            node.spec.network.passphrase(),
+            node.spec.network_passphrase(),
             "Test SDF Future Network ; October 2022"
         );
 
         // Test Custom
         node.spec.network = StellarNetwork::Custom("My Custom Network".to_string());
-        assert_eq!(node.spec.network.passphrase(), "My Custom Network");
+        node.spec.custom_network_passphrase = Some("My Custom Network".to_string());
+        assert_eq!(node.spec.network_passphrase(), "My Custom Network");
     }
 
     /// Test that validator nodes require quorum set
@@ -600,7 +712,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
-
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
         let state = ControllerState {
             client: client.clone(),
             enable_mtls: true,
@@ -608,6 +722,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             watch_namespace: None,
             mtls_config: None,
             dry_run: false,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 60,
+            retry_budget_max_attempts: 3,
             is_leader: Arc::new(AtomicBool::new(true)),
             event_reporter: kube::runtime::events::Reporter {
                 controller: "stellar-operator".to_string(),
@@ -616,6 +733,20 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             operator_config: Arc::new(Default::default()),
             reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
             last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
+            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         };
 
         assert_eq!(state.operator_namespace, "test-namespace");
@@ -631,6 +762,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
 
         let state = ControllerState {
             client,
@@ -639,6 +773,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             watch_namespace: None,
             mtls_config: None,
             dry_run: true,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 60,
+            retry_budget_max_attempts: 3,
             is_leader: Arc::new(AtomicBool::new(true)),
             event_reporter: kube::runtime::events::Reporter {
                 controller: "stellar-operator".to_string(),
@@ -647,6 +784,20 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             operator_config: Arc::new(Default::default()),
             reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
             last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
+            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         };
 
         assert!(
@@ -683,5 +834,109 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             node.spec.version.contains('.'),
             "Version should contain dots for semantic versioning"
         );
+    }
+
+    fn condition_status<'a>(conditions: &'a [Condition], condition_type: &str) -> Option<&'a str> {
+        conditions
+            .iter()
+            .find(|condition| condition.type_ == condition_type)
+            .map(|condition| condition.status.as_str())
+    }
+
+    proptest! {
+        #[test]
+        fn prop_phase_transition_invariants(
+            phase in prop_oneof![
+                Just("Ready".to_string()),
+                Just("Creating".to_string()),
+                Just("Pending".to_string()),
+                Just("Syncing".to_string()),
+                Just("Running".to_string()),
+                Just("Degraded".to_string()),
+                Just("Failed".to_string()),
+                Just("Remediating".to_string()),
+                Just("Suspended".to_string()),
+                Just("Maintenance".to_string()),
+            ],
+            message in proptest::option::of("[A-Za-z0-9 _.-]{1,40}"),
+        ) {
+            let mut conditions = Vec::new();
+            apply_phase_conditions(&mut conditions, &phase, message.as_deref());
+
+            let ready = condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_READY);
+            prop_assert!(ready.is_some());
+
+            match phase.as_str() {
+                "Ready" | "Running" => {
+                    prop_assert_eq!(ready, Some(crate::controller::conditions::CONDITION_STATUS_TRUE));
+                }
+                _ => {
+                    prop_assert_ne!(ready, Some(crate::controller::conditions::CONDITION_STATUS_TRUE));
+                }
+            }
+
+            match phase.as_str() {
+                "Degraded" | "Failed" | "Remediating" => {
+                    prop_assert_eq!(
+                        condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_DEGRADED),
+                        Some(crate::controller::conditions::CONDITION_STATUS_TRUE)
+                    );
+                }
+                "Ready" => {
+                    prop_assert_eq!(
+                        condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_DEGRADED),
+                        Some(crate::controller::conditions::CONDITION_STATUS_FALSE)
+                    );
+                }
+                _ => {}
+            }
+        }
+
+        #[test]
+        fn prop_unknown_phase_sets_ready_unknown(
+            phase in "[A-Za-z][A-Za-z0-9_-]{0,24}",
+        ) {
+            prop_assume!(![
+                "Ready", "Creating", "Pending", "Syncing", "Running",
+                "Degraded", "Failed", "Remediating", "Suspended", "Maintenance"
+            ].contains(&phase.as_str()));
+
+            let mut conditions = Vec::new();
+            apply_phase_conditions(&mut conditions, &phase, None);
+
+            prop_assert_eq!(
+                condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_READY),
+                Some(crate::controller::conditions::CONDITION_STATUS_UNKNOWN)
+            );
+        }
+
+        #[test]
+        fn prop_condition_types_remain_unique_after_sequences(
+            phases in proptest::collection::vec(
+                prop_oneof![
+                    Just("Ready".to_string()),
+                    Just("Creating".to_string()),
+                    Just("Pending".to_string()),
+                    Just("Syncing".to_string()),
+                    Just("Running".to_string()),
+                    Just("Degraded".to_string()),
+                    Just("Failed".to_string()),
+                    Just("Remediating".to_string()),
+                    Just("Suspended".to_string()),
+                    Just("Maintenance".to_string()),
+                ],
+                1..32
+            )
+        ) {
+            let mut conditions = Vec::new();
+            for phase in phases {
+                apply_phase_conditions(&mut conditions, &phase, None);
+            }
+
+            let mut seen = std::collections::BTreeSet::new();
+            for condition in &conditions {
+                prop_assert!(seen.insert(condition.type_.clone()));
+            }
+        }
     }
 }

@@ -1,0 +1,74 @@
+name: Collect E2E Logs & Artifacts
+description: >
+  Consolidated log and artifact gathering for all e2e / heavy-validation
+  workflows. Dumps operator logs, Kubernetes events, and resource status,
+  then uploads everything as a named artifact.
+
+inputs:
+  operator-namespace:
+    description: Namespace where the operator is deployed
+    required: false
+    default: stellar-system
+  artifact-name:
+    description: Name of the uploaded artifact
+    required: true
+  extra-namespaces:
+    description: Space-separated list of additional namespaces to dump events from
+    required: false
+    default: ""
+  retention-days:
+    description: How many days to retain the artifact
+    required: false
+    default: "30"
+
+runs:
+  using: composite
+  steps:
+    - name: Dump cluster state
+      if: always()
+      shell: bash
+      env:
+        OPERATOR_NAMESPACE: ${{ inputs.operator-namespace }}
+        EXTRA_NS: ${{ inputs.extra-namespaces }}
+      run: |
+        mkdir -p /tmp/e2e-logs
+
+        echo "=== Operator Pod Status ===" | tee /tmp/e2e-logs/summary.txt
+        kubectl get pods -n "${OPERATOR_NAMESPACE}" \
+          -o wide 2>/dev/null | tee -a /tmp/e2e-logs/summary.txt || true
+
+        echo "" >> /tmp/e2e-logs/summary.txt
+        echo "=== Operator Logs ===" >> /tmp/e2e-logs/summary.txt
+        kubectl logs \
+          --selector=app=stellar-operator \
+          --namespace="${OPERATOR_NAMESPACE}" \
+          --tail=500 2>/dev/null \
+          | tee /tmp/e2e-logs/operator.log >> /tmp/e2e-logs/summary.txt || true
+
+        echo "" >> /tmp/e2e-logs/summary.txt
+        echo "=== StellarNode Status ===" >> /tmp/e2e-logs/summary.txt
+        kubectl get stellarnode --all-namespaces -o wide 2>/dev/null \
+          | tee -a /tmp/e2e-logs/summary.txt || true
+
+        echo "" >> /tmp/e2e-logs/summary.txt
+        echo "=== Kubernetes Events (all namespaces) ===" >> /tmp/e2e-logs/summary.txt
+        kubectl get events --all-namespaces \
+          --sort-by='.lastTimestamp' 2>/dev/null \
+          | tail -100 | tee -a /tmp/e2e-logs/summary.txt || true
+
+        # Dump events for any extra namespaces
+        for ns in ${EXTRA_NS}; do
+          echo "" >> /tmp/e2e-logs/summary.txt
+          echo "=== Events in ${ns} ===" >> /tmp/e2e-logs/summary.txt
+          kubectl get events -n "${ns}" \
+            --sort-by='.lastTimestamp' 2>/dev/null \
+            | tee -a /tmp/e2e-logs/summary.txt || true
+        done
+
+    - name: Upload logs artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: /tmp/e2e-logs/
+        retention-days: ${{ inputs.retention-days }}

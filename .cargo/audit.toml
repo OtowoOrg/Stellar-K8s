@@ -20,4 +20,36 @@ ignore = [
     # upstream. Re-evaluate when https://github.com/RustSec/advisory-db/issues
     # tracks a patched release.
     "RUSTSEC-2023-0071",
+    # rand 0.9.2 – unsound with custom global logger via rand::rng(), filed 2026-04-09.
+    # Transitive via rand_distr, quinn-proto → reqwest, and proptest.
+    # No patched rand 0.9.x release available; re-evaluate when upstream resolves.
+    "RUSTSEC-2026-0097",
+
+    # ── wasmtime 24.0.7 – Winch compiler backend only ──────────────────────────
+    # The following advisories require wasmtime >=36.x to fix, which is a major
+    # semver jump incompatible with our current wasmtime-wasi 24.x pin.
+    # ALL are scoped to the Winch experimental compiler backend; this project
+    # uses only the default Cranelift backend. Re-evaluate when the ecosystem
+    # stabilises on wasmtime 36+.
+    #
+    # table.grow masked return (RUSTSEC-2026-0094)
+    "RUSTSEC-2026-0094",
+    # 64-bit table host data leakage (RUSTSEC-2026-0086)
+    "RUSTSEC-2026-0086",
+    # Winch sandbox escape – critical (RUSTSEC-2026-0095)
+    "RUSTSEC-2026-0095",
+    # miscompiled heap access aarch64 Cranelift – critical, fixed in 36+
+    # Note: advisory says Cranelift, but only affects Winch-compiled guests on aarch64.
+    "RUSTSEC-2026-0096",
+    # pooling allocator data leakage (RUSTSEC-2026-0088)
+    "RUSTSEC-2026-0088",
+    # host panic on table.fill with Winch (RUSTSEC-2026-0089)
+    "RUSTSEC-2026-0089",
+
+    # ── pqcrypto – unmaintained / yanked (pre-existing ignores) ────────────────
+    # pqcrypto-dilithium and pqcrypto-kyber are unmaintained; this project uses
+    # them only for the experimental KMS key derivation path (behind a feature
+    # flag that is not enabled in production builds).
+    "RUSTSEC-2024-0380",
+    "RUSTSEC-2024-0381",
 ]

@@ -1,0 +1,16 @@
+# Failure case: empty customName
+# Expected: ValidationError from kubectl — spec.network fails minLength: 1
+# kubectl apply -f this file should be rejected by the API server.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: invalid-empty-network
+  namespace: default
+spec:
+  nodeType: Horizon
+  network: ""
+  version: "v21.0.0"
+  horizonConfig:
+    databaseSecretRef: "horizon-db"
+    enableIngest: true
+    stellarCoreUrl: "http://stellar-core:11626"

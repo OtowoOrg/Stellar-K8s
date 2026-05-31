@@ -1,0 +1,111 @@
+{{- if .Values.forkDetector.enabled }}
+---
+# Fork Detection Sidecar — standalone Deployment (for operator pod).
+# When deploying alongside individual StellarNode pods, the sidecar is injected
+# via the deployment.yaml template instead.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-fork-detector
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fork-detector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "stellar-operator.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: fork-detector
+  template:
+    metadata:
+      labels:
+        {{- include "stellar-operator.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: fork-detector
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.forkDetector.metricsPort | quote }}
+        prometheus.io/path: "/metrics"
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "stellar-operator.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: fork-detector
+          image: "{{ .Values.forkDetector.image.repository | default .Values.image.repository }}:{{ .Values.forkDetector.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.forkDetector.image.pullPolicy | default .Values.image.pullPolicy }}
+          command: ["/stellar-fork-detector"]
+          env:
+            - name: FORK_DETECTOR_LOCAL_ENDPOINT
+              value: {{ .Values.forkDetector.localEndpoint | quote }}
+            - name: FORK_DETECTOR_ANCHORS
+              value: {{ join "," .Values.forkDetector.anchors | quote }}
+            - name: FORK_DETECTOR_POLL_INTERVAL
+              value: {{ .Values.forkDetector.pollIntervalSecs | quote }}
+            - name: FORK_DETECTOR_DIVERGENCE_THRESHOLD
+              value: {{ .Values.forkDetector.divergenceThreshold | quote }}
+            - name: FORK_DETECTOR_METRICS_BIND
+              value: "0.0.0.0:{{ .Values.forkDetector.metricsPort }}"
+            - name: FORK_DETECTOR_NETWORK
+              value: {{ .Values.byzantineWatcher.defaultNetwork | default "mainnet" | quote }}
+            - name: FORK_DETECTOR_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: RUST_LOG
+              value: {{ .Values.operator.logLevel }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.forkDetector.metricsPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.forkDetector.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.arch }}
+        kubernetes.io/arch: {{ .Values.arch }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-fork-detector
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fork-detector
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: {{ .Values.forkDetector.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "stellar-operator.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: fork-detector
+{{- end }}

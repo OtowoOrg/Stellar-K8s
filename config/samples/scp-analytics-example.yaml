@@ -1,0 +1,366 @@
+---
+# Example: Stellar Validator with SCP Analytics enabled
+# This configuration demonstrates how to enable real-time SCP message streaming
+# to Kafka for network topology analysis and quorum health monitoring.
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-with-scp-analytics
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-validator
+    app.kubernetes.io/component: validator
+    stellar.org/network: mainnet
+    stellar.org/scp-analytics: enabled
+spec:
+  # Node configuration
+  nodeType: Validator
+  network: mainnet
+  version: "21.0.0"
+  historyMode: Full
+  
+  # SCP Analytics configuration
+  # Enables a sidecar that streams SCP messages to Kafka
+  scpAnalytics:
+    enabled: true
+    
+    kafkaConfig:
+      # Kafka bootstrap servers
+      bootstrapServers: "kafka-cluster.kafka:9092"
+      
+      # Topic name for SCP messages
+      topic: "stellar-scp-messages"
+      
+      # Serialization format: "avro", "protobuf", or "json"
+      # Avro recommended for production (efficient, schema evolution)
+      format: "avro"
+      
+      # Compression: "snappy", "gzip", "lz4", or "zstd"
+      # Snappy recommended for balance of speed and compression
+      compression: "snappy"
+      
+      # Batch size in bytes (1MB default)
+      batchSize: 1000000
+      
+      # Linger time in milliseconds
+      # Wait this long before sending batch (allows batching)
+      lingerMs: 100
+      
+      # Enable message deduplication
+      enableDeduplication: true
+      
+      # Polling interval in seconds
+      # How often to query Stellar Core for SCP state
+      pollIntervalSecs: 1
+      
+      # Schema registry URL (for Avro)
+      schemaRegistryUrl: "http://schema-registry.kafka:8081"
+      
+      # SASL authentication (optional, for secure Kafka)
+      sasl:
+        mechanism: "SCRAM-SHA-256"
+        username: "stellar-producer"
+        password: "secret"  # Use Kubernetes Secret in production
+  
+  # Storage configuration
+  storage:
+    mode: PersistentVolume
+    storageClass: fast-ssd
+    size: "1500Gi"
+    retentionPolicy: Retain
+  
+  # Resource requirements
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  
+  # Quorum configuration
+  quorumSet:
+    threshold: 3
+    validators:
+      - name: sdf1
+        publicKey: "GCGB2S2KGYARPVIA37HYZXVRM2YZUEXA6S33ZU5BUDC6THSB62LZSTYH"
+      - name: sdf2
+        publicKey: "GCM6QMP3DLRPTAZW2UZPCPX2LF3SXWXKPMP3GKFZBDSF3QZGV2G5QSTK"
+      - name: sdf3
+        publicKey: "GABMKJM6I25XI4K7U6XWMULOUQIQ27BCTMLS6BYYSOWKTBUXVRJSXHYQ"
+      - name: satoshipay
+        publicKey: "GC5SXLNAM3C4NMGK2PXK4R34B5GNZ47FYQ24ZIBFDFOCU6D4KBN4POAE"
+
+---
+# Kafka cluster configuration (using Strimzi)
+# This is a production-ready Kafka cluster for SCP analytics
+
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: stellar-kafka
+  namespace: kafka
+spec:
+  kafka:
+    version: 3.6.0
+    replicas: 3
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+        authentication:
+          type: scram-sha-256
+    authorization:
+      type: simple
+    config:
+      # Replication settings
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      default.replication.factor: 3
+      min.insync.replicas: 2
+      
+      # Performance tuning
+      num.network.threads: 8
+      num.io.threads: 8
+      socket.send.buffer.bytes: 102400
+      socket.receive.buffer.bytes: 102400
+      socket.request.max.bytes: 104857600
+      
+      # Log settings
+      log.retention.hours: 168  # 7 days
+      log.segment.bytes: 1073741824
+      log.retention.check.interval.ms: 300000
+      
+      # Compression
+      compression.type: snappy
+    storage:
+      type: jbod
+      volumes:
+        - id: 0
+          type: persistent-claim
+          size: 500Gi
+          deleteClaim: false
+          class: fast-ssd
+  zookeeper:
+    replicas: 3
+    storage:
+      type: persistent-claim
+      size: 10Gi
+      deleteClaim: false
+      class: fast-ssd
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
+
+---
+# Kafka topic for SCP messages
+
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: stellar-scp-messages
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: stellar-kafka
+spec:
+  # Partitions: one per validator for ordering guarantees
+  partitions: 25
+  
+  # Replication factor for durability
+  replicas: 3
+  
+  config:
+    # Retention: 7 days
+    retention.ms: 604800000
+    
+    # Compression
+    compression.type: snappy
+    
+    # Segment size: 1GB
+    segment.bytes: 1073741824
+    
+    # Min in-sync replicas
+    min.insync.replicas: 2
+    
+    # Cleanup policy
+    cleanup.policy: delete
+
+---
+# Kafka user for SCP producer (SASL authentication)
+
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: stellar-producer
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: stellar-kafka
+spec:
+  authentication:
+    type: scram-sha-256
+  authorization:
+    type: simple
+    acls:
+      # Write to SCP messages topic
+      - resource:
+          type: topic
+          name: stellar-scp-messages
+          patternType: literal
+        operations:
+          - Write
+          - Create
+          - Describe
+      
+      # Access to consumer groups (for exactly-once semantics)
+      - resource:
+          type: group
+          name: stellar-producer
+          patternType: prefix
+        operations:
+          - Read
+
+---
+# PrometheusRule for SCP analytics alerts
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: scp-analytics-alerts
+  namespace: stellar-system
+  labels:
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: scp-analytics
+      interval: 30s
+      rules:
+        - alert: ScpTopologyUnhealthy
+          expr: stellar_topology_health_score < 0.7
+          for: 5m
+          labels:
+            severity: warning
+            component: scp-analytics
+          annotations:
+            summary: "SCP topology health degraded"
+            description: |
+              Network topology health score is {{ $value }} (threshold: 0.7).
+              Check for stalled validators or network partitions.
+        
+        - alert: ScpStalledValidators
+          expr: stellar_topology_stalled_validators > 3
+          for: 10m
+          labels:
+            severity: warning
+            component: scp-analytics
+          annotations:
+            summary: "Multiple validators stalled"
+            description: |
+              {{ $value }} validators have not changed SCP phase in 30+ seconds.
+              This may indicate network issues or validator problems.
+        
+        - alert: ScpQuorumIntersectionLost
+          expr: stellar_topology_quorum_intersection == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: scp-analytics
+          annotations:
+            summary: "Quorum intersection lost"
+            description: |
+              The network has lost quorum intersection.
+              This is a critical condition that can lead to consensus failure.
+        
+        - alert: ScpNetworkPartition
+          expr: stellar_topology_partition_detected == 1
+          for: 5m
+          labels:
+            severity: critical
+            component: scp-analytics
+          annotations:
+            summary: "Network partition detected"
+            description: |
+              A network partition has been detected.
+              Validators are in significantly different SCP phases.
+        
+        - alert: ScpConsumerLag
+          expr: stellar_scp_consumer_lag > 10000
+          for: 5m
+          labels:
+            severity: warning
+            component: scp-analytics
+          annotations:
+            summary: "SCP consumer lag high"
+            description: |
+              Consumer lag is {{ $value }} messages.
+              Consider scaling up consumer replicas.
+        
+        - alert: ScpSidecarDown
+          expr: up{job="scp-sidecar"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: scp-analytics
+          annotations:
+            summary: "SCP sidecar down"
+            description: |
+              SCP streaming sidecar is not responding.
+              SCP messages are not being captured.
+
+---
+# Grafana Dashboard ConfigMap
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scp-analytics-dashboard
+  namespace: stellar-system
+  labels:
+    grafana_dashboard: "1"
+data:
+  scp-analytics.json: |
+    {
+      "dashboard": {
+        "title": "SCP Analytics",
+        "panels": [
+          {
+            "title": "Topology Health Score",
+            "targets": [
+              {
+                "expr": "stellar_topology_health_score"
+              }
+            ]
+          },
+          {
+            "title": "Active Validators",
+            "targets": [
+              {
+                "expr": "stellar_topology_active_validators"
+              }
+            ]
+          },
+          {
+            "title": "Stalled Validators",
+            "targets": [
+              {
+                "expr": "stellar_topology_stalled_validators"
+              }
+            ]
+          },
+          {
+            "title": "Consensus Latency",
+            "targets": [
+              {
+                "expr": "stellar_topology_consensus_latency_ms"
+              }
+            ]
+          }
+        ]
+      }
+    }

@@ -54,13 +54,13 @@ spec:
       vALiDaTor1 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX2"
       vALiDaTor2 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX3"
       vALiDaTor3 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX4"
-      
+
       [VALIDATORS.vALiDaTor1]
       HOME_DOMAIN = "validator1.example.com"
-      
+
       [VALIDATORS.vALiDaTor2]
       HOME_DOMAIN = "validator2.example.com"
-      
+
       [VALIDATORS.vALiDaTor3]
       HOME_DOMAIN = "validator3.example.com"
     enableHistoryArchive: true
@@ -98,13 +98,13 @@ spec:
       vALiDaTor1 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX2"
       vALiDaTor2 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX3"
       vALiDaTor3 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX4"
-      
+
       [VALIDATORS.vALiDaTor1]
       HOME_DOMAIN = "validator1.example.com"
-      
+
       [VALIDATORS.vALiDaTor2]
       HOME_DOMAIN = "validator2.example.com"
-      
+
       [VALIDATORS.vALiDaTor3]
       HOME_DOMAIN = "validator3.example.com"
     enableHistoryArchive: true
@@ -142,13 +142,13 @@ spec:
       vALiDaTor1 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX2"
       vALiDaTor2 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX3"
       vALiDaTor3 = "GCZST3XVCDTUJ76ZAV2HA72KYQJWKCQXVFQ3YGUQR5DAKT4QC6FCGX4"
-      
+
       [VALIDATORS.vALiDaTor1]
       HOME_DOMAIN = "validator1.example.com"
-      
+
       [VALIDATORS.vALiDaTor2]
       HOME_DOMAIN = "validator2.example.com"
-      
+
       [VALIDATORS.vALiDaTor3]
       HOME_DOMAIN = "validator3.example.com"
     enableHistoryArchive: true

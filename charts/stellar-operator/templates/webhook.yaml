@@ -74,14 +74,18 @@ spec:
         prometheus.io/port: "9090"
     spec:
       serviceAccountName: stellar-webhook
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: webhook
-          image: stellar-k8s-webhook:latest
-          imagePullPolicy: IfNotPresent
+          image: '{{ if .Values.image.digest }}{{ .Values.image.repository }}@{{ .Values.image.digest }}{{ else }}{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}{{ end }}'
+          imagePullPolicy: '{{ .Values.image.pullPolicy }}'
           args:
             - "--webhook-port=8443"
             - "--metrics-port=9090"

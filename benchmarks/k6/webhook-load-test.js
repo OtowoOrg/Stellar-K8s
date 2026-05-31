@@ -1,10 +1,10 @@
 /**
  * Stellar-K8s Webhook Performance Benchmark
- * 
+ *
  * This k6 script measures latency (p99) and throughput for the
  * StellarNode Validation and Mutation webhooks to quantify Rust's
  * low-latency advantage in Kubernetes operators.
- * 
+ *
  * Usage:
  *   k6 run --out json=results/webhook-benchmark.json benchmarks/k6/webhook-load-test.js
  *   k6 run --env WEBHOOK_URL=https://webhook:8443 benchmarks/k6/webhook-load-test.js

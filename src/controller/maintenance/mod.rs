@@ -5,7 +5,9 @@
 pub mod bloat;
 pub mod controller;
 pub mod coordinator;
+pub mod node_drain;
 
 pub use bloat::BloatDetector;
 pub use controller::MaintenanceController;
 pub use coordinator::MaintenanceCoordinator;
+pub use node_drain::NodeDrainOrchestrator;

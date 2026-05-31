@@ -13,6 +13,7 @@ spec:
     stellarCoreUrl: "http://stellar-core:11626"
   # New Canary rollout strategy
   strategy:
+    type: canary
     canary:
-      weight: 25 # 25% of traffic will be routed to the canary pods
+      weight: 20
       checkIntervalSeconds: 60

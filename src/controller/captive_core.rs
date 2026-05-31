@@ -76,7 +76,7 @@ impl CaptiveCoreConfigBuilder {
         let network_passphrase = config
             .network_passphrase
             .clone()
-            .unwrap_or_else(|| node.spec.network.passphrase().to_string());
+            .unwrap_or_else(|| node.spec.network_passphrase().to_string());
 
         // Validate history archive URLs
         if config.history_archive_urls.is_empty() {
@@ -203,7 +203,6 @@ mod tests {
                 node_type: NodeType::SorobanRpc,
                 network: StellarNetwork::Testnet,
                 version: "v21.0.0".to_string(),
-                history_mode: Default::default(),
                 resources: crate::crd::ResourceRequirements {
                     requests: crate::crd::ResourceSpec {
                         cpu: "500m".to_string(),
@@ -217,12 +216,8 @@ mod tests {
                 storage: crate::crd::StorageConfig {
                     storage_class: "standard".to_string(),
                     size: "100Gi".to_string(),
-                    retention_policy: Default::default(),
-                    annotations: None,
                     ..Default::default()
                 },
-                validator_config: None,
-                horizon_config: None,
                 soroban_config: Some(SorobanConfig {
                     stellar_core_url: "http://core:11626".to_string(),
                     #[allow(deprecated)]
@@ -230,6 +225,7 @@ mod tests {
                     captive_core_structured_config: Some(captive_config),
                     enable_preflight: true,
                     max_events_per_request: 10000,
+                    cache_config: None,
                 }),
                 replicas: 2,
                 min_available: None,
@@ -237,7 +233,6 @@ mod tests {
                 suspended: false,
                 alerting: false,
                 database: None,
-                // Added this field to resolve the E0063 error
                 managed_database: None,
                 autoscaling: None,
                 ingress: None,
@@ -251,6 +246,7 @@ mod tests {
                 network_policy: None,
                 dr_config: None,
                 pod_anti_affinity: Default::default(),
+                placement: Default::default(),
                 topology_spread_constraints: None,
                 cve_handling: None,
                 read_replica_config: None,
@@ -258,9 +254,17 @@ mod tests {
                 oci_snapshot: None,
                 service_mesh: None,
                 forensic_snapshot: None,
+                label_propagation: None,
                 resource_meta: None,
                 vpa_config: None,
                 read_pool_endpoint: None,
+                sidecars: None,
+                cert_manager: None,
+                nat_traversal: None,
+                custom_network_passphrase: None,
+                cross_cloud_failover: None,
+                hitless_upgrade: None,
+                ..Default::default()
             },
             status: None,
         }
@@ -561,6 +565,7 @@ mod tests {
 
         let mut node = create_test_node(config);
         node.spec.network = StellarNetwork::Custom(custom_passphrase.to_string());
+        node.spec.custom_network_passphrase = Some(custom_passphrase.to_string());
 
         let builder = CaptiveCoreConfigBuilder::from_node_config(&node).unwrap();
         let toml = builder.build_toml().unwrap();

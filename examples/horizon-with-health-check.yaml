@@ -19,16 +19,16 @@ metadata:
 spec:
   # Horizon API server
   nodeType: Horizon
-  
+
   # Target network
   network: Testnet
-  
+
   # Container version
   version: "v21.0.0"
-  
+
   # Number of replicas (can scale horizontally)
   replicas: 2
-  
+
   # Resource requirements
   resources:
     requests:
@@ -37,28 +37,28 @@ spec:
     limits:
       cpu: "4"
       memory: "16Gi"
-  
+
   # Storage configuration
   storage:
     storageClass: "ssd"
     size: "500Gi"
     retentionPolicy: Retain
-  
+
   # Horizon-specific configuration
   horizonConfig:
     # Reference to secret containing database credentials
     # Secret should have keys: DATABASE_URL
     databaseSecretRef: "horizon-db-credentials"
-    
+
     # Enable ingestion from Stellar Core
     enableIngest: true
-    
+
     # Stellar Core URL to ingest from
     stellarCoreUrl: "http://stellar-core:11626"
-    
+
     # Number of parallel ingestion workers
     ingestWorkers: 2
-    
+
     # Enable experimental ingestion features
     enableExperimentalIngestion: false
 

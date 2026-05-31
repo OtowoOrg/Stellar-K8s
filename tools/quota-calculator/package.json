@@ -1,0 +1,11 @@
+{
+    "name": "quota-calculator",
+    "version": "0.1.0",
+    "type": "module",
+    "description": "Standalone quota calculator (web UI + CLI) anchored to GCP pricing samples.",
+    "scripts": {
+        "start": "node cli.mjs --help",
+        "serve": "npx http-server public -c-1 -p 8080",
+        "build": "echo 'No build step; pure ESM modules.'"
+    }
+}

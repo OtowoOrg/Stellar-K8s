@@ -16,7 +16,7 @@ PVC creation succeeds but ConfigMap creation fails. The reconciler requeues. On 
 
 ```tla
 NoResourceLeak =>
-    (GetNode(n).hasResources = TRUE) => 
+    (GetNode(n).hasResources = TRUE) =>
         (GetNode(n).state \in {"HealthChecking", "Running", "BeingDeleted", "CleanupInProgress"})
 ```
 
@@ -36,7 +36,7 @@ resources::ensure_config_map(client, node, None, ctx.enable_mtls).await?;  // At
 // If either fails, error bubbles up, no state change
 ```
 
-**Mechanism**: 
+**Mechanism**:
 - K8s API operations are atomic at the resource level
 - If ConfigMap creation fails, the entire `apply_or_emit` block fails
 - Kubernetes runtime requeues the reconciliation
@@ -132,13 +132,13 @@ pub(crate) async fn cleanup_stellar_node(
     if let Err(e) = service_mesh::delete_service_mesh_resources(client, node).await {
         warn!("Failed to delete service mesh resources: {:?}", e);
     }
-    
+
     // Step 2: Health archive cleanup
     apply_or_emit(ctx, node, ActionType::Delete, "Archive Health", ...).await?;
-    
+
     // Step 3: Other resource cleanup
     apply_or_emit(ctx, node, ActionType::Delete, "Resources", ...).await?;
-    
+
     // Only then return success - finalizer will be removed by kube-rs
     Ok(Action::await_change())
 }
@@ -237,7 +237,7 @@ HealthCheckCompletes ==
 pub async fn check_node_health(client: &Client, node: &StellarNode) -> Result<HealthStatus> {
     // Timeout prevents hanging
     let timeout = Duration::from_secs(60);
-    
+
     match timeout_at(timeout, check_sync_status(client, node)).await {
         Ok(Ok(synced)) => Ok(HealthStatus { synced, ..}),
         Ok(Err(e)) => Err(e),
@@ -290,7 +290,7 @@ client.create(DestinationRule::from(circuit_breaker)).await?;
 ```rust
 pub fn validate_service_mesh(service_mesh: &ServiceMeshConfig) -> Result<(), Vec<SpecValidationError>> {
     let mut errors = Vec::new();
-    
+
     if let Some(ref istio) = service_mesh.istio {
         if let Some(ref circuit_breaker) = istio.circuit_breaker {
             if circuit_breaker.consecutive_errors < 1 {
@@ -300,7 +300,7 @@ pub fn validate_service_mesh(service_mesh: &ServiceMeshConfig) -> Result<(), Vec
                     how_to_fix: "Set to a value >= 1, typically 5-10 for most use cases".to_string(),
                 });
             }
-            
+
             if circuit_breaker.time_window_secs < 1 {
                 errors.push(SpecValidationError {
                     field: "service_mesh.istio.circuit_breaker.time_window_secs".to_string(),
@@ -310,7 +310,7 @@ pub fn validate_service_mesh(service_mesh: &ServiceMeshConfig) -> Result<(), Vec
             }
         }
     }
-    
+
     if errors.is_empty() { Ok(()) } else { Err(errors) }
 }
 ```
@@ -408,10 +408,10 @@ pub(crate) async fn cleanup_stellar_node(
         warn!("Failed to delete service mesh resources: {:?}", e);
         // Continue anyway - cleanup is idempotent
     }
-    
+
     // Other cleanup steps
     // ...
-    
+
     // Return success even if some cleanup failed
     Ok(Action::await_change())
 }
@@ -500,7 +500,7 @@ async fn reconcile(obj: Arc<StellarNode>, ctx: Arc<ControllerState>) -> Result<A
 
         // Bring in the latest object from API server
         let node = api.get(obj.name_any()).await?;
-        
+
         // Pass the fresh object through reconciliation
         apply_stellar_node(&client, &node, &ctx).await
     };
@@ -529,7 +529,7 @@ Node creation requires resources that exceed namespace quotas. CreateDeployment 
 ```rust
 pub async fn ensure_deployment(client: &Client, node: &StellarNode) -> Result<()> {
     let deployment = create_deployment_spec(node)?;
-    
+
     match client.create(&deployment).await {
         Ok(_) => Ok(()),
         Err(e) if e.to_string().contains("exceeded") => {
@@ -549,7 +549,7 @@ $ kubectl describe stellarnode my-validator
 Status:
   Phase: CreatingResources
   Message: Failed to create Deployment: Namespace resource quota exceeded
-  
+
 Events:
   Warning  CreateFailed  2s  StellarOperator  Failed to create Deployment: exceeded quota
 ```
@@ -591,17 +591,17 @@ pub(crate) async fn apply_stellar_node(
         update_status(client, node, "Failed", Some(&message), 0, true).await?;
         return Err(Error::ValidationError(message));
     }
-    
+
     // Always attempt resource creation (idempotent)
     resources::ensure_pvc(client, node).await?;
-    
+
     // Always run health check (even if status says healthy)
     let health_result = health::check_node_sync(client, node).await?;
     if !health_result.healthy {
         // Re-run until healthy, don't trust old status
         return Ok(Action::requeue(Duration::from_secs(10)));
     }
-    
+
     // Update status based on current observation, not old status
     update_status(client, node, "Running", None, health_result.ledger_seq, true).await?;
 }

@@ -1,37 +1,41 @@
-# Issue #359: Implement 'stellar logs' command in CLI (operator binary)
+# TODO: Multi-tenancy support (Stellar-K8s)
 
-## Plan Status: ✅ Ready
+## Step 1 — Repo inspection (done)
 
-## Information Gathered
-**CLI Structure** (src/main.rs):
-- `stellar-operator` binary: `run`, `webhook`, `version`, `info`, `simulator`
-- clap::Subcommand enum `Commands`
-- Uses `std::process::Command("kubectl")` in simulator/info
+- Reviewed existing `src/controller/network_isolation.rs` and Helm templates (`charts/stellar-operator/templates/network-isolation.yaml`, `rbac.yaml`, existing CRDs).
 
-**Existing Logs** (src/kubectl_plugin.rs = `kubectl stellar`):
-- `kubectl stellar logs <node-name>` for StellarNode pods
-- **New**: `stellar-operator logs` for **operator pod itself** (`deployment/stellar-operator -c operator`)
+## Step 2 — Tenant CRD + status design (in progress)
 
-**Args**: `--namespace`, `--tail=100`, `--follow`, `--container=operator`
+- Added Rust CRD types: `src/crd/tenant.rs`.
+- Exposed CRD module in `src/crd/mod.rs`.
+- Added Helm CRDs: `charts/stellar-operator/templates/crd-tenant.yaml` (Tenant + TenantUsage).
 
-## Plan
-**Edit**: `src/main.rs`
-1. Add to `Commands`: `Logs(OperatorLogsArgs)`
-2. Impl `operator_logs()` fn: `kubectl logs -n $NS deployment/stellar-operator -c operator [flags]`
-3. Handle multiple replicas: follow all (non-f), first (f)
+## Step 3 — Tenant onboarding/offboarding controller (pending)
 
-## Dependent Files
-None (self-contained CLI).
+- New controller to create/label namespaces and apply tenant-scoped isolation objects.
+- Add finalizers for safe cleanup.
 
-## Followup
-- `cargo build --bin stellar-operator`
-- `./target/release/stellar-operator logs --namespace stellar-system -f`
+## Step 4 — Resource quota enforcement controller (pending)
 
-✅ 1. Created TODO.md
-✅ 2. Analyzed CLI structure
-✅ 3. Added Logs subcommand to Commands enum + OperatorLogsArgs + operator_logs() fn in src/main.rs
-✅ 4. cargo build --bin stellar-operator (building)
+- New controller to create/update `ResourceQuota` (and optional `LimitRange`) per tenant namespace.
 
-✅ 5. Complete! `stellar-operator logs -f --namespace stellar-system`
+## Step 5 — Tenant-specific RBAC controller (pending)
 
-**Issue #359 ✅** `stellar-operator logs` now tails operator pod(s) with --follow, --tail, --container, --pod, --namespace flags.
+- New controller to create tenant Roles/RoleBindings and tenant service accounts.
+
+## Step 6 — Tenant network isolation controller (pending)
+
+- New controller (or extend existing patterns) to enforce tenant isolation via `NetworkPolicy`.
+
+## Step 7 — Usage tracking + billing metrics (pending)
+
+- New controller/collector to aggregate resource usage into a `TenantUsage` CRD.
+
+## Step 8 — Admin dashboard (pending)
+
+- Extend dashboard handlers/UI to list/manage tenants.
+
+## Step 9 — Wiring + documentation (pending)
+
+- Wire controllers into operator main loop.
+- Update chart values/docs with tenant configuration knobs.

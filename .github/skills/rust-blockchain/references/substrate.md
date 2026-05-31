@@ -54,19 +54,19 @@ pub use pallet::*;
 pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
-    
+
     #[pallet::pallet]
     pub struct Pallet<T>(_);
-    
+
     #[pallet::config]
     pub trait Config: frame_system::Config {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-        
+
         /// Maximum number of items
         #[pallet::constant]
         type MaxItems: Get<u32>;
     }
-    
+
     /// Storage for items
     #[pallet::storage]
     #[pallet::getter(fn items)]
@@ -77,21 +77,21 @@ pub mod pallet {
         BoundedVec<u128, T::MaxItems>,
         ValueQuery,
     >;
-    
+
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         ItemAdded { who: T::AccountId, item: u128 },
         ItemRemoved { who: T::AccountId, item: u128 },
     }
-    
+
     #[pallet::error]
     pub enum Error<T> {
         TooManyItems,
         ItemNotFound,
         Unauthorized,
     }
-    
+
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         #[pallet::weight(10_000)]
@@ -100,24 +100,24 @@ pub mod pallet {
             item: u128,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            
+
             Items::<T>::try_mutate(&who, |items| {
                 items.try_push(item)
                     .map_err(|_| Error::<T>::TooManyItems)?;
                 Ok(())
             })?;
-            
+
             Self::deposit_event(Event::ItemAdded { who, item });
             Ok(())
         }
-        
+
         #[pallet::weight(10_000)]
         pub fn remove_item(
             origin: OriginFor<T>,
             item: u128,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            
+
             Items::<T>::try_mutate(&who, |items| {
                 let pos = items.iter()
                     .position(|&x| x == item)
@@ -125,7 +125,7 @@ pub mod pallet {
                 items.remove(pos);
                 Ok(())
             })?;
-            
+
             Self::deposit_event(Event::ItemRemoved { who, item });
             Ok(())
         }
@@ -140,16 +140,16 @@ pub mod pallet {
 pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
-    
+
     #[pallet::pallet]
     pub struct Pallet<T>(_);
-    
+
     #[pallet::config]
     pub trait Config: frame_system::Config {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         type Balance: Member + Parameter + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen;
     }
-    
+
     #[pallet::storage]
     pub type Balances<T: Config> = StorageMap<
         _,
@@ -158,7 +158,7 @@ pub mod pallet {
         T::Balance,
         ValueQuery,
     >;
-    
+
     #[pallet::storage]
     pub type Allowances<T: Config> = StorageDoubleMap<
         _,
@@ -169,10 +169,10 @@ pub mod pallet {
         T::Balance,
         ValueQuery,
     >;
-    
+
     #[pallet::storage]
     pub type TotalSupply<T: Config> = StorageValue<_, T::Balance, ValueQuery>;
-    
+
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
@@ -181,14 +181,14 @@ pub mod pallet {
         Mint { to: T::AccountId, amount: T::Balance },
         Burn { from: T::AccountId, amount: T::Balance },
     }
-    
+
     #[pallet::error]
     pub enum Error<T> {
         InsufficientBalance,
         InsufficientAllowance,
         Overflow,
     }
-    
+
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         #[pallet::weight(10_000)]
@@ -201,7 +201,7 @@ pub mod pallet {
             Self::do_transfer(&from, &to, amount)?;
             Ok(())
         }
-        
+
         #[pallet::weight(10_000)]
         pub fn approve(
             origin: OriginFor<T>,
@@ -209,13 +209,13 @@ pub mod pallet {
             amount: T::Balance,
         ) -> DispatchResult {
             let owner = ensure_signed(origin)?;
-            
+
             Allowances::<T>::insert(&owner, &spender, amount);
             Self::deposit_event(Event::Approval { owner, spender, amount });
-            
+
             Ok(())
         }
-        
+
         #[pallet::weight(10_000)]
         pub fn transfer_from(
             origin: OriginFor<T>,
@@ -224,20 +224,20 @@ pub mod pallet {
             amount: T::Balance,
         ) -> DispatchResult {
             let spender = ensure_signed(origin)?;
-            
+
             // Check allowance
             let allowance = Allowances::<T>::get(&from, &spender);
             ensure!(allowance >= amount, Error::<T>::InsufficientAllowance);
-            
+
             // Update allowance
             Allowances::<T>::insert(&from, &spender, allowance - amount);
-            
+
             // Transfer
             Self::do_transfer(&from, &to, amount)?;
-            
+
             Ok(())
         }
-        
+
         #[pallet::weight(10_000)]
         pub fn mint(
             origin: OriginFor<T>,
@@ -245,23 +245,23 @@ pub mod pallet {
             amount: T::Balance,
         ) -> DispatchResult {
             ensure_root(origin)?;
-            
+
             let new_balance = Balances::<T>::get(&to)
                 .checked_add(&amount)
                 .ok_or(Error::<T>::Overflow)?;
-            
+
             Balances::<T>::insert(&to, new_balance);
-            
+
             let new_supply = TotalSupply::<T>::get()
                 .checked_add(&amount)
                 .ok_or(Error::<T>::Overflow)?;
             TotalSupply::<T>::put(new_supply);
-            
+
             Self::deposit_event(Event::Mint { to, amount });
             Ok(())
         }
     }
-    
+
     impl<T: Config> Pallet<T> {
         fn do_transfer(
             from: &T::AccountId,
@@ -270,18 +270,18 @@ pub mod pallet {
         ) -> DispatchResult {
             let from_balance = Balances::<T>::get(from);
             ensure!(from_balance >= amount, Error::<T>::InsufficientBalance);
-            
+
             let to_balance = Balances::<T>::get(to);
-            
+
             Balances::<T>::insert(from, from_balance - amount);
             Balances::<T>::insert(to, to_balance + amount);
-            
+
             Self::deposit_event(Event::Transfer {
                 from: from.clone(),
                 to: to.clone(),
                 amount,
             });
-            
+
             Ok(())
         }
     }
@@ -389,31 +389,31 @@ impl<T: Config> Pallet<T> {
         // Make HTTP request
         let deadline = sp_io::offchain::timestamp().add(Duration::from_millis(2_000));
         let request = http::Request::get("https://api.example.com/price");
-        
+
         let pending = request
             .deadline(deadline)
             .send()
             .map_err(|_| "HTTP request failed")?;
-        
+
         let response = pending
             .try_wait(deadline)
             .map_err(|_| "HTTP timeout")?
             .map_err(|_| "HTTP error")?;
-        
+
         if response.code != 200 {
             return Err("HTTP status error");
         }
-        
+
         let body = response.body().collect::<Vec<u8>>();
         let price: u128 = serde_json::from_slice(&body)
             .map_err(|_| "JSON parse error")?;
-        
+
         // Submit signed transaction
         let signer = Signer::<T, T::AuthorityId>::all_accounts();
         let results = signer.send_signed_transaction(|_account| {
             Call::submit_price { price }
         });
-        
+
         Ok(())
     }
 }
@@ -434,14 +434,14 @@ impl ChainExtension<Runtime> for MyChainExtension {
         E: Ext<T = Runtime>,
     {
         let func_id = env.func_id();
-        
+
         match func_id {
             // Custom function to get oracle price
             1000 => {
                 let asset_id: u32 = env.read_as()?;
                 let price = pallet_oracle::Pallet::<Runtime>::get_price(asset_id)
                     .ok_or(DispatchError::Other("Price not found"))?;
-                
+
                 env.write(&price.encode(), false, None)?;
                 Ok(RetVal::Converging(0))
             }
@@ -462,21 +462,21 @@ benchmarks! {
         let caller: T::AccountId = whitelisted_caller();
         let recipient: T::AccountId = account("recipient", 0, 0);
         let amount = 100u32.into();
-        
+
         // Setup
         Balances::<T>::insert(&caller, 1000u32.into());
-        
+
     }: _(RawOrigin::Signed(caller.clone()), recipient.clone(), amount)
     verify {
         assert_eq!(Balances::<T>::get(&caller), 900u32.into());
         assert_eq!(Balances::<T>::get(&recipient), 100u32.into());
     }
-    
+
     approve {
         let caller: T::AccountId = whitelisted_caller();
         let spender: T::AccountId = account("spender", 0, 0);
         let amount = 100u32.into();
-        
+
     }: _(RawOrigin::Signed(caller.clone()), spender.clone(), amount)
     verify {
         assert_eq!(Allowances::<T>::get(&caller, &spender), amount);
@@ -498,10 +498,10 @@ mod tests {
         testing::Header,
         traits::{BlakeTwo256, IdentityLookup},
     };
-    
+
     type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
     type Block = frame_system::mocking::MockBlock<Test>;
-    
+
     frame_support::construct_runtime!(
         pub enum Test where
             Block = Block,
@@ -512,7 +512,7 @@ mod tests {
             Token: pallet_token,
         }
     );
-    
+
     impl frame_system::Config for Test {
         type BaseCallFilter = frame_support::traits::Everything;
         type BlockWeights = ();
@@ -539,36 +539,36 @@ mod tests {
         type OnSetCode = ();
         type MaxConsumers = frame_support::traits::ConstU32<16>;
     }
-    
+
     impl Config for Test {
         type RuntimeEvent = RuntimeEvent;
         type Balance = u128;
     }
-    
+
     fn new_test_ext() -> sp_io::TestExternalities {
         frame_system::GenesisConfig::default()
             .build_storage::<Test>()
             .unwrap()
             .into()
     }
-    
+
     #[test]
     fn transfer_works() {
         new_test_ext().execute_with(|| {
             Balances::<Test>::insert(1, 1000);
-            
+
             assert_ok!(Token::transfer(RuntimeOrigin::signed(1), 2, 100));
-            
+
             assert_eq!(Balances::<Test>::get(1), 900);
             assert_eq!(Balances::<Test>::get(2), 100);
         });
     }
-    
+
     #[test]
     fn transfer_insufficient_balance_fails() {
         new_test_ext().execute_with(|| {
             Balances::<Test>::insert(1, 50);
-            
+
             assert_noop!(
                 Token::transfer(RuntimeOrigin::signed(1), 2, 100),
                 Error::<Test>::InsufficientBalance

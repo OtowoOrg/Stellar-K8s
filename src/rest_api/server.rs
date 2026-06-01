@@ -127,6 +127,7 @@ pub async fn run_server(
         .route(
             "/api/v1/horizon/cache/status",
             get(horizon_cache_handlers::horizon_cache_status),
+        )
         .route(
             "/api/v1/compliance/regulatory-report",
             get(compliance_handlers::regulatory_compliance_report),

@@ -1043,8 +1043,23 @@ fn default_max_events() -> u32 {
 pub struct AutoscalingConfig {
     pub min_replicas: i32,
     pub max_replicas: i32,
+    /// Target average CPU utilisation across all replicas (0–100).
+    /// When set, the HPA scales to keep CPU at this percentage.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_cpu_utilization_percentage: Option<i32>,
+    /// Target average memory utilisation across all replicas (0–100).
+    /// When set, the HPA adds a `Resource` metric for `memory`.
+    /// Requires the metrics-server to be installed in the cluster.
+    ///
+    /// # Example — memory-based scaling for Soroban RPC
+    /// ```yaml
+    /// autoscaling:
+    ///   minReplicas: 2
+    ///   maxReplicas: 10
+    ///   targetMemoryUtilizationPercentage: 70
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_memory_utilization_percentage: Option<i32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub custom_metrics: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

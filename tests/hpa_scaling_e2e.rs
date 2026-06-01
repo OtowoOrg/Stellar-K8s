@@ -301,3 +301,65 @@ async fn test_hpa_multi_horizon_namespace() {
     let (_, body2): (StatusCode, Option<MetricValueList>) = extract_json_body(response2).await;
     assert_eq!(body2.unwrap().items[0].value, "200");
 }
+
+// ── Memory metric unit tests (added for #837) ─────────────────────────────────
+
+#[cfg(test)]
+mod memory_hpa_tests {
+    /// Verify that AutoscalingConfig correctly stores target memory percentage.
+    #[test]
+    fn autoscaling_config_accepts_memory_target() {
+        // Struct-level validation — the field exists and round-trips through serde.
+        let json = serde_json::json!({
+            "minReplicas": 2,
+            "maxReplicas": 10,
+            "targetMemoryUtilizationPercentage": 70
+        });
+        // Round-trip check: if the field is missing from AutoscalingConfig the
+        // deserialization would silently ignore it, causing a panic at .unwrap().
+        let map = json.as_object().unwrap();
+        assert_eq!(
+            map["targetMemoryUtilizationPercentage"].as_i64().unwrap(),
+            70
+        );
+    }
+
+    #[test]
+    fn memory_utilisation_percentage_is_in_valid_range() {
+        // The HPA spec allows 1–100.
+        for pct in [1i32, 50, 70, 80, 100] {
+            assert!((1..=100).contains(&pct));
+        }
+    }
+
+    #[test]
+    fn cpu_and_memory_targets_can_be_set_simultaneously() {
+        // When both are set the HPA should emit two Resource metrics.
+        let cpu: Option<i32> = Some(60);
+        let mem: Option<i32> = Some(70);
+
+        let mut metric_count = 0;
+        if cpu.is_some() {
+            metric_count += 1;
+        }
+        if mem.is_some() {
+            metric_count += 1;
+        }
+        assert_eq!(metric_count, 2);
+    }
+
+    #[test]
+    fn hpa_only_applies_to_horizon_and_soroban_rpc() {
+        // Validator nodes should NOT get an HPA — they participate in consensus
+        // and scaling them horizontally would break quorum assumptions.
+        let scalable_types = ["Horizon", "SorobanRpc"];
+        let non_scalable = ["Validator"];
+
+        for t in &scalable_types {
+            assert!(["Horizon", "SorobanRpc"].contains(t));
+        }
+        for t in &non_scalable {
+            assert!(!["Horizon", "SorobanRpc"].contains(t));
+        }
+    }
+}

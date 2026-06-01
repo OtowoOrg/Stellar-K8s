@@ -3409,6 +3409,21 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
         });
     }
 
+    if let Some(target_mem) = autoscaling.target_memory_utilization_percentage {
+        metrics.push(MetricSpec {
+            type_: "Resource".to_string(),
+            resource: Some(k8s_openapi::api::autoscaling::v2::ResourceMetricSource {
+                name: "memory".to_string(),
+                target: MetricTarget {
+                    type_: "Utilization".to_string(),
+                    average_utilization: Some(target_mem),
+                    ..Default::default()
+                },
+            }),
+            ..Default::default()
+        });
+    }
+
     for metric_name in &autoscaling.custom_metrics {
         let metric = match metric_name.as_str() {
             "ledger_ingestion_lag" => Some((

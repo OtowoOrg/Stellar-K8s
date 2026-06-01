@@ -1,0 +1,21 @@
+# Example: Horizon node with CPU-based HPA.
+# Scales between 2 and 10 replicas targeting 60% average CPU utilisation.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-cpu-hpa
+  namespace: stellar-prod
+spec:
+  nodeType: Horizon
+  network: Public
+  version: "v21.0.0"
+  replicas: 2
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCpuUtilizationPercentage: 60
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+      scaleUp:
+        stabilizationWindowSeconds: 30

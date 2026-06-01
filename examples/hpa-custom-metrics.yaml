@@ -1,0 +1,24 @@
+# Example: Horizon node with custom metric HPA (TPS-based scaling).
+# Scales based on stellar_horizon_tps — requires a Prometheus adapter or KEDA.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-tps-hpa
+  namespace: stellar-prod
+spec:
+  nodeType: Horizon
+  network: Public
+  version: "v21.0.0"
+  replicas: 2
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 15
+    targetCpuUtilizationPercentage: 70   # fallback CPU scaling
+    customMetrics:
+      - stellar_horizon_tps             # scale on transactions per second
+      - ledger_ingestion_lag            # also scale on ingestion lag
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+      scaleUp:
+        stabilizationWindowSeconds: 30

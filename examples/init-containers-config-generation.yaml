@@ -1,0 +1,31 @@
+# Example: StellarNode Validator with config-generation init container.
+# The init container renders stellar-core.cfg from a ConfigMap template
+# into a shared emptyDir volume before Stellar Core starts.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-with-config-gen
+  namespace: stellar-prod
+spec:
+  nodeType: Validator
+  network: Public
+  version: "v21.0.0"
+  initContainers:
+    - name: config-gen
+      image: busybox:latest
+      command:
+        - /bin/sh
+        - -c
+        - envsubst < /templates/stellar-core.cfg.tmpl > /config/stellar-core.cfg
+      volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: config-templates
+          mountPath: /templates
+          readOnly: true
+      env:
+        - name: NETWORK_PASSPHRASE
+          valueFrom:
+            secretKeyRef:
+              name: stellar-network-secret
+              key: NETWORK_PASSPHRASE

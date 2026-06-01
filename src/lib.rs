@@ -65,6 +65,7 @@
 
 pub mod backup;
 pub mod benchmark_compare;
+pub mod event_processing;
 pub mod byzantine;
 pub mod canary_deployment;
 pub mod capacity_planning;

@@ -81,6 +81,7 @@ reqwest = { version = "0.12", features = [
     "multipart",
 ] }
 rdkafka = { version = "0.36", optional = true, features = ["cmake-build", "ssl", "sasl"] }
+async-nats = { version = "0.35", optional = true }
 # Vendored libsasl2 so CI/dev builds succeed without system libsasl2-dev.
 sasl2-sys = { version = "0.1.22", features = ["vendored"] }
 
@@ -152,6 +153,7 @@ default = ["rest-api", "metrics", "admission-webhook", "k8s-v1-30"]
 rest-api = ["axum", "tower", "tower-http"]
 metrics = ["prometheus-client", "once_cell"]
 kafka = ["dep:rdkafka"]
+nats = ["dep:async-nats"]
 admission-webhook = [
     "wasmtime",
     "wasmtime-wasi",

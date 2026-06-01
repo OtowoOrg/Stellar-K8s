@@ -22,7 +22,7 @@ use k8s_openapi::api::core::v1::{
     PersistentVolumeClaim, PersistentVolumeClaimSpec, PodAffinityTerm, PodAntiAffinity,
     PodSecurityContext, PodSpec, PodTemplateSpec, ResourceRequirements as K8sResources,
     SeccompProfile, SecretKeySelector, SecurityContext, Service, ServicePort, ServiceSpec,
-    TypedLocalObjectReference, Volume, VolumeMount, VolumeResourceRequirements,
+    Toleration, TypedLocalObjectReference, Volume, VolumeMount, VolumeResourceRequirements,
     WeightedPodAffinityTerm,
 };
 use k8s_openapi::api::networking::v1::{
@@ -34,7 +34,10 @@ use k8s_openapi::api::policy::v1::{PodDisruptionBudget, PodDisruptionBudgetSpec}
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta, OwnerReference};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
-use kube::api::{Api, DeleteParams, Patch, PatchParams, PostParams};
+use kube::api::{
+    Api, ApiResource, DeleteParams, DynamicObject, GroupVersionKind, Patch, PatchParams,
+    PostParams,
+};
 use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
@@ -1854,6 +1857,7 @@ fn build_pod_template(
             &node.name_any(),
         )),
         affinity: merge_workload_affinity(node),
+        tolerations: build_workload_tolerations(node),
         security_context: Some(PodSecurityContext {
             run_as_non_root: Some(true),
             run_as_user: Some(10000),
@@ -2620,6 +2624,10 @@ pub(crate) fn merge_workload_affinity(node: &StellarNode) -> Option<Affinity> {
         aff.node_affinity = Some(na);
     }
 
+    if let Some(na) = node.spec.node_affinity.clone() {
+        aff.node_affinity = Some(na);
+    }
+
     // Inject jurisdiction nodeAffinity (overrides storage node_affinity if both set)
     if let Some(jurisdiction) = node.spec.placement.jurisdiction.as_ref() {
         if let Some(jur_affinity) =
@@ -3064,6 +3072,13 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
     // Add extra mounts (HSM)
     volume_mounts.extend(extra_volume_mounts);
 
+    // Apply node-type specific custom environment variables from the CRD.
+    match node.spec.node_type {
+        NodeType::Validator => merge_env_overrides(&mut env_vars, &node.spec.stellar_core_env),
+        NodeType::Horizon => merge_env_overrides(&mut env_vars, &node.spec.horizon_env),
+        NodeType::SorobanRpc => {}
+    }
+
     Container {
         name: "stellar-node".to_string(),
         image: Some(node.spec.container_image()),
@@ -3106,6 +3121,33 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
             node.spec.probes.as_ref().and_then(|p| p.startup.as_ref()),
         ),
         ..Default::default()
+    }
+}
+
+fn merge_env_overrides(base: &mut Vec<EnvVar>, overrides: &[EnvVar]) {
+    for override_var in overrides {
+        if let Some(existing) = base.iter_mut().find(|env| env.name == override_var.name) {
+            *existing = override_var.clone();
+        } else {
+            base.push(override_var.clone());
+        }
+    }
+}
+
+fn build_workload_tolerations(node: &StellarNode) -> Option<Vec<Toleration>> {
+    let mut tolerations = node.spec.tolerations.clone();
+
+    if let Some(jurisdiction) = node.spec.placement.jurisdiction.as_ref() {
+        crate::controller::jurisdiction::merge_jurisdiction_tolerations(
+            &mut tolerations,
+            jurisdiction,
+        );
+    }
+
+    if tolerations.is_empty() {
+        None
+    } else {
+        Some(tolerations)
     }
 }
 
@@ -3550,41 +3592,88 @@ pub async fn delete_hpa(client: &Client, node: &StellarNode, dry_run: bool) -> R
 }
 
 // ============================================================================
-// ServiceMonitor — unchanged
+// ServiceMonitor
 // ============================================================================
 
-pub async fn ensure_service_monitor(_client: &Client, node: &StellarNode) -> Result<()> {
-    if !matches!(
-        node.spec.node_type,
-        NodeType::Horizon | NodeType::SorobanRpc
-    ) || node.spec.autoscaling.is_none()
-    {
+fn service_monitor_api_resource() -> ApiResource {
+    ApiResource::from_gvk(&GroupVersionKind {
+        group: "monitoring.coreos.com".to_string(),
+        version: "v1".to_string(),
+        kind: "ServiceMonitor".to_string(),
+    })
+}
+
+pub async fn ensure_service_monitor(client: &Client, node: &StellarNode) -> Result<()> {
+    if !matches!(node.spec.node_type, NodeType::Horizon | NodeType::SorobanRpc) {
         return Ok(());
     }
 
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = resource_name(node, "service-monitor");
+    let api_resource = service_monitor_api_resource();
+    let api: Api<DynamicObject> = Api::namespaced_with(client.clone(), &namespace, &api_resource);
+
+    let mut service_monitor = DynamicObject::new(&name, &api_resource).within(&namespace);
+    service_monitor.metadata.labels = Some(standard_labels(node));
+    service_monitor.metadata.owner_references = Some(vec![owner_reference(node)]);
+    service_monitor.data = serde_json::json!({
+        "spec": {
+            "jobLabel": "app.kubernetes.io/instance",
+            "namespaceSelector": {
+                "matchNames": [namespace]
+            },
+            "selector": {
+                "matchLabels": {
+                    "app.kubernetes.io/name": "stellar-node",
+                    "app.kubernetes.io/instance": node.name_any()
+                }
+            },
+            "endpoints": [
+                {
+                    "targetPort": 8000,
+                    "path": "/metrics",
+                    "interval": "30s",
+                    "scheme": "http"
+                }
+            ]
+        }
+    })
+    .as_object()
+    .cloned();
+
+    api.patch(
+        &name,
+        &PatchParams::apply("stellar-operator").force(),
+        &Patch::Apply(&service_monitor),
+    )
+    .await
+    .map_err(Error::KubeError)?;
 
     info!(
-        "ServiceMonitor configuration available for {}/{}. Users should manually create the ServiceMonitor resource.",
+        "Ensured ServiceMonitor {}/{} for Prometheus Operator scraping",
         namespace, name
     );
 
     Ok(())
 }
 
-pub async fn delete_service_monitor(_client: &Client, node: &StellarNode) -> Result<()> {
-    if node.spec.autoscaling.is_none() {
+pub async fn delete_service_monitor(client: &Client, node: &StellarNode) -> Result<()> {
+    if !matches!(node.spec.node_type, NodeType::Horizon | NodeType::SorobanRpc) {
         return Ok(());
     }
 
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = resource_name(node, "service-monitor");
+    let api_resource = service_monitor_api_resource();
+    let api: Api<DynamicObject> = Api::namespaced_with(client.clone(), &namespace, &api_resource);
 
-    info!(
-        "Note: ServiceMonitor {}/{} must be manually deleted if it was created",
-        namespace, name
-    );
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => info!("Deleted ServiceMonitor {}/{}", namespace, name),
+        Err(kube::Error::Api(api_err)) if api_err.code == 404 => {
+            info!("ServiceMonitor {}/{} not found (already deleted)", namespace, name)
+        }
+        Err(e) => return Err(Error::KubeError(e)),
+    }
 
     Ok(())
 }

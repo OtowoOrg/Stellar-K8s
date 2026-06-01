@@ -197,6 +197,22 @@ pub struct StellarNodeSpec {
     #[serde(default)]
     pub placement: PlacementConfig,
 
+    /// Custom node affinity for pod scheduling.
+    ///
+    /// This is applied at the pod level and can be used to pin workloads to
+    /// specific node pools, hardware classes, or zones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(schema_with = "super::schema_utils::object_schema")]
+    pub node_affinity: Option<k8s_openapi::api::core::v1::NodeAffinity>,
+
+    /// Custom tolerations applied to pods created for this StellarNode.
+    ///
+    /// Useful when target node pools use taints and workloads need explicit
+    /// tolerations to be schedulable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(schema_with = "super::schema_utils::array_of_objects_schema")]
+    pub tolerations: Vec<k8s_openapi::api::core::v1::Toleration>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(schema_with = "super::schema_utils::array_of_objects_schema")]
     pub topology_spread_constraints:
@@ -328,6 +344,19 @@ pub struct StellarNodeSpec {
     /// ```
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probes: Option<ProbeConfig>,
+
+    /// Additional environment variables injected into Validator (Stellar Core)
+    /// container instances.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(schema_with = "super::schema_utils::array_of_objects_schema")]
+    pub stellar_core_env: Vec<k8s_openapi::api::core::v1::EnvVar>,
+
+    /// Additional environment variables injected into Horizon container
+    /// instances.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(schema_with = "super::schema_utils::array_of_objects_schema")]
+    pub horizon_env: Vec<k8s_openapi::api::core::v1::EnvVar>,
+
     /// Cross-cloud failover configuration for Horizon clusters.
     /// Enables seamless traffic failover between cloud providers (AWS, GCP, Azure)
     /// during major provider outages.
@@ -447,6 +476,8 @@ impl Default for StellarNodeSpec {
             replication_config: None,
             pod_anti_affinity: Default::default(),
             placement: Default::default(),
+            node_affinity: None,
+            tolerations: Vec::new(),
             topology_spread_constraints: None,
             cve_handling: None,
             snapshot_schedule: None,
@@ -465,6 +496,8 @@ impl Default for StellarNodeSpec {
             init_containers: None,
             cert_manager: None,
             probes: None,
+            stellar_core_env: Vec::new(),
+            horizon_env: Vec::new(),
             cross_cloud_failover: None,
             hitless_upgrade: None,
             ebpf_config: None,

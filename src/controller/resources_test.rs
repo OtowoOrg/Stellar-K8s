@@ -1550,3 +1550,201 @@ fn test_priority_class_name_empty_string_fails_validation() {
         "error must reference priorityClassName field"
     );
 }
+
+#[test]
+fn test_validator_custom_env_overrides_defaults() {
+    use k8s_openapi::api::core::v1::EnvVar;
+
+    use crate::crd::types::{ResourceRequirements, ResourceSpec, ValidatorConfig};
+    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
+
+    let spec = StellarNodeSpec {
+        node_type: NodeType::Validator,
+        network: StellarNetwork::Testnet,
+        version: "v21.0.0".to_string(),
+        resources: ResourceRequirements {
+            requests: ResourceSpec {
+                cpu: "500m".to_string(),
+                memory: "1Gi".to_string(),
+            },
+            limits: ResourceSpec {
+                cpu: "2".to_string(),
+                memory: "4Gi".to_string(),
+            },
+        },
+        replicas: 1,
+        validator_config: Some(ValidatorConfig {
+            seed_secret_ref: "my-seed".to_string(),
+            ..Default::default()
+        }),
+        stellar_core_env: vec![
+            EnvVar {
+                name: "STELLAR_CORE_WORKER_THREADS".to_string(),
+                value: Some("99".to_string()),
+                ..Default::default()
+            },
+            EnvVar {
+                name: "CUSTOM_CORE_FLAG".to_string(),
+                value: Some("enabled".to_string()),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+
+    let mut node = crate::crd::StellarNode::new("test", spec);
+    node.metadata.namespace = Some("default".to_string());
+    let sts = crate::controller::resources::build_statefulset_for_test(&node);
+    let container = sts
+        .spec
+        .unwrap()
+        .template
+        .spec
+        .unwrap()
+        .containers
+        .into_iter()
+        .next()
+        .unwrap();
+    let env = container.env.unwrap_or_default();
+
+    assert!(
+        env.iter().any(|e| {
+            e.name == "STELLAR_CORE_WORKER_THREADS" && e.value.as_deref() == Some("99")
+        }),
+        "custom env must override default STELLAR_CORE_WORKER_THREADS"
+    );
+    assert!(
+        env.iter()
+            .any(|e| e.name == "CUSTOM_CORE_FLAG" && e.value.as_deref() == Some("enabled")),
+        "custom env must be appended for validator container"
+    );
+}
+
+#[test]
+fn test_horizon_custom_env_injected() {
+    use k8s_openapi::api::core::v1::EnvVar;
+
+    use crate::crd::types::{HorizonConfig, ResourceRequirements, ResourceSpec};
+    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
+
+    let spec = StellarNodeSpec {
+        node_type: NodeType::Horizon,
+        network: StellarNetwork::Testnet,
+        version: "v21.0.0".to_string(),
+        resources: ResourceRequirements {
+            requests: ResourceSpec {
+                cpu: "500m".to_string(),
+                memory: "1Gi".to_string(),
+            },
+            limits: ResourceSpec {
+                cpu: "2".to_string(),
+                memory: "4Gi".to_string(),
+            },
+        },
+        replicas: 1,
+        horizon_config: Some(HorizonConfig {
+            database_secret_ref: "db".to_string(),
+            ..Default::default()
+        }),
+        horizon_env: vec![EnvVar {
+            name: "HORIZON_LOG_LEVEL".to_string(),
+            value: Some("debug".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let mut node = crate::crd::StellarNode::new("test", spec);
+    node.metadata.namespace = Some("default".to_string());
+    let dep = crate::controller::resources::build_deployment_for_test(&node);
+    let container = dep
+        .spec
+        .unwrap()
+        .template
+        .spec
+        .unwrap()
+        .containers
+        .into_iter()
+        .next()
+        .unwrap();
+    let env = container.env.unwrap_or_default();
+
+    assert!(
+        env.iter()
+            .any(|e| e.name == "HORIZON_LOG_LEVEL" && e.value.as_deref() == Some("debug")),
+        "custom env must be injected for horizon container"
+    );
+}
+
+#[test]
+fn test_spec_and_jurisdiction_tolerations_are_applied() {
+    use k8s_openapi::api::core::v1::Toleration;
+
+    use crate::crd::types::{
+        JurisdictionConfig, PlacementConfig, ResourceRequirements, ResourceSpec, ValidatorConfig,
+    };
+    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
+
+    let spec = StellarNodeSpec {
+        node_type: NodeType::Validator,
+        network: StellarNetwork::Testnet,
+        version: "v21.0.0".to_string(),
+        resources: ResourceRequirements {
+            requests: ResourceSpec {
+                cpu: "500m".to_string(),
+                memory: "1Gi".to_string(),
+            },
+            limits: ResourceSpec {
+                cpu: "2".to_string(),
+                memory: "4Gi".to_string(),
+            },
+        },
+        replicas: 1,
+        validator_config: Some(ValidatorConfig {
+            seed_secret_ref: "my-seed".to_string(),
+            ..Default::default()
+        }),
+        tolerations: vec![Toleration {
+            key: Some("dedicated".to_string()),
+            operator: Some("Equal".to_string()),
+            value: Some("stellar".to_string()),
+            effect: Some("NoSchedule".to_string()),
+            ..Default::default()
+        }],
+        placement: PlacementConfig {
+            jurisdiction: Some(JurisdictionConfig {
+                code: "EU".to_string(),
+                regions: vec!["eu-west-1".to_string()],
+                label_key: "topology.kubernetes.io/region".to_string(),
+                tolerations: vec![Toleration {
+                    key: Some("jurisdiction".to_string()),
+                    operator: Some("Equal".to_string()),
+                    value: Some("EU".to_string()),
+                    effect: Some("NoSchedule".to_string()),
+                    ..Default::default()
+                }],
+            }),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let mut node = crate::crd::StellarNode::new("test", spec);
+    node.metadata.namespace = Some("default".to_string());
+    let sts = crate::controller::resources::build_statefulset_for_test(&node);
+    let pod_spec = sts.spec.unwrap().template.spec.unwrap();
+    let tolerations = pod_spec.tolerations.unwrap_or_default();
+
+    assert!(
+        tolerations.iter().any(|t| {
+            t.key.as_deref() == Some("dedicated") && t.value.as_deref() == Some("stellar")
+        }),
+        "spec tolerations must be propagated"
+    );
+    assert!(
+        tolerations
+            .iter()
+            .any(|t| t.key.as_deref() == Some("jurisdiction") && t.value.as_deref() == Some("EU")),
+        "jurisdiction tolerations must be merged"
+    );
+}

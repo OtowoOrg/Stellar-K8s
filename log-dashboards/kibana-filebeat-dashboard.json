@@ -1,0 +1,28 @@
+{
+    "title": "Filebeat - Errors Overview",
+    "type": "dashboard",
+    "panels": [
+        {
+            "id": "errors-over-time",
+            "title": "Errors Over Time",
+            "type": "timeseries",
+            "index_pattern": "filebeat-*",
+            "query": "log.level:ERROR",
+            "interval": "5m"
+        },
+        {
+            "id": "top-namespaces",
+            "title": "Top Namespaces by Error Count",
+            "type": "table",
+            "index_pattern": "filebeat-*",
+            "aggs": [
+                {
+                    "field": "kubernetes.namespace",
+                    "type": "terms",
+                    "size": 10
+                }
+            ],
+            "query": "log.level:ERROR"
+        }
+    ]
+}

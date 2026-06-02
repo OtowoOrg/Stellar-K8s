@@ -1,0 +1,69 @@
+openapi: 3.0.3
+info:
+  title: Stellar-K8s Operator API
+  version: 1.0.0
+  description: |
+    REST API exposed by the Stellar-K8s operator for cluster management, health checks, and diagnostics.
+servers:
+  - url: https://{host}:{port}
+    variables:
+      host:
+        default: localhost
+      port:
+        default: "9090"
+paths:
+  /healthz:
+    get:
+      summary: Operator health probe
+      responses:
+        '200':
+          description: Operator is healthy
+  /readyz:
+    get:
+      summary: Readiness probe
+      responses:
+        '200':
+          description: Operator is ready
+  /livez:
+    get:
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Operator is alive
+  /api/v1/nodes:
+    get:
+      summary: List StellarNode resources
+      responses:
+        '200':
+          description: A list of StellarNode resources
+  /api/v1/nodes/{namespace}/{name}:
+    get:
+      summary: Get a specific StellarNode resource
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: StellarNode details
+        '404':
+          description: Resource not found
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required:
+        - code
+        - message

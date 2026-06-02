@@ -208,4 +208,11 @@ name = "stellar-fork-detector"
 path = "src/bin/stellar-fork-detector.rs"
 required-features = ["rest-api", "metrics"]
 
+# Health Check Sidecar — provides advanced liveness/readiness probes
+# that query Stellar Core API instead of just checking process status
+[[bin]]
+name = "stellar-health-sidecar"
+path = "src/bin/stellar-health-sidecar.rs"
+required-features = ["rest-api"]
+
 [workspace]

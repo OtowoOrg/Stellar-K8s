@@ -324,6 +324,12 @@ pub struct StellarNodeSpec {
     #[schemars(with = "Option<Vec<serde_json::Value>>")]
     pub sidecars: Option<Vec<k8s_openapi::api::core::v1::Container>>,
 
+    /// Resource requests and limits for the operator-managed diagnostic health-check sidecar.
+    ///
+    /// Defaults to 50m CPU and 64Mi memory for both requests and limits when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic_sidecar_resources: Option<ResourceRequirements>,
+
     /// Optional init containers to run before the main Stellar container starts.
     ///
     /// These run to completion in order before the main container starts.
@@ -553,6 +559,7 @@ impl Default for StellarNodeSpec {
             custom_network_passphrase: None,
             passphrase_secret_ref: None,
             sidecars: None,
+            diagnostic_sidecar_resources: None,
             init_containers: None,
             cert_manager: None,
             probes: None,

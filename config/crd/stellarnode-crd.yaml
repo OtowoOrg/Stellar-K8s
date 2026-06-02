@@ -1112,6 +1112,36 @@ spec:
                 - limits
                 - requests
                 type: object
+              diagnosticSidecarResources:
+                description: Resource requests and limits for the operator-managed diagnostic health-check sidecar. Defaults to 50m CPU and 64Mi memory for both requests and limits when unset.
+                nullable: true
+                properties:
+                  limits:
+                    description: Resource specification for CPU and memory
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - memory
+                    type: object
+                  requests:
+                    description: Resource specification for CPU and memory
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - memory
+                    type: object
+                required:
+                - limits
+                - requests
+                type: object
               restoreFromSnapshot:
                 description: Bootstrap this node from an existing VolumeSnapshot instead of an empty volume (Validator only). The PVC will be created from the specified snapshot for near-instant startup.
                 nullable: true

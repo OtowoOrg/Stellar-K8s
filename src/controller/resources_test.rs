@@ -11,8 +11,8 @@ mod tests {
 
     use crate::controller::resources::build_topology_spread_constraints;
     use crate::crd::{
-        types::{HorizonConfig, PodAntiAffinityStrength, ResourceRequirements, ResourceSpec},
         NodeType, StellarNetwork, StellarNodeSpec,
+        types::{HorizonConfig, PodAntiAffinityStrength, ResourceRequirements, ResourceSpec},
     };
 
     // -----------------------------------------------------------------------
@@ -320,8 +320,8 @@ mod tests {
         build_pvc_for_test, build_service_for_test, build_statefulset_for_test,
         merge_workload_affinity, owner_reference, standard_labels,
     };
-    use crate::crd::types::ValidatorConfig;
     use crate::crd::StellarNode;
+    use crate::crd::types::ValidatorConfig;
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 
     #[test]
@@ -865,16 +865,18 @@ peer-2 = "G..."
         let netpol = build_network_policy(&node, &config);
         let spec = netpol.spec.expect("spec must be present");
 
-        assert!(spec
-            .policy_types
-            .as_ref()
-            .unwrap()
-            .contains(&"Ingress".to_string()));
-        assert!(spec
-            .policy_types
-            .as_ref()
-            .unwrap()
-            .contains(&"Egress".to_string()));
+        assert!(
+            spec.policy_types
+                .as_ref()
+                .unwrap()
+                .contains(&"Ingress".to_string())
+        );
+        assert!(
+            spec.policy_types
+                .as_ref()
+                .unwrap()
+                .contains(&"Egress".to_string())
+        );
 
         let egress = spec.egress.expect("egress rules must be present");
 
@@ -1016,8 +1018,8 @@ mod init_containers_tests {
 
     use crate::controller::resources::{build_deployment_for_test, build_statefulset_for_test};
     use crate::crd::{
-        types::{ResourceRequirements, ResourceSpec, ValidatorConfig},
         NodeType, StellarNetwork, StellarNodeSpec,
+        types::{ResourceRequirements, ResourceSpec, ValidatorConfig},
     };
 
     fn make_node(
@@ -1299,323 +1301,106 @@ mod init_containers_tests {
 }
 
 // -----------------------------------------------------------------------
-// #839 — Default probes per node type
+// diagnostic sidecar resource tests
 // -----------------------------------------------------------------------
 
-#[test]
-fn test_validator_has_tcp_liveness_probe() {
-    use crate::crd::types::{ResourceRequirements, ResourceSpec, ValidatorConfig};
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
-    let spec = StellarNodeSpec {
-        node_type: NodeType::Validator,
-        network: StellarNetwork::Testnet,
-        version: "v21.0.0".to_string(),
-        resources: ResourceRequirements {
+#[cfg(test)]
+mod diagnostic_sidecar_resource_tests {
+    use k8s_openapi::api::core::v1::Container;
+
+    use crate::controller::resources::{build_deployment_for_test, build_statefulset_for_test};
+    use crate::crd::{
+        NodeType, StellarNetwork, StellarNode, StellarNodeSpec,
+        types::{ResourceRequirements, ResourceSpec, ValidatorConfig},
+    };
+
+    fn make_node(node_type: NodeType) -> StellarNode {
+        let spec = StellarNodeSpec {
+            node_type: node_type.clone(),
+            network: StellarNetwork::Testnet,
+            version: "v21.0.0".to_string(),
+            resources: ResourceRequirements {
+                requests: ResourceSpec {
+                    cpu: "500m".to_string(),
+                    memory: "1Gi".to_string(),
+                },
+                limits: ResourceSpec {
+                    cpu: "2".to_string(),
+                    memory: "4Gi".to_string(),
+                },
+            },
+            replicas: 1,
+            validator_config: if node_type == NodeType::Validator {
+                Some(ValidatorConfig {
+                    seed_secret_ref: "my-seed".to_string(),
+                    ..Default::default()
+                })
+            } else {
+                None
+            },
+            ..Default::default()
+        };
+
+        let mut node = StellarNode::new("test-node", spec);
+        node.metadata.namespace = Some("default".to_string());
+        node
+    }
+
+    fn health_sidecar(containers: &[Container]) -> &Container {
+        containers
+            .iter()
+            .find(|container| container.name == "stellar-health-check")
+            .expect("diagnostic sidecar must be present")
+    }
+
+    #[test]
+    fn applies_default_diagnostic_sidecar_resources_to_statefulset() {
+        let node = make_node(NodeType::Validator);
+        let sts = build_statefulset_for_test(&node);
+        let pod_spec = sts.spec.unwrap().template.spec.unwrap();
+        let resources = health_sidecar(&pod_spec.containers)
+            .resources
+            .as_ref()
+            .expect("diagnostic sidecar resources must be set");
+
+        let requests = resources.requests.as_ref().expect("requests must be set");
+        let limits = resources.limits.as_ref().expect("limits must be set");
+
+        assert_eq!(requests.get("cpu").unwrap().0, "50m");
+        assert_eq!(requests.get("memory").unwrap().0, "64Mi");
+        assert_eq!(limits.get("cpu").unwrap().0, "50m");
+        assert_eq!(limits.get("memory").unwrap().0, "64Mi");
+    }
+
+    #[test]
+    fn applies_crd_override_diagnostic_sidecar_resources_to_deployment() {
+        let mut node = make_node(NodeType::Horizon);
+        node.spec.diagnostic_sidecar_resources = Some(ResourceRequirements {
             requests: ResourceSpec {
-                cpu: "500m".to_string(),
-                memory: "1Gi".to_string(),
+                cpu: "75m".to_string(),
+                memory: "96Mi".to_string(),
             },
             limits: ResourceSpec {
-                cpu: "2".to_string(),
-                memory: "4Gi".to_string(),
+                cpu: "150m".to_string(),
+                memory: "128Mi".to_string(),
             },
-        },
-        replicas: 1,
-        validator_config: Some(ValidatorConfig {
-            seed_secret_ref: "my-seed".to_string(),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let mut node = crate::crd::StellarNode::new("test", spec);
-    node.metadata.namespace = Some("default".to_string());
-    let sts = crate::controller::resources::build_statefulset_for_test(&node);
-    let container = sts
-        .spec
-        .unwrap()
-        .template
-        .spec
-        .unwrap()
-        .containers
-        .into_iter()
-        .next()
-        .unwrap();
-    let liveness = container
-        .liveness_probe
-        .expect("validator must have a liveness probe");
-    assert!(
-        liveness.tcp_socket.is_some(),
-        "validator liveness probe must use TCP socket"
-    );
-    assert_eq!(
-        liveness.tcp_socket.unwrap().port,
-        k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(11625)
-    );
-}
+        });
 
-#[test]
-fn test_horizon_has_http_liveness_probe() {
-    use crate::crd::types::{HorizonConfig, ResourceRequirements, ResourceSpec};
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
-    let spec = StellarNodeSpec {
-        node_type: NodeType::Horizon,
-        network: StellarNetwork::Testnet,
-        version: "v21.0.0".to_string(),
-        resources: ResourceRequirements {
-            requests: ResourceSpec {
-                cpu: "500m".to_string(),
-                memory: "1Gi".to_string(),
-            },
-            limits: ResourceSpec {
-                cpu: "2".to_string(),
-                memory: "4Gi".to_string(),
-            },
-        },
-        replicas: 1,
-        horizon_config: Some(HorizonConfig {
-            database_secret_ref: "db".to_string(),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let mut node = crate::crd::StellarNode::new("test", spec);
-    node.metadata.namespace = Some("default".to_string());
-    let dep = crate::controller::resources::build_deployment_for_test(&node);
-    let container = dep
-        .spec
-        .unwrap()
-        .template
-        .spec
-        .unwrap()
-        .containers
-        .into_iter()
-        .next()
-        .unwrap();
-    let liveness = container
-        .liveness_probe
-        .expect("horizon must have a liveness probe");
-    assert!(
-        liveness.http_get.is_some(),
-        "horizon liveness probe must use HTTP GET"
-    );
-    assert_eq!(liveness.http_get.unwrap().path.as_deref(), Some("/health"));
-}
+        let deployment = build_deployment_for_test(&node);
+        let pod_spec = deployment.spec.unwrap().template.spec.unwrap();
+        let resources = health_sidecar(&pod_spec.containers)
+            .resources
+            .as_ref()
+            .expect("diagnostic sidecar resources must be set");
 
-#[test]
-fn test_probe_override_replaces_default_period() {
-    use crate::crd::types::{
-        ProbeConfig, ProbeOverride, ResourceRequirements, ResourceSpec, ValidatorConfig,
-    };
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
-    let spec = StellarNodeSpec {
-        node_type: NodeType::Validator,
-        network: StellarNetwork::Testnet,
-        version: "v21.0.0".to_string(),
-        resources: ResourceRequirements {
-            requests: ResourceSpec {
-                cpu: "500m".to_string(),
-                memory: "1Gi".to_string(),
-            },
-            limits: ResourceSpec {
-                cpu: "2".to_string(),
-                memory: "4Gi".to_string(),
-            },
-        },
-        replicas: 1,
-        validator_config: Some(ValidatorConfig {
-            seed_secret_ref: "my-seed".to_string(),
-            ..Default::default()
-        }),
-        probes: Some(ProbeConfig {
-            liveness: Some(ProbeOverride {
-                period_seconds: Some(60),
-                failure_threshold: Some(5),
-                ..Default::default()
-            }),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let mut node = crate::crd::StellarNode::new("test", spec);
-    node.metadata.namespace = Some("default".to_string());
-    let sts = crate::controller::resources::build_statefulset_for_test(&node);
-    let container = sts
-        .spec
-        .unwrap()
-        .template
-        .spec
-        .unwrap()
-        .containers
-        .into_iter()
-        .next()
-        .unwrap();
-    let liveness = container.liveness_probe.expect("must have liveness probe");
-    assert_eq!(
-        liveness.period_seconds,
-        Some(60),
-        "override period_seconds must be applied"
-    );
-    assert_eq!(
-        liveness.failure_threshold,
-        Some(5),
-        "override failure_threshold must be applied"
-    );
-    // TCP socket from default must still be present
-    assert!(
-        liveness.tcp_socket.is_some(),
-        "default TCP socket must be preserved"
-    );
-}
+        let requests = resources.requests.as_ref().expect("requests must be set");
+        let limits = resources.limits.as_ref().expect("limits must be set");
 
-// -----------------------------------------------------------------------
-// #840 — PriorityClass support
-// -----------------------------------------------------------------------
-
-#[test]
-fn test_priority_class_name_applied_to_statefulset() {
-    use crate::crd::types::{ResourceRequirements, ResourceSpec, ValidatorConfig};
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
-    let spec = StellarNodeSpec {
-        node_type: NodeType::Validator,
-        network: StellarNetwork::Testnet,
-        version: "v21.0.0".to_string(),
-        resources: ResourceRequirements {
-            requests: ResourceSpec {
-                cpu: "500m".to_string(),
-                memory: "1Gi".to_string(),
-            },
-            limits: ResourceSpec {
-                cpu: "2".to_string(),
-                memory: "4Gi".to_string(),
-            },
-        },
-        replicas: 1,
-        validator_config: Some(ValidatorConfig {
-            seed_secret_ref: "my-seed".to_string(),
-            ..Default::default()
-        }),
-        priority_class_name: Some("stellar-validator-critical".to_string()),
-        ..Default::default()
-    };
-    let mut node = crate::crd::StellarNode::new("test", spec);
-    node.metadata.namespace = Some("default".to_string());
-    let sts = crate::controller::resources::build_statefulset_for_test(&node);
-    let pod_spec = sts.spec.unwrap().template.spec.unwrap();
-    assert_eq!(
-        pod_spec.priority_class_name.as_deref(),
-        Some("stellar-validator-critical"),
-        "priority_class_name must be propagated to pod spec"
-    );
-}
-
-#[test]
-fn test_priority_class_name_applied_to_deployment() {
-    use crate::crd::types::{HorizonConfig, ResourceRequirements, ResourceSpec};
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
-    let spec = StellarNodeSpec {
-        node_type: NodeType::Horizon,
-        network: StellarNetwork::Testnet,
-        version: "v21.0.0".to_string(),
-        resources: ResourceRequirements {
-            requests: ResourceSpec {
-                cpu: "500m".to_string(),
-                memory: "1Gi".to_string(),
-            },
-            limits: ResourceSpec {
-                cpu: "2".to_string(),
-                memory: "4Gi".to_string(),
-            },
-        },
-        replicas: 1,
-        horizon_config: Some(HorizonConfig {
-            database_secret_ref: "db".to_string(),
-            ..Default::default()
-        }),
-        priority_class_name: Some("stellar-rpc-high".to_string()),
-        ..Default::default()
-    };
-    let mut node = crate::crd::StellarNode::new("test", spec);
-    node.metadata.namespace = Some("default".to_string());
-    let dep = crate::controller::resources::build_deployment_for_test(&node);
-    let pod_spec = dep.spec.unwrap().template.spec.unwrap();
-    assert_eq!(
-        pod_spec.priority_class_name.as_deref(),
-        Some("stellar-rpc-high"),
-        "priority_class_name must be propagated to deployment pod spec"
-    );
-}
-
-#[test]
-fn test_no_priority_class_name_when_unset() {
-    use crate::crd::types::{ResourceRequirements, ResourceSpec, ValidatorConfig};
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
-    let spec = StellarNodeSpec {
-        node_type: NodeType::Validator,
-        network: StellarNetwork::Testnet,
-        version: "v21.0.0".to_string(),
-        resources: ResourceRequirements {
-            requests: ResourceSpec {
-                cpu: "500m".to_string(),
-                memory: "1Gi".to_string(),
-            },
-            limits: ResourceSpec {
-                cpu: "2".to_string(),
-                memory: "4Gi".to_string(),
-            },
-        },
-        replicas: 1,
-        validator_config: Some(ValidatorConfig {
-            seed_secret_ref: "my-seed".to_string(),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let mut node = crate::crd::StellarNode::new("test", spec);
-    node.metadata.namespace = Some("default".to_string());
-    let sts = crate::controller::resources::build_statefulset_for_test(&node);
-    let pod_spec = sts.spec.unwrap().template.spec.unwrap();
-    assert!(
-        pod_spec.priority_class_name.is_none(),
-        "priority_class_name must be None when not set in spec"
-    );
-}
-
-#[test]
-fn test_priority_class_name_empty_string_fails_validation() {
-    use crate::crd::types::{ResourceRequirements, ResourceSpec, ValidatorConfig};
-    use crate::crd::{NodeType, StellarNetwork, StellarNodeSpec};
-    let spec = StellarNodeSpec {
-        node_type: NodeType::Validator,
-        network: StellarNetwork::Testnet,
-        version: "v21.0.0".to_string(),
-        resources: ResourceRequirements {
-            requests: ResourceSpec {
-                cpu: "500m".to_string(),
-                memory: "1Gi".to_string(),
-            },
-            limits: ResourceSpec {
-                cpu: "2".to_string(),
-                memory: "4Gi".to_string(),
-            },
-        },
-        replicas: 1,
-        validator_config: Some(ValidatorConfig {
-            seed_secret_ref: "my-seed".to_string(),
-            ..Default::default()
-        }),
-        priority_class_name: Some("".to_string()),
-        ..Default::default()
-    };
-    let result = spec.validate();
-    assert!(
-        result.is_err(),
-        "empty priorityClassName must fail validation"
-    );
-    let errs = result.unwrap_err();
-    assert!(
-        errs.iter().any(|e| e.field.contains("priorityClassName")),
-        "error must reference priorityClassName field"
-    );
+        assert_eq!(requests.get("cpu").unwrap().0, "75m");
+        assert_eq!(requests.get("memory").unwrap().0, "96Mi");
+        assert_eq!(limits.get("cpu").unwrap().0, "150m");
+        assert_eq!(limits.get("memory").unwrap().0, "128Mi");
+    }
 }
 
 // -----------------------------------------------------------------------

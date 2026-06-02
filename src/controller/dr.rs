@@ -42,8 +42,7 @@ pub async fn reconcile_dr(
     // Fetch DR Policy if referenced
     let policy = if let Some(policy_name) = &dr_config.policy_ref {
         let ns = node.namespace().unwrap_or_else(|| "default".to_string());
-        let policy_api: kube::Api<DisasterRecoveryPolicy> =
-            kube::Api::namespaced(client.clone(), &ns);
+        let policy_api: kube::Api<DisasterRecoveryPolicy> = kube::Api::namespaced(client.clone(), &ns);
         match policy_api.get(policy_name).await {
             Ok(p) => Some(p),
             Err(kube::Error::Api(e)) if e.code == 404 => None,
@@ -240,7 +239,7 @@ fn calculate_health_score(node: &StellarNode) -> u32 {
     } else {
         score = 0;
     }
-    score
+    score.max(0) as u32
 }
 
 async fn update_policy_compliance(

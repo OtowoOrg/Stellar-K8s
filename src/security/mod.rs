@@ -33,6 +33,17 @@ pub enum SecuritySeverity {
     Low,
 }
 
+impl std::fmt::Display for SecuritySeverity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SecuritySeverity::Critical => write!(f, "CRITICAL"),
+            SecuritySeverity::High => write!(f, "HIGH"),
+            SecuritySeverity::Medium => write!(f, "MEDIUM"),
+            SecuritySeverity::Low => write!(f, "LOW"),
+        }
+    }
+}
+
 /// Security posture report
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityPosture {

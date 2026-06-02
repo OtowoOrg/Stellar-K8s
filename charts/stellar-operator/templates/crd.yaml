@@ -86,6 +86,25 @@ spec:
                           type: string
                         memory:
                           type: string
+                diagnosticSidecarResources:
+                  type: object
+                  nullable: true
+                  description: Resource requests and limits for the operator-managed diagnostic health-check sidecar. Defaults to 50m CPU and 64Mi memory for both requests and limits when unset.
+                  properties:
+                    requests:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                        memory:
+                          type: string
+                    limits:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                        memory:
+                          type: string
                 storage:
                   type: object
                   properties:

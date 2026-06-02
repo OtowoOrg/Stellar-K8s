@@ -218,4 +218,4 @@ pub mod observability_dashboard;
 pub mod observability_pipeline;
 pub mod pvc_autoscaler;
 pub mod resource_optimization;
-pub mod upgrade_orchestrator;
+pub mod health_check_sidecar;

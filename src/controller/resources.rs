@@ -47,11 +47,15 @@ use crate::crd::{
     ExternalCluster, HistoryMode, HsmProvider, IngressConfig, InitDbConfiguration, KeySource,
     ManagedDatabaseConfig, MonitoringConfiguration, NetworkPolicyConfig, NodeType, PgBouncerSpec,
     Pooler, PoolerCluster, PoolerSpec, PostgresConfiguration, RecoveryConfiguration,
-    ReplicaConfiguration, S3Credentials, SecretKeySelector as CnpgSecretKeySelector, StellarNode,
-    StellarNodeSpec, StorageConfiguration, WalBackupConfiguration,
+    ReplicaConfiguration, ResourceRequirements, S3Credentials,
+    SecretKeySelector as CnpgSecretKeySelector, StellarNode, StellarNodeSpec, StorageConfiguration,
+    WalBackupConfiguration,
 };
 use crate::error::{Error, Result};
 use crate::scheduler::scoring::extract_peer_names_from_toml;
+
+const DIAGNOSTIC_SIDECAR_DEFAULT_CPU: &str = "50m";
+const DIAGNOSTIC_SIDECAR_DEFAULT_MEMORY: &str = "64Mi";
 
 /// Get the standard labels for a StellarNode's resources
 pub(crate) fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
@@ -2113,9 +2117,9 @@ fn build_pod_template(
                     containers.push(Container {
                         name: "dedicatedhsm-client".to_string(),
                         image: Some("azure/dedicated-hsm-client:latest".to_string()),
-                        command: Some(
-                            vec!["/opt/dedicatedhsm/bin/dedicatedhsm_client".to_string()],
-                        ),
+                        command: Some(vec![
+                            "/opt/dedicatedhsm/bin/dedicatedhsm_client".to_string(),
+                        ]),
                         args: Some(vec!["--foreground".to_string()]),
                         volume_mounts: Some(vec![VolumeMount {
                             name: "dedicatedhsm-socket".to_string(),
@@ -2302,6 +2306,62 @@ fn build_pod_template(
             pod_spec.containers.push(handoff_sidecar);
         }
     }
+
+    // ==========================================================================
+    // Inject health check sidecar for advanced liveness/readiness probes
+    // ==========================================================================
+    let health_check_sidecar = k8s_openapi::api::core::v1::Container {
+        name: "stellar-health-check".to_string(),
+        image: Some(
+            node.spec
+                .container_image()
+                .replace("stellar-core", "stellar-k8s")
+                .replace("horizon", "stellar-k8s"),
+        ),
+        command: Some(vec!["/stellar-health-sidecar".to_string()]),
+        ports: Some(vec![k8s_openapi::api::core::v1::ContainerPort {
+            name: Some("health".to_string()),
+            container_port: 8081,
+            protocol: Some("TCP".to_string()),
+            ..Default::default()
+        }]),
+        env: Some(vec![
+            EnvVar {
+                name: "CORE_URL".to_string(),
+                value: Some(match node.spec.node_type {
+                    NodeType::Validator => "http://localhost:11626".to_string(),
+                    NodeType::Horizon => "http://localhost:8000".to_string(),
+                    NodeType::SorobanRpc => "http://localhost:8000".to_string(),
+                }),
+                ..Default::default()
+            },
+            EnvVar {
+                name: "RUST_LOG".to_string(),
+                value: Some("info".to_string()),
+                ..Default::default()
+            },
+        ]),
+        security_context: Some(SecurityContext {
+            allow_privilege_escalation: Some(false),
+            capabilities: Some(Capabilities {
+                drop: Some(vec!["ALL".to_string()]),
+                add: None,
+            }),
+            run_as_non_root: Some(true),
+            privileged: Some(false),
+            read_only_root_filesystem: Some(true),
+            seccomp_profile: Some(SeccompProfile {
+                type_: "RuntimeDefault".to_string(),
+                localhost_profile: None,
+            }),
+            ..Default::default()
+        }),
+        resources: Some(build_diagnostic_sidecar_resources(
+            node.spec.diagnostic_sidecar_resources.as_ref(),
+        )),
+        ..Default::default()
+    };
+    pod_spec.containers.push(health_check_sidecar);
 
     // ==========================================================================
     // NEW: Inject KMS/ESO/CSI seed env vars, volumes, and volume mounts
@@ -3179,21 +3239,92 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
         }),
         volume_mounts: Some(volume_mounts),
         liveness_probe: apply_probe_override(
-            Some(default_liveness_probe(&node.spec.node_type)),
+            Some(k8s_openapi::api::core::v1::Probe {
+                http_get: Some(k8s_openapi::api::core::v1::HTTPGetAction {
+                    path: Some("/healthz".to_string()),
+                    port: k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(8081),
+                    ..Default::default()
+                }),
+                initial_delay_seconds: Some(30),
+                period_seconds: Some(10),
+                timeout_seconds: Some(5),
+                failure_threshold: Some(3),
+                ..Default::default()
+            }),
             node.spec.probes.as_ref().and_then(|p| p.liveness.as_ref()),
         ),
         readiness_probe: apply_probe_override(
-            Some(default_readiness_probe(&node.spec.node_type)),
+            Some(k8s_openapi::api::core::v1::Probe {
+                http_get: Some(k8s_openapi::api::core::v1::HTTPGetAction {
+                    path: Some("/readyz".to_string()),
+                    port: k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(8081),
+                    ..Default::default()
+                }),
+                initial_delay_seconds: Some(60),
+                period_seconds: Some(5),
+                timeout_seconds: Some(5),
+                failure_threshold: Some(2),
+                ..Default::default()
+            }),
             node.spec.probes.as_ref().and_then(|p| p.readiness.as_ref()),
         ),
         startup_probe: apply_probe_override(
-            Some(default_startup_probe(&node.spec.node_type)),
+            Some(k8s_openapi::api::core::v1::Probe {
+                http_get: Some(k8s_openapi::api::core::v1::HTTPGetAction {
+                    path: Some("/healthz".to_string()),
+                    port: k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(8081),
+                    ..Default::default()
+                }),
+                initial_delay_seconds: Some(0),
+                period_seconds: Some(10),
+                timeout_seconds: Some(5),
+                failure_threshold: Some(30),
+                ..Default::default()
+            }),
             node.spec.probes.as_ref().and_then(|p| p.startup.as_ref()),
         ),
         ..Default::default()
     }
 }
 
+fn build_diagnostic_sidecar_resources(
+    override_resources: Option<&ResourceRequirements>,
+) -> K8sResources {
+    let requests_cpu = override_resources
+        .map(|resources| resources.requests.cpu.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(DIAGNOSTIC_SIDECAR_DEFAULT_CPU);
+    let requests_memory = override_resources
+        .map(|resources| resources.requests.memory.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(DIAGNOSTIC_SIDECAR_DEFAULT_MEMORY);
+    let limits_cpu = override_resources
+        .map(|resources| resources.limits.cpu.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(DIAGNOSTIC_SIDECAR_DEFAULT_CPU);
+    let limits_memory = override_resources
+        .map(|resources| resources.limits.memory.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(DIAGNOSTIC_SIDECAR_DEFAULT_MEMORY);
+
+    K8sResources {
+        requests: Some(
+            [
+                ("cpu".to_string(), Quantity(requests_cpu.to_string())),
+                ("memory".to_string(), Quantity(requests_memory.to_string())),
+            ]
+            .into_iter()
+            .collect(),
+        ),
+        limits: Some(
+            [
+                ("cpu".to_string(), Quantity(limits_cpu.to_string())),
+                ("memory".to_string(), Quantity(limits_memory.to_string())),
+            ]
+            .into_iter()
+            .collect(),
+        ),
+        claims: None,
 fn merge_env_overrides(base: &mut Vec<EnvVar>, overrides: &[EnvVar]) {
     for override_var in overrides {
         if let Some(existing) = base.iter_mut().find(|env| env.name == override_var.name) {
@@ -4460,8 +4591,8 @@ pub(crate) fn build_service_for_test(node: &StellarNode) -> k8s_openapi::api::co
 mod ensure_pvc_tests {
     use super::{build_hpa, build_pvc, pvc_needs_update, resolve_pvc_storage_class};
     use crate::crd::{
-        types::{ResourceRequirements, ResourceSpec, StorageMode},
         NodeType, StellarNetwork, StellarNode, StellarNodeSpec,
+        types::{ResourceRequirements, ResourceSpec, StorageMode},
     };
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 

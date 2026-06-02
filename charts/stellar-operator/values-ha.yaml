@@ -1,0 +1,62 @@
+# Stellar Operator High Availability Values
+# This configuration file enables leader election and high availability for the operator.
+#
+# Deploy with:
+#   helm install stellar-operator ./charts/stellar-operator -f values-ha.yaml
+#
+# Or upgrade existing deployment:
+#   helm upgrade stellar-operator ./charts/stellar-operator -f values-ha.yaml
+
+# Number of replicas for high availability
+# With 3+ replicas and leader election enabled, the operator can tolerate
+# the failure of (N-1) replicas and continue processing reconciliation.
+replicaCount: 3
+
+# Pod Disruption Budget - ensures availability during cluster maintenance
+# At least 1 replica will remain available during voluntary disruptions
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Affinity configuration is automatically applied when replicaCount > 1
+# (see deployment.yaml for default pod anti-affinity)
+# Override here if you need custom affinity rules
+# affinity: {}
+
+# Optional: override the default anti-affinity for custom scheduling
+# Example: schedule on nodes with a specific label
+# affinity:
+#   nodeAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       nodeSelectorTerms:
+#         - matchExpressions:
+#             - key: node.kubernetes.io/instance-type
+#               operator: In
+#               values:
+#                 - m5.large
+#                 - m5.xlarge
+
+# Increase resource requests for HA deployments
+resources:
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+  requests:
+    cpu: 500m
+    memory: 256Mi
+
+# Operator-specific configuration
+operator:
+  logLevel: info
+  restApiEnabled: true
+  restApiPort: 9090
+  metricsPort: 9090
+
+# Optional: node selection for operator pods
+# nodeSelector: {}
+
+# Optional: tolerations for specific node taints
+# tolerations: []
+
+# Optional: specify architecture preference (amd64, arm64, etc)
+# arch: ""

@@ -1,0 +1,22 @@
+# Example: StellarNode Horizon with DB migration init container.
+# The init container runs 'stellar-horizon db migrate up' before the main
+# Horizon process starts, ensuring the schema is always up-to-date.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-with-migration
+  namespace: stellar-prod
+spec:
+  nodeType: Horizon
+  network: Public
+  version: "v21.0.0"
+  initContainers:
+    - name: db-migrate
+      image: stellar/stellar-horizon:latest
+      command: ["stellar-horizon", "db", "migrate", "up"]
+      env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: horizon-db-secret
+              key: DATABASE_URL

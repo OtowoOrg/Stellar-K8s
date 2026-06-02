@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # ── Scope check: skip on PRs that don't touch operator code ──────────
       - name: Decide whether boot verification should run
@@ -141,7 +141,7 @@ jobs:
       # ── Upload log artifact ───────────────────────────────────────────────
       - name: Upload operator log
         if: always() && steps.scope.outputs.run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: operator-boot-log-${{ github.run_id }}
           path: /tmp/operator.log

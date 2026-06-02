@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # ── Build binary ──────────────────────────────────────────────────────
       - name: Setup Rust
@@ -85,7 +85,7 @@ jobs:
       # ── Upload results ────────────────────────────────────────────────────
       - name: Upload memory samples
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: soak-memory-samples-${{ github.run_id }}
           path: /tmp/soak-memory.log

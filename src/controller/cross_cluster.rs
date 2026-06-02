@@ -287,6 +287,10 @@ fn build_external_name_service(
         "stellar.org/peer-cluster".to_string(),
         peer.cluster_id.clone(),
     );
+    super::resources::merge_service_metadata_labels(&mut labels, node);
+
+    let mut annotations = BTreeMap::new();
+    super::resources::merge_service_annotations(&mut annotations, node);
 
     let port = peer.port.unwrap_or(11625);
 
@@ -295,6 +299,11 @@ fn build_external_name_service(
             name: Some(service_name.to_string()),
             namespace: node.namespace(),
             labels: Some(labels),
+            annotations: if annotations.is_empty() {
+                None
+            } else {
+                Some(annotations)
+            },
             ..Default::default()
         },
         spec: Some(ServiceSpec {

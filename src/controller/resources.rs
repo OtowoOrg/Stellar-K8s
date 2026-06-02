@@ -9,7 +9,7 @@ use crate::controller::resource_meta::merge_resource_meta;
 use super::kms_secret;
 use super::label_propagation::LabelPropagator;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec, StatefulSet, StatefulSetSpec};
 use k8s_openapi::api::autoscaling::v2::{
@@ -80,6 +80,42 @@ pub(crate) fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
             .scheduling_label_value(&node.spec.custom_network_passphrase),
     );
     labels
+}
+
+fn render_annotation_template(value: &str, node: &StellarNode) -> String {
+    let mut rendered = value.replace("{{name}}", &node.name_any());
+    rendered = rendered.replace("${name}", &node.name_any());
+    rendered = rendered.replace(
+        "{{namespace}}",
+        &node.namespace().unwrap_or_default(),
+    );
+    rendered = rendered.replace("${namespace}", &node.namespace().unwrap_or_default());
+    rendered = rendered.replace("{{nodeType}}", &node.spec.node_type.to_string());
+    rendered = rendered.replace("${nodeType}", &node.spec.node_type.to_string());
+    rendered = rendered.replace("{{network}}", &node.spec.network.to_string());
+    rendered = rendered.replace("${network}", &node.spec.network.to_string());
+    rendered
+}
+
+pub(crate) fn merge_service_annotations(
+    annotations: &mut BTreeMap<String, String>,
+    node: &StellarNode,
+) {
+    if let Some(service_annotations) = &node.spec.service_annotations {
+        for (key, value) in service_annotations {
+            annotations.entry(key.clone()).or_insert_with(|| {
+                render_annotation_template(value, node)
+            });
+        }
+    }
+}
+
+pub(crate) fn merge_service_metadata_labels(labels: &mut BTreeMap<String, String>, node: &StellarNode) {
+    if let Some(service_labels) = &node.spec.service_labels {
+        for (key, value) in service_labels {
+            labels.entry(key.clone()).or_insert_with(|| value.clone());
+        }
+    }
 }
 
 /// Create an OwnerReference for garbage collection
@@ -1036,7 +1072,8 @@ pub async fn ensure_canary_service(
 }
 
 fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
-    let labels = standard_labels(node);
+    let mut labels = standard_labels(node);
+    merge_service_metadata_labels(&mut labels, node);
     let name = node.name_any();
 
     let mut annotations = BTreeMap::new();
@@ -1084,6 +1121,8 @@ fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
             }
         }
     }
+
+    merge_service_annotations(&mut annotations, node);
 
     let http_port_name = if enable_mtls { "https" } else { "http" }.to_string();
 
@@ -1889,6 +1928,11 @@ fn build_pod_template(
         priority_class_name: node.spec.priority_class_name.clone(),
         ..Default::default()
     };
+
+    if let Some(custom_volumes) = &node.spec.volumes {
+        let volumes = pod_spec.volumes.get_or_insert_with(Vec::new);
+        volumes.extend(custom_volumes.clone());
+    }
 
     if node.spec.node_type == NodeType::Validator {
         if let Some(fs) = &node.spec.forensic_snapshot {
@@ -3089,6 +3133,15 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
     // Add extra mounts (HSM)
     volume_mounts.extend(extra_volume_mounts);
 
+    if let Some(custom_volume_mounts) = &node.spec.volume_mounts {
+        let existing_mount_names: BTreeSet<String> =
+            volume_mounts.iter().map(|m| m.name.clone()).collect();
+        for mount in custom_volume_mounts {
+            if existing_mount_names.contains(&mount.name) {
+                continue;
+            }
+            volume_mounts.push(mount.clone());
+        }
     // Apply node-type specific custom environment variables from the CRD.
     match node.spec.node_type {
         NodeType::Validator => merge_env_overrides(&mut env_vars, &node.spec.stellar_core_env),

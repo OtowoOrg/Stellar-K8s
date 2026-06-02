@@ -6,7 +6,7 @@
 mod tests {
     use std::collections::BTreeMap;
 
-    use k8s_openapi::api::core::v1::TopologySpreadConstraint;
+    use k8s_openapi::api::core::v1::{ConfigMapVolumeSource, Volume, VolumeMount, TopologySpreadConstraint};
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 
     use crate::controller::resources::build_topology_spread_constraints;
@@ -534,6 +534,73 @@ peer-2 = "G..."
         let svc = build_service_for_test(&node);
         assert_standard_labels(&svc.metadata, &node);
         assert_owner_reference(&svc.metadata, &node);
+    }
+
+    #[test]
+    fn test_service_merges_custom_service_labels_and_annotations() {
+        let mut node = make_node(NodeType::Horizon);
+        node.spec.service_labels = Some(BTreeMap::from([
+            ("team".to_string(), "infra".to_string()),
+            ("app.kubernetes.io/managed-by".to_string(), "evil".to_string()),
+        ]));
+        node.spec.service_annotations = Some(BTreeMap::from([
+            ("stellar.org/custom".to_string(), "${name}-service".to_string()),
+        ]));
+
+        let svc = build_service_for_test(&node);
+        let labels = svc.metadata.labels.as_ref().expect("labels must exist");
+        assert_eq!(labels.get("team"), Some(&"infra".to_string()));
+        assert_eq!(labels.get("app.kubernetes.io/managed-by"), Some(&"stellar-operator".to_string()));
+
+        let annotations = svc.metadata.annotations.as_ref().expect("annotations must exist");
+        assert_eq!(annotations.get("stellar.org/custom"), Some(&"test-node-service".to_string()));
+    }
+
+    #[test]
+    fn test_custom_volumes_and_volume_mounts_are_injected_into_pod_spec() {
+        let mut node = make_node(NodeType::Horizon);
+        node.spec.volumes = Some(vec![Volume {
+            name: "custom-config".to_string(),
+            config_map: Some(ConfigMapVolumeSource {
+                name: Some("my-config".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }]);
+        node.spec.volume_mounts = Some(vec![VolumeMount {
+            name: "custom-config".to_string(),
+            mount_path: "/custom".to_string(),
+            ..Default::default()
+        }]);
+
+        let deploy = build_deployment_for_test(&node);
+        let pod_spec = deploy
+            .spec
+            .as_ref()
+            .expect("deployment spec present")
+            .template
+            .spec
+            .as_ref()
+            .expect("pod spec present");
+
+        assert!(pod_spec
+            .volumes
+            .as_ref()
+            .expect("volumes present")
+            .iter()
+            .any(|v| v.name == "custom-config"));
+
+        let main_container = pod_spec
+            .containers
+            .iter()
+            .find(|c| c.name == "stellar-node")
+            .expect("main container present");
+        assert!(main_container
+            .volume_mounts
+            .as_ref()
+            .expect("volume mounts present")
+            .iter()
+            .any(|m| m.name == "custom-config" && m.mount_path == "/custom"));
     }
 
     #[test]

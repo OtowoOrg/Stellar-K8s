@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// API Version
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ApiVersion {
     pub major: u32,
     pub minor: Option<u32>,

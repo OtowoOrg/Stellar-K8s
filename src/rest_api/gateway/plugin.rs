@@ -71,13 +71,16 @@ pub trait GatewayPlugin: Send + Sync {
     async fn periodic(&self, _ctx: &PluginContext) {}
 }
 
-/// Plugin execution context
-#[derive(Debug)]
+/// Plugin execution context with request metadata
+#[derive(Debug, Clone)]
 pub struct PluginContext {
-    pub request: Request<Body>,
+    pub method: http::Method,
+    pub uri: http::Uri,
+    pub headers: http::HeaderMap,
     pub auth: AuthContext,
     pub state: Arc<ControllerState>,
-    pub response: Option<Response<Body>>,
+    pub response_status: Option<http::StatusCode>,
+    pub response_headers: Option<http::HeaderMap>,
     pub metadata: HashMap<String, String>,
     pub start_time: DateTime<Utc>,
 }
@@ -138,11 +141,14 @@ impl PluginManager {
             tracing::warn!("Plugin {} init error: {}", name, e);
         }
 
-        plugins.insert(name, Box::new(plugin));
+        plugins.insert(name.clone(), Box::new(plugin));
 
         drop(plugins);
         let mut settings = self.settings.write().await;
-        settings.insert(name, settings);
+        settings.insert(name, PluginSettings {
+            enabled: true,
+            config: HashMap::new(),
+        });
     }
 
     /// Unregister a plugin
@@ -214,7 +220,7 @@ impl PluginManager {
                 plugin.post_request(ctx).await;
             }
 
-            if let Some(ref response) = ctx.response {
+            if ctx.response_status.is_some() {
                 if plugin.hooks().contains(&PluginHook::PostResponse) {
                     plugin.post_response(ctx).await;
                 }
@@ -300,8 +306,7 @@ impl GatewayPlugin for CustomAuthPlugin {
     async fn pre_request(&self, ctx: &mut PluginContext) -> Option<bool> {
         // Custom auth logic here
         let token = ctx
-            .request
-            .headers()
+            .headers
             .get("X-Custom-Token")
             .and_then(|v| v.to_str().ok());
 
@@ -360,8 +365,8 @@ impl GatewayPlugin for LoggingPlugin {
     async fn pre_request(&self, ctx: &mut PluginContext) -> Option<bool> {
         tracing::info!(
             "Request: {} {} from {}",
-            ctx.request.method(),
-            ctx.request.uri(),
+            ctx.method,
+            ctx.uri,
             ctx.auth.client_id
         );
         None
@@ -370,9 +375,9 @@ impl GatewayPlugin for LoggingPlugin {
     async fn post_request(&self, _ctx: &mut PluginContext) {}
 
     async fn post_response(&self, ctx: &mut PluginContext) {
-        if let Some(response) = &ctx.response {
+        if let Some(status) = ctx.response_status {
             let duration = (Utc::now() - ctx.start_time).num_milliseconds();
-            tracing::info!("Response: {} in {}ms", response.status(), duration);
+            tracing::info!("Response: {} in {}ms", status, duration);
         }
     }
 

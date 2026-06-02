@@ -22,7 +22,7 @@ use super::{
     auth::AuthConfig,
     openapi::OpenApiGenerator,
     plugin::PluginSettings,
-    ratelimit::{QuotaConfig, RateLimitInfo},
+    ratelimit::{QuotaConfig, RateLimitConfig, RateLimitInfo},
     router::RouterConfig,
     GatewayConfig, GatewayState,
 };
@@ -104,12 +104,14 @@ async fn get_gateway_config(
         plugins: vec![],
     };
 
-    match query.section.as_deref() {
-        Some("auth") => Json(config.auth),
-        Some("ratelimit") => Json(config.rate_limit),
-        Some("router") => Json(config.router),
-        _ => Json(config),
-    }
+    let response_value = match query.section.as_deref() {
+        Some("auth") => serde_json::to_value(&config.auth).unwrap(),
+        Some("ratelimit") => serde_json::to_value(&config.rate_limit).unwrap(),
+        Some("router") => serde_json::to_value(&config.router).unwrap(),
+        _ => serde_json::to_value(&config).unwrap(),
+    };
+    
+    Json(response_value)
 }
 
 async fn update_gateway_config(

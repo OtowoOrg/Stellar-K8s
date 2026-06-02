@@ -43,6 +43,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -116,9 +117,15 @@ pub async fn gateway_handler(
 
     // 4. Plugin Pre-processing
     let mut ctx = PluginContext {
-        request: request.clone(),
+        method: request.method().clone(),
+        uri: request.uri().clone(),
+        headers: request.headers().clone(),
         auth: auth_context.clone(),
         state: state.inner.clone(),
+        response_status: None,
+        response_headers: None,
+        metadata: HashMap::new(),
+        start_time: chrono::Utc::now(),
     };
     if let Some(should_continue) = state.plugin_manager.pre_process(&mut ctx).await {
         if !should_continue {
@@ -133,11 +140,11 @@ pub async fn gateway_handler(
     // 5. Request Transformation
     let transformed = state
         .transform_pipeline
-        .transform_request(ctx.request)
+        .transform_request(request)
         .await;
 
     // 6. Route to correct version
-    let routed = state.router.route(&transformed).await;
+    let routed = state.router.route(transformed).await;
 
     // 7. Execute request
     let response = next.run(routed).await;
@@ -146,7 +153,8 @@ pub async fn gateway_handler(
     let final_response = state.transform_pipeline.transform_response(response).await;
 
     // 9. Plugin Post-processing
-    ctx.response = Some(final_response.clone());
+    ctx.response_status = Some(final_response.status());
+    ctx.response_headers = Some(final_response.headers().clone());
     state.plugin_manager.post_process(&mut ctx).await;
 
     // 10. Record Analytics

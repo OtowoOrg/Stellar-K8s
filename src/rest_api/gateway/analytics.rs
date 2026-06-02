@@ -419,21 +419,39 @@ fn percentile(sorted: &[u64], p: usize) -> u64 {
     sorted[index]
 }
 
+/// Label for HTTP method metrics
+#[derive(Clone, Debug, Hash, PartialEq, Eq, prometheus_client::encoding::EncodeLabelSet)]
+pub struct MethodLabel {
+    pub method: String,
+}
+
+/// Label for HTTP status metrics  
+#[derive(Clone, Debug, Hash, PartialEq, Eq, prometheus_client::encoding::EncodeLabelSet)]
+pub struct StatusLabel {
+    pub status: String,
+}
+
+/// Label for path metrics
+#[derive(Clone, Debug, Hash, PartialEq, Eq, prometheus_client::encoding::EncodeLabelSet)]
+pub struct PathLabel {
+    pub path: String,
+}
+
 /// Gateway metrics for prometheus export
 pub struct GatewayMetrics {
     pub total_requests: prometheus_client::metrics::counter::Counter,
     pub total_errors: prometheus_client::metrics::counter::Counter,
     pub requests_by_method: prometheus_client::metrics::family::Family<
+        MethodLabel,
         prometheus_client::metrics::counter::Counter,
-        prometheus_client::metrics::family::MetricLabel,
     >,
     pub requests_by_status: prometheus_client::metrics::family::Family<
+        StatusLabel,
         prometheus_client::metrics::counter::Counter,
-        prometheus_client::metrics::family::MetricLabel,
     >,
     pub requests_by_path: prometheus_client::metrics::family::Family<
+        PathLabel,
         prometheus_client::metrics::counter::Counter,
-        prometheus_client::metrics::family::MetricLabel,
     >,
     pub latency_histogram: prometheus_client::metrics::histogram::Histogram,
 }
@@ -441,36 +459,13 @@ pub struct GatewayMetrics {
 impl GatewayMetrics {
     pub fn new() -> Self {
         Self {
-            total_requests: prometheus_client::metrics::counter::Counter::new(
-                "gateway_total_requests",
-                "Total number of requests processed by the gateway",
-            ),
-            total_errors: prometheus_client::metrics::counter::Counter::new(
-                "gateway_total_errors",
-                "Total number of errors processed by the gateway",
-            ),
-            requests_by_method: prometheus_client::metrics::family::Family::new(|labels| {
-                prometheus_client::metrics::counter::Counter::new(
-                    "gateway_requests_total",
-                    "Total requests by HTTP method",
-                )
-            }),
-            requests_by_status: prometheus_client::metrics::family::Family::new(|labels| {
-                prometheus_client::metrics::counter::Counter::new(
-                    "gateway_responses_total",
-                    "Total responses by status code",
-                )
-            }),
-            requests_by_path: prometheus_client::metrics::family::Family::new(|labels| {
-                prometheus_client::metrics::counter::Counter::new(
-                    "gateway_path_requests_total",
-                    "Total requests by path",
-                )
-            }),
+            total_requests: Default::default(),
+            total_errors: Default::default(),
+            requests_by_method: Default::default(),
+            requests_by_status: Default::default(),
+            requests_by_path: Default::default(),
             latency_histogram: prometheus_client::metrics::histogram::Histogram::new(
-                "gateway_request_duration_seconds",
-                "Request duration in seconds",
-                vec![0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+                vec![0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0].into_iter()
             ),
         }
     }
@@ -479,13 +474,13 @@ impl GatewayMetrics {
     pub fn record_request(&self, call: &ApiCall) {
         self.total_requests.inc();
 
-        let method_label =
-            prometheus_client::metrics::family::MetricLabel::new("method", call.method.clone());
-        self.requests_by_method.get_or_create(&[method_label]).inc();
+        self.requests_by_method.get_or_create(&MethodLabel {
+            method: call.method.clone(),
+        }).inc();
 
-        let status_label =
-            prometheus_client::metrics::family::MetricLabel::new("status", call.status.to_string());
-        self.requests_by_status.get_or_create(&[status_label]).inc();
+        self.requests_by_status.get_or_create(&StatusLabel {
+            status: call.status.to_string(),
+        }).inc();
 
         if call.status >= 400 {
             self.total_errors.inc();

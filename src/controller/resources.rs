@@ -3853,7 +3853,7 @@ pub async fn ensure_service_monitor(client: &Client, node: &StellarNode) -> Resu
     let mut service_monitor = DynamicObject::new(&name, &api_resource).within(&namespace);
     service_monitor.metadata.labels = Some(standard_labels(node));
     service_monitor.metadata.owner_references = Some(vec![owner_reference(node)]);
-    service_monitor.data = serde_json::json!({
+    service_monitor.data = serde_json::to_value(serde_json::json!({
         "spec": {
             "jobLabel": "app.kubernetes.io/instance",
             "namespaceSelector": {
@@ -3874,9 +3874,8 @@ pub async fn ensure_service_monitor(client: &Client, node: &StellarNode) -> Resu
                 }
             ]
         }
-    })
-    .as_object()
-    .cloned();
+    }))
+    .unwrap_or_default();
 
     api.patch(
         &name,

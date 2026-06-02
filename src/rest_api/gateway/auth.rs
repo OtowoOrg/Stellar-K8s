@@ -105,6 +105,7 @@ pub struct JwtClaims {
 }
 
 /// JWT Authentication
+#[derive(Clone)]
 pub struct JwtAuth {
     secret: Option<String>,
     algorithm: Algorithm,
@@ -180,6 +181,7 @@ impl JwtAuth {
 }
 
 /// OAuth2 Authentication
+#[derive(Clone)]
 pub struct OAuth2Auth {
     client_id: Option<String>,
     client_secret: Option<String>,
@@ -231,6 +233,7 @@ impl OAuth2Auth {
 }
 
 /// API Key Authentication
+#[derive(Clone)]
 pub struct ApiKeyAuth {
     keys: HashMap<String, ApiKeyEntry>,
 }

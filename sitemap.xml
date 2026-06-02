@@ -17,62 +17,6 @@
          <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/PRUNING_CHECKLIST/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/PRUNING_COMPLETE/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/PRUNING_EXECUTIVE_SUMMARY/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/PRUNING_FILE_MANIFEST/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/PRUNING_IMPLEMENTATION/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/PRUNING_INDEX/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/PRUNING_INTEGRATION_GUIDE/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/PRUNING_QUICK_REFERENCE/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/QUICK_START_HEALTH_CHECKS/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/QUICK_START_PEER_DISCOVERY/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/SCHEDULER_PROXIMITY_BENCHMARK/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/SECURITY_TESTING/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/WEBHOOK_BENCHMARK_SUMMARY/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/_branding/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/api-reference/</loc>
          <lastmod>2026-06-02</lastmod>
     </url>
@@ -89,19 +33,11 @@
          <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/benchmark-compare-quick-start/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/benchmark-compare/</loc>
          <lastmod>2026-06-02</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/benchmarking/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/byzantine-monitoring-quickstart/</loc>
          <lastmod>2026-06-02</lastmod>
     </url>
     <url>
@@ -141,10 +77,6 @@
          <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/disk-scaling-quick-reference/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/docker-build-optimization/</loc>
          <lastmod>2026-06-02</lastmod>
     </url>
@@ -178,10 +110,6 @@
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/gatekeeper-policies/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/getting-started/</loc>
          <lastmod>2026-06-02</lastmod>
     </url>
     <url>
@@ -285,10 +213,6 @@
          <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/quickstart/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/quorum-optimization/</loc>
          <lastmod>2026-06-02</lastmod>
     </url>
@@ -306,10 +230,6 @@
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/scp-analytics-pipeline/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/scp-analytics-quick-start/</loc>
          <lastmod>2026-06-02</lastmod>
     </url>
     <url>
@@ -365,10 +285,6 @@
          <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/__temp_test__/tmp/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/adr/</loc>
          <lastmod>2026-06-02</lastmod>
     </url>
@@ -406,10 +322,6 @@
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/api/webhook/</loc>
-         <lastmod>2026-06-02</lastmod>
-    </url>
-    <url>
-         <loc>https://m1s0g1.github.io/Stellar-K8s/api-reference/</loc>
          <lastmod>2026-06-02</lastmod>
     </url>
     <url>

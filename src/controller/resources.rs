@@ -4132,11 +4132,7 @@ pub(crate) fn build_network_policy(
                 }),
                 ..Default::default()
             }]),
-            ports: Some(vec![NetworkPolicyPort {
-                port: Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(11625)),
-                protocol: Some("TCP".to_string()),
-                ..Default::default()
-            }]),
+            ports: Some(app_ports.clone()),
         });
 
         // --- Stellar-Native Egress Rules ---
@@ -4224,6 +4220,12 @@ pub(crate) fn build_network_policy(
             }
         }
     } else {
+        // Allow public and ingress-controller traffic to Horizon/Soroban RPC on port 8000.
+        ingress_rules.push(NetworkPolicyIngressRule {
+            from: None,
+            ports: Some(app_ports.clone()),
+        });
+
         // Horizon / Soroban RPC egress rules
         // 1. Allow DNS
         egress_rules.push(k8s_openapi::api::networking::v1::NetworkPolicyEgressRule {

@@ -1,0 +1,20 @@
+# Example: StellarNode with PSS 'baseline' security context (for legacy images that
+# require a writable root filesystem but still avoid privilege escalation).
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-baseline
+  namespace: stellar-staging
+spec:
+  nodeType: Horizon
+  network: Testnet
+  version: "v21.0.0"
+  securityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false   # relaxed for legacy images
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault

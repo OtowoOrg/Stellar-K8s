@@ -529,6 +529,75 @@ pub struct VpaConfig {
     pub container_policies: Vec<VpaContainerPolicy>,
 }
 
+// ── Security Context ─────────────────────────────────────────────────────────
+
+/// Capabilities to add/drop at the container level.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerCapabilities {
+    /// Capabilities to add (avoid unless absolutely necessary under PSS baseline).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub add: Vec<String>,
+    /// Capabilities to drop. Defaults to `["ALL"]` when using restricted PSS.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drop: Vec<String>,
+}
+
+/// Seccomp profile override for pods/containers.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SeccompProfileOverride {
+    /// `RuntimeDefault`, `Localhost`, or `Unconfined`.
+    pub type_: String,
+    /// Path relative to the kubelet seccomp profile root (only for `Localhost`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub localhost_profile: Option<String>,
+}
+
+/// Security context overrides for StellarNode pods and containers.
+///
+/// When unset the operator enforces PSS `restricted` defaults.
+/// Any field explicitly set here overrides the corresponding default.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StellarSecurityContext {
+    /// Run as non-root user. Defaults to `true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_non_root: Option<bool>,
+
+    /// UID to run the container process as.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_user: Option<i64>,
+
+    /// GID to run the container process as.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_group: Option<i64>,
+
+    /// fsGroup for the pod's volume ownership. Defaults to `10000`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fs_group: Option<i64>,
+
+    /// Mount root filesystem read-only. Defaults to `true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_only_root_filesystem: Option<bool>,
+
+    /// Prevent privilege escalation. Defaults to `false` (escalation blocked).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_privilege_escalation: Option<bool>,
+
+    /// Run as privileged. **Never enable in production.** Defaults to `false`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub privileged: Option<bool>,
+
+    /// Linux capabilities override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<ContainerCapabilities>,
+
+    /// Seccomp profile override. Defaults to `RuntimeDefault`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seccomp_profile: Option<SeccompProfileOverride>,
+}
+
 /// Configuration for the durable log-to-S3 sidecar.
 ///
 /// When set, the operator injects a `stellar-log-shipper` sidecar into every

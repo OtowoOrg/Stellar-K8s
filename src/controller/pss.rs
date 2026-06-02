@@ -15,6 +15,7 @@ use kube::api::{Api, Patch, PatchParams};
 use kube::Client;
 use tracing::{info, instrument, warn};
 
+use crate::crd::types::StellarSecurityContext;
 use crate::crd::StellarNodeSpec;
 use crate::error::{Error, Result};
 
@@ -175,6 +176,11 @@ impl PssViolation {
 pub fn validate_pss_compliance(spec: &StellarNodeSpec) -> Vec<PssViolation> {
     let mut violations = Vec::new();
 
+    // Validate spec.securityContext override field
+    if let Some(sc) = &spec.security_context {
+        violations.extend(validate_stellar_security_context(sc));
+    }
+
     // Check sidecars for privilege escalation attempts
     if let Some(sidecars) = &spec.sidecars {
         for (i, sidecar) in sidecars.iter().enumerate() {
@@ -252,3 +258,142 @@ fn check_container_security_context(
         ));
     }
 }
+
+// ── StellarNode security_context field validation ────────────────────────────
+
+/// Validate the `spec.securityContext` override field against PSS `restricted` rules.
+///
+/// Returns violations for fields that would break PSS compliance.
+pub fn validate_stellar_security_context(
+    ctx: &StellarSecurityContext,
+) -> Vec<PssViolation> {
+    let mut v = Vec::new();
+    let prefix = "spec.securityContext";
+
+    if ctx.privileged == Some(true) {
+        v.push(PssViolation::new(
+            format!("{prefix}.privileged"),
+            "privileged containers are forbidden under PSS 'restricted'",
+        ));
+    }
+    if ctx.allow_privilege_escalation == Some(true) {
+        v.push(PssViolation::new(
+            format!("{prefix}.allowPrivilegeEscalation"),
+            "allowPrivilegeEscalation must be false under PSS 'restricted'",
+        ));
+    }
+    if ctx.run_as_non_root == Some(false) {
+        v.push(PssViolation::new(
+            format!("{prefix}.runAsNonRoot"),
+            "runAsNonRoot: false is forbidden under PSS 'restricted'",
+        ));
+    }
+    if ctx.run_as_user == Some(0) {
+        v.push(PssViolation::new(
+            format!("{prefix}.runAsUser"),
+            "runAsUser 0 (root) is forbidden under PSS 'restricted'",
+        ));
+    }
+    if let Some(caps) = &ctx.capabilities {
+        let forbidden = ["NET_ADMIN", "SYS_ADMIN", "SYS_PTRACE", "NET_RAW", "SYS_MODULE"];
+        for cap in &caps.add {
+            if forbidden.contains(&cap.as_str()) {
+                v.push(PssViolation::new(
+                    format!("{prefix}.capabilities.add"),
+                    format!("capability '{cap}' is forbidden under PSS 'restricted'"),
+                ));
+            }
+        }
+    }
+    if let Some(seccomp) = &ctx.seccomp_profile {
+        if seccomp.type_ == "Unconfined" {
+            v.push(PssViolation::new(
+                format!("{prefix}.seccompProfile.type"),
+                "seccompProfile type 'Unconfined' is forbidden under PSS 'restricted'",
+            ));
+        }
+    }
+    v
+}
+
+// ── Security context merge helpers ────────────────────────────────────────────
+
+/// Build a merged [`SecurityContext`] from the operator's secure defaults plus
+/// any user-supplied [`StellarSecurityContext`] overrides.
+///
+/// Fields explicitly set in `override_ctx` take precedence; unset fields fall
+/// back to the restricted defaults.
+pub fn build_container_security_context(
+    override_ctx: Option<&StellarSecurityContext>,
+) -> SecurityContext {
+    let mut sc = restricted_container_security_context();
+
+    if let Some(oc) = override_ctx {
+        if let Some(v) = oc.run_as_non_root {
+            sc.run_as_non_root = Some(v);
+        }
+        if let Some(v) = oc.run_as_user {
+            sc.run_as_user = Some(v);
+        }
+        if let Some(v) = oc.run_as_group {
+            sc.run_as_group = Some(v);
+        }
+        if let Some(v) = oc.read_only_root_filesystem {
+            sc.read_only_root_filesystem = Some(v);
+        }
+        if let Some(v) = oc.allow_privilege_escalation {
+            sc.allow_privilege_escalation = Some(v);
+        }
+        if let Some(v) = oc.privileged {
+            sc.privileged = Some(v);
+        }
+        if let Some(caps) = &oc.capabilities {
+            sc.capabilities = Some(Capabilities {
+                add: if caps.add.is_empty() { None } else { Some(caps.add.clone()) },
+                drop: if caps.drop.is_empty() { None } else { Some(caps.drop.clone()) },
+            });
+        }
+        if let Some(seccomp) = &oc.seccomp_profile {
+            sc.seccomp_profile = Some(SeccompProfile {
+                type_: seccomp.type_.clone(),
+                localhost_profile: seccomp.localhost_profile.clone(),
+            });
+        }
+    }
+
+    sc
+}
+
+/// Build a merged [`PodSecurityContext`] from secure defaults plus overrides.
+pub fn build_pod_security_context(
+    override_ctx: Option<&StellarSecurityContext>,
+) -> PodSecurityContext {
+    let mut psc = restricted_pod_security_context();
+
+    if let Some(oc) = override_ctx {
+        if let Some(v) = oc.run_as_non_root {
+            psc.run_as_non_root = Some(v);
+        }
+        if let Some(v) = oc.run_as_user {
+            psc.run_as_user = Some(v);
+        }
+        if let Some(v) = oc.run_as_group {
+            psc.run_as_group = Some(v);
+        }
+        if let Some(v) = oc.fs_group {
+            psc.fs_group = Some(v);
+        }
+        if let Some(seccomp) = &oc.seccomp_profile {
+            psc.seccomp_profile = Some(SeccompProfile {
+                type_: seccomp.type_.clone(),
+                localhost_profile: seccomp.localhost_profile.clone(),
+            });
+        }
+    }
+
+    psc
+}
+
+#[cfg(test)]
+#[path = "pss_test.rs"]
+mod tests;

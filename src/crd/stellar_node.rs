@@ -344,6 +344,44 @@ pub struct StellarNodeSpec {
     #[schemars(with = "Option<Vec<serde_json::Value>>")]
     pub init_containers: Option<Vec<k8s_openapi::api::core::v1::Container>>,
 
+    /// Optional pod-level and container-level security context overrides.
+    ///
+    /// When unset the operator applies secure defaults compliant with the
+    /// Kubernetes Pod Security Standards `restricted` profile:
+    /// - `runAsNonRoot: true`
+    /// - `readOnlyRootFilesystem: true`
+    /// - `allowPrivilegeEscalation: false`
+    /// - `capabilities.drop: ["ALL"]`
+    /// - `seccompProfile.type: RuntimeDefault`
+    ///
+    /// # Example — restricted (default)
+    /// ```yaml
+    /// securityContext:
+    ///   runAsNonRoot: true
+    ///   readOnlyRootFilesystem: true
+    ///   allowPrivilegeEscalation: false
+    ///   capabilities:
+    ///     drop: ["ALL"]
+    ///   seccompProfile:
+    ///     type: RuntimeDefault
+    /// ```
+    ///
+    /// # Example — baseline (loosened for legacy images)
+    /// ```yaml
+    /// securityContext:
+    ///   runAsNonRoot: true
+    ///   allowPrivilegeEscalation: false
+    ///   readOnlyRootFilesystem: false
+    /// ```
+    ///
+    /// # Example — privileged (use only in dev/test namespaces)
+    /// ```yaml
+    /// securityContext:
+    ///   privileged: true
+    /// ```
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security_context: Option<super::types::StellarSecurityContext>,
+
     /// Optional overrides for the liveness, readiness, and startup probes on the main container.
     ///
     /// When set, the specified fields replace the operator's built-in probe defaults.

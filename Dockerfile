@@ -45,18 +45,21 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --bin kubectl-stellar \
     --bin stellar-sidecar \
     --bin stellar-watcher \
-    --bin stellar-fork-detector && \
+    --bin stellar-fork-detector \
+    --bin stellar-health-sidecar && \
   mkdir -p /app/bin && \
   cp /app/target/release/stellar-operator /app/bin/ && \
   cp /app/target/release/kubectl-stellar /app/bin/ && \
   cp /app/target/release/stellar-sidecar /app/bin/ && \
   cp /app/target/release/stellar-watcher /app/bin/ && \
   cp /app/target/release/stellar-fork-detector /app/bin/ && \
+  cp /app/target/release/stellar-health-sidecar /app/bin/ && \
   strip /app/bin/stellar-operator \
     /app/bin/kubectl-stellar \
     /app/bin/stellar-sidecar \
     /app/bin/stellar-watcher \
-    /app/bin/stellar-fork-detector
+    /app/bin/stellar-fork-detector \
+    /app/bin/stellar-health-sidecar
 
 # ==============================================================================
 # Stage 4: Local Binaries - Fast local packaging from host build artifacts
@@ -135,6 +138,7 @@ COPY --from=builder /app/bin/kubectl-stellar /kubectl-stellar
 COPY --from=builder /app/bin/stellar-sidecar /stellar-sidecar
 COPY --from=builder /app/bin/stellar-watcher /stellar-watcher
 COPY --from=builder /app/bin/stellar-fork-detector /stellar-fork-detector
+COPY --from=builder /app/bin/stellar-health-sidecar /stellar-health-sidecar
 
 # Run as nonroot user
 USER nonroot:nonroot

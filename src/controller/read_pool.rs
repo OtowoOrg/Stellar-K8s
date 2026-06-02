@@ -29,6 +29,7 @@ use std::collections::BTreeMap;
 use tracing::{info, instrument, warn};
 
 use crate::crd::{ReadReplicaConfig, StellarNode};
+use super::resources::{merge_service_annotations, merge_service_metadata_labels};
 use crate::error::Result;
 
 // ---------------------------------------------------------------------------
@@ -223,19 +224,26 @@ async fn ensure_read_service(client: &Client, node: &StellarNode) -> Result<()> 
 }
 
 fn build_read_service(node: &StellarNode) -> Service {
-    let labels = read_pool_labels(node);
+    let mut labels = read_pool_labels(node);
+    merge_service_metadata_labels(&mut labels, node);
     let name = service_name(node);
+
+    let mut annotations = BTreeMap::from([(
+        "stellar.org/read-pool".to_string(),
+        "true".to_string(),
+    )]);
+    merge_service_annotations(&mut annotations, node);
 
     Service {
         metadata: ObjectMeta {
             name: Some(name),
             namespace: node.namespace(),
             labels: Some(labels.clone()),
-            // Annotation so operators know this is a read-pool endpoint
-            annotations: Some(BTreeMap::from([(
-                "stellar.org/read-pool".to_string(),
-                "true".to_string(),
-            )])),
+            annotations: if annotations.is_empty() {
+                None
+            } else {
+                Some(annotations)
+            },
             owner_references: Some(vec![super::resources::owner_reference(node)]),
             ..Default::default()
         },

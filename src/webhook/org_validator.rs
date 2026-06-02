@@ -3,12 +3,15 @@
 //! Validates that all StellarNode resources meet organizational standards:
 //! - `resources.limits` and `resources.requests` are always present and non-empty.
 //! - Resource limits do not exceed per-node-type maximums.
+//! - In **production mode** (`spec.network == Mainnet`), resource *requests*
+//!   meet per-node-type minimums so that under-provisioned nodes are rejected
+//!   before they reach the public network.
 //! - Required labels (`project-id`, `owner`) are present.
 //!
 //! This runs as part of the built-in webhook validation pipeline, before any
 //! WASM plugins, so it cannot be bypassed.
 
-use crate::crd::{NodeType, StellarNode};
+use crate::crd::{NodeType, StellarNetwork, StellarNode};
 
 /// A single validation failure with a clear, actionable message.
 #[derive(Debug, Clone)]
@@ -51,6 +54,45 @@ fn max_limits_for(node_type: &NodeType) -> MaxLimits {
     }
 }
 
+/// Minimum resource *requests* per node type, enforced only in production mode.
+///
+/// These floors prevent operators from scheduling under-provisioned nodes onto
+/// the public network, where insufficient CPU/memory causes ledger lag,
+/// dropped consensus messages, and degraded API latency.
+struct MinRequests {
+    cpu_millicores: u64,
+    memory_mib: u64,
+}
+
+fn min_requests_for(node_type: &NodeType) -> MinRequests {
+    match node_type {
+        // A Mainnet validator must keep up with consensus and history.
+        NodeType::Validator => MinRequests {
+            cpu_millicores: 2_000, // 2 cores
+            memory_mib: 4_096,     // 4 GiB
+        },
+        // Horizon serves API traffic and ingests the ledger.
+        NodeType::Horizon => MinRequests {
+            cpu_millicores: 2_000, // 2 cores
+            memory_mib: 4_096,     // 4 GiB
+        },
+        // Soroban RPC executes smart contracts and is the most demanding.
+        NodeType::SorobanRpc => MinRequests {
+            cpu_millicores: 4_000, // 4 cores
+            memory_mib: 8_192,     // 8 GiB
+        },
+    }
+}
+
+/// Whether the node targets a production network.
+///
+/// Production mode is defined as the public Stellar network (`Mainnet`).
+/// Testnet, Futurenet, and custom networks are treated as non-production and
+/// are exempt from the minimum-resource floor so developers can run cheaply.
+fn is_production(node: &StellarNode) -> bool {
+    matches!(node.spec.network, StellarNetwork::Mainnet)
+}
+
 /// Required labels that every StellarNode must carry.
 const REQUIRED_LABELS: &[(&str, &str)] = &[
     (
@@ -70,6 +112,7 @@ pub fn validate_org_standards(node: &StellarNode) -> Vec<OrgValidationError> {
 
     validate_resource_presence(node, &mut errors);
     validate_resource_limits(node, &mut errors);
+    validate_minimum_resources(node, &mut errors);
     validate_required_labels(node, &mut errors);
 
     errors
@@ -144,6 +187,52 @@ fn validate_resource_limits(node: &StellarNode, errors: &mut Vec<OrgValidationEr
                 format!(
                     "Reduce spec.resources.limits.memory to at most '{}Mi' for {:?} nodes.",
                     max.memory_mib, node.spec.node_type
+                ),
+            ));
+        }
+    }
+}
+
+/// In production mode, ensure resource *requests* meet per-node-type minimums.
+///
+/// Non-production nodes (Testnet/Futurenet/Custom) are exempt. Unparseable
+/// quantities are skipped here — `validate_resource_presence` already rejects
+/// empty/zero values, and the Kubernetes API server rejects malformed ones.
+fn validate_minimum_resources(node: &StellarNode, errors: &mut Vec<OrgValidationError>) {
+    if !is_production(node) {
+        return;
+    }
+
+    let min = min_requests_for(&node.spec.node_type);
+    let requests = &node.spec.resources.requests;
+
+    if let Some(cpu_mc) = parse_cpu_millicores(&requests.cpu) {
+        if cpu_mc < min.cpu_millicores {
+            errors.push(OrgValidationError::new(
+                "spec.resources.requests.cpu",
+                format!(
+                    "CPU request '{}' ({} millicores) is below the minimum {} millicores required for {:?} nodes in production (network: Mainnet).",
+                    requests.cpu, cpu_mc, min.cpu_millicores, node.spec.node_type
+                ),
+                format!(
+                    "Increase spec.resources.requests.cpu to at least '{}m' for production {:?} nodes.",
+                    min.cpu_millicores, node.spec.node_type
+                ),
+            ));
+        }
+    }
+
+    if let Some(mem_mib) = parse_memory_mib(&requests.memory) {
+        if mem_mib < min.memory_mib {
+            errors.push(OrgValidationError::new(
+                "spec.resources.requests.memory",
+                format!(
+                    "Memory request '{}' ({} MiB) is below the minimum {} MiB required for {:?} nodes in production (network: Mainnet).",
+                    requests.memory, mem_mib, min.memory_mib, node.spec.node_type
+                ),
+                format!(
+                    "Increase spec.resources.requests.memory to at least '{}Mi' for production {:?} nodes.",
+                    min.memory_mib, node.spec.node_type
                 ),
             ));
         }
@@ -344,5 +433,156 @@ mod tests {
         assert_eq!(parse_memory_mib("512Mi"), Some(512));
         assert_eq!(parse_memory_mib("1Gi"), Some(1024));
         assert_eq!(parse_memory_mib("2Gi"), Some(2048));
+    }
+
+    // -----------------------------------------------------------------------
+    // Minimum-resource validation (production mode) — issue #678
+    // -----------------------------------------------------------------------
+
+    /// Mark a node as production (Mainnet).
+    fn as_production(mut node: StellarNode) -> StellarNode {
+        node.spec.network = StellarNetwork::Mainnet;
+        node
+    }
+
+    #[test]
+    fn production_cpu_below_min_rejected() {
+        // Validator min is 2 cores; 500m is far below.
+        let node = as_production(make_node(
+            NodeType::Validator,
+            "500m",
+            "4Gi",
+            "2",
+            "4Gi",
+            good_labels(),
+        ));
+        let errors = validate_org_standards(&node);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.field == "spec.resources.requests.cpu"),
+            "expected a CPU request floor violation, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn production_memory_below_min_rejected() {
+        // Validator min is 4Gi; 1Gi is below.
+        let node = as_production(make_node(
+            NodeType::Validator,
+            "2",
+            "1Gi",
+            "2",
+            "4Gi",
+            good_labels(),
+        ));
+        let errors = validate_org_standards(&node);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.field == "spec.resources.requests.memory"),
+            "expected a memory request floor violation, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn production_below_min_reports_both_cpu_and_memory() {
+        let node = as_production(make_node(
+            NodeType::Validator,
+            "500m",
+            "1Gi",
+            "2",
+            "4Gi",
+            good_labels(),
+        ));
+        let errors = validate_org_standards(&node);
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "spec.resources.requests.cpu"));
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "spec.resources.requests.memory"));
+    }
+
+    #[test]
+    fn production_meeting_min_passes() {
+        // Exactly at the Validator floor: 2 cores / 4Gi.
+        let node = as_production(make_node(
+            NodeType::Validator,
+            "2",
+            "4Gi",
+            "4",
+            "8Gi",
+            good_labels(),
+        ));
+        let errors = validate_org_standards(&node);
+        assert!(errors.is_empty(), "expected no errors, got: {errors:?}");
+    }
+
+    #[test]
+    fn production_min_boundary_is_inclusive() {
+        // Requests expressed in alternate units that equal the floor exactly
+        // (2000m == 2 cores, 4096Mi == 4Gi) must pass.
+        let node = as_production(make_node(
+            NodeType::Validator,
+            "2000m",
+            "4096Mi",
+            "4",
+            "8Gi",
+            good_labels(),
+        ));
+        let errors = validate_org_standards(&node);
+        assert!(errors.is_empty(), "expected no errors, got: {errors:?}");
+    }
+
+    #[test]
+    fn testnet_below_min_is_allowed() {
+        // Same under-provisioned spec as production tests, but on Testnet:
+        // the floor is not enforced for non-production networks.
+        let node = make_node(
+            NodeType::Validator,
+            "500m",
+            "1Gi",
+            "2",
+            "4Gi",
+            good_labels(),
+        );
+        assert_eq!(node.spec.network, StellarNetwork::Testnet);
+        let errors = validate_org_standards(&node);
+        assert!(
+            errors.is_empty(),
+            "non-production nodes must not be subject to the floor, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn soroban_production_has_higher_floor() {
+        // 2 cores / 4Gi satisfies the Validator floor but NOT Soroban's (4/8Gi).
+        let node = as_production(make_node(
+            NodeType::SorobanRpc,
+            "2",
+            "4Gi",
+            "8",
+            "16Gi",
+            good_labels(),
+        ));
+        let errors = validate_org_standards(&node);
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "spec.resources.requests.cpu"));
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "spec.resources.requests.memory"));
+
+        // Bumping to the Soroban floor clears both violations.
+        let ok = as_production(make_node(
+            NodeType::SorobanRpc,
+            "4",
+            "8Gi",
+            "8",
+            "16Gi",
+            good_labels(),
+        ));
+        assert!(validate_org_standards(&ok).is_empty());
     }
 }

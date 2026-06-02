@@ -1,4 +1,12 @@
+pub mod affinity;
+pub mod constraints;
 pub mod core;
+pub mod cost;
 pub mod latency_monitor;
+pub mod metrics;
+pub mod optimizer;
+pub mod preemption;
 pub mod prometheus;
 pub mod scoring;
+pub mod simulation;
+pub mod visualization;

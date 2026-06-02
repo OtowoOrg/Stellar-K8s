@@ -1954,8 +1954,9 @@ pub(crate) fn apply_stellar_node(
             ActionType::Update,
             "Monitoring and Scaling resources",
             move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+                resources::ensure_service_monitor(&client, &node).await?;
+
                 if node.spec.autoscaling.is_some() {
-                    resources::ensure_service_monitor(&client, &node).await?;
                     resources::ensure_hpa(&client, &node, ctx.dry_run).await?;
                 }
 
@@ -2701,7 +2702,80 @@ pub(crate) fn apply_stellar_node(
             super::audit::patch_audit_annotations(&client, &node, action).await;
         }
 
-        // 14. Update status to Running with ready replica count
+        // 14. GitOps protocol upgrade — check if a timeline annotation is present and
+        //     drive the next due upgrade step via ArgoCD or Flux.
+        {
+            use super::gitops_upgrade::{
+                GitOpsEngine, GitOpsUpgradeController, ProtocolUpgradeTimeline,
+            };
+
+            let timeline_json = node
+                .metadata
+                .annotations
+                .as_ref()
+                .and_then(|a| a.get("stellar.org/protocol-upgrade-timeline"))
+                .cloned();
+
+            if let Some(json_str) = timeline_json {
+                match serde_json::from_str::<ProtocolUpgradeTimeline>(&json_str) {
+                    Ok(timeline) => {
+                        let engine_str = node
+                            .metadata
+                            .annotations
+                            .as_ref()
+                            .and_then(|a| a.get("stellar.org/gitops-engine"))
+                            .map(|s| s.as_str())
+                            .unwrap_or("argocd");
+                        let engine = if engine_str == "flux" {
+                            GitOpsEngine::Flux
+                        } else {
+                            GitOpsEngine::ArgoCd
+                        };
+                        let controller = GitOpsUpgradeController::new(
+                            engine,
+                            std::time::Duration::from_secs(300),
+                            0.95,
+                        );
+                        let current_protocol: u32 = node
+                            .metadata
+                            .annotations
+                            .as_ref()
+                            .and_then(|a| a.get("stellar.org/current-protocol"))
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(0);
+                        let now_unix = chrono::Utc::now().timestamp();
+                        match controller
+                            .plan_and_sync(&client, &node, &timeline, current_protocol, now_unix)
+                            .await
+                        {
+                            Ok(Some(plan)) => {
+                                info!(
+                                    "GitOps upgrade planned for {}/{}: protocol v{} via {}",
+                                    namespace, name, plan.target_protocol, engine_str
+                                );
+                            }
+                            Ok(None) => {
+                                debug!("No GitOps upgrade step due for {}/{}", namespace, name);
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "GitOps upgrade planning failed for {}/{}: {}",
+                                    namespace, name, e
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse protocol-upgrade-timeline annotation for {}/{}: {}",
+                            namespace, name, e
+                        );
+                    }
+                }
+            }
+        }
+
+        // 15. Update status to Running with ready replica count
         // Use configured requeue interval for healthy reconciliation
         let requeue_interval = ctx.operator_config.reconciler.requeue_interval;
 
@@ -3131,6 +3205,13 @@ async fn update_suspended_status(client: &Client, node: &StellarNode) -> Result<
         "NodeSuspended",
         "Node is offline - replicas scaled to 0. Service remains active for peer discovery.",
     );
+    conditions::set_condition(
+        &mut conditions,
+        conditions::CONDITION_TYPE_AVAILABLE,
+        conditions::CONDITION_STATUS_FALSE,
+        "NodeSuspended",
+        "Node is suspended and no replicas are available.",
+    );
     conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_PROGRESSING);
     conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_DEGRADED);
 
@@ -3192,6 +3273,13 @@ pub(crate) fn apply_phase_conditions(
                 "NoIssues",
                 "No degradation detected",
             );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_AVAILABLE,
+                conditions::CONDITION_STATUS_TRUE,
+                "MinimumReplicasAvailable",
+                "At least one replica is available and serving traffic",
+            );
         }
         "Creating" | "Pending" => {
             conditions::set_condition(
@@ -3209,6 +3297,13 @@ pub(crate) fn apply_phase_conditions(
                 message.unwrap_or("Creating resources"),
             );
             conditions::remove_condition(conditions, conditions::CONDITION_TYPE_DEGRADED);
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_AVAILABLE,
+                conditions::CONDITION_STATUS_FALSE,
+                "Provisioning",
+                "Resources are being created and are not yet available",
+            );
         }
         "Syncing" => {
             conditions::set_condition(
@@ -3226,6 +3321,13 @@ pub(crate) fn apply_phase_conditions(
                 message.unwrap_or("Syncing data"),
             );
             conditions::remove_condition(conditions, conditions::CONDITION_TYPE_DEGRADED);
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_AVAILABLE,
+                conditions::CONDITION_STATUS_FALSE,
+                "Syncing",
+                "Node is syncing and not yet available for full traffic",
+            );
         }
         "Running" => {
             conditions::set_condition(
@@ -3243,6 +3345,13 @@ pub(crate) fn apply_phase_conditions(
                 "Resource creation complete",
             );
             conditions::remove_condition(conditions, conditions::CONDITION_TYPE_DEGRADED);
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_AVAILABLE,
+                conditions::CONDITION_STATUS_TRUE,
+                "MinimumReplicasAvailable",
+                "Workload is running and available",
+            );
         }
         "Degraded" => {
             conditions::set_condition(
@@ -3260,6 +3369,13 @@ pub(crate) fn apply_phase_conditions(
                 message.unwrap_or("Node is degraded"),
             );
             conditions::remove_condition(conditions, conditions::CONDITION_TYPE_PROGRESSING);
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_AVAILABLE,
+                conditions::CONDITION_STATUS_FALSE,
+                "Degraded",
+                "Node is degraded and not considered available",
+            );
         }
         "Failed" => {
             conditions::set_condition(
@@ -3277,6 +3393,13 @@ pub(crate) fn apply_phase_conditions(
                 message.unwrap_or("Operation failed"),
             );
             conditions::remove_condition(conditions, conditions::CONDITION_TYPE_PROGRESSING);
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_AVAILABLE,
+                conditions::CONDITION_STATUS_FALSE,
+                "Failed",
+                "Node failed and is unavailable",
+            );
         }
         "Remediating" => {
             conditions::set_condition(
@@ -3300,6 +3423,13 @@ pub(crate) fn apply_phase_conditions(
                 "Remediating",
                 "Node required remediation",
             );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_AVAILABLE,
+                conditions::CONDITION_STATUS_FALSE,
+                "Remediating",
+                "Node is under remediation and not currently available",
+            );
         }
         "Suspended" => {
             conditions::set_condition(
@@ -3308,6 +3438,13 @@ pub(crate) fn apply_phase_conditions(
                 conditions::CONDITION_STATUS_FALSE,
                 "Suspended",
                 message.unwrap_or("Node is suspended"),
+            );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_AVAILABLE,
+                conditions::CONDITION_STATUS_FALSE,
+                "Suspended",
+                "Node is suspended and not available",
             );
             conditions::remove_condition(conditions, conditions::CONDITION_TYPE_PROGRESSING);
             conditions::remove_condition(conditions, conditions::CONDITION_TYPE_DEGRADED);
@@ -3320,6 +3457,13 @@ pub(crate) fn apply_phase_conditions(
                 "Maintenance",
                 message.unwrap_or("Node is in maintenance mode"),
             );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_AVAILABLE,
+                conditions::CONDITION_STATUS_FALSE,
+                "Maintenance",
+                "Node is in maintenance mode and not available",
+            );
             conditions::remove_condition(conditions, conditions::CONDITION_TYPE_PROGRESSING);
             conditions::remove_condition(conditions, conditions::CONDITION_TYPE_DEGRADED);
         }
@@ -3330,6 +3474,13 @@ pub(crate) fn apply_phase_conditions(
                 conditions::CONDITION_STATUS_UNKNOWN,
                 "Unknown",
                 message.unwrap_or("Status unknown"),
+            );
+            conditions::set_condition(
+                conditions,
+                conditions::CONDITION_TYPE_AVAILABLE,
+                conditions::CONDITION_STATUS_UNKNOWN,
+                "Unknown",
+                message.unwrap_or("Availability unknown"),
             );
         }
     }
@@ -3628,6 +3779,13 @@ async fn update_status_with_health(
             "SyncComplete",
             "Node sync completed",
         );
+        conditions::set_condition(
+            &mut conditions,
+            conditions::CONDITION_TYPE_AVAILABLE,
+            conditions::CONDITION_STATUS_TRUE,
+            "MinimumReplicasAvailable",
+            "Node is healthy and available",
+        );
         conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_DEGRADED);
     } else if health.healthy {
         conditions::set_condition(
@@ -3644,6 +3802,13 @@ async fn update_status_with_health(
             "Syncing",
             &health.message,
         );
+        conditions::set_condition(
+            &mut conditions,
+            conditions::CONDITION_TYPE_AVAILABLE,
+            conditions::CONDITION_STATUS_TRUE,
+            "MinimumReplicasAvailable",
+            "Node is healthy but still syncing",
+        );
         conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_DEGRADED);
     } else {
         conditions::set_condition(
@@ -3659,6 +3824,13 @@ async fn update_status_with_health(
             conditions::CONDITION_STATUS_TRUE,
             "HealthCheckFailed",
             &health.message,
+        );
+        conditions::set_condition(
+            &mut conditions,
+            conditions::CONDITION_TYPE_AVAILABLE,
+            conditions::CONDITION_STATUS_FALSE,
+            "HealthCheckFailed",
+            "Node failed health checks and is unavailable",
         );
         conditions::remove_condition(&mut conditions, conditions::CONDITION_TYPE_PROGRESSING);
     }

@@ -1,6 +1,11 @@
 # Default values for stellar-operator
 # This is a YAML-formatted file.
 
+# Number of replicas for the operator deployment.
+# For high availability, set to 3 or more.
+# Requires enabling leader election (configured automatically if replicaCount > 1).
+# With leader election enabled, only one replica processes reconciliation at a time,
+# and failover occurs automatically if the leader becomes unavailable.
 replicaCount: 1
 
 image:
@@ -158,8 +163,14 @@ arch: ""
 #     effect: "NoSchedule"
 
 # PodDisruptionBudget configuration for operator deployment
+# Recommended to enable when running multiple replicas for high availability.
+# This ensures at least one operator replica remains available during maintenance.
 podDisruptionBudget:
   enabled: false
+  # Minimum number of available pods (set to 1 for HA with 3+ replicas)
+  minAvailable: 1
+  # Maximum number of unavailable pods
+  maxUnavailable: null
 
 # Operator configuration
 operator:
@@ -475,7 +486,6 @@ otel:
         endpoint: "http://elasticsearch:9200"
         index: "stellar-logs"
 
-
 # SCP Analytics Pipeline Configuration
 # Real-time streaming of SCP messages to Kafka for network topology analysis
 scpAnalytics:
@@ -572,3 +582,25 @@ hooks:
     enabled: true
     # Enable rollback capability verification
     enableRollbackCheck: true
+# ============================================================================
+# HIGH AVAILABILITY CONFIGURATION EXAMPLE
+# ============================================================================
+# To deploy the operator in HA mode with leader election, use the following
+# configuration values in your values-ha.yaml or pass them to helm:
+#
+# replicaCount: 3
+# podDisruptionBudget:
+#   enabled: true
+#   minAvailable: 1
+#
+# This configuration will:
+# 1. Deploy 3 operator replicas
+# 2. Automatically enable leader election via Lease-based coordination
+# 3. Only one replica processes reconciliation at a time
+# 4. If the leader becomes unavailable, a follower takes over within ~20s
+# 5. PodDisruptionBudget ensures at least 1 replica remains during maintenance
+# 6. Pod anti-affinity spreads replicas across different nodes
+#
+# Deploy with:
+#   helm install stellar-operator ./charts/stellar-operator -f values-ha.yaml
+# ============================================================================

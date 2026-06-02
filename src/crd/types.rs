@@ -529,6 +529,75 @@ pub struct VpaConfig {
     pub container_policies: Vec<VpaContainerPolicy>,
 }
 
+// ── Security Context ─────────────────────────────────────────────────────────
+
+/// Capabilities to add/drop at the container level.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerCapabilities {
+    /// Capabilities to add (avoid unless absolutely necessary under PSS baseline).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub add: Vec<String>,
+    /// Capabilities to drop. Defaults to `["ALL"]` when using restricted PSS.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drop: Vec<String>,
+}
+
+/// Seccomp profile override for pods/containers.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SeccompProfileOverride {
+    /// `RuntimeDefault`, `Localhost`, or `Unconfined`.
+    pub type_: String,
+    /// Path relative to the kubelet seccomp profile root (only for `Localhost`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub localhost_profile: Option<String>,
+}
+
+/// Security context overrides for StellarNode pods and containers.
+///
+/// When unset the operator enforces PSS `restricted` defaults.
+/// Any field explicitly set here overrides the corresponding default.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StellarSecurityContext {
+    /// Run as non-root user. Defaults to `true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_non_root: Option<bool>,
+
+    /// UID to run the container process as.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_user: Option<i64>,
+
+    /// GID to run the container process as.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_group: Option<i64>,
+
+    /// fsGroup for the pod's volume ownership. Defaults to `10000`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fs_group: Option<i64>,
+
+    /// Mount root filesystem read-only. Defaults to `true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_only_root_filesystem: Option<bool>,
+
+    /// Prevent privilege escalation. Defaults to `false` (escalation blocked).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_privilege_escalation: Option<bool>,
+
+    /// Run as privileged. **Never enable in production.** Defaults to `false`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub privileged: Option<bool>,
+
+    /// Linux capabilities override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<ContainerCapabilities>,
+
+    /// Seccomp profile override. Defaults to `RuntimeDefault`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seccomp_profile: Option<SeccompProfileOverride>,
+}
+
 /// Configuration for the durable log-to-S3 sidecar.
 ///
 /// When set, the operator injects a `stellar-log-shipper` sidecar into every
@@ -1043,8 +1112,23 @@ fn default_max_events() -> u32 {
 pub struct AutoscalingConfig {
     pub min_replicas: i32,
     pub max_replicas: i32,
+    /// Target average CPU utilisation across all replicas (0–100).
+    /// When set, the HPA scales to keep CPU at this percentage.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_cpu_utilization_percentage: Option<i32>,
+    /// Target average memory utilisation across all replicas (0–100).
+    /// When set, the HPA adds a `Resource` metric for `memory`.
+    /// Requires the metrics-server to be installed in the cluster.
+    ///
+    /// # Example — memory-based scaling for Soroban RPC
+    /// ```yaml
+    /// autoscaling:
+    ///   minReplicas: 2
+    ///   maxReplicas: 10
+    ///   targetMemoryUtilizationPercentage: 70
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_memory_utilization_percentage: Option<i32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub custom_metrics: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1164,7 +1248,7 @@ impl Condition {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkPolicyConfig {
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allow_namespaces: Vec<String>,
@@ -1600,6 +1684,10 @@ pub enum DRSyncStrategy {
     Consensus,
     PeerTracking,
     ArchiveSync,
+    /// Continuously stream captive core ledger state via a sidecar container.
+    /// Publishes a [`LedgerStateSnapshot`] ConfigMap every second, enabling
+    /// zero-RPO cross-region synchronization.
+    StreamingLedger,
 }
 
 /// Configuration for multi-region ledger replication
@@ -2236,9 +2324,11 @@ pub struct DbMaintenanceConfig {
 
     /// Maintenance window start time (24h format, e.g., "02:00")
     /// Maintenance will only trigger during this window
+    #[serde(default = "default_window_start")]
     pub window_start: String,
 
     /// Maintenance window duration (e.g., "2h")
+    #[serde(default = "default_window_duration")]
     pub window_duration: String,
 
     /// Bloat threshold percentage to trigger VACUUM FULL (default: 30)
@@ -2249,6 +2339,18 @@ pub struct DbMaintenanceConfig {
     #[serde(default = "default_true")]
     pub auto_reindex: bool,
 
+    /// Automatically profile slow SQL and suggest indexes during maintenance.
+    #[serde(default = "default_false")]
+    pub enable_query_profiling: bool,
+
+    /// Automatically create missing indexes for slow queries.
+    #[serde(default = "default_false")]
+    pub auto_index_maintenance: bool,
+
+    /// Slow query threshold in milliseconds used to identify candidate queries.
+    #[serde(default = "default_slow_query_threshold_ms")]
+    pub slow_query_threshold_ms: u32,
+
     /// Coordination with read-pool for zero-downtime
     #[serde(default = "default_true")]
     pub read_pool_coordination: bool,
@@ -2256,6 +2358,22 @@ pub struct DbMaintenanceConfig {
 
 fn default_bloat_threshold() -> u32 {
     30
+}
+
+fn default_window_start() -> String {
+    "02:00".to_string()
+}
+
+fn default_window_duration() -> String {
+    "2h".to_string()
+}
+
+fn default_slow_query_threshold_ms() -> u32 {
+    100
+}
+
+fn default_false() -> bool {
+    false
 }
 
 fn default_pooler_replicas() -> i32 {

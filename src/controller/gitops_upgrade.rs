@@ -286,4 +286,65 @@ mod tests {
             Some(&"21".to_string())
         );
     }
+
+    #[test]
+    fn emits_flux_annotations() {
+        let mut node = StellarNode::new("validator-1", StellarNodeSpec::default());
+        node.spec.version = "v21.0.0".to_string();
+
+        let controller =
+            GitOpsUpgradeController::new(GitOpsEngine::Flux, Duration::from_secs(120), 0.95);
+
+        let step = ProtocolUpgradeStep {
+            protocol_version: 22,
+            activate_at_unix: 1_800_000_000,
+            config_ref: "main@sha256:bbb".to_string(),
+        };
+
+        let ann = controller.build_sync_annotations(&node, &step);
+        assert_eq!(
+            ann.get("stellar.org/protocol-target"),
+            Some(&"22".to_string())
+        );
+        assert!(
+            ann.contains_key("kustomize.toolkit.fluxcd.io/force"),
+            "Flux annotations must include kustomize force key"
+        );
+        assert!(
+            ann.contains_key("reconcile.fluxcd.io/requestedAt"),
+            "Flux annotations must include requestedAt"
+        );
+    }
+
+    #[test]
+    fn no_step_when_all_already_applied() {
+        let controller = GitOpsUpgradeController::default();
+        // current_protocol == 22 means both steps are already applied
+        let step = controller.next_due_step(&sample_timeline(), 22, 1_900_000_000);
+        assert!(
+            step.is_none(),
+            "no step should be returned when all are already applied"
+        );
+    }
+
+    #[test]
+    fn picks_lowest_due_version_when_multiple_are_due() {
+        let controller = GitOpsUpgradeController::default();
+        // Both steps are due (now > both activate_at_unix), current_protocol = 20
+        let step = controller
+            .next_due_step(&sample_timeline(), 20, 1_900_000_000)
+            .expect("expected a due step");
+        assert_eq!(
+            step.protocol_version, 21,
+            "must pick the lowest due version first"
+        );
+    }
+
+    #[test]
+    fn timeline_json_roundtrip() {
+        let timeline = sample_timeline();
+        let json = serde_json::to_string(&timeline).expect("serialize");
+        let decoded: ProtocolUpgradeTimeline = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(timeline, decoded);
+    }
 }

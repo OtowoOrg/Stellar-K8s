@@ -4,8 +4,8 @@
 /// exponential-backoff retry, message filtering/routing, quota management,
 /// and Prometheus-style metrics.
 use serde::{Deserialize, Serialize};
-use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
@@ -198,13 +198,18 @@ impl Queue {
         if let Some(filter) = &self.config.routing_filter {
             if msg.routing_key.as_deref() != Some(filter.as_str()) {
                 self.metrics.filtered += 1;
-                return Err(format!("Message routing_key does not match filter '{filter}'"));
+                return Err(format!(
+                    "Message routing_key does not match filter '{filter}'"
+                ));
             }
         }
         // Quota
         if self.len() >= self.config.max_size {
             self.metrics.quota_rejected += 1;
-            return Err(format!("Queue '{}' is full (max {})", self.config.name, self.config.max_size));
+            return Err(format!(
+                "Queue '{}' is full (max {})",
+                self.config.name, self.config.max_size
+            ));
         }
         self.metrics.enqueued += 1;
         if self.config.fifo {
@@ -212,7 +217,8 @@ impl Queue {
         } else {
             let enqueued_at = msg.enqueued_at;
             let priority = msg.priority;
-            self.priority.push(PriorityEntry(priority, enqueued_at, msg));
+            self.priority
+                .push(PriorityEntry(priority, enqueued_at, msg));
         }
         Ok(())
     }
@@ -282,7 +288,10 @@ impl Queue {
 
         if msg.delivery_attempts >= msg.max_delivery_attempts {
             self.metrics.dead_lettered += 1;
-            warn!("Message {} exceeded max delivery attempts, dead-lettering", id);
+            warn!(
+                "Message {} exceeded max delivery attempts, dead-lettering",
+                id
+            );
             return Some(msg); // caller routes to DLQ
         }
 
@@ -301,7 +310,9 @@ pub struct MessageQueueSystem {
 
 impl MessageQueueSystem {
     pub fn new() -> Self {
-        let mut sys = Self { queues: HashMap::new() };
+        let mut sys = Self {
+            queues: HashMap::new(),
+        };
         // Always create a default DLQ
         sys.create_queue(QueueConfig {
             name: "dlq".to_string(),
@@ -313,7 +324,9 @@ impl MessageQueueSystem {
 
     pub fn create_queue(&mut self, config: QueueConfig) {
         info!("Creating queue '{}'", config.name);
-        self.queues.entry(config.name.clone()).or_insert_with(|| Queue::new(config));
+        self.queues
+            .entry(config.name.clone())
+            .or_insert_with(|| Queue::new(config));
     }
 
     pub fn enqueue(&mut self, msg: Message) -> Result<(), String> {
@@ -331,17 +344,15 @@ impl MessageQueueSystem {
     }
 
     pub fn ack(&mut self, queue: &str, id: &str) -> bool {
-        self.queues.get_mut(queue).map(|q| q.ack(id)).unwrap_or(false)
+        self.queues
+            .get_mut(queue)
+            .map(|q| q.ack(id))
+            .unwrap_or(false)
     }
 
     /// Returns the dead-lettered message if it exceeded retries.
     pub fn nack(&mut self, queue: &str, id: &str) -> Option<Message> {
-        let dlq_name = self
-            .queues
-            .get(queue)?
-            .config
-            .dead_letter_queue
-            .clone()?;
+        let dlq_name = self.queues.get(queue)?.config.dead_letter_queue.clone()?;
 
         let dead = self.queues.get_mut(queue)?.nack(id)?;
 
@@ -409,7 +420,8 @@ mod tests {
     #[test]
     fn test_ack_removes_from_inflight() {
         let mut mq = make_mq();
-        mq.enqueue(Message::new("m2", "test", serde_json::json!({}))).unwrap();
+        mq.enqueue(Message::new("m2", "test", serde_json::json!({})))
+            .unwrap();
         let msg = mq.receive("test").unwrap();
         assert!(mq.ack("test", &msg.id));
         // Second ack should fail
@@ -441,9 +453,20 @@ mod tests {
     #[test]
     fn test_priority_ordering() {
         let mut mq = make_mq();
-        mq.enqueue(Message::new("low", "test", serde_json::json!({})).with_priority(MessagePriority::Low)).unwrap();
-        mq.enqueue(Message::new("critical", "test", serde_json::json!({})).with_priority(MessagePriority::Critical)).unwrap();
-        mq.enqueue(Message::new("normal", "test", serde_json::json!({})).with_priority(MessagePriority::Normal)).unwrap();
+        mq.enqueue(
+            Message::new("low", "test", serde_json::json!({})).with_priority(MessagePriority::Low),
+        )
+        .unwrap();
+        mq.enqueue(
+            Message::new("critical", "test", serde_json::json!({}))
+                .with_priority(MessagePriority::Critical),
+        )
+        .unwrap();
+        mq.enqueue(
+            Message::new("normal", "test", serde_json::json!({}))
+                .with_priority(MessagePriority::Normal),
+        )
+        .unwrap();
 
         let first = mq.receive("test").unwrap();
         assert_eq!(first.id, "critical");
@@ -457,8 +480,10 @@ mod tests {
             fifo: true,
             ..Default::default()
         });
-        mq.enqueue(Message::new("first", "fifo-q", serde_json::json!({}))).unwrap();
-        mq.enqueue(Message::new("second", "fifo-q", serde_json::json!({}))).unwrap();
+        mq.enqueue(Message::new("first", "fifo-q", serde_json::json!({})))
+            .unwrap();
+        mq.enqueue(Message::new("second", "fifo-q", serde_json::json!({})))
+            .unwrap();
         assert_eq!(mq.receive("fifo-q").unwrap().id, "first");
         mq.ack("fifo-q", "first");
         assert_eq!(mq.receive("fifo-q").unwrap().id, "second");
@@ -472,8 +497,11 @@ mod tests {
             max_size: 1,
             ..Default::default()
         });
-        mq.enqueue(Message::new("m1", "small", serde_json::json!({}))).unwrap();
-        let err = mq.enqueue(Message::new("m2", "small", serde_json::json!({}))).unwrap_err();
+        mq.enqueue(Message::new("m1", "small", serde_json::json!({})))
+            .unwrap();
+        let err = mq
+            .enqueue(Message::new("m2", "small", serde_json::json!({})))
+            .unwrap_err();
         assert!(err.contains("full"));
     }
 
@@ -487,8 +515,7 @@ mod tests {
         });
         let ok = Message::new("m1", "filtered", serde_json::json!({}))
             .with_routing_key("stellar.events");
-        let bad = Message::new("m2", "filtered", serde_json::json!({}))
-            .with_routing_key("other");
+        let bad = Message::new("m2", "filtered", serde_json::json!({})).with_routing_key("other");
         assert!(mq.enqueue(ok).is_ok());
         assert!(mq.enqueue(bad).is_err());
     }

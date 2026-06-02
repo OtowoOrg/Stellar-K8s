@@ -1,4 +1,17 @@
-//! Incident reporting and post-mortem artifact gathering
+//! Incident management system with automated response workflows.
+
+pub mod detector;
+pub mod manager;
+pub mod metrics;
+pub mod notification;
+pub mod playbook;
+pub mod rca;
+
+pub use manager::{Incident, IncidentDashboard, IncidentManager, IncidentSeverity, IncidentStatus};
+pub use metrics::{IncidentMetrics, SlaTracker};
+pub use rca::RcaGenerator;
+
+// Incident reporting and post-mortem artifact gathering (legacy forensics module)
 
 use std::fs::File;
 use std::io::Write;

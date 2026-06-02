@@ -24,24 +24,21 @@ pub struct HorizonCacheLabels {
 }
 
 #[cfg(feature = "metrics")]
-pub static HORIZON_CACHE_HITS: Lazy<
-    Family<HorizonCacheLabels, Counter<u64, AtomicU64>>,
-> = Lazy::new(Family::default);
+pub static HORIZON_CACHE_HITS: Lazy<Family<HorizonCacheLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
 
 #[cfg(feature = "metrics")]
-pub static HORIZON_CACHE_MISSES: Lazy<
-    Family<HorizonCacheLabels, Counter<u64, AtomicU64>>,
-> = Lazy::new(Family::default);
+pub static HORIZON_CACHE_MISSES: Lazy<Family<HorizonCacheLabels, Counter<u64, AtomicU64>>> =
+    Lazy::new(Family::default);
 
 #[cfg(feature = "metrics")]
-pub static HORIZON_CACHE_HIT_RATE: Lazy<
-    Family<HorizonCacheLabels, Gauge<i64, AtomicI64>>,
-> = Lazy::new(Family::default);
+pub static HORIZON_CACHE_HIT_RATE: Lazy<Family<HorizonCacheLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
 
 #[cfg(feature = "metrics")]
-pub static HORIZON_QUERY_LATENCY: Lazy<
-    Family<HorizonCacheLabels, Histogram>,
-> = Lazy::new(|| Family::new_with_constructor(|| Histogram::new(exponential_buckets(0.001, 2.0, 12))));
+pub static HORIZON_QUERY_LATENCY: Lazy<Family<HorizonCacheLabels, Histogram>> = Lazy::new(|| {
+    Family::new_with_constructor(|| Histogram::new(exponential_buckets(0.001, 2.0, 12)))
+});
 
 #[cfg(feature = "metrics")]
 pub fn record_cache_hit(namespace: &str, node: &str, layer: &str) {

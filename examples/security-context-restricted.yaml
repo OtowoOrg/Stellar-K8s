@@ -1,0 +1,23 @@
+# Example: StellarNode with PSS 'restricted' security context (default operator behavior)
+# This matches the Kubernetes Pod Security Standards 'restricted' profile.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-restricted
+  namespace: stellar-prod
+spec:
+  nodeType: Horizon
+  network: Public
+  version: "v21.0.0"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    runAsGroup: 10000
+    fsGroup: 10000
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault

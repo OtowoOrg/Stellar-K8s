@@ -84,10 +84,19 @@ pub fn export_pdf(report: &ComplianceReport) -> Result<Vec<u8>> {
     let layer = doc.get_page(page1).get_layer(layer1);
     let mut y = 277.0;
 
-    layer.use_text("Stellar-K8s Compliance Report", 18.0, Mm(15.0), Mm(y), &font_bold);
+    layer.use_text(
+        "Stellar-K8s Compliance Report",
+        18.0,
+        Mm(15.0),
+        Mm(y),
+        &font_bold,
+    );
     y -= 10.0;
     layer.use_text(
-        format!("Generated: {}", report.generated_at.format("%Y-%m-%dT%H:%M:%SZ")),
+        format!(
+            "Generated: {}",
+            report.generated_at.format("%Y-%m-%dT%H:%M:%SZ")
+        ),
         10.0,
         Mm(15.0),
         Mm(y),
@@ -151,7 +160,10 @@ pub fn export_pdf(report: &ComplianceReport) -> Result<Vec<u8>> {
 
     for drift in &report.drift_findings {
         layer.use_text(
-            format!("  {} expected={} actual={}", drift.field, drift.expected, drift.actual),
+            format!(
+                "  {} expected={} actual={}",
+                drift.field, drift.expected, drift.actual
+            ),
             9.0,
             Mm(15.0),
             Mm(y),

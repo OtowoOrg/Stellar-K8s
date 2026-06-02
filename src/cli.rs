@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 use stellar_k8s::controller::archive_prune::PruneArchiveArgs;
 use stellar_k8s::controller::diff::DiffArgs;
 use stellar_k8s::incident;
+use crate::commands::backup::{BackupArgs, RestoreArgs, ListArgs, CleanupArgs};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -98,6 +99,23 @@ pub enum Commands {
     BenchmarkCompare(stellar_k8s::benchmark_compare::BenchmarkCompareArgs),
     /// Export operator audit log and config as a signed compliance report
     ExportCompliance(ExportComplianceArgs),
+    /// Backup commands for Stellar node data
+    Backup {
+        #[command(subcommand)]
+        command: BackupCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BackupCommands {
+    /// Create a backup of Stellar node data
+    Create(BackupArgs),
+    /// Restore a backup
+    Restore(RestoreArgs),
+    /// List available backups
+    List(ListArgs),
+    /// Cleanup old backups
+    Cleanup(CleanupArgs),
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]

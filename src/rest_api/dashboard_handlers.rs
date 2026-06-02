@@ -8,6 +8,7 @@ use axum::{
     Json,
 };
 use k8s_openapi::api::core::v1::Pod;
+use crate::crd::StellarNodeSpec;
 use kube::{api::Api, api::LogParams, api::Patch, api::PatchParams, ResourceExt};
 use tracing::{error, info, instrument};
 
@@ -716,6 +717,61 @@ pub async fn get_operator_logs(
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse::new("list_pods_failed", &e.to_string())),
+            ))
+        }
+    }
+}
+
+/// Get dashboard metrics summary
+#[instrument(skip(state))]
+pub async fn dashboard_metrics(
+    State(state): State<Arc<ControllerState>>,
+) -> Result<Json<MetricsSummary>, (StatusCode, Json<ErrorResponse>)> {
+    // Return aggregated metrics across all nodes
+    let api: Api<StellarNode> = Api::all(state.client.clone());
+
+    match api.list(&Default::default()).await {
+        Ok(nodes) => {
+            let mut total_replicas = 0;
+            let mut total_ready_replicas = 0;
+            let mut latest_ledger = None;
+            let mut avg_quorum_fragility = 0.0;
+            let mut fragility_count = 0;
+
+            for node in &nodes.items {
+                if let Some(status) = &node.status {
+                    total_replicas += status.replicas;
+                    total_ready_replicas += status.ready_replicas;
+                    
+                    if let Some(ledger) = status.ledger_sequence {
+                        latest_ledger = Some(latest_ledger.map_or(ledger, |l: u64| l.max(ledger)));
+                    }
+                    
+                    if let Some(fragility) = status.quorum_fragility {
+                        avg_quorum_fragility += fragility;
+                        fragility_count += 1;
+                    }
+                }
+            }
+
+            if fragility_count > 0 {
+                avg_quorum_fragility /= fragility_count as f64;
+            }
+
+            Ok(Json(MetricsSummary {
+                namespace: "all".to_string(),
+                name: "cluster".to_string(),
+                ledger_sequence: latest_ledger,
+                ready_replicas: total_ready_replicas,
+                replicas: total_replicas,
+                quorum_fragility: if fragility_count > 0 { Some(avg_quorum_fragility) } else { None },
+            }))
+        }
+        Err(e) => {
+            error!("Failed to get dashboard metrics: {:?}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new("metrics_failed", &e.to_string())),
             ))
         }
     }

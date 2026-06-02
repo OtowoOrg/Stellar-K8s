@@ -1,0 +1,63 @@
+# Example: Intelligent pod scheduling based on network latency (#680)
+#
+# Enable proximity-aware scheduling so the custom Stellar scheduler places
+# validator pods on nodes with the lowest inter-peer latency, and automatically
+# evicts and reschedules pods when latency exceeds the configured threshold.
+#
+# Prerequisites:
+#   1. Deploy the stellar-scheduler with --scheduler-name=stellar-scheduler
+#   2. Prometheus must be reachable at PROMETHEUS_URL (default: http://prometheus-k8s.monitoring.svc:9090)
+#   3. Set LATENCY_EVICTION_THRESHOLD_MS env var on the operator (default: 150ms)
+
+---
+# Validator with proximity-aware scheduling enabled
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-latency-optimized
+  namespace: stellar
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+
+  # Enable proximity-aware scheduling: the operator monitors inter-peer latency
+  # and evicts pods that exceed the threshold so the scheduler can place them
+  # on lower-latency nodes.
+  proximityAware: true
+
+  storage:
+    storageClass: "gp3"
+    size: "500Gi"
+  validatorConfig:
+    seedSecretRef: "mainnet-validator-seed"
+    quorumSet: |
+      [QUORUM_SET]
+      VALIDATORS=[
+        "GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGZS4BPQC4YFKB2GHIBIY",
+        "GD6SZQV3WEJUH352NTVLKEV2JM2RH266VPEM7EH5QLLI7ZZAALMLNUVN"
+      ]
+
+  # Use the custom Stellar scheduler for latency-aware placement
+  placement:
+    schedulerName: "stellar-scheduler"
+
+---
+# Operator deployment — configure latency eviction threshold
+# Set this on the stellar-operator Deployment in the stellar-system namespace:
+#
+# env:
+#   - name: LATENCY_EVICTION_THRESHOLD_MS
+#     value: "100"          # evict pods with avg quorum latency > 100ms
+#   - name: PROMETHEUS_URL
+#     value: "http://prometheus-k8s.monitoring.svc:9090"
+#
+# The latency monitor runs every 60 seconds and logs a benchmark summary:
+#   INFO latency monitor cycle: evaluated=3 above_threshold=1 evictions=1 avg_ms=87.3 max_ms=210.5
+#
+# Benchmark metrics logged per cycle:
+#   - pods_evaluated:       total proximity-aware validator pods checked
+#   - pods_above_threshold: pods whose avg quorum latency exceeded the threshold
+#   - evictions_triggered:  pods evicted for rescheduling this cycle
+#   - avg_latency_ms:       average quorum latency across all evaluated pods
+#   - max_latency_ms:       worst-case quorum latency observed

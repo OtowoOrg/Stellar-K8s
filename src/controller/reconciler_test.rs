@@ -864,7 +864,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             apply_phase_conditions(&mut conditions, &phase, message.as_deref());
 
             let ready = condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_READY);
+            let available = condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_AVAILABLE);
             prop_assert!(ready.is_some());
+            prop_assert!(available.is_some());
 
             match phase.as_str() {
                 "Ready" | "Running" => {
@@ -906,6 +908,10 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
 
             prop_assert_eq!(
                 condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_READY),
+                Some(crate::controller::conditions::CONDITION_STATUS_UNKNOWN)
+            );
+            prop_assert_eq!(
+                condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_AVAILABLE),
                 Some(crate::controller::conditions::CONDITION_STATUS_UNKNOWN)
             );
         }

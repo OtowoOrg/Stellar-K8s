@@ -1,0 +1,14 @@
+# Example: StellarNode with privileged security context.
+# WARNING: Only use in isolated development or test namespaces.
+# NEVER use in production. Violates PSS 'restricted' and 'baseline'.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-dev
+  namespace: stellar-dev
+spec:
+  nodeType: Validator
+  network: Futurenet
+  version: "v21.0.0"
+  securityContext:
+    privileged: true   # DEV ONLY — bypasses all container isolation

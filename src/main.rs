@@ -1,8 +1,9 @@
 mod cli;
 mod commands;
 
-use crate::cli::{Args, Commands};
+use crate::cli::{Args, Commands, BackupCommands};
 use crate::commands::benchmark::run_benchmark_controller_cmd;
+use crate::commands::backup::{run_backup, run_restore, run_list, run_cleanup};
 use crate::commands::check_crd::run_check_crd;
 use crate::commands::doctor::run_doctor;
 use crate::commands::export_compliance::run_export_compliance;
@@ -129,6 +130,12 @@ async fn main() -> Result<(), Error> {
         Commands::ExportCompliance(export_args) => {
             return run_export_compliance(export_args).await;
         }
+        Commands::Backup { command } => match command {
+            BackupCommands::Create(args) => run_backup(args).await.map_err(|e| Error::ConfigError(e.to_string())),
+            BackupCommands::Restore(args) => run_restore(args).await.map_err(|e| Error::ConfigError(e.to_string())),
+            BackupCommands::List(args) => run_list(args).await.map_err(|e| Error::ConfigError(e.to_string())),
+            BackupCommands::Cleanup(args) => run_cleanup(args).await.map_err(|e| Error::ConfigError(e.to_string())),
+        },
     };
 
     version_check::check_and_notify(offline).await;

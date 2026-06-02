@@ -397,9 +397,20 @@ async fn run(cli: Cli) -> Result<()> {
                 Some("Inspect compliance audit trails (read-only)".to_string())
             }
             Commands::Snapshot { command } => match command {
-                SnapshotCommands::List { .. } => Some("List VolumeSnapshots (read-only)".to_string()),
-                SnapshotCommands::Create { node_name, .. } => Some(format!("Create VolumeSnapshot for StellarNode '{}'", node_name)),
-                SnapshotCommands::Restore { snapshot_name, node_name } => Some(format!("Restore VolumeSnapshot '{}' to StellarNode '{}'", snapshot_name, node_name)),
+                SnapshotCommands::List { .. } => {
+                    Some("List VolumeSnapshots (read-only)".to_string())
+                }
+                SnapshotCommands::Create { node_name, .. } => Some(format!(
+                    "Create VolumeSnapshot for StellarNode '{}'",
+                    node_name
+                )),
+                SnapshotCommands::Restore {
+                    snapshot_name,
+                    node_name,
+                } => Some(format!(
+                    "Restore VolumeSnapshot '{}' to StellarNode '{}'",
+                    snapshot_name, node_name
+                )),
             },
         };
         if let Some(desc) = action {
@@ -740,10 +751,22 @@ async fn run(cli: Cli) -> Result<()> {
             let client = Client::try_default().await.map_err(Error::KubeError)?;
             let namespace = cli.namespace.as_deref().unwrap_or("default");
             match command {
-                SnapshotCommands::Create { node_name, volume_snapshot_class } => {
-                    snapshot_create(&client, namespace, &node_name, volume_snapshot_class.as_deref()).await
+                SnapshotCommands::Create {
+                    node_name,
+                    volume_snapshot_class,
+                } => {
+                    snapshot_create(
+                        &client,
+                        namespace,
+                        &node_name,
+                        volume_snapshot_class.as_deref(),
+                    )
+                    .await
                 }
-                SnapshotCommands::List { node_name, all_namespaces } => {
+                SnapshotCommands::List {
+                    node_name,
+                    all_namespaces,
+                } => {
                     let ns = if all_namespaces {
                         None
                     } else {
@@ -751,9 +774,10 @@ async fn run(cli: Cli) -> Result<()> {
                     };
                     snapshot_list(&client, node_name.as_deref(), ns, &cli.output).await
                 }
-                SnapshotCommands::Restore { snapshot_name, node_name } => {
-                    snapshot_restore(&client, namespace, &snapshot_name, &node_name).await
-                }
+                SnapshotCommands::Restore {
+                    snapshot_name,
+                    node_name,
+                } => snapshot_restore(&client, namespace, &snapshot_name, &node_name).await,
             }
         }
         _ => todo!(),
@@ -798,9 +822,18 @@ async fn snapshot_create(
     let api: Api<DynamicObject> = Api::namespaced_with(client.clone(), namespace, &api_resource);
 
     let mut labels = std::collections::BTreeMap::new();
-    labels.insert("app.kubernetes.io/name".to_string(), "stellar-node".to_string());
-    labels.insert("app.kubernetes.io/instance".to_string(), node_name.to_string());
-    labels.insert("app.kubernetes.io/managed-by".to_string(), "stellar-operator".to_string());
+    labels.insert(
+        "app.kubernetes.io/name".to_string(),
+        "stellar-node".to_string(),
+    );
+    labels.insert(
+        "app.kubernetes.io/instance".to_string(),
+        node_name.to_string(),
+    );
+    labels.insert(
+        "app.kubernetes.io/managed-by".to_string(),
+        "stellar-operator".to_string(),
+    );
     labels.insert("stellar.org/snapshot-of".to_string(), node_name.to_string());
 
     let meta = k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
@@ -831,8 +864,13 @@ async fn snapshot_create(
         }),
     };
 
-    api.create(&PostParams::default(), &snapshot).await.map_err(Error::KubeError)?;
-    println!("Created VolumeSnapshot '{}' for PVC '{}'", snapshot_name, pvc_name);
+    api.create(&PostParams::default(), &snapshot)
+        .await
+        .map_err(Error::KubeError)?;
+    println!(
+        "Created VolumeSnapshot '{}' for PVC '{}'",
+        snapshot_name, pvc_name
+    );
 
     Ok(())
 }
@@ -861,19 +899,42 @@ async fn snapshot_list(
 
     match output {
         "json" => {
-            println!("{}", serde_json::to_string_pretty(&list.items).map_err(|e| Error::ConfigError(format!("JSON serialization error: {}", e)))?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&list.items)
+                    .map_err(|e| Error::ConfigError(format!("JSON serialization error: {}", e)))?
+            );
         }
         "yaml" => {
-            println!("{}", serde_yaml::to_string(&list.items).map_err(|e| Error::ConfigError(format!("YAML serialization error: {}", e)))?);
+            println!(
+                "{}",
+                serde_yaml::to_string(&list.items)
+                    .map_err(|e| Error::ConfigError(format!("YAML serialization error: {}", e)))?
+            );
         }
         _ => {
-            println!("{:<50} {:<20} {:<30} {:<20}", "NAME", "NAMESPACE", "SNAPSHOT OF", "STATUS");
+            println!(
+                "{:<50} {:<20} {:<30} {:<20}",
+                "NAME", "NAMESPACE", "SNAPSHOT OF", "STATUS"
+            );
             println!("{}", "-".repeat(120));
             for item in list.items {
                 let name = item.name_any();
                 let ns = item.namespace().unwrap_or_else(|| "default".to_string());
-                let snapshot_of = item.metadata.labels.as_ref().and_then(|l| l.get("stellar.org/snapshot-of")).cloned().unwrap_or_else(|| "unknown".to_string());
-                let status = item.data.get("status").and_then(|s| s.get("readyToUse")).and_then(|r| r.as_bool()).map(|b| if b { "Ready" } else { "Pending" }).unwrap_or("Unknown");
+                let snapshot_of = item
+                    .metadata
+                    .labels
+                    .as_ref()
+                    .and_then(|l| l.get("stellar.org/snapshot-of"))
+                    .cloned()
+                    .unwrap_or_else(|| "unknown".to_string());
+                let status = item
+                    .data
+                    .get("status")
+                    .and_then(|s| s.get("readyToUse"))
+                    .and_then(|r| r.as_bool())
+                    .map(|b| if b { "Ready" } else { "Pending" })
+                    .unwrap_or("Unknown");
                 println!("{:<50} {:<20} {:<30} {:<20}", name, ns, snapshot_of, status);
             }
         }

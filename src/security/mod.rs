@@ -4,13 +4,13 @@
 
 pub mod compliance;
 pub mod kms;
+pub mod policy;
+pub mod remediation;
+pub mod runtime;
 pub mod secret_audit;
 pub mod secret_metrics;
 pub mod secret_rotation;
 pub mod secret_sync;
-pub mod policy;
-pub mod remediation;
-pub mod runtime;
 pub mod vulnerability;
 
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,17 @@ pub enum SecuritySeverity {
     High,
     Medium,
     Low,
+}
+
+impl std::fmt::Display for SecuritySeverity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SecuritySeverity::Critical => write!(f, "CRITICAL"),
+            SecuritySeverity::High => write!(f, "HIGH"),
+            SecuritySeverity::Medium => write!(f, "MEDIUM"),
+            SecuritySeverity::Low => write!(f, "LOW"),
+        }
+    }
 }
 
 /// Security posture report

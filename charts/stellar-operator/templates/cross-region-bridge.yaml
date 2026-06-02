@@ -1,0 +1,124 @@
+{{- /*
+  cross-region-bridge.yaml
+  Creates the Kubernetes resources needed for cross-region state synchronization:
+    1. A ClusterRole + ClusterRoleBinding granting the operator read/write access
+       to ledger-state ConfigMaps across namespaces.
+    2. An ExternalName Service per peer cluster, enabling standby operators to
+       reach the primary region's Kubernetes API through DNS without a full
+       service mesh.
+    3. A NetworkPolicy that allows the state-sync sidecar to reach the Stellar
+       Core HTTP port (11626) within the pod.
+
+  Enabled when featureFlags.enableDr == "true" AND crossRegion.enabled == true.
+*/ -}}
+
+{{- if and (eq (index .Values.featureFlags "enableDr") "true") .Values.crossRegion.enabled }}
+
+# ─── ClusterRole: ledger-state ConfigMap access ──────────────────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-state-sync
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    stellar.org/component: state-sync
+rules:
+  # Read/write ledger-state ConfigMaps in any namespace
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+    resourceNames: []
+  # Read StellarNode status to compute lag
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes", "stellarnodes/status"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+---
+# ─── ClusterRoleBinding ───────────────────────────────────────────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-state-sync
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    stellar.org/component: state-sync
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "stellar-operator.fullname" . }}-state-sync
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "stellar-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- range .Values.crossRegion.peerClusters }}
+{{- if .enabled }}
+# ─── ExternalName Service: bridge to peer cluster {{ .clusterId }} ────────────
+# This service lets standby operators resolve the primary cluster's
+# Kubernetes API server by DNS name, enabling ConfigMap reads across regions.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "stellar-bridge-%s" .clusterId | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" $ | nindent 4 }}
+    stellar.org/component: cross-region-bridge
+    stellar.org/peer-cluster: {{ .clusterId | quote }}
+  annotations:
+    stellar.org/region: {{ .region | default "unknown" | quote }}
+    stellar.org/bridge-endpoint: {{ .endpoint | quote }}
+spec:
+  type: ExternalName
+  externalName: {{ .endpoint }}
+  ports:
+    - name: peer
+      port: {{ .port | default 11625 }}
+      protocol: TCP
+    - name: http
+      port: 11626
+      protocol: TCP
+---
+{{- end }}
+{{- end }}
+
+# ─── NetworkPolicy: allow state-sync sidecar ─────────────────────────────────
+# Permits the state-sync sidecar container to reach the local Stellar Core
+# HTTP API on port 11626 within the same pod (loopback traffic).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-state-sync-sidecar
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    stellar.org/component: state-sync
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/managed-by: stellar-operator
+      stellar.org/state-sync: "true"
+  policyTypes:
+    - Egress
+  egress:
+    # Allow sidecar → local Stellar Core HTTP (loopback)
+    - ports:
+        - port: 11626
+          protocol: TCP
+    # Allow DNS resolution
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Allow reaching peer cluster bridges (cross-region)
+    {{- range .Values.crossRegion.peerClusters }}
+    {{- if .enabled }}
+    - ports:
+        - port: {{ .port | default 11625 }}
+          protocol: TCP
+        - port: 11626
+          protocol: TCP
+    {{- end }}
+    {{- end }}
+
+{{- end }}

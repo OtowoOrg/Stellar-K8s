@@ -5,6 +5,7 @@
 //! or generating runbooks.
 
 pub mod benchmark;
+pub mod backup;
 pub mod check_crd;
 pub mod doctor;
 pub mod export_compliance;

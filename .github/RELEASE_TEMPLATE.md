@@ -34,6 +34,34 @@ A concise overview of the release highlights and major improvements.
 
 ## ⚠️ Breaking Changes
 
+HOW TO USE THIS TEMPLATE
+
+1. COPY this file's content into the GitHub Release description when creating
+   a new release at: https://github.com/stellar/stellar-k8s/releases/new
+
+2. REPLACE all placeholders:
+   - [VERSION]       → the new version, e.g. 0.2.0
+   - [PREV_VERSION]  → the previous version, e.g. 0.1.0
+   - YYYY-MM-DD      → today's date
+   - PR_NUMBER / ISSUE_NUMBER → actual GitHub numbers
+   - <hash>          → SHA-256 values from the release workflow's SHA256SUMS file
+
+3. REMOVE any sections that don't apply to this release
+   (e.g. no Breaking Changes → delete that whole section).
+
+4. FILL IN the Highlights paragraph last — it's easier once all other
+   sections are complete.
+
+5. VERIFY checksums are populated. The release workflow generates a
+   SHA256SUMS file automatically; copy values from there.
+
+6. PREVIEW the release in GitHub's editor before publishing to confirm
+   all links resolve and the formatting looks correct.
+
+Tip: The release workflow (`.github/workflows/release.yml`) auto-generates
+a changelog via git-cliff. Use that output as a starting point for the
+Features and Bug Fixes sections, then add context and links manually.
+-->
 <!-- List any breaking changes that users need to be aware of -->
 <!-- Format: - **[Change Name]**: Detailed explanation of what changed and migration path -->
 

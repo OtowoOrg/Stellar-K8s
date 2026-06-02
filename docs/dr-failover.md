@@ -2,179 +2,421 @@
 
 ## Overview
 
-This document provides a **manual step-by-step procedure** for performing a disaster recovery (DR) failover between regions in a Stellar-K8s multi-region deployment.
+This document describes the **automated cross-region state synchronization** system
+and the **manual failover procedure** for Stellar-K8s multi-region deployments.
 
-**Scope**: Active-passive failover from Primary (e.g., `us-east-1`) to Secondary (e.g., `eu-west-1`) region.
+**Scope**: Active-passive failover from Primary (e.g., `us-east-1`) to Secondary
+(e.g., `eu-west-1`) with zero-RPO via continuous ledger state streaming.
 
-**Assumptions**:
-- 10 validators total: 5 Primary (quorum-capable), 5 Secondary.
-- Cross-region peering: Submariner/BGP (docs/peer-discovery.md).
-- Storage: CSI snapshots backed by Velero (docs/volume-snapshots.md).
-- Horizon failover via DNS.
-- Same Stellar network passphrase across regions.
+**Architecture**:
+```
+Primary Region (us-east-1)                 Standby Region (eu-west-1)
+┌──────────────────────────────┐           ┌──────────────────────────────┐
+│  StellarNode Pod             │           │  StellarNode Pod             │
+│  ┌──────────┐  ┌──────────┐ │  bridge   │  ┌──────────┐  ┌──────────┐ │
+│  │  core    │→ │state-sync│ │──────────▶│  │state-sync│→ │  core    │ │
+│  │ :11626   │  │ sidecar  │ │           │  │ sidecar  │  │ standby  │ │
+│  └──────────┘  └────┬─────┘ │           │  └────┬─────┘  └──────────┘ │
+│                     │       │           │       │                      │
+│              ConfigMap       │           │  reads ConfigMap via bridge  │
+│         <node>-ledger-state  │           │  computes lag + hash check   │
+└──────────────────────────────┘           └──────────────────────────────┘
+```
 
-**RTO**: ~15-30 min (quorum shift + DNS TTL).
-**RPO**: Near-zero (async replication + snapshots).
+**RTO**: ~5-10 min (automated failover) / ~15-30 min (manual).
+**RPO**: Zero (streaming ledger sync, lag ≤ 10 ledgers = ~50 seconds).
 
-**⚠️ WARNING**: Test in staging first! Use DR drills (controller/dr.rs).
+---
 
-## Prerequisites
+## Part 1: Automated State Synchronization
 
-1. **Cluster Health**:
+### How It Works
+
+The operator injects a `state-sync` sidecar into every StellarNode pod when
+`spec.dr_config.sync_strategy: streamingledger` is set. The sidecar:
+
+1. Polls the local Stellar Core HTTP API (`/info`) every second.
+2. Extracts the latest closed ledger sequence and SHA-256 hash.
+3. Publishes a `LedgerStateSnapshot` to a Kubernetes ConfigMap
+   (`<node-name>-ledger-state`) in the same namespace.
+4. Standby-region operators read that ConfigMap via the cross-cluster bridge
+   and compute sync lag + hash-chain consistency.
+
+### Enabling Cross-Region Sync
+
+**Step 1: Enable the feature flags in Helm values**
+
+```yaml
+# values-production.yaml
+featureFlags:
+  enableDr: "true"
+
+crossRegion:
+  enabled: true
+  peerClusters:
+    - clusterId: "us-east-1"
+      endpoint: "k8s-api.us-east-1.example.com"
+      region: "us-east-1"
+      port: 11625
+      enabled: true
+    - clusterId: "eu-west-1"
+      endpoint: "k8s-api.eu-west-1.example.com"
+      region: "eu-west-1"
+      port: 11625
+      enabled: true
+```
+
+```bash
+helm upgrade stellar-operator charts/stellar-operator \
+  -f values-production.yaml \
+  --namespace stellar-system
+```
+
+**Step 2: Configure StellarNode resources**
+
+Primary region:
+```yaml
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-primary
+  namespace: stellar-system
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  drConfig:
+    enabled: true
+    role: primary
+    peerClusterId: "stellar-system/validator-standby"
+    syncStrategy: streamingledger
+    healthCheckInterval: 30
+    failoverDns:
+      hostname: "horizon.stellar.example.com"
+      provider: "route53"
+```
+
+Standby region:
+```yaml
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-standby
+  namespace: stellar-system
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  drConfig:
+    enabled: true
+    role: standby
+    peerClusterId: "stellar-system/validator-primary"
+    syncStrategy: streamingledger
+    healthCheckInterval: 30
+    failoverDns:
+      hostname: "horizon.stellar.example.com"
+      provider: "route53"
+```
+
+**Step 3: Verify sync is active**
+
+```bash
+# Check the ledger-state ConfigMap on the primary
+kubectl get configmap validator-primary-ledger-state \
+  -n stellar-system -o jsonpath='{.data.ledger-state}' | jq .
+
+# Expected output:
+# {
+#   "ledgerSequence": 50123456,
+#   "ledgerHash": "a1b2c3d4...",
+#   "networkPassphrase": "Public Global Stellar Network ; September 2015",
+#   "capturedAt": "2026-05-31T12:00:00Z",
+#   "coreVersion": "v21.0.0",
+#   "inSync": true
+# }
+
+# Check sync lag on the standby
+kubectl get stellarnode validator-standby \
+  -n stellar-system -o jsonpath='{.status.drStatus}' | jq .
+```
+
+### Sync Lag Thresholds
+
+| Lag (ledgers) | Status | Action |
+|---------------|--------|--------|
+| 0–10 | ✅ In sync | Normal operation |
+| 11–50 | ⚠️ Degraded | Alert; investigate network |
+| 51–500 | 🔴 Critical | Consider manual intervention |
+| > 500 | 🚨 Out of sync | Trigger failover or re-bootstrap |
+
+### Hash-Chain Consistency
+
+The sidecar verifies that when the standby reaches the same ledger sequence as
+the primary, their ledger hashes match. A mismatch indicates a **fork** — the
+two nodes have diverged and the standby must be re-bootstrapped from a snapshot.
+
+```bash
+# Check for fork detection
+kubectl get stellarnode validator-standby \
+  -n stellar-system -o jsonpath='{.status.drStatus.forkDetected}'
+# Should return: false
+```
+
+---
+
+## Part 2: Cross-Cluster Network Bridges
+
+The Helm chart creates `ExternalName` Services for each peer cluster, enabling
+DNS-based routing without a full service mesh:
+
+```bash
+# List bridge services
+kubectl get services -n stellar-system -l stellar.org/component=cross-region-bridge
+
+# NAME                          TYPE           CLUSTER-IP   EXTERNAL-IP
+# stellar-bridge-us-east-1      ExternalName   <none>       k8s-api.us-east-1.example.com
+# stellar-bridge-eu-west-1      ExternalName   <none>       k8s-api.eu-west-1.example.com
+```
+
+For production deployments with strict network isolation, use **Submariner** or
+**Cilium Cluster Mesh** instead of ExternalName services:
+
+```yaml
+# StellarNode with Submariner cross-cluster
+spec:
+  crossCluster:
+    enabled: true
+    mode: ServiceMesh
+    serviceMesh:
+      meshType: Submariner
+      clusterSetId: "stellar-global"
+    peerClusters:
+      - clusterId: "eu-west-1"
+        endpoint: "validator-primary.stellar-system.svc.clusterset.local"
+        enabled: true
+```
+
+---
+
+## Part 3: Failover Procedure
+
+### Prerequisites
+
+1. **Verify standby sync status**:
    ```bash
-   kubectl get stellarnode --all-namespaces -o wide
+   kubectl get stellarnode validator-standby \
+     -n stellar-system --context=standby-kubeconfig \
+     -o jsonpath='{.status.drStatus}' | jq .
+   # Confirm: lagLedgers < 10, withinThreshold: true, forkDetected: false
+   ```
+
+2. **Confirm quorum capability**:
+   ```bash
+   kubectl get stellarnode --all-namespaces --context=standby-kubeconfig
    # All Ready=True
    ```
 
-2. **Quorum Status** (Primary holds quorum):
+3. **Backups available**:
    ```bash
-   kubectl get stellarnodes stellar.org/v1alpha1 default -o json | jq '.items[0].status.quorum'
+   velero snapshot get --selector=backup=stellar-daily
    ```
 
-3. **Backups**:
-   - Velero snapshots: `velero snapshot get --selector=backup=stellar-daily`
-   - Forensic snapshots: `kubectl get forensicsnapshots -A`
+4. **DNS TTL ≤ 300s** on the Horizon endpoint.
 
-4. **DNS Ready**: Secondary Horizon endpoints registered, TTL ≤300s.
+### Automated Failover (~5 min)
 
-5. **Access**: Admin kubeconfig for both regions.
+The operator automatically promotes the standby when the primary is unreachable
+for more than `healthCheckInterval` seconds (default: 30s):
 
-## Preparation (~5 min)
-
-1. **Scale Secondary Validators** (pre-warm):
-   ```yaml
-   # secondary-region.yaml
-   apiVersion: stellar.org/v1alpha1
-   kind: StellarNode
-   metadata:
-     name: validators-secondary
-     namespace: stellar-system
-   spec:
-     replicas: 7  # +2 buffer
-   ```
-   `kubectl apply -f secondary-region.yaml --context=secondary-kubeconfig`
-
-2. **Sync Data** (if needed):
-   ```bash
-   # Promote latest snapshot if lag > RPO
-   velero restore create --from-backup=stellar-daily-latest --namespace=stellar-system
-   ```
-
-3. **Notify Stakeholders**:
-   - Announce 30min maintenance.
-   - Monitor: Grafana (monitoring/grafana-dashboard.json).
-
-## Failover Procedure (~10 min)
-
-### Step 1: Quiesce Primary (~2 min)
 ```bash
-# Graceful scale-down Primary validators
-kubectl patch stellarnode validators-primary -p='{\"spec\":{\"replicas\":1}}' --context=primary-kubeconfig
+# Monitor failover progress
+kubectl get stellarnode validator-standby \
+  -n stellar-system --context=standby-kubeconfig \
+  -w -o jsonpath='{.status.drStatus.failoverActive}'
 
-# Wait for drain
-kubectl wait --for=delete stellarpod --all --timeout=300s -n stellar-system --context=primary
+# Once true, verify the standby is now primary:
+kubectl get stellarnode validator-standby \
+  -n stellar-system --context=standby-kubeconfig \
+  -o jsonpath='{.status.drStatus.currentRole}'
+# Expected: "primary"
 ```
 
-### Step 2: Promote Secondary Quorum (~3 min)
+### Manual Failover (~15 min)
+
+Use this procedure when automated failover has not triggered or you need
+controlled maintenance failover.
+
+#### Step 1: Quiesce Primary (~2 min)
+
 ```bash
-# Adjust validator weights/peers (network.toml or CR)
-kubectl patch stellarnode validators-secondary -p='{\"spec\":{\"quorumWeight\":100}}' --context=secondary
+# Graceful scale-down of primary validators
+kubectl patch stellarnode validator-primary \
+  -n stellar-system \
+  --context=primary-kubeconfig \
+  -p '{"spec":{"replicas":0}}'
+
+# Wait for pods to terminate
+kubectl wait pod \
+  -l app.kubernetes.io/instance=validator-primary \
+  -n stellar-system \
+  --context=primary-kubeconfig \
+  --for=delete --timeout=300s
+```
+
+#### Step 2: Verify Final Sync State (~1 min)
+
+```bash
+# Confirm standby has the latest ledger
+kubectl get configmap validator-primary-ledger-state \
+  -n stellar-system --context=primary-kubeconfig \
+  -o jsonpath='{.data.ledger-state}' | jq .ledgerSequence
+
+kubectl get stellarnode validator-standby \
+  -n stellar-system --context=standby-kubeconfig \
+  -o jsonpath='{.status.ledgerSequence}'
+
+# Both values should match (or standby within 10 ledgers)
+```
+
+#### Step 3: Promote Standby (~2 min)
+
+```bash
+# Update the standby's DR role to primary
+kubectl patch stellarnode validator-standby \
+  -n stellar-system \
+  --context=standby-kubeconfig \
+  -p '{"spec":{"drConfig":{"role":"primary"}}}'
+
+# Scale up to full replica count
+kubectl patch stellarnode validator-standby \
+  -n stellar-system \
+  --context=standby-kubeconfig \
+  -p '{"spec":{"replicas":5}}'
 
 # Force peer-discovery refresh
-kubectl annotate stellarnode validators-secondary peer-discovery.stellar.org/reload=true --context=secondary
+kubectl annotate stellarnode validator-standby \
+  -n stellar-system \
+  --context=standby-kubeconfig \
+  peer-discovery.stellar.org/reload=true --overwrite
 ```
 
-### Step 3: Failover Horizon (~2 min)
+#### Step 4: Failover Horizon DNS (~2 min)
+
 ```bash
-# Update Route53/Global DNS
-aws route53 change-resource-record-sets --hosted-zone-id Z123 --change-batch file://horizon-failover.json
-```
-`horizon-failover.json`:
-```json
-[
-  {
-    \"Action\": \"UPSERT\",
-    \"ResourceRecordSet\": {
-      \"Name\": \"horizon.stellar.example.com\",
-      \"Type\": \"A\",
-      \"SetIdentifier\": \"secondary\",
-      \"Failover\": \"PRIMARY\",
-      \"ResourceRecords\": [{\"Value\": \"203.0.113.10\"}]
-    }
-  }
-]
+# Update Route53 (replace with your DNS provider)
+aws route53 change-resource-record-sets \
+  --hosted-zone-id Z123 \
+  --change-batch '{
+    "Changes": [{
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "horizon.stellar.example.com",
+        "Type": "A",
+        "TTL": 60,
+        "ResourceRecords": [{"Value": "STANDBY_REGION_IP"}]
+      }
+    }]
+  }'
 ```
 
-### Step 4: Verify Network Connectivity
+#### Step 5: Validate (~5 min)
+
 ```bash
-# From Secondary: Check quorum
-kubectl logs -l app=stellar-core -n stellar-system --context=secondary | grep \"Quorum set\"
+# 1. Check quorum
+kubectl logs -l app=stellar-core \
+  -n stellar-system --context=standby-kubeconfig \
+  | grep "Quorum set"
 
-# Cross-region ping (Submariner)
-kubectl exec -it debug -- ping peer-primary-ip --context=secondary
+# 2. Check Horizon health
+curl -f https://horizon.stellar.example.com/health
+
+# 3. Verify ledger advancement (should increase every ~5s)
+watch -n 5 'kubectl get stellarnode validator-standby \
+  -n stellar-system --context=standby-kubeconfig \
+  -o jsonpath="{.status.ledgerSequence}"'
+
+# 4. Submit a test transaction
+# stellar-sdk submit-tx --network mainnet --source-account GA...
 ```
-
-## Validation (~5-10 min)
-
-1. **Health Checks**:
-   ```
-   kubectl get stellarnode --context=secondary  # Ready=True, quorum slice full
-   curl -f https://horizon.stellar.example.com/health
-   ```
-
-2. **Workload Test**:
-   ```bash
-   # Submit tx, verify inclusion
-   sdk-submit-tx --network testnet --source-account GA...  # From QUICK_START_HEALTH_CHECKS.md
-   ```
-
-3. **Observability**:
-   - Grafana: Ledger lag <5, CPU <80%.
-   - Events: `kubectl get events --sort-by=.lastTimestamp`.
 
 **Success Criteria**:
-- ✅ Quorum in Secondary.
-- ✅ Horizon responsive.
-- ✅ New tx processing.
+- ✅ Standby quorum active (5+ validators in quorum slice)
+- ✅ Horizon `/health` returns 200
+- ✅ Ledger sequence advancing
+- ✅ New transactions processing
 
-## Rollback (~10 min)
+---
 
-If validation fails:
+## Part 4: Rollback Procedure
 
-1. **Revert DNS**:
-   ```bash
-   aws route53 change-resource-record-sets --change-batch file://horizon-rollback.json
-   ```
+If validation fails within 15 minutes of failover:
 
-2. **Restore Primary**:
-   ```bash
-   kubectl patch stellarnode validators-primary -p='{\"spec\":{\"replicas\":5}}' --context=primary
-   sleep 60; kubectl rollout status deployment/stellar-operator -n stellar-system --context=primary
-   ```
+```bash
+# 1. Revert DNS
+aws route53 change-resource-record-sets \
+  --hosted-zone-id Z123 \
+  --change-batch file://horizon-rollback.json
 
-3. **Demote Secondary**:
-   ```bash
-   kubectl patch stellarnode validators-secondary -p='{\"spec\":{\"quorumWeight\":0}}' --context=secondary
-   ```
+# 2. Restore primary
+kubectl patch stellarnode validator-primary \
+  -n stellar-system \
+  --context=primary-kubeconfig \
+  -p '{"spec":{"replicas":5}}'
 
-## Post-Failover
+# 3. Demote standby back
+kubectl patch stellarnode validator-standby \
+  -n stellar-system \
+  --context=standby-kubeconfig \
+  -p '{"spec":{"drConfig":{"role":"standby"}}}'
 
-- Update SOPs with timings.
-- Schedule failback.
-- Run DR drill.
+# 4. Wait for primary to re-sync
+kubectl wait stellarnode validator-primary \
+  -n stellar-system \
+  --context=primary-kubeconfig \
+  --for=condition=Ready --timeout=600s
+```
+
+---
+
+## Part 5: Consistency Verification Under Load
+
+The `state_sync` module includes tests that prove consistency under high load.
+Run them with:
+
+```bash
+cargo test state_sync -- --nocapture
+```
+
+Key test scenarios:
+- **Rapid ledger advancement**: 1000 ledger advances with up to 3-ledger jitter
+  — all within the 10-ledger threshold.
+- **Sustained lag detection**: 20,000-ledger lag correctly flagged as out-of-sync.
+- **Fork detection**: Hash mismatch at the same ledger sequence triggers alert.
+- **Serialization roundtrip**: `LedgerStateSnapshot` survives JSON encode/decode.
+
+---
 
 ## Troubleshooting
 
-| Issue | Command |
-|-------|---------|
-| Quorum stuck | `kubectl delete pod -l app=stellar-core --context=secondary` |
-| Peer discovery fail | Check docs/peer-discovery.md BGP status |
-| Snapshot restore | `velero restore describe` |
+| Symptom | Diagnosis | Fix |
+|---------|-----------|-----|
+| `lagLedgers` > 10 | Network congestion or bridge down | Check ExternalName service DNS; verify peer cluster reachability |
+| `forkDetected: true` | Hash-chain divergence | Re-bootstrap standby from OCI snapshot: `spec.oci_snapshot` |
+| ConfigMap not found | Sidecar not injected | Verify `sync_strategy: streamingledger` and `enableDr: "true"` |
+| Sidecar CrashLoopBackOff | Core not reachable | Check `STELLAR_CORE_HTTP_URL` env var; verify Core pod is running |
+| Automated failover not triggering | `healthCheckInterval` too high | Lower to 15s; check `peer_health` in DR status |
+| DNS not updating | Route53 permissions | Verify IAM role has `route53:ChangeResourceRecordSets` |
+
+---
 
 ## References
+
+- [Cross-Region Architecture](../src/controller/state_sync.rs) — Rust implementation
+- [Cross-Cluster Bridges](../src/controller/cross_cluster.rs) — ExternalName + Submariner
+- [DR Controller](../src/controller/dr.rs) — Automated failover logic
 - [Peer Discovery](peer-discovery.md)
 - [Volume Snapshots](volume-snapshots.md)
-- [QUICK_START_HEALTH_CHECKS](QUICK_START_HEALTH_CHECKS.md)
-- Stellar Core: https://developers.stellar.org/docs/validators/admin-guide/quorum
+- [OCI Snapshot Sync](../src/controller/oci_snapshot.rs) — Cross-region bootstrapping
+- Stellar Core docs: https://developers.stellar.org/docs/validators/admin-guide/quorum
 
-**Last Updated**: $(date)
+**Last Updated**: 2026-05-31

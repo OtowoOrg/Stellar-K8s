@@ -8,8 +8,7 @@ use kube::{
 use tracing::{info, warn};
 
 use crate::crd::secret_policy::{
-    SecretPolicy, SecretPolicyCondition, SecretPolicyPhase,
-    SecretPolicyStatus,
+    SecretPolicy, SecretPolicyCondition, SecretPolicyPhase, SecretPolicyStatus,
 };
 use crate::error::Result;
 use crate::security::kms::create_kms_backend;
@@ -84,7 +83,9 @@ pub async fn reconcile_secret_policy(
     if let Some(sync_config) = &spec.sync {
         status.phase = SecretPolicyPhase::Syncing;
         let current = store.current();
-        let encrypted = current.map(|v| v.encrypted.ciphertext.as_slice()).unwrap_or(&[]);
+        let encrypted = current
+            .map(|v| v.encrypted.ciphertext.as_slice())
+            .unwrap_or(&[]);
 
         match SecretSynchronizer::sync(
             sync_config,

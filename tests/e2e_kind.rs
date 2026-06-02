@@ -206,6 +206,93 @@ fn e2e_stellarnode_reconciliation() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Test PDB creation and quorum-aware minAvailable calculation for Validators.
+#[test]
+#[ignore]
+fn e2e_kind_validator_pdb_quorum() -> Result<(), Box<dyn Error>> {
+    if std::env::var("E2E_KIND").is_err() {
+        eprintln!("E2E_KIND is not set; skipping KinD E2E PDB test.");
+        return Ok(());
+    }
+
+    let cluster_name = std::env::var("KIND_CLUSTER_NAME").unwrap_or_else(|_| "stellar-e2e".into());
+    ensure_kind_cluster(&cluster_name)?;
+
+    let image = std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
+    let operator_yaml = operator_manifest(&image, None);
+    let _cleanup = Cleanup::new(operator_yaml.clone());
+
+    run_cmd("kubectl", &["apply", "-f", "config/crd/stellarnode-crd.yaml"])?;
+    
+    run_cmd(
+        "kubectl",
+        &["create", "namespace", OPERATOR_NAMESPACE, "--dry-run=client", "-o", "yaml"],
+    ).and_then(|output| kubectl_apply(&output))?;
+
+    kubectl_apply(&operator_yaml)?;
+    run_cmd(
+        "kubectl",
+        &["rollout", "status", "deployment/stellar-operator", "-n", OPERATOR_NAMESPACE, "--timeout=180s"],
+    )?;
+
+    run_cmd(
+        "kubectl",
+        &["create", "namespace", TEST_NAMESPACE, "--dry-run=client", "-o", "yaml"],
+    ).and_then(|output| kubectl_apply(&output))?;
+
+    let validator_name = "e2e-validator-pdb";
+    let validator_manifest = format!(
+        r#"apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: {validator_name}
+  namespace: {TEST_NAMESPACE}
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 3
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+  storage:
+    storageClass: "standard"
+    size: "1Gi"
+"#,
+    );
+    kubectl_apply(&validator_manifest)?;
+
+    wait_for("PDB created", Duration::from_secs(90), || {
+        Ok(run_cmd("kubectl", &["get", "pdb", validator_name, "-n", TEST_NAMESPACE]).is_ok())
+    })?;
+
+    let min_available = run_cmd(
+        "kubectl",
+        &["get", "pdb", validator_name, "-n", TEST_NAMESPACE, "-o", "jsonpath={.spec.minAvailable}"],
+    )?;
+    
+    if min_available != "2" {
+        return Err(format!("Expected minAvailable to be 2 for 3 replicas, got {}", min_available).into());
+    }
+
+    // Scale to 5 replicas and verify PDB update
+    run_cmd(
+        "kubectl",
+        &["patch", "stellarnode", validator_name, "-n", TEST_NAMESPACE, "--type", "merge", "-p", "{\"spec\":{\"replicas\":5}}"],
+    )?;
+
+    wait_for("PDB updated for 5 replicas", Duration::from_secs(90), || {
+        let min_avail = run_cmd(
+            "kubectl",
+            &["get", "pdb", validator_name, "-n", TEST_NAMESPACE, "-o", "jsonpath={.spec.minAvailable}"],
+        )?;
+        Ok(min_avail == "4")
+    })?;
+
+    Ok(())
+}
+
 /// Manifest for the e2e reconciliation test node.
 fn e2e_soroban_manifest(version: &str) -> String {
     format!(
@@ -681,6 +768,9 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["events"]

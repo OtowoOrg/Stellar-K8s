@@ -401,7 +401,12 @@ impl DeploymentController {
     /// Update a feature-flag rollout percentage.
     pub fn update_feature_flag(&mut self, id: &str, flag: &str, percent: u8) -> bool {
         if let Some(d) = self.deployments.get_mut(id) {
-            if let Some(ff) = d.config.feature_flags.iter_mut().find(|f| f.flag_name == flag) {
+            if let Some(ff) = d
+                .config
+                .feature_flags
+                .iter_mut()
+                .find(|f| f.flag_name == flag)
+            {
                 ff.rollout_percent = percent.min(100);
                 d.touch();
                 self.audit_log.push(DeploymentEvent::new(
@@ -433,12 +438,8 @@ impl DeploymentController {
             d.completed_at = Some(Utc::now().timestamp());
             d.touch();
             self.analytics.rolled_back_deployments += 1;
-            self.audit_log.push(DeploymentEvent::new(
-                id,
-                "rolled_back",
-                "system",
-                &reason,
-            ));
+            self.audit_log
+                .push(DeploymentEvent::new(id, "rolled_back", "system", &reason));
             return true;
         }
         false
@@ -446,19 +447,13 @@ impl DeploymentController {
 
     /// Check all in-progress deployments and auto-rollback if health fails.
     pub fn reconcile_health(&mut self) {
-        let ids: Vec<String> = self
-            .deployments
-            .keys()
-            .cloned()
-            .collect();
+        let ids: Vec<String> = self.deployments.keys().cloned().collect();
 
         for id in ids {
             let should = self
                 .deployments
                 .get(&id)
-                .map(|d| {
-                    d.phase == DeploymentPhase::InProgress && d.should_rollback()
-                })
+                .map(|d| d.phase == DeploymentPhase::InProgress && d.should_rollback())
                 .unwrap_or(false);
 
             if should {
@@ -629,7 +624,10 @@ mod tests {
             require_approval: true,
             ..Default::default()
         });
-        assert_eq!(ctrl.get(&id).unwrap().phase, DeploymentPhase::WaitingApproval);
+        assert_eq!(
+            ctrl.get(&id).unwrap().phase,
+            DeploymentPhase::WaitingApproval
+        );
         assert!(ctrl.approve(&id, "ops-team"));
         assert_eq!(ctrl.get(&id).unwrap().phase, DeploymentPhase::InProgress);
     }
@@ -661,7 +659,11 @@ mod tests {
         let mut ctrl = DeploymentController::new();
         let id = ctrl.create(canary_config());
         ctrl.rollback(&id, "manual rollback");
-        let events: Vec<&str> = ctrl.audit_log().iter().map(|e| e.event_type.as_str()).collect();
+        let events: Vec<&str> = ctrl
+            .audit_log()
+            .iter()
+            .map(|e| e.event_type.as_str())
+            .collect();
         assert!(events.contains(&"created"));
         assert!(events.contains(&"rolled_back"));
     }

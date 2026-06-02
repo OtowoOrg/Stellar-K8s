@@ -87,7 +87,10 @@ impl ValidationPipeline {
         }
     }
 
-    pub fn validate(framework: ComplianceFramework, state: &ClusterComplianceState) -> Vec<RuleResult> {
+    pub fn validate(
+        framework: ComplianceFramework,
+        state: &ClusterComplianceState,
+    ) -> Vec<RuleResult> {
         Self::rules_for(framework)
             .into_iter()
             .map(|rule| Self::evaluate_rule(&rule, state))
@@ -172,31 +175,97 @@ impl ValidationPipeline {
 
     fn soc2_rules() -> Vec<ComplianceRule> {
         vec![
-            rule("SOC2-CC6.1", ComplianceFramework::Soc2, "Logical Access Controls", "RBAC must be enforced", RuleSeverity::Critical),
-            rule("SOC2-CC6.6", ComplianceFramework::Soc2, "Encryption in Transit", "mTLS for API communication", RuleSeverity::High),
-            rule("SOC2-CC7.2", ComplianceFramework::Soc2, "Audit Logging", "All admin actions must be logged", RuleSeverity::High),
+            rule(
+                "SOC2-CC6.1",
+                ComplianceFramework::Soc2,
+                "Logical Access Controls",
+                "RBAC must be enforced",
+                RuleSeverity::Critical,
+            ),
+            rule(
+                "SOC2-CC6.6",
+                ComplianceFramework::Soc2,
+                "Encryption in Transit",
+                "mTLS for API communication",
+                RuleSeverity::High,
+            ),
+            rule(
+                "SOC2-CC7.2",
+                ComplianceFramework::Soc2,
+                "Audit Logging",
+                "All admin actions must be logged",
+                RuleSeverity::High,
+            ),
         ]
     }
 
     fn gdpr_rules() -> Vec<ComplianceRule> {
         vec![
-            rule("GDPR-Art32", ComplianceFramework::Gdpr, "Security of Processing", "Encryption required", RuleSeverity::Critical),
-            rule("GDPR-Art17", ComplianceFramework::Gdpr, "Right to Erasure", "Data retention limits", RuleSeverity::High),
-            rule("GDPR-Art25", ComplianceFramework::Gdpr, "Data Protection by Design", "PII scrubbing in logs", RuleSeverity::Medium),
+            rule(
+                "GDPR-Art32",
+                ComplianceFramework::Gdpr,
+                "Security of Processing",
+                "Encryption required",
+                RuleSeverity::Critical,
+            ),
+            rule(
+                "GDPR-Art17",
+                ComplianceFramework::Gdpr,
+                "Right to Erasure",
+                "Data retention limits",
+                RuleSeverity::High,
+            ),
+            rule(
+                "GDPR-Art25",
+                ComplianceFramework::Gdpr,
+                "Data Protection by Design",
+                "PII scrubbing in logs",
+                RuleSeverity::Medium,
+            ),
         ]
     }
 
     fn pci_dss_rules() -> Vec<ComplianceRule> {
         vec![
-            rule("PCI-3.4", ComplianceFramework::PciDss, "Render PAN Unreadable", "Encrypt secrets at rest", RuleSeverity::Critical),
-            rule("PCI-4.1", ComplianceFramework::PciDss, "Strong Cryptography", "TLS for data transmission", RuleSeverity::Critical),
-            rule("PCI-10.2", ComplianceFramework::PciDss, "Audit Trails", "Log all access to cardholder data", RuleSeverity::High),
-            rule("PCI-11.2", ComplianceFramework::PciDss, "Vulnerability Scans", "Regular vulnerability scanning", RuleSeverity::High),
+            rule(
+                "PCI-3.4",
+                ComplianceFramework::PciDss,
+                "Render PAN Unreadable",
+                "Encrypt secrets at rest",
+                RuleSeverity::Critical,
+            ),
+            rule(
+                "PCI-4.1",
+                ComplianceFramework::PciDss,
+                "Strong Cryptography",
+                "TLS for data transmission",
+                RuleSeverity::Critical,
+            ),
+            rule(
+                "PCI-10.2",
+                ComplianceFramework::PciDss,
+                "Audit Trails",
+                "Log all access to cardholder data",
+                RuleSeverity::High,
+            ),
+            rule(
+                "PCI-11.2",
+                ComplianceFramework::PciDss,
+                "Vulnerability Scans",
+                "Regular vulnerability scanning",
+                RuleSeverity::High,
+            ),
         ]
     }
 }
 
-fn rule(id: &str, framework: ComplianceFramework, title: &str, desc: &str, severity: RuleSeverity) -> ComplianceRule {
+fn rule(
+    id: &str,
+    framework: ComplianceFramework,
+    title: &str,
+    desc: &str,
+    severity: RuleSeverity,
+) -> ComplianceRule {
     ComplianceRule {
         id: id.to_string(),
         framework,

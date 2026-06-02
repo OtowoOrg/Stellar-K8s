@@ -1,0 +1,101 @@
+# Example: Custom liveness and readiness probe configuration (#839)
+#
+# Stellar-K8s sets sensible per-node-type defaults automatically:
+#   Validator  — liveness: TCP:11625, readiness: HTTP /info:11626, startup: TCP:11625
+#   Horizon    — liveness: HTTP /health:8000, readiness: HTTP /health:8000
+#   SorobanRpc — liveness: HTTP /health:8000, readiness: HTTP /health:8000
+#
+# Use spec.probes to override individual fields while keeping the rest of the
+# defaults intact.  All fields are optional.
+
+---
+# Strategy 1: Conservative probes for a mainnet validator
+# Increase failure thresholds and delays to tolerate slow ledger catch-up.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-conservative-probes
+  namespace: stellar
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  storage:
+    storageClass: "gp3"
+    size: "500Gi"
+  validatorConfig:
+    seedSecretRef: "mainnet-validator-seed"
+  probes:
+    liveness:
+      # Allow 2 minutes before the first liveness check (ledger sync can be slow)
+      initialDelaySeconds: 120
+      periodSeconds: 20
+      timeoutSeconds: 10
+      failureThreshold: 5
+    readiness:
+      initialDelaySeconds: 60
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 3
+    startup:
+      # Allow up to 20 minutes for initial ledger sync (30 × 40s)
+      periodSeconds: 40
+      failureThreshold: 30
+
+---
+# Strategy 2: Aggressive probes for a testnet Horizon node
+# Faster detection of unhealthy pods in a non-critical environment.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-aggressive-probes
+  namespace: stellar
+spec:
+  nodeType: Horizon
+  network: Testnet
+  version: "v21.0.0"
+  storage:
+    storageClass: "standard"
+    size: "100Gi"
+  horizonConfig:
+    databaseSecretRef: "horizon-db-secret"
+    stellarCoreUrl: "http://validator-testnet:11626"
+  probes:
+    liveness:
+      initialDelaySeconds: 10
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 2
+    readiness:
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 2
+
+---
+# Strategy 3: Soroban RPC with extended startup probe
+# Soroban nodes need extra time to load Wasm modules on first start.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: soroban-extended-startup
+  namespace: stellar
+spec:
+  nodeType: SorobanRpc
+  network: Testnet
+  version: "v21.0.0"
+  storage:
+    storageClass: "standard"
+    size: "200Gi"
+  sorobanConfig:
+    captiveCoreConfig:
+      stellarCoreImage: "stellar/stellar-core:v21.0.0"
+  probes:
+    startup:
+      # Allow up to 15 minutes for Wasm module loading (45 × 20s)
+      initialDelaySeconds: 30
+      periodSeconds: 20
+      failureThreshold: 45
+    liveness:
+      periodSeconds: 30
+      failureThreshold: 3

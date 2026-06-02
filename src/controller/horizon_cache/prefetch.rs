@@ -1,7 +1,7 @@
 //! Predictive prefetching engine for Horizon queries.
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use super::cache::HorizonCache;
 use super::optimizer::{QueryOptimizer, QueryType};
@@ -123,9 +123,7 @@ mod tests {
         engine.record_access("/accounts/A/payments");
 
         let predictions = engine.predict("/accounts/A", 5);
-        let payment_pred = predictions
-            .iter()
-            .find(|p| p.key.contains("payments"));
+        let payment_pred = predictions.iter().find(|p| p.key.contains("payments"));
         assert!(payment_pred.is_some());
     }
 }

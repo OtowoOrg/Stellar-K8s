@@ -1,0 +1,101 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stellarobservabilities.stellar.org
+spec:
+  group: stellar.org
+  names:
+    kind: StellarObservability
+    plural: stellarobservabilities
+    shortNames:
+      - sobs
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - targetNode
+                - tracing
+                - logging
+                - alerting
+                - anomalyDetection
+              properties:
+                targetNode:
+                  type: string
+                tracing:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    backend:
+                      type: string
+                      enum: [Jaeger, Zipkin, OpenTelemetry]
+                    sampleRate:
+                      type: number
+                logging:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    backend:
+                      type: string
+                      enum: [Loki, Elasticsearch, Stackdriver]
+                    logLevel:
+                      type: string
+                    retentionDays:
+                      type: integer
+                alerting:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    fatigueReduction:
+                      type: boolean
+                    alertRules:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          condition:
+                            type: string
+                          threshold:
+                            type: number
+                          durationSecs:
+                            type: integer
+                anomalyDetection:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    modelType:
+                      type: string
+                      enum: [IsolationForest, LocalOutlierFactor, AutoEncoder]
+                    sensitivity:
+                      type: string
+                      enum: [Low, Medium, High]
+                    baselineLearningDays:
+                      type: integer
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                tracingEnabled:
+                  type: boolean
+                loggingEnabled:
+                  type: boolean
+                alertsConfigured:
+                  type: integer
+                anomaliesDetected:
+                  type: integer
+                dashboardReady:
+                  type: boolean

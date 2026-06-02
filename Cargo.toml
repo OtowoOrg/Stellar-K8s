@@ -32,8 +32,20 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
 
+# JWT support
+jsonwebtoken = "9"
+
+# Regex for routing
+regex = "1"
+
+# HTTP types
+http = "1"
+
 # Schema generation for CRDs
 schemars = { version = "0.8", features = ["chrono"] }
+
+# Hyper for body operations
+hyper = "1"
 
 # Error handling
 thiserror = "1"
@@ -81,6 +93,7 @@ reqwest = { version = "0.12", features = [
     "multipart",
 ] }
 rdkafka = { version = "0.36", optional = true, features = ["cmake-build", "ssl", "sasl"] }
+async-nats = { version = "0.35", optional = true }
 # Vendored libsasl2 so CI/dev builds succeed without system libsasl2-dev.
 sasl2-sys = { version = "0.1.22", features = ["vendored"] }
 
@@ -152,6 +165,7 @@ default = ["rest-api", "metrics", "admission-webhook", "k8s-v1-30"]
 rest-api = ["axum", "tower", "tower-http"]
 metrics = ["prometheus-client", "once_cell"]
 kafka = ["dep:rdkafka"]
+nats = ["dep:async-nats"]
 admission-webhook = [
     "wasmtime",
     "wasmtime-wasi",
@@ -205,5 +219,12 @@ required-features = ["rest-api", "metrics"]
 name = "stellar-fork-detector"
 path = "src/bin/stellar-fork-detector.rs"
 required-features = ["rest-api", "metrics"]
+
+# Health Check Sidecar — provides advanced liveness/readiness probes
+# that query Stellar Core API instead of just checking process status
+[[bin]]
+name = "stellar-health-sidecar"
+path = "src/bin/stellar-health-sidecar.rs"
+required-features = ["rest-api"]
 
 [workspace]

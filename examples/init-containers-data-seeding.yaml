@@ -1,0 +1,37 @@
+# Example: StellarNode Validator with data-seeding init container.
+# Downloads a ledger checkpoint from S3 into the /data PVC before Stellar Core
+# starts, enabling near-instant catch-up instead of syncing from genesis.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-with-data-seed
+  namespace: stellar-prod
+spec:
+  nodeType: Validator
+  network: Public
+  version: "v21.0.0"
+  initContainers:
+    - name: data-seed
+      image: amazon/aws-cli:latest
+      command:
+        - aws
+        - s3
+        - sync
+        - s3://my-org-stellar-checkpoints/latest/
+        - /data/
+      volumeMounts:
+        - name: data
+          mountPath: /data
+      env:
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: aws-credentials
+              key: access-key-id
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: aws-credentials
+              key: secret-access-key

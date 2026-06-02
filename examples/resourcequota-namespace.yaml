@@ -1,0 +1,40 @@
+# Example: Namespace ResourceQuota and LimitRange for a Stellar operator namespace.
+# Apply this before deploying StellarNode resources to enable quota enforcement.
+#
+# Quota planning guidelines:
+# - Set quota to 120% of steady-state consumption for rolling update headroom.
+# - Use LimitRange defaults so pods without explicit limits are bounded.
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: stellar-quota
+  namespace: stellar-prod
+spec:
+  hard:
+    requests.cpu: "8"          # 8 cores total across all pods
+    requests.memory: "32Gi"
+    limits.cpu: "16"
+    limits.memory: "64Gi"
+    pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: stellar-limits
+  namespace: stellar-prod
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "1"
+        memory: "1Gi"
+      defaultRequest:
+        cpu: "250m"
+        memory: "256Mi"
+      max:
+        cpu: "8"
+        memory: "16Gi"
+      min:
+        cpu: "50m"
+        memory: "64Mi"

@@ -945,11 +945,12 @@ spec:
                     nullable: true
                     type: object
                   enabled:
-                    default: false
+                    default: true
                     type: boolean
                   metricsNamespace:
                     default: monitoring
                     type: string
+
                 type: object
               nodeType:
                 description: Supported Stellar node types
@@ -1085,6 +1086,36 @@ spec:
                     cpu: 500m
                     memory: 1Gi
                 description: Kubernetes-style resource requirements
+                properties:
+                  limits:
+                    description: Resource specification for CPU and memory
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - memory
+                    type: object
+                  requests:
+                    description: Resource specification for CPU and memory
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - memory
+                    type: object
+                required:
+                - limits
+                - requests
+                type: object
+              diagnosticSidecarResources:
+                description: Resource requests and limits for the operator-managed diagnostic health-check sidecar. Defaults to 50m CPU and 64Mi memory for both requests and limits when unset.
+                nullable: true
                 properties:
                   limits:
                     description: Resource specification for CPU and memory

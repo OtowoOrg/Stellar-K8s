@@ -570,7 +570,8 @@ Fields marked *(required)* must be present in every `StellarNode` manifest.
 | **Path** | `spec.dbMaintenanceConfig.windowDuration` |
 | **Type** | `string` |
 | **Description** | Maintenance window duration (e.g., "2h") |
-| **Required** | *(required)* |
+| **Default** | `2h` |
+| **Required** | No |
 
 #### `spec.dbMaintenanceConfig.windowStart`
 
@@ -578,8 +579,36 @@ Fields marked *(required)* must be present in every `StellarNode` manifest.
 |---|---|
 | **Path** | `spec.dbMaintenanceConfig.windowStart` |
 | **Type** | `string` |
-| **Description** | Maintenance window start time (24h format, e.g., "02:00") Maintenance will only trigger during this window |
-| **Required** | *(required)* |
+| **Description** | Maintenance window start time (24h format, e.g., "02:00"). Maintenance will only trigger during this window. |
+| **Default** | `02:00` |
+| **Required** | No |
+
+#### `spec.dbMaintenanceConfig.enableQueryProfiling`
+
+| | |
+|---|---|
+| **Path** | `spec.dbMaintenanceConfig.enableQueryProfiling` |
+| **Type** | `boolean` |
+| **Description** | Enable slow query profiling during maintenance windows |
+| **Default** | `False` |
+
+#### `spec.dbMaintenanceConfig.autoIndexMaintenance`
+
+| | |
+|---|---|
+| **Path** | `spec.dbMaintenanceConfig.autoIndexMaintenance` |
+| **Type** | `boolean` |
+| **Description** | Automatically create recommended indexes for slow queries |
+| **Default** | `False` |
+
+#### `spec.dbMaintenanceConfig.slowQueryThresholdMs`
+
+| | |
+|---|---|
+| **Path** | `spec.dbMaintenanceConfig.slowQueryThresholdMs` |
+| **Type** | `integer` (uint32) |
+| **Description** | Queries with average runtime above this threshold are considered for profiling and index recommendations |
+| **Default** | `100` |
 
 ### `spec.drConfig`
 

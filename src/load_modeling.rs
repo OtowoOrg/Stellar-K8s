@@ -156,6 +156,9 @@ pub struct LoadModelingController {
 }
 
 impl LoadModelingController {
+    const HISTORY_LIMIT: usize = 10080;
+    const COST_PER_REPLICA_USD_PER_HOUR: f32 = 0.45;
+
     pub fn new(policy: AutoscalingPolicy, sla: SLAConfig) -> Self {
         Self {
             metrics_history: std::sync::Arc::new(tokio::sync::RwLock::new(VecDeque::new())),
@@ -185,12 +188,13 @@ impl LoadModelingController {
     pub async fn record_metric(&self, datapoint: MetricDataPoint) -> Result<(), String> {
         let mut history = self.metrics_history.write().await;
 
+        history.push_back(datapoint);
+
         // Keep only last 7 days of data
-        if history.len() > 10080 {
+        while history.len() > Self::HISTORY_LIMIT {
             history.pop_front();
         }
 
-        history.push_back(datapoint);
         Ok(())
     }
 
@@ -357,42 +361,51 @@ impl LoadModelingController {
         let sla = self.sla_config.read().await;
 
         let mut target_replicas = current_replicas;
-        let mut reason = String::new();
+        let mut reason = String::from("No scaling action required.");
         let mut sla_maintained = true;
+        let mut triggered_by_prediction = false;
 
         // Predict-based scaling
-        if predicted_load > policy.scale_up_threshold_percent {
-            // Scale up proactively
-            target_replicas = ((predicted_load / policy.target_cpu_percent)
-                * current_replicas as f32)
-                .ceil() as i32;
-            reason = format!(
-                "Predicted load {}% exceeds target {}%. Proactive scale-up.",
-                predicted_load, policy.target_cpu_percent
-            );
-        } else if predicted_load < policy.scale_down_threshold_percent {
-            // Scale down cautiously
-            target_replicas = ((predicted_load / policy.target_cpu_percent)
-                * current_replicas as f32)
-                .floor() as i32;
-            reason = format!(
-                "Predicted load {}% below threshold {}%. Proactive scale-down.",
-                predicted_load, policy.scale_down_threshold_percent
-            );
+        if policy.prediction_enabled {
+            if predicted_load > policy.scale_up_threshold_percent {
+                // Scale up proactively
+                target_replicas = ((predicted_load / policy.target_cpu_percent)
+                    * current_replicas as f32)
+                    .ceil() as i32;
+                reason = format!(
+                    "Predicted load {}% exceeds target {}%. Proactive scale-up.",
+                    predicted_load, policy.target_cpu_percent
+                );
+                triggered_by_prediction = true;
+            } else if predicted_load < policy.scale_down_threshold_percent {
+                // Scale down cautiously
+                target_replicas = ((predicted_load / policy.target_cpu_percent)
+                    * current_replicas as f32)
+                    .floor() as i32;
+                reason = format!(
+                    "Predicted load {}% below threshold {}%. Proactive scale-down.",
+                    predicted_load, policy.scale_down_threshold_percent
+                );
+                triggered_by_prediction = true;
+            }
+        } else {
+            reason = "Prediction disabled; maintaining current replica count.".to_string();
         }
 
         // Cost optimization: Adjust replicas if over budget
-        let cost_per_replica = 0.45; // USD per hour
-        let mut estimated_cost = target_replicas as f32 * cost_per_replica;
+        let mut estimated_cost = target_replicas as f32 * Self::COST_PER_REPLICA_USD_PER_HOUR;
 
         if policy.cost_optimization_enabled && estimated_cost > sla.cost_budget_per_hour {
-            let max_allowed_replicas = (sla.cost_budget_per_hour / cost_per_replica).floor() as i32;
-            if target_replicas > max_allowed_replicas {
-                target_replicas = max_allowed_replicas.max(policy.min_replicas);
-                reason += " (Capped by cost budget)";
+            let max_allowed_replicas =
+                (sla.cost_budget_per_hour / Self::COST_PER_REPLICA_USD_PER_HOUR).floor() as i32;
+            let budget_cap = max_allowed_replicas.max(policy.min_replicas);
+            if target_replicas > budget_cap {
+                target_replicas = budget_cap;
+                reason = format!("{} (Capped by cost budget)", reason);
                 sla_maintained = false; // May risk SLA if we cap
+                triggered_by_prediction = true;
             }
-            estimated_cost = target_replicas as f32 * cost_per_replica;
+            estimated_cost = target_replicas as f32 * Self::COST_PER_REPLICA_USD_PER_HOUR;
         }
 
         target_replicas = target_replicas
@@ -405,7 +418,7 @@ impl LoadModelingController {
             target_replicas,
             current_replicas,
             reason,
-            triggered_by_prediction: true,
+            triggered_by_prediction,
             predicted_load_percent: predicted_load,
             sla_maintained,
             cost_estimate: estimated_cost,
@@ -578,5 +591,105 @@ mod tests {
         let decision = controller.make_autoscaling_decision(3, 85.0).await;
 
         assert!(decision.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_metric_recording_history_truncation() {
+        let policy = AutoscalingPolicy {
+            name: "test".to_string(),
+            min_replicas: 1,
+            max_replicas: 5,
+            target_cpu_percent: 70.0,
+            target_memory_percent: 80.0,
+            scale_up_threshold_percent: 80.0,
+            scale_down_threshold_percent: 20.0,
+            cooldown_seconds: 300,
+            prediction_enabled: true,
+            cost_optimization_enabled: true,
+        };
+
+        let sla = SLAConfig {
+            target_response_time_ms: 100.0,
+            target_availability_percent: 99.9,
+            max_error_rate: 0.001,
+            cost_budget_per_hour: 50.0,
+        };
+
+        let controller = LoadModelingController::new(policy, sla);
+
+        for i in 0..(LoadModelingController::HISTORY_LIMIT + 1) {
+            let dp = MetricDataPoint {
+                timestamp: Utc::now().timestamp() + i as i64,
+                cpu_usage_percent: 10.0,
+                memory_usage_percent: 10.0,
+                network_throughput_mbps: 1.0,
+                request_count: 1,
+                response_time_ms: 1.0,
+            };
+            controller.record_metric(dp).await.unwrap();
+        }
+
+        let history = controller.metrics_history.read().await;
+        assert_eq!(history.len(), LoadModelingController::HISTORY_LIMIT);
+    }
+
+    #[tokio::test]
+    async fn test_autoscaling_cost_budget_capping() {
+        let policy = AutoscalingPolicy {
+            name: "budget".to_string(),
+            min_replicas: 1,
+            max_replicas: 20,
+            target_cpu_percent: 70.0,
+            target_memory_percent: 80.0,
+            scale_up_threshold_percent: 80.0,
+            scale_down_threshold_percent: 20.0,
+            cooldown_seconds: 300,
+            prediction_enabled: true,
+            cost_optimization_enabled: true,
+        };
+
+        let sla = SLAConfig {
+            target_response_time_ms: 100.0,
+            target_availability_percent: 99.9,
+            max_error_rate: 0.001,
+            cost_budget_per_hour: 1.0,
+        };
+
+        let controller = LoadModelingController::new(policy, sla);
+        let decision = controller.make_autoscaling_decision(10, 85.0).await.unwrap();
+
+        assert_eq!(decision.target_replicas, 2);
+        assert!(!decision.sla_maintained);
+        assert!(decision.reason.contains("Capped by cost budget"));
+    }
+
+    #[tokio::test]
+    async fn test_autoscaling_no_action_reason() {
+        let policy = AutoscalingPolicy {
+            name: "stable".to_string(),
+            min_replicas: 1,
+            max_replicas: 10,
+            target_cpu_percent: 70.0,
+            target_memory_percent: 80.0,
+            scale_up_threshold_percent: 80.0,
+            scale_down_threshold_percent: 20.0,
+            cooldown_seconds: 300,
+            prediction_enabled: true,
+            cost_optimization_enabled: false,
+        };
+
+        let sla = SLAConfig {
+            target_response_time_ms: 100.0,
+            target_availability_percent: 99.9,
+            max_error_rate: 0.001,
+            cost_budget_per_hour: 100.0,
+        };
+
+        let controller = LoadModelingController::new(policy, sla);
+        let decision = controller.make_autoscaling_decision(5, 50.0).await.unwrap();
+
+        assert_eq!(decision.target_replicas, 5);
+        assert_eq!(decision.reason, "No scaling action required.");
+        assert!(!decision.triggered_by_prediction);
     }
 }

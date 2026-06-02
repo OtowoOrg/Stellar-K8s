@@ -1,0 +1,82 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stellarupgrades.stellar.org
+spec:
+  group: stellar.org
+  names:
+    kind: StellarUpgrade
+    plural: stellarupgrades
+    shortNames:
+      - sup
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - targetNode
+                - targetVersion
+                - canaryStrategy
+                - healthValidation
+                - rollbackPolicy
+              properties:
+                targetNode:
+                  type: string
+                targetVersion:
+                  type: string
+                canaryStrategy:
+                  type: object
+                  properties:
+                    initialTrafficPercent:
+                      type: integer
+                    trafficIncrementPercent:
+                      type: integer
+                    incrementIntervalSecs:
+                      type: integer
+                healthValidation:
+                  type: object
+                  properties:
+                    consensusHealthy:
+                      type: boolean
+                    syncStateHealthy:
+                      type: boolean
+                    apiResponding:
+                      type: boolean
+                    errorRateThresholdPercent:
+                      type: number
+                rollbackPolicy:
+                  type: object
+                  properties:
+                    automaticRollback:
+                      type: boolean
+                    rollbackOnErrorRate:
+                      type: boolean
+                    errorRateThresholdPercent:
+                      type: number
+                    rollbackTimeoutSecs:
+                      type: integer
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, CanaryDeployed, ProgressiveRollout, Completed, RolledBack, Failed]
+                canaryReady:
+                  type: boolean
+                trafficPercent:
+                  type: integer
+                healthChecksPasssed:
+                  type: integer
+                healthChecksFailed:
+                  type: integer
+                lastUpdateTime:
+                  type: string
+                rollbackInProgress:
+                  type: boolean

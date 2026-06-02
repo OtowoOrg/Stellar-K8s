@@ -37,12 +37,20 @@ pub mod task;
 pub mod executor;
 pub mod dependency;
 pub mod monitoring;
+pub mod audit;
+pub mod crd;
+pub mod templates;
+pub mod visualization;
 
 pub use dag::{DAG, DAGNode};
 pub use task::{Task, TaskStatus, TaskResult};
 pub use executor::{DAGExecutor, ExecutionMode};
 pub use dependency::{DependencyResolver, TopologicalSort};
 pub use monitoring::{WorkflowMonitor, ExecutionMetrics};
+pub use audit::{AuditEntry, AuditTrail};
+pub use crd::{RetrySpec, TaskAction, TaskSpec, WorkflowPhase, WorkflowSpec, WorkflowStatus};
+pub use templates::{disaster_recovery_workflow, migration_workflow, upgrade_workflow};
+pub use visualization::{audit_to_mermaid, to_dot, to_mermaid};
 
 use std::sync::Arc;
 use tracing::info;

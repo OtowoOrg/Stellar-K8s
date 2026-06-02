@@ -112,6 +112,7 @@ pub mod operator_config;
 pub mod peer_discovery;
 #[cfg(test)]
 mod peer_discovery_test;
+pub mod performance;
 pub mod pruning_reconciler;
 pub mod pruning_worker;
 pub mod quorum;
@@ -132,6 +133,7 @@ mod snapshot;
 pub mod snapshot_worker;
 pub mod soroban_cache;
 pub mod spot_drain;
+pub mod topology;
 pub mod storage_migration;
 pub(crate) mod sync_scale;
 pub(crate) mod sync_state_monitor;

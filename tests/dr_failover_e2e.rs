@@ -407,7 +407,7 @@ fn run_cmd_with_stdin(program: &str, args: &[&str], input: &str) -> Result<(), B
     let mut cmd = Command::new(program);
     cmd.args(args);
     if let Ok(kubeconfig) = std::env::var("KUBECONFIG") {
-        cmd.env("KUBECONconfig", kubeconfig);
+        cmd.env("KUBECONFIG", kubeconfig);
     }
     let mut child = cmd
         .stdin(Stdio::piped())

@@ -69,9 +69,13 @@ COPY target/release/stellar-operator /stellar-operator
 COPY target/release/kubectl-stellar /kubectl-stellar
 
 # ==============================================================================
-# Stage 5: Runtime Local - Minimal image for local dev (no container recompile)
+# Stage 5: Runtime Base - Shared runtime dependencies for all runtime images
+#
+# Consolidates the apt-get install, user creation, labels, exposed ports, and
+# health-check declaration that are identical between the local-dev and CI
+# runtime images.  Both runtime-local and runtime inherit from this stage.
 # ==============================================================================
-FROM debian:bookworm-slim AS runtime-local
+FROM debian:bookworm-slim AS runtime-base
 
 # Install runtime dependencies for dynamic linking
 RUN apt-get update -qq && \
@@ -91,10 +95,6 @@ RUN useradd -u 65532 -U -m -s /bin/bash nonroot
 LABEL org.opencontainers.image.source="https://github.com/stellar/stellar-k8s"
 LABEL org.opencontainers.image.description="Stellar-K8s Kubernetes Operator"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
-
-# Copy prebuilt local binaries
-COPY --from=local-binaries /stellar-operator /stellar-operator
-COPY --from=local-binaries /kubectl-stellar /kubectl-stellar
 
 # Run as nonroot user
 USER nonroot:nonroot
@@ -106,48 +106,28 @@ EXPOSE 8080 9090
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD ["/stellar-operator", "--health-check"] || exit 1
 
+# ==============================================================================
+# Stage 6: Runtime Local - Minimal image for local dev (no container recompile)
+# ==============================================================================
+FROM runtime-base AS runtime-local
+
+# Copy prebuilt local binaries
+COPY --from=local-binaries /stellar-operator /stellar-operator
+COPY --from=local-binaries /kubectl-stellar /kubectl-stellar
+
 ENTRYPOINT ["/stellar-operator"]
 
 # ==============================================================================
-# Stage 6: Runtime - Minimal distroless image (~15-20MB total)
+# Stage 7: Runtime - Minimal distroless image (~15-20MB total)
 # ==============================================================================
-FROM debian:bookworm-slim AS runtime
+FROM runtime-base AS runtime
 
-# Install runtime dependencies for dynamic linking
-RUN apt-get update -qq && \
-    apt-get install -y --no-install-recommends \
-      ca-certificates \
-      libssl3 \
-      libsasl2-2 \
-      liblzma5 \
-      libzstd1 \
-      libbz2-1.0 && \
-    rm -rf /var/lib/apt/lists/*
-
-# Create nonroot user
-RUN useradd -u 65532 -U -m -s /bin/bash nonroot
-
-# Labels for container registry
-LABEL org.opencontainers.image.source="https://github.com/stellar/stellar-k8s"
-LABEL org.opencontainers.image.description="Stellar-K8s Kubernetes Operator"
-LABEL org.opencontainers.image.licenses="Apache-2.0"
-
-# Copy stripped binaries
+# Copy stripped binaries from the container build
 COPY --from=builder /app/bin/stellar-operator /stellar-operator
 COPY --from=builder /app/bin/kubectl-stellar /kubectl-stellar
 COPY --from=builder /app/bin/stellar-sidecar /stellar-sidecar
 COPY --from=builder /app/bin/stellar-watcher /stellar-watcher
 COPY --from=builder /app/bin/stellar-fork-detector /stellar-fork-detector
 COPY --from=builder /app/bin/stellar-health-sidecar /stellar-health-sidecar
-
-# Run as nonroot user
-USER nonroot:nonroot
-
-# Expose metrics and REST API ports
-EXPOSE 8080 9090
-
-# Health check endpoint
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD ["/stellar-operator", "--health-check"] || exit 1
 
 ENTRYPOINT ["/stellar-operator"]

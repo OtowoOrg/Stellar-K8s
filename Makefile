@@ -1,4 +1,4 @@
-.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart
+.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart validate preflight
 
 # Default target
 .DEFAULT_GOAL := help
@@ -226,6 +226,18 @@ quickstart: ## End-to-end local quickstart: kind cluster + CRD + operator + samp
 	@echo "  Watch nodes:    kubectl get stellarnode -n stellar-system -w"
 	@echo "  View resources: kubectl get deploy,sts,svc,pvc -n stellar-system"
 	@echo "  Cleanup:        kind delete cluster --name stellar-dev"
+
+validate: ## Run local validation script (format + lint + compile)
+	@bash scripts/validate.sh
+
+preflight: ## Validate required local tools are installed (docker, kind, kubectl, helm, cargo)
+	@echo "→ Running local development preflight checks..."
+	@command -v docker  >/dev/null 2>&1 && echo "  ✓ docker"  || echo "  ✗ docker  — Install: https://docs.docker.com/engine/install/"
+	@command -v kind    >/dev/null 2>&1 && echo "  ✓ kind"    || echo "  ✗ kind    — Install: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
+	@command -v kubectl >/dev/null 2>&1 && echo "  ✓ kubectl" || echo "  ✗ kubectl — Install: https://kubernetes.io/docs/tasks/tools/"
+	@command -v helm    >/dev/null 2>&1 && echo "  ✓ helm"    || echo "  ✗ helm    — Install: https://helm.sh/docs/intro/install/"
+	@command -v cargo   >/dev/null 2>&1 && echo "  ✓ cargo"   || echo "  ✗ cargo   — Install: https://rustup.rs/"
+	@echo "→ Preflight complete. Fix any ✗ items above before continuing."
 
 all: ci-local docker-build ## Full build pipeline
 

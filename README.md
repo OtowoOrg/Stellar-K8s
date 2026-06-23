@@ -91,7 +91,7 @@ make compose-logs
 make compose-down
 ```
 
-See the [Docker Compose Quickstart Guide](docs/docker-compose-quickstart.md) for detailed instructions.
+See the [Docker Compose → Kubernetes Migration Guide](docs/docker-compose-to-kubernetes-migration.md) for detailed instructions on moving from Compose to a full cluster.
 
 ### Option 2: Kubernetes Cluster
 

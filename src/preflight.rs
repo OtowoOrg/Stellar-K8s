@@ -2,6 +2,16 @@
 //!
 //! Runs a suite of preflight checks before the operator begins reconciling.
 //! If critical checks fail, the operator exits with a descriptive error.
+//!
+//! # Two modes
+//!
+//! * **Local / onboarding** — call [`run_local_preflight`] to validate that
+//!   all required CLI tools are installed before any cluster work starts.
+//!   This is intentionally fast and printable so it can be wired into
+//!   `make dev-setup` or an onboarding script.
+//!
+//! * **Cluster / runtime** — call [`run_preflight_checks`] (async) to probe
+//!   the live Kubernetes API for CRDs, RBAC, namespaces, and lease access.
 
 use kube::{
     api::{Api, ListParams},
@@ -16,6 +26,16 @@ use crate::error::{Error, Result};
 
 /// Labels required by issue automation before opening new issues.
 pub const REQUIRED_GH_LABELS: &[&str] = &["ci", "security", "stellar-wave"];
+
+/// Tools that must be present for local development and CI to function.
+/// Each entry is `(binary, install_hint)`.
+pub const REQUIRED_LOCAL_TOOLS: &[(&str, &str)] = &[
+    ("docker",  "Install Docker Engine: https://docs.docker.com/engine/install/"),
+    ("kind",    "Install kind: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"),
+    ("kubectl", "Install kubectl: https://kubernetes.io/docs/tasks/tools/"),
+    ("helm",    "Install Helm 3: https://helm.sh/docs/intro/install/"),
+    ("cargo",   "Install Rust via rustup: https://rustup.rs/"),
+];
 
 const GH_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -60,6 +80,80 @@ impl CheckResult {
 #[derive(Debug, Deserialize)]
 struct GhLabel {
     name: String,
+}
+
+/// Run local development preflight checks.
+///
+/// Validates that every required CLI tool is present in `PATH` and prints an
+/// actionable message for each missing one.  This is designed to run in under
+/// a second so it is suitable as the first step of `make dev-setup` or any
+/// onboarding script.
+///
+/// # Errors
+/// Returns an error listing every missing tool so the developer can fix all
+/// gaps in one pass rather than discovering them one by one.
+///
+/// # Example
+/// ```no_run
+/// use stellar_k8s::preflight::run_local_preflight;
+/// run_local_preflight().expect("all required tools must be installed");
+/// ```
+pub fn run_local_preflight() -> Result<()> {
+    run_local_preflight_with_tools(REQUIRED_LOCAL_TOOLS)
+}
+
+/// Inner implementation — accepts an explicit tool list so tests can inject
+/// a subset without depending on the full `REQUIRED_LOCAL_TOOLS` array.
+pub fn run_local_preflight_with_tools(tools: &[(&str, &str)]) -> Result<()> {
+    info!("=== Local Development Preflight ===");
+
+    let mut missing: Vec<String> = Vec::new();
+
+    for (binary, hint) in tools {
+        match check_tool_available(binary) {
+            Ok(version) => {
+                info!("  [PASS] {} — {}", binary, version.trim());
+            }
+            Err(_) => {
+                error!("  [FAIL] {} not found in PATH", binary);
+                error!("         → {}", hint);
+                missing.push(format!("{binary}: {hint}"));
+            }
+        }
+    }
+
+    if missing.is_empty() {
+        info!("=== Local preflight passed — all required tools present ===");
+        Ok(())
+    } else {
+        Err(Error::ConfigError(format!(
+            "Local preflight failed — {} tool(s) missing.\n\nInstall instructions:\n{}",
+            missing.len(),
+            missing
+                .iter()
+                .map(|m| format!("  • {m}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )))
+    }
+}
+
+/// Returns the first line of `<binary> --version` output on success, or an
+/// error if the binary is not found / exits non-zero.
+fn check_tool_available(binary: &str) -> std::result::Result<String, ()> {
+    let output = Command::new(binary)
+        .arg("--version")
+        .output()
+        .map_err(|_| ())?;
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Some tools print version to stderr (e.g. older kubectl)
+        let version_line = if stdout.trim().is_empty() { &stderr } else { &stdout };
+        Ok(version_line.lines().next().unwrap_or("").to_string())
+    } else {
+        Err(())
+    }
 }
 
 /// Fast-fail preflight for GitHub CLI auth and label readiness.
@@ -410,5 +504,39 @@ mod tests {
     fn parse_label_names_invalid_json() {
         let err = parse_label_names(b"not-json").expect_err("must fail for invalid json");
         assert!(err.to_string().contains("failed to parse label JSON"));
+    }
+
+    #[test]
+    fn local_preflight_passes_with_no_tools() {
+        // An empty tool list should always pass.
+        let result = run_local_preflight_with_tools(&[]);
+        assert!(result.is_ok(), "empty tool list should pass");
+    }
+
+    #[test]
+    fn local_preflight_fails_for_nonexistent_tool() {
+        let fake_tools: &[(&str, &str)] = &[
+            ("__nonexistent_binary_xyz__", "Install from https://example.com"),
+        ];
+        let result = run_local_preflight_with_tools(fake_tools);
+        assert!(result.is_err(), "missing binary must cause failure");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("__nonexistent_binary_xyz__"),
+            "error message must name the missing binary"
+        );
+        assert!(
+            msg.contains("https://example.com"),
+            "error message must include the install hint"
+        );
+    }
+
+    #[test]
+    fn check_tool_available_finds_real_binary() {
+        // Use `cargo` itself — it must be present since this is compiled by cargo.
+        let result = check_tool_available("cargo");
+        assert!(result.is_ok(), "cargo must be found in PATH");
+        let version = result.unwrap();
+        assert!(!version.is_empty(), "version string must not be empty");
     }
 }

@@ -22,7 +22,7 @@ Before you begin, ensure you have the following tools installed:
 
 ### Required Tools
 
-1. **Rust** (1.75+ required, 1.88+ recommended)
+1. **Rust** (1.88+ required, 1.93+ recommended)
    ```bash
    # Install via rustup (recommended)
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -115,12 +115,14 @@ This command:
 Run a quick check to ensure everything is configured correctly:
 
 ```bash
+# Check all required tools are installed
+make preflight
+
+# Then run a fast compile/format check
 make quick
 ```
 
-This performs:
-- Format check (`cargo fmt --all --check`)
-- Compile check (`cargo check --workspace`)
+`make preflight` validates that `docker`, `kind`, `kubectl`, `helm`, and `cargo` are all in your `PATH` and prints an install hint for any that are missing. Fix any gaps before proceeding.
 
 ---
 
@@ -406,7 +408,9 @@ make clean         # Remove build artifacts
 ### Quick Checks
 
 ```bash
+make preflight     # Validate all required tools are installed (run this first)
 make quick         # Fast pre-commit check (format + compile)
+make validate      # Full local validation: format + lint + compile check
 make ci-local      # Full CI pipeline locally (format + lint + audit + test + build)
 ```
 
@@ -676,7 +680,9 @@ kubectl stellar --help
 ```bash
 # Setup
 make dev-setup                    # One-time setup
+make preflight                    # Validate required tools are installed
 make quick                        # Fast pre-commit check
+make validate                     # Format + lint + compile check
 make ci-local                     # Full CI validation
 
 # Development

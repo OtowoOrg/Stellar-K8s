@@ -1104,7 +1104,6 @@ fn validate_gas_autoscaling(gas: &GasAutoscalingConfig, errors: &mut Vec<SpecVal
     }
 }
 
-#[allow(dead_code)]
 fn validate_ingress(ingress: &IngressConfig, errors: &mut Vec<SpecValidationError>) {
     if ingress.hosts.is_empty() {
         errors.push(SpecValidationError::new(
@@ -1185,7 +1184,6 @@ fn validate_ingress(ingress: &IngressConfig, errors: &mut Vec<SpecValidationErro
     }
 }
 
-#[allow(dead_code)]
 fn validate_load_balancer(lb: &LoadBalancerConfig, errors: &mut Vec<SpecValidationError>) {
     use super::types::LoadBalancerMode;
 
@@ -1245,7 +1243,6 @@ fn validate_load_balancer(lb: &LoadBalancerConfig, errors: &mut Vec<SpecValidati
     }
 }
 
-#[allow(dead_code)]
 fn validate_global_discovery(gd: &GlobalDiscoveryConfig, errors: &mut Vec<SpecValidationError>) {
     if !gd.enabled {
         return;
@@ -1270,7 +1267,6 @@ fn validate_global_discovery(gd: &GlobalDiscoveryConfig, errors: &mut Vec<SpecVa
     }
 }
 
-#[allow(dead_code)]
 fn validate_cross_cluster(cc: &CrossClusterConfig, errors: &mut Vec<SpecValidationError>) {
     use super::types::{CrossClusterMeshType, CrossClusterMode};
 

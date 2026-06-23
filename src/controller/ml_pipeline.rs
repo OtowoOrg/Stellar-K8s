@@ -60,7 +60,9 @@ pub fn extract_features(entries: &[AuditEntry]) -> FeatureVector {
 
 /// Simple EWMA-based anomaly detector (placeholder for more complex ML)
 pub struct EwmaModel {
-    #[allow(dead_code)]
+    /// Smoothing factor (0 < alpha < 1). Stored for potential re-configuration;
+    /// the current `predict` implementation uses `threshold` directly.
+    #[allow(dead_code)] // reserved for dynamic alpha updates
     alpha: f64,
     threshold: f64,
 }

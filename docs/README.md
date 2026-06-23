@@ -99,6 +99,8 @@ Production-grade Stellar infrastructure on Kubernetes. This directory contains a
 ## Contributing & Development
 
 - [Contributing Guide](../CONTRIBUTING.md)
+- [Development Guide](../DEVELOPMENT.md)
+- [Repository Conventions](../CONVENTIONS.md)
 - [Development Setup](contributing/development-setup.md)
 - [Developer Onboarding](developer-onboarding/index.md)
 - [Development Reference](development.md)

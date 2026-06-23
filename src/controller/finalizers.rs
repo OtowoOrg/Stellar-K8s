@@ -26,7 +26,6 @@ pub const STELLAR_NODE_FINALIZER: &str = "stellarnode.stellar.org/finalizer";
 /// Called during the Apply phase to ensure the finalizer is set.
 /// The kube-rs `finalizer` helper handles this automatically, but
 /// this function can be used for manual finalizer management.
-#[allow(dead_code)]
 pub async fn add_finalizer(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
@@ -56,7 +55,6 @@ pub async fn add_finalizer(client: &Client, node: &StellarNode) -> Result<()> {
 ///
 /// Called after all resources have been cleaned up. Once the finalizer
 /// is removed, Kubernetes will complete the deletion of the StellarNode.
-#[allow(dead_code)]
 pub async fn remove_finalizer(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
@@ -89,13 +87,11 @@ pub async fn remove_finalizer(client: &Client, node: &StellarNode) -> Result<()>
 ///
 /// A deletion timestamp indicates the user has requested deletion,
 /// but finalizers are preventing the actual removal.
-#[allow(dead_code)]
 pub fn is_being_deleted(node: &StellarNode) -> bool {
     node.metadata.deletion_timestamp.is_some()
 }
 
 /// Check if the node has our finalizer
-#[allow(dead_code)]
 pub fn has_finalizer(node: &StellarNode) -> bool {
     node.finalizers()
         .iter()

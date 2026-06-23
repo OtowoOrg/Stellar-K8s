@@ -182,7 +182,46 @@ make ci-local
 - Document behavior changes in code comments and docs.
 - Keep PRs small and easy to review.
 
-## 9. Need Help?
+### Rust code conventions
+
+- Module names use `snake_case`.
+- Public types and functions require doc comments (`///`).
+- Do not add `#[allow(dead_code)]` without a comment explaining why the code must stay.
+- Unused imports must be removed before merging.
+- Feature-gated code that is no longer used should be deleted, not suppressed.
+
+### Documentation conventions
+
+- Documentation files use `kebab-case.md` (e.g., `disk-scaling.md`).
+- Files that belong to a topic area go in the matching `docs/<topic>/` subdirectory.
+- Root-level docs (`README.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md`) are entry points only — detailed content belongs in `docs/`.
+- New doc files must be linked from `docs/README.md` under the appropriate section.
+
+### Script conventions
+
+- Scripts use `kebab-case.sh` (e.g., `setup-mac.sh`).
+- Every script must pass `shellcheck -S error`.
+- Historical or one-off scripts should be moved to `scripts/archive/` rather than left in the root of `scripts/`.
+
+### Manifest and config conventions
+
+- CRD YAML files follow the `stellar{feature}-crd.yaml` naming pattern under `config/crd/`.
+- Example manifests in `examples/` use descriptive, feature-based names — not issue numbers.
+- Generated manifests (CRDs, API reference, bundle) must be regenerated from their source before merging. See the [Regenerating Manifests](DEVELOPMENT.md#regenerating-manifests) table in DEVELOPMENT.md.
+
+## 9. Repo Health Checklist
+
+Run through this before marking a PR ready for review:
+
+- [ ] `make ci-local` passes (format + lint + audit + test + build)
+- [ ] No new `#[allow(dead_code)]` without an explanatory comment
+- [ ] No unused imports in modified files
+- [ ] Generated manifests are up to date with their source
+- [ ] Shell scripts pass `shellcheck -S error`
+- [ ] New doc files are linked from `docs/README.md`
+- [ ] Commit messages follow Conventional Commits and include a `Signed-off-by` line
+
+## 10. Need Help?
 
 If you're stuck, open a Draft PR or create an issue to ask for guidance.
 

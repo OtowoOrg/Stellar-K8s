@@ -1047,7 +1047,10 @@ mod base64_serde {
     use base64::{engine::general_purpose::STANDARD, Engine};
     use serde::{Deserialize, Deserializer, Serializer};
 
-    #[allow(dead_code)]
+    /// Serialize bytes as a base64 string.
+    /// Included for symmetry with `deserialize`; some serde consumers only use
+    /// one half of the pair, which the compiler flags as dead.
+    #[allow(dead_code)] // serde module convention: serialize/deserialize pair
     pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

@@ -707,4 +707,62 @@ E2E_OPERATOR_IMAGE=stellar-operator:dev  # Custom operator image for E2E
 
 ---
 
+## Repo Health Checklist
+
+Use this checklist before merging any PR that touches code, scripts, or documentation. It captures the minimum bar to keep the repository clean and navigable.
+
+### Code Quality
+
+- [ ] `make fmt-check` passes (no unformatted Rust code)
+- [ ] `make lint` passes (no clippy warnings at the deny level)
+- [ ] `make audit` passes or all advisories are reviewed and acknowledged
+- [ ] `make test` passes locally
+- [ ] No new `#[allow(dead_code)]` attributes added without a comment explaining why
+- [ ] No unused `use` imports left in modified files
+- [ ] New public functions and types have doc comments
+
+### Documentation
+
+- [ ] Any user-facing behavior change is reflected in `docs/` or the relevant doc file
+- [ ] New `make` targets are listed under **Useful Make Targets** in this file
+- [ ] New environment variables are listed under **Environment Variables** in the Quick Reference
+- [ ] CRD field changes trigger `make generate-api-docs` to regenerate `docs/api-reference.md`
+
+### Scripts and Manifests
+
+- [ ] Shell scripts pass `shellcheck -S error`
+- [ ] New config files go under `config/` with a clear subdirectory (see `config/README.md`)
+- [ ] Helm values changes are reflected in `charts/stellar-operator/values.yaml` comments
+- [ ] Generated manifests are regenerated from their source (see [Regenerating Manifests](#regenerating-manifests))
+
+### Naming
+
+- [ ] Rust modules use `snake_case`
+- [ ] Documentation files use `kebab-case.md`
+- [ ] CRD YAML files follow the `stellar{feature}-crd.yaml` pattern
+- [ ] Example manifests use descriptive names, not issue-number-based names
+
+### Final
+
+- [ ] `make ci-local` passes end-to-end (format + lint + audit + test + build)
+- [ ] Branch is up to date with `main`
+- [ ] Commit messages follow Conventional Commits
+
+---
+
+## Regenerating Manifests
+
+Several files in this repo are generated from a source of truth. Always regenerate them after changing the source.
+
+| Generated file | Source of truth | Regeneration command |
+|---|---|---|
+| `docs/api-reference.md` | CRD types in `src/crd/` | `make generate-api-docs` |
+| `config/crd/*.yaml` | CRD structs in `src/crd/` | `make crd-gen` |
+| `bundle/manifests/*.yaml` | `config/manifests/bases/` + operator metadata | `make bundle` (requires operator-sdk) |
+| Shell completions | CLI definitions in `src/cli.rs` | `make completions` |
+
+After running any of the above, commit the updated generated file alongside the source change in the same PR.
+
+---
+
 Happy coding! If you encounter issues not covered here, please open an issue or ask in the community channels.

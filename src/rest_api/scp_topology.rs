@@ -305,13 +305,15 @@ fn short_key(key: &str) -> String {
 
 /// Tracks the last observed SCP phase + ballot counter per node across WebSocket frames.
 /// Nodes that do not advance within `stall_threshold` are flagged as stalled.
-#[allow(dead_code)]
+/// This tracker is instantiated inside the WebSocket streaming handler; the compiler
+/// does not see the construction site so `#[allow(dead_code)]` is required on the struct.
+#[allow(dead_code)] // constructed inside the WS streaming closure
 struct StallTracker {
     last_seen: HashMap<String, (String, u32, Instant)>,
     stall_threshold: Duration,
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // methods called through the WS streaming closure
 impl StallTracker {
     fn new(stall_threshold: Duration) -> Self {
         Self {

@@ -1184,10 +1184,13 @@ fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
 }
 
 // ============================================================================
-// LoadBalancer Service (MetalLB Integration) — stubs unchanged
+// LoadBalancer Service (MetalLB Integration) — stubs, wiring in progress
 // ============================================================================
 
-#[allow(dead_code)]
+/// Ensure a LoadBalancer Service exists for the node.
+/// This is a stub pending full MetalLB integration; the reconciler skips this
+/// path until load_balancer config is specified in the StellarNode spec.
+#[allow(dead_code)] // called conditionally when load_balancer spec is present
 #[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
 pub async fn ensure_load_balancer_service(_client: &Client, _node: &StellarNode) -> Result<()> {
     Ok(())
@@ -1198,7 +1201,9 @@ pub async fn delete_load_balancer_service(_client: &Client, _node: &StellarNode)
     Ok(())
 }
 
-#[allow(dead_code)]
+/// Ensure MetalLB L2/BGP advertisement config exists for the node.
+/// Stub pending MetalLB CRD integration.
+#[allow(dead_code)] // pending MetalLB CRD integration
 #[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
 pub async fn ensure_metallb_config(_client: &Client, _node: &StellarNode) -> Result<()> {
     Ok(())
@@ -1480,10 +1485,13 @@ pub async fn delete_cnpg_resources(
 }
 
 // ============================================================================
-// Ingress — unchanged
+// Ingress — called by the reconciler when spec.ingress is configured
 // ============================================================================
 
-#[allow(dead_code)]
+/// Ensure a Kubernetes Ingress resource exists for the node.
+/// Called from the reconciler for Horizon and SorobanRpc node types when
+/// `spec.ingress` is set.
+#[allow(dead_code)] // called via reconciler ingress path; conditional on feature flag
 pub async fn ensure_ingress(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let ingress_cfg = match &node.spec.ingress {
         Some(cfg)
@@ -1721,7 +1729,6 @@ async fn delete_istio_canary_virtual_service(
     Ok(())
 }
 
-#[allow(dead_code)]
 fn build_ingress(node: &StellarNode, config: &IngressConfig) -> Ingress {
     let labels = standard_labels(node);
     let name = resource_name(node, "ingress");

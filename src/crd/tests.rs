@@ -189,7 +189,9 @@ mod stellar_node_spec_validation {
         }
     }
 
-    #[allow(dead_code)]
+    // Test-only helper constructors. The compiler warns these as dead code
+    // because test modules aren't fully linked; the suppression is intentional.
+    #[allow(dead_code)] // test helper — used by test cases in this module
     fn default_resources() -> ResourceRequirements {
         ResourceRequirements {
             requests: ResourceSpec {
@@ -203,7 +205,7 @@ mod stellar_node_spec_validation {
         }
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // test helper — used by test cases in this module
     fn default_storage() -> StorageConfig {
         StorageConfig {
             storage_class: "standard".to_string(),

@@ -10,7 +10,9 @@ use tracing::{debug, warn};
 /// Client for querying Stellar Core HTTP API
 pub struct ScpClient {
     http_client: Client,
-    #[allow(dead_code)]
+    /// Timeout passed to the reqwest `Client` builder. Stored here so callers
+    /// can inspect or reconfigure the client without recreating it.
+    #[allow(dead_code)] // stored for future client reconfiguration
     timeout: Duration,
     /// Maximum number of HTTP retry attempts
     max_attempts: u32,

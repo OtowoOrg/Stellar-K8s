@@ -321,6 +321,20 @@ featureFlags:
 
 We welcome contributions! This project uses pre-commit hooks to ensure code quality. Please see our [Contributing Guide](CONTRIBUTING.md) for details on our development process, coding standards, and how to submit pull requests.
 
+### Repo Health Checklist
+
+Before opening a PR, run through this quick checklist to keep the repo clean:
+
+- `make ci-local` — runs format check, lint, security audit, tests, and build in one step
+- `make fmt` — auto-formats all Rust code
+- `make lint` — runs clippy at the deny level
+- `make audit` — scans dependencies for known vulnerabilities
+- `shellcheck -S error scripts/*.sh` — validates shell scripts
+- `make generate-api-docs` — regenerates `docs/api-reference.md` after CRD changes
+- `make crd-gen` — regenerates `config/crd/` manifests after CRD type changes
+
+For the full checklist and expected conventions for docs, scripts, and code, see [DEVELOPMENT.md](DEVELOPMENT.md#repo-health-checklist), [CONTRIBUTING.md](CONTRIBUTING.md#9-repo-health-checklist), and [CONVENTIONS.md](CONVENTIONS.md).
+
 ### Quick Start for Contributors
 
 ```bash

@@ -189,6 +189,10 @@
          <lastmod>2026-06-24</lastmod>
     </url>
     <url>
+         <loc>https://m1s0g1.github.io/Stellar-K8s/operator-sdk-guide/</loc>
+         <lastmod>2026-06-24</lastmod>
+    </url>
+    <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/peer-discovery/</loc>
          <lastmod>2026-06-24</lastmod>
     </url>
@@ -221,6 +225,10 @@
          <lastmod>2026-06-24</lastmod>
     </url>
     <url>
+         <loc>https://m1s0g1.github.io/Stellar-K8s/registry-management/</loc>
+         <lastmod>2026-06-24</lastmod>
+    </url>
+    <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/resource-limits/</loc>
          <lastmod>2026-06-24</lastmod>
     </url>
@@ -242,6 +250,10 @@
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/scp-topology-dashboard/</loc>
+         <lastmod>2026-06-24</lastmod>
+    </url>
+    <url>
+         <loc>https://m1s0g1.github.io/Stellar-K8s/secret-management-guide/</loc>
          <lastmod>2026-06-24</lastmod>
     </url>
     <url>

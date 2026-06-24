@@ -37,7 +37,7 @@ mod reconcile;
 mod state;
 mod support;
 
-trait ToStellarNodeArc {
+pub(crate) trait ToStellarNodeArc {
     fn to_arc(&self) -> Arc<StellarNode>;
 }
 impl ToStellarNodeArc for Arc<StellarNode> {
@@ -61,7 +61,7 @@ impl ToStellarNodeArc for &StellarNode {
     }
 }
 
-trait ToControllerStateArc {
+pub(crate) trait ToControllerStateArc {
     fn to_arc_controller(&self) -> Arc<ControllerState>;
 }
 impl ToControllerStateArc for Arc<ControllerState> {

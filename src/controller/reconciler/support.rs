@@ -1,6 +1,7 @@
 //! Status and helper functions.
 
 use super::prelude::*;
+use super::{publish_stellar_event, ToStellarNodeArc};
 
 pub(crate) async fn get_ready_replicas(client: &Client, node: &StellarNode) -> Result<i32> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());

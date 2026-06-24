@@ -2,6 +2,7 @@
 
 use super::prelude::*;
 use super::state::ControllerState;
+use super::{emit_event, publish_stellar_event, ToStellarNodeArc};
 
 pub(crate) fn recorder_for(client: &Client, reporter: &Reporter, node: &StellarNode) -> Recorder {
     Recorder::new(client.clone(), reporter.clone(), node.object_ref(&()))

@@ -415,8 +415,12 @@ fn percentile(sorted: &[u64], p: usize) -> u64 {
     if sorted.is_empty() {
         return 0;
     }
-    let index = (sorted.len() * p / 100).min(sorted.len() - 1);
-    sorted[index]
+    let index = sorted
+        .len()
+        .saturating_mul(p)
+        .div_ceil(100)
+        .saturating_sub(1);
+    sorted[index.min(sorted.len() - 1)]
 }
 
 /// Label for HTTP method metrics
@@ -425,7 +429,7 @@ pub struct MethodLabel {
     pub method: String,
 }
 
-/// Label for HTTP status metrics  
+/// Label for HTTP status metrics
 #[derive(Clone, Debug, Hash, PartialEq, Eq, prometheus_client::encoding::EncodeLabelSet)]
 pub struct StatusLabel {
     pub status: String,
@@ -465,7 +469,7 @@ impl GatewayMetrics {
             requests_by_status: Default::default(),
             requests_by_path: Default::default(),
             latency_histogram: prometheus_client::metrics::histogram::Histogram::new(
-                vec![0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0].into_iter()
+                vec![0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0].into_iter(),
             ),
         }
     }
@@ -474,13 +478,17 @@ impl GatewayMetrics {
     pub fn record_request(&self, call: &ApiCall) {
         self.total_requests.inc();
 
-        self.requests_by_method.get_or_create(&MethodLabel {
-            method: call.method.clone(),
-        }).inc();
+        self.requests_by_method
+            .get_or_create(&MethodLabel {
+                method: call.method.clone(),
+            })
+            .inc();
 
-        self.requests_by_status.get_or_create(&StatusLabel {
-            status: call.status.to_string(),
-        }).inc();
+        self.requests_by_status
+            .get_or_create(&StatusLabel {
+                status: call.status.to_string(),
+            })
+            .inc();
 
         if call.status >= 400 {
             self.total_errors.inc();

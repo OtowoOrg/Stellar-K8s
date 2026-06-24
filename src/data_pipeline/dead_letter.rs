@@ -78,6 +78,11 @@ impl DeadLetterQueue {
         self.queue.read().await.len()
     }
 
+    /// Returns true when the DLQ has no pending records.
+    pub async fn is_empty(&self) -> bool {
+        self.len().await == 0
+    }
+
     /// Records that have exhausted retries (permanently failed)
     pub async fn exhausted_count(&self) -> usize {
         self.queue

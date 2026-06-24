@@ -457,8 +457,8 @@ impl OpenApiGenerator {
             }
         }
         let tags: Vec<OpenApiTag> = tags_map
-            .into_iter()
-            .map(|(name, _)| OpenApiTag {
+            .into_keys()
+            .map(|name| OpenApiTag {
                 name,
                 description: None,
                 external_docs: None,

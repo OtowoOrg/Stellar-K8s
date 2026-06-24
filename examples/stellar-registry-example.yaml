@@ -1,0 +1,44 @@
+apiVersion: stellar.org/v1alpha1
+kind: StellarRegistry
+metadata:
+  name: main-registry
+  namespace: stellar
+spec:
+  endpoint: registry.stellar.example.com
+  scanning:
+    enabled: true
+    scanner: trivy
+    endpoint: http://trivy.trivy.svc:4954
+    scanIntervalSecs: 3600
+    maxCriticalCves: 0
+    maxHighCves: 5
+  signing:
+    enabled: true
+    cosignPublicKeyRef: cosign-public-key
+    requireSignature: true
+  admission:
+    blockVulnerable: true
+    blockUnsigned: true
+    enforceOnDeploy: true
+  mirrors:
+    - region: us-east-1
+      endpoint: registry-us-east.stellar.example.com
+      enabled: true
+    - region: eu-west-1
+      endpoint: registry-eu-west.stellar.example.com
+      enabled: true
+    - region: ap-southeast-1
+      endpoint: registry-ap.stellar.example.com
+      enabled: true
+  garbageCollection:
+    enabled: true
+    schedule: "0 2 * * 0"
+    retentionDays: 30
+    dryRun: false
+  proxy:
+    enabled: true
+    upstream: https://registry-1.docker.io
+    cacheTtlHours: 24
+  autoPatch:
+    enabled: true
+    schedule: "0 3 * * *"

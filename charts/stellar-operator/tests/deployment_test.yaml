@@ -157,16 +157,11 @@ tests:
 
   - it: adds watch-namespace args when configured
     set:
-      operator.watchNamespaces:
-        - stellar-system
-        - default
+      operator.watchNamespace: stellar-system
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
           content: --watch-namespace=stellar-system
-      - contains:
-          path: spec.template.spec.containers[0].args
-          content: --watch-namespace=default
 
   - it: has correct selector labels
     asserts:

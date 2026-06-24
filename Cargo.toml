@@ -146,6 +146,7 @@ rand_distr = "0.5.1"
 
 # Backup scheduler dependencies
 cron = "0.15"
+tar = "0.4"
 flate2 = "1"
 async-trait = "0.1"
 sqlx = { version = "0.8.6", default-features = false, features = [

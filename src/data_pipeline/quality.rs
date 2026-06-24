@@ -81,7 +81,9 @@ fn get_sequence(record: &EtlRecord) -> u64 {
 }
 
 fn get_hash(record: &EtlRecord) -> String {
-    record.payload.get("hash")
+    record
+        .payload
+        .get("hash")
         .or_else(|| record.payload.get("ledger_hash"))
         .and_then(|v| v.as_str())
         .unwrap_or("")
@@ -89,27 +91,42 @@ fn get_hash(record: &EtlRecord) -> String {
 }
 
 fn get_base_fee_xlm(record: &EtlRecord) -> f64 {
-    record.payload.get("base_fee_xlm")
+    record
+        .payload
+        .get("base_fee_xlm")
         .or_else(|| record.payload.get("base_fee"))
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0)
 }
 
 fn get_tx_success_rate(record: &EtlRecord) -> f64 {
-    record.payload.get("tx_success_rate")
+    record
+        .payload
+        .get("tx_success_rate")
         .or_else(|| record.payload.get("success_rate"))
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0)
 }
 
 fn get_date_partition(record: &EtlRecord) -> String {
-    record.metadata.get("date_partition")
+    record
+        .metadata
+        .get("date_partition")
         .map(|s| s.to_string())
-        .unwrap_or_else(|| record.pipeline_ts.split('T').next().unwrap_or("").to_string())
+        .unwrap_or_else(|| {
+            record
+                .pipeline_ts
+                .split('T')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        })
 }
 
 fn get_avg_ops_per_tx(record: &EtlRecord) -> f64 {
-    record.payload.get("avg_ops_per_tx")
+    record
+        .payload
+        .get("avg_ops_per_tx")
         .or_else(|| record.payload.get("operations_per_transaction"))
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0)
@@ -288,24 +305,27 @@ impl DataQualityEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_pipeline::etl::LedgerSizeCategory;
     use std::collections::HashMap;
 
     fn good_record(seq: u64) -> EtlRecord {
+        let mut metadata = HashMap::new();
+        metadata.insert("date_partition".into(), "2024-01-15".into());
         EtlRecord {
-            sequence: seq,
-            hash: format!("hash_{seq:016x}"),
-            base_fee_xlm: 0.00001,
-            base_reserve_xlm: 0.5,
-            timestamp_epoch_ms: 1_700_000_000_000,
-            date_partition: "2024-01-15".into(),
-            hour_partition: 12,
-            tx_success_rate: 0.98,
-            avg_ops_per_tx: 2.5,
-            ledger_size_category: LedgerSizeCategory::Medium,
-            pipeline_version: "1.0.0".into(),
-            enriched_at: chrono::Utc::now(),
-            tags: HashMap::new(),
+            id: format!("test-{seq}"),
+            source_topic: "ledger".into(),
+            partition: 0,
+            offset: seq as i64,
+            payload: serde_json::json!({
+                "hash": format!("hash_{seq:016x}"),
+                "base_fee_xlm": 0.00001,
+                "base_reserve_xlm": 0.5,
+                "tx_success_rate": 0.98,
+                "avg_ops_per_tx": 2.5,
+                "ledger_size_category": "medium",
+            }),
+            metadata,
+            pipeline_ts: "2024-01-15T12:00:00Z".into(),
+            ledger_seq: Some(seq),
         }
     }
 
@@ -320,7 +340,7 @@ mod tests {
     fn test_zero_sequence_is_critical() {
         let engine = DataQualityEngine::with_default_rules();
         let mut r = good_record(0);
-        r.sequence = 0;
+        r.ledger_seq = Some(0);
         let violations = engine.validate(&r);
         assert!(violations.iter().any(|v| v.severity == Severity::Critical));
     }
@@ -329,7 +349,7 @@ mod tests {
     fn test_invalid_success_rate_is_error() {
         let engine = DataQualityEngine::with_default_rules();
         let mut r = good_record(1);
-        r.tx_success_rate = 1.5;
+        r.payload["tx_success_rate"] = serde_json::json!(1.5);
         let violations = engine.validate(&r);
         assert!(violations
             .iter()

@@ -699,15 +699,18 @@ host = "v3.example.com"
     #[test]
     fn test_vsl_cache_expires_stale_entry() {
         clear_vsl_cache();
-        let url = "https://example.com/vsl.toml";
+        let url = "https://example.com/vsl-stale-cache-test.toml";
         let quorum_set = parse_and_verify_vsl(&minimal_unsigned_vsl()).unwrap();
+        let stale_at = Instant::now()
+            .checked_sub(VSL_CACHE_TTL + Duration::from_secs(5))
+            .expect("test clock should support stale VSL cache timestamps");
 
         if let Ok(mut cache) = vsl_cache().write() {
             cache.insert(
                 url.to_string(),
                 CachedVsl {
                     quorum_set,
-                    fetched_at: Instant::now() - VSL_CACHE_TTL - Duration::from_secs(1),
+                    fetched_at: stale_at,
                 },
             );
         }

@@ -18,6 +18,8 @@
 //!     connection_timeout_secs: 5,
 //!     idle_timeout_secs: Some(300),
 //!     query_timeout_ms: Some(30_000),
+//!     max_lifetime_secs: None,
+//!     test_before_acquire: true,
 //! };
 //! let pool = create_pool(&config).await?;
 //! # Ok(())

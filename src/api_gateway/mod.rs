@@ -2,7 +2,7 @@
 //! rate limiting, analytics, and API key management (#789).
 //!
 //! Architecture:
-//! ```
+//! ```text
 //! Client Request
 //!   → API Key Auth
 //!   → Rate Limiter

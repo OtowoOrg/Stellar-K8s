@@ -406,6 +406,9 @@ impl ControllerState {
 ///         plugin_registry: Arc::new(stellar_k8s::plugin_sdk::PluginRegistry::new()),
 ///         oidc_config: None,
 ///         metrics_store: Arc::new(stellar_k8s::rest_api::metrics_store::StellarMetricsStore::new()),
+///         analytics_engine: Arc::new(stellar_k8s::logging::analytics::AnalyticsEngine::new(
+///             std::time::Duration::from_secs(3600),
+///         )),
 ///     });
 ///     run_controller(state).await?;
 ///     Ok(())

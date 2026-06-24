@@ -6,8 +6,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use crate::backup::providers::{StorageProviderTrait, UploadMetadata};
-use crate::backup::*;
+use stellar_k8s::backup::providers::{StorageProviderTrait, UploadMetadata};
+use stellar_k8s::backup::*;
 
 #[derive(Parser, Debug)]
 pub struct BackupArgs {

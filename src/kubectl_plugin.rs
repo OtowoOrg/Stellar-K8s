@@ -10,7 +10,8 @@ use std::process;
 use clap::{Parser, Subcommand};
 use k8s_openapi::api::core::v1::Pod;
 use kube::{
-    api::{Api, Patch, PatchParams},
+    api::{Api, ListParams, Patch, PatchParams, PostParams},
+    core::DynamicObject,
     Client, ResourceExt,
 };
 

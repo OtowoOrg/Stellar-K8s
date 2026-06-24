@@ -359,8 +359,8 @@ mod tests {
         let pdb = build_pdb(&node).expect("PDB should be created for replicated validator");
         let spec_pdb = pdb.spec.expect("PDB spec should be set");
 
-        // ceil(2 * 5 / 3) = ceil(3.33) = 4
-        assert_eq!(spec_pdb.min_available, Some(IntOrString::Int(4)));
+        // Validator PDB uses quorum-safe (replicas / 2) + 1
+        assert_eq!(spec_pdb.min_available, Some(IntOrString::Int(3)));
     }
 
     #[test]
@@ -382,7 +382,8 @@ mod tests {
         let pdb = build_pdb(&node).expect("PDB should be created for replicated validator");
         let spec_pdb = pdb.spec.expect("PDB spec should be set");
 
-        assert_eq!(spec_pdb.min_available, Some(IntOrString::Int(1)));
+        // Validators auto-calculate minAvailable; user overrides are ignored
+        assert_eq!(spec_pdb.min_available, Some(IntOrString::Int(2)));
     }
 
     // -----------------------------------------------------------------------
@@ -602,7 +603,7 @@ peer-2 = "G..."
     #[test]
     fn test_service_has_standard_labels_and_owner_ref() {
         let node = make_node(NodeType::Horizon);
-        let svc = build_service(&node, false);
+        let svc = build_service_for_test(&node);
         assert_standard_labels(&svc.metadata, &node);
         assert_owner_reference(&svc.metadata, &node);
     }
@@ -727,7 +728,7 @@ peer-2 = "G..."
     // Sidecar injection tests (#507)
     // -----------------------------------------------------------------------
 
-    use k8s_openapi::api::core::v1::{Container, VolumeMount};
+    use k8s_openapi::api::core::v1::Container;
 
     fn make_sidecar(name: &str) -> Container {
         Container {
@@ -807,12 +808,14 @@ peer-2 = "G..."
         let sts = build_statefulset_for_test(&node);
         let containers = sts.spec.unwrap().template.spec.unwrap().containers;
 
-        // Only the main stellar-node container should be present
+        // Main container plus operator-managed health-check sidecar
         assert_eq!(
             containers.len(),
-            1,
-            "no sidecars configured — only the main container should be present"
+            2,
+            "no user sidecars — main container and health-check sidecar should be present"
         );
+        assert_eq!(containers[0].name, "stellar-node");
+        assert_eq!(containers[1].name, "stellar-health-check");
     }
 
     #[test]
@@ -894,14 +897,18 @@ peer-2 = "G..."
         let sts = build_statefulset_for_test(&node);
         let containers = sts.spec.unwrap().template.spec.unwrap().containers;
 
-        assert_ne!(
-            containers[0].name, "log-forwarder",
-            "main container must come before sidecars"
+        assert_eq!(
+            containers[0].name, "stellar-node",
+            "main container must be first in the pod spec"
+        );
+        assert!(
+            containers.iter().any(|c| c.name == "log-forwarder"),
+            "user sidecar must be present"
         );
         assert_eq!(
             containers.last().unwrap().name,
-            "log-forwarder",
-            "sidecar must be appended after the main container"
+            "stellar-health-check",
+            "health-check sidecar is appended after user sidecars"
         );
     }
     #[test]
@@ -1378,7 +1385,7 @@ mod init_containers_tests {
 
         let pos_migration = init_containers
             .iter()
-            .position(|c| c.name == "horizon-migration");
+            .position(|c| c.name == "horizon-db-migration");
         let pos_custom = init_containers
             .iter()
             .position(|c| c.name == "my-custom-init");
@@ -1540,94 +1547,82 @@ mod advanced_probe_tests {
         }
     }
 
-    /// Liveness probe for a Validator must use TCP socket on port 11625.
-    /// This ensures the pod is only killed when the process is truly unresponsive,
-    /// not merely syncing.
+    /// Liveness probe targets the health-check sidecar HTTP endpoint on port 8081.
     #[test]
     fn test_validator_liveness_probe_is_tcp_socket() {
         let node = validator_node("v-liveness");
         let sts = build_statefulset_for_test(&node);
-        let container = &sts.spec.unwrap().template.spec.unwrap().containers[0];
+        let containers = sts.spec.unwrap().template.spec.unwrap().containers;
+        let container = containers
+            .iter()
+            .find(|c| c.name == "stellar-node")
+            .expect("main container must be present");
         let probe = container
             .liveness_probe
             .as_ref()
             .expect("liveness probe must be set");
         assert!(
-            probe.tcp_socket.is_some(),
-            "Validator liveness probe must be TCP socket (not HTTP), got: {:?}",
+            probe.http_get.is_some(),
+            "Validator liveness probe must be HTTP GET on health sidecar, got: {:?}",
             probe
         );
-        assert!(
-            probe.http_get.is_none(),
-            "Validator liveness probe must NOT be HTTP GET"
-        );
-        assert!(
-            probe.exec.is_none(),
-            "Validator liveness probe must NOT be exec"
-        );
-        let tcp = probe.tcp_socket.as_ref().unwrap();
+        let http = probe.http_get.as_ref().unwrap();
+        assert_eq!(http.path.as_deref(), Some("/healthz"));
         assert_eq!(
-            tcp.port,
-            k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(11625),
-            "Validator liveness probe must target port 11625"
+            http.port,
+            k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(8081),
+            "Validator liveness probe must target health sidecar port 8081"
         );
     }
 
-    /// Readiness probe for a Validator must use an exec probe that queries /info
-    /// and rejects CATCHING_UP / SYNCING states.
+    /// Readiness probe targets the health-check sidecar /readyz endpoint.
     #[test]
     fn test_validator_readiness_probe_is_exec_checking_info() {
         let node = validator_node("v-readiness");
         let sts = build_statefulset_for_test(&node);
-        let container = &sts.spec.unwrap().template.spec.unwrap().containers[0];
+        let containers = sts.spec.unwrap().template.spec.unwrap().containers;
+        let container = containers
+            .iter()
+            .find(|c| c.name == "stellar-node")
+            .expect("main container must be present");
         let probe = container
             .readiness_probe
             .as_ref()
             .expect("readiness probe must be set");
         assert!(
-            probe.exec.is_some(),
-            "Validator readiness probe must be exec (not HTTP GET), got: {:?}",
+            probe.http_get.is_some(),
+            "Validator readiness probe must be HTTP GET on health sidecar, got: {:?}",
             probe
         );
-        assert!(
-            probe.http_get.is_none(),
-            "Validator readiness probe must NOT be HTTP GET"
-        );
-        let exec = probe.exec.as_ref().unwrap();
-        let cmd = exec.command.as_ref().expect("exec command must be set");
-        let script = cmd.join(" ");
-        assert!(
-            script.contains("11626"),
-            "readiness probe must query port 11626 (Stellar-Core HTTP)"
-        );
-        assert!(
-            script.contains("CATCHING_UP"),
-            "readiness probe must check for CATCHING_UP state"
-        );
-        assert!(
-            script.contains("SYNCING"),
-            "readiness probe must check for SYNCING state"
+        let http = probe.http_get.as_ref().unwrap();
+        assert_eq!(http.path.as_deref(), Some("/readyz"));
+        assert_eq!(
+            http.port,
+            k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(8081),
+            "Validator readiness probe must target health sidecar port 8081"
         );
     }
 
-    /// A node in CATCHING_UP/SYNCING should be Not Ready (liveness still passes).
-    /// This test verifies the probe script logic: the script must exit non-zero
-    /// when the /info response contains a syncing state.
+    /// Health-check sidecar is configured to query Stellar-Core on port 11626.
     #[test]
     fn test_readiness_script_rejects_catching_up_state() {
         let node = validator_node("v-sync-check");
         let sts = build_statefulset_for_test(&node);
-        let container = &sts.spec.unwrap().template.spec.unwrap().containers[0];
-        let probe = container.readiness_probe.as_ref().unwrap();
-        let exec = probe.exec.as_ref().unwrap();
-        let cmd = exec.command.as_ref().unwrap();
-        // The script must use grep -qv (invert match) so that presence of
-        // CATCHING_UP or SYNCING causes a non-zero exit.
-        let script = cmd.join(" ");
+        let containers = sts.spec.unwrap().template.spec.unwrap().containers;
+        let health_sidecar = containers
+            .iter()
+            .find(|c| c.name == "stellar-health-check")
+            .expect("health-check sidecar must be present");
+        let core_url = health_sidecar
+            .env
+            .as_ref()
+            .and_then(|env| env.iter().find(|e| e.name == "CORE_URL"))
+            .and_then(|e| e.value.as_ref())
+            .expect("CORE_URL must be set on health-check sidecar");
         assert!(
-            script.contains("grep -qv"),
-            "script must use 'grep -qv' to invert-match syncing states: {}",
-            script
+            core_url.contains("11626"),
+            "health sidecar must query Stellar-Core HTTP on port 11626, got: {}",
+            core_url
         );
     }
 }

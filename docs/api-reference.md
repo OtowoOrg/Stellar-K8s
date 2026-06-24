@@ -570,8 +570,7 @@ Fields marked *(required)* must be present in every `StellarNode` manifest.
 | **Path** | `spec.dbMaintenanceConfig.windowDuration` |
 | **Type** | `string` |
 | **Description** | Maintenance window duration (e.g., "2h") |
-| **Default** | `2h` |
-| **Required** | No |
+| **Required** | *(required)* |
 
 #### `spec.dbMaintenanceConfig.windowStart`
 
@@ -579,36 +578,67 @@ Fields marked *(required)* must be present in every `StellarNode` manifest.
 |---|---|
 | **Path** | `spec.dbMaintenanceConfig.windowStart` |
 | **Type** | `string` |
-| **Description** | Maintenance window start time (24h format, e.g., "02:00"). Maintenance will only trigger during this window. |
-| **Default** | `02:00` |
-| **Required** | No |
+| **Description** | Maintenance window start time (24h format, e.g., "02:00") Maintenance will only trigger during this window |
+| **Required** | *(required)* |
 
-#### `spec.dbMaintenanceConfig.enableQueryProfiling`
-
-| | |
-|---|---|
-| **Path** | `spec.dbMaintenanceConfig.enableQueryProfiling` |
-| **Type** | `boolean` |
-| **Description** | Enable slow query profiling during maintenance windows |
-| **Default** | `False` |
-
-#### `spec.dbMaintenanceConfig.autoIndexMaintenance`
+### `spec.diagnosticSidecarResources`
 
 | | |
 |---|---|
-| **Path** | `spec.dbMaintenanceConfig.autoIndexMaintenance` |
-| **Type** | `boolean` |
-| **Description** | Automatically create recommended indexes for slow queries |
-| **Default** | `False` |
+| **Path** | `spec.diagnosticSidecarResources` |
+| **Type** | `object` |
+| **Description** | Resource requests and limits for the operator-managed diagnostic health-check sidecar. Defaults to 50m CPU and 64Mi memory for both requests and limits when unset. |
+| **Nullable** | `true` |
 
-#### `spec.dbMaintenanceConfig.slowQueryThresholdMs`
+#### `spec.diagnosticSidecarResources.limits`
 
 | | |
 |---|---|
-| **Path** | `spec.dbMaintenanceConfig.slowQueryThresholdMs` |
-| **Type** | `integer` (uint32) |
-| **Description** | Queries with average runtime above this threshold are considered for profiling and index recommendations |
-| **Default** | `100` |
+| **Path** | `spec.diagnosticSidecarResources.limits` |
+| **Type** | `object` |
+| **Description** | Resource specification for CPU and memory |
+| **Required** | *(required)* |
+
+##### `spec.diagnosticSidecarResources.limits.cpu`
+
+| | |
+|---|---|
+| **Path** | `spec.diagnosticSidecarResources.limits.cpu` |
+| **Type** | `string` |
+| **Required** | *(required)* |
+
+##### `spec.diagnosticSidecarResources.limits.memory`
+
+| | |
+|---|---|
+| **Path** | `spec.diagnosticSidecarResources.limits.memory` |
+| **Type** | `string` |
+| **Required** | *(required)* |
+
+#### `spec.diagnosticSidecarResources.requests`
+
+| | |
+|---|---|
+| **Path** | `spec.diagnosticSidecarResources.requests` |
+| **Type** | `object` |
+| **Description** | Resource specification for CPU and memory |
+| **Required** | *(required)* |
+
+##### `spec.diagnosticSidecarResources.requests.cpu`
+
+| | |
+|---|---|
+| **Path** | `spec.diagnosticSidecarResources.requests.cpu` |
+| **Type** | `string` |
+| **Required** | *(required)* |
+
+##### `spec.diagnosticSidecarResources.requests.memory`
+
+| | |
+|---|---|
+| **Path** | `spec.diagnosticSidecarResources.requests.memory` |
+| **Type** | `string` |
+| **Required** | *(required)* |
 
 ### `spec.drConfig`
 
@@ -1509,7 +1539,7 @@ Fields marked *(required)* must be present in every `StellarNode` manifest.
 |---|---|
 | **Path** | `spec.networkPolicy.enabled` |
 | **Type** | `boolean` |
-| **Default** | `False` |
+| **Default** | `True` |
 
 #### `spec.networkPolicy.metricsNamespace`
 

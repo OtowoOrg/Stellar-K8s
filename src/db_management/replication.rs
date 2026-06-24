@@ -122,6 +122,6 @@ mod tests {
 
     #[test]
     fn lag_thresholds() {
-        assert!(LAG_WARN_MS < LAG_CRITICAL_MS);
+        const { assert!(LAG_WARN_MS < LAG_CRITICAL_MS) };
     }
 }

@@ -12,7 +12,7 @@
   Enabled when featureFlags.enableDr == "true" AND crossRegion.enabled == true.
 */ -}}
 
-{{- if and (eq (index .Values.featureFlags "enableDr") "true") .Values.crossRegion.enabled }}
+{{- if and .Values.featureFlags.enableDr .Values.crossRegion.enabled }}
 
 # ─── ClusterRole: ledger-state ConfigMap access ──────────────────────────────
 apiVersion: rbac.authorization.k8s.io/v1

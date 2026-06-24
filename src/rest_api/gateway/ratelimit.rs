@@ -153,7 +153,8 @@ impl RateLimiter {
             requests_per_hour: requests_per_minute * 60,
             requests_per_day: requests_per_minute * 60 * 24,
             burst_size,
-            ..Default::default()
+            per_ip_limit: Some(requests_per_minute),
+            per_client_limit: Some(requests_per_minute),
         };
         Self::from_config(&config)
     }

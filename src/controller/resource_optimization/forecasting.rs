@@ -136,6 +136,13 @@ impl ForecastEngine {
     }
 
     fn holt_winters_forecast(&self, values: &[f64], horizon: u32) -> Vec<f64> {
+        if values.is_empty() {
+            return vec![0.0; horizon as usize];
+        }
+        if values.len() == 1 {
+            return vec![values[0]; horizon as usize];
+        }
+
         let mut level = values[0];
         let mut trend = values[1] - values[0];
 

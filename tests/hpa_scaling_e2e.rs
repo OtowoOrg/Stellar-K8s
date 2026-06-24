@@ -64,6 +64,9 @@ async fn mock_controller_state() -> Option<Arc<ControllerState>> {
             Default::default(),
         )),
         plugin_registry: Arc::new(stellar_k8s::plugin_sdk::PluginRegistry::new()),
+        analytics_engine: Arc::new(stellar_k8s::logging::analytics::AnalyticsEngine::new(
+            std::time::Duration::from_secs(3600),
+        )),
     }))
 }
 

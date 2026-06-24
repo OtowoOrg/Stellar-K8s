@@ -107,7 +107,7 @@ async fn get_gateway_config(
         allow_anonymous: false,
         k8s_auth_enabled: false,
     };
-    
+
     let config = GatewayConfig {
         auth: auth_config,
         rate_limit: RateLimitConfig::default(),
@@ -121,7 +121,7 @@ async fn get_gateway_config(
         Some("router") => serde_json::to_value(&config.router).unwrap(),
         _ => serde_json::to_value(&config).unwrap(),
     };
-    
+
     Json(response_value)
 }
 
@@ -236,10 +236,7 @@ async fn set_quota(
     Json(config): Json<QuotaConfig>,
 ) -> impl IntoResponse {
     let client_id = config.client_id.clone();
-    state
-        .quota_manager
-        .set_quota(&client_id, config)
-        .await;
+    state.quota_manager.set_quota(&client_id, config).await;
     (
         StatusCode::OK,
         Json(serde_json::json!({ "status": "updated" })),
@@ -287,11 +284,11 @@ async fn get_openapi_spec(State(_state): State<Arc<GatewayState>>) -> impl IntoR
             "https://localhost:9090",
             Some("Local development".to_string()),
         );
-    
+
     for route in routes {
         generator = generator.add_route(route);
     }
-    
+
     let doc = generator.generate();
 
     (StatusCode::OK, Json(doc))

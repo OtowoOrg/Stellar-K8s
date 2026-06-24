@@ -36,13 +36,19 @@ impl PartitionStrategy {
         let value = match self {
             Self::ByDate => {
                 // Extract date from pipeline_ts (ISO-8601 format)
-                record.pipeline_ts.split('T').next().unwrap_or("unknown").replace('-', "/")
+                record
+                    .pipeline_ts
+                    .split('T')
+                    .next()
+                    .unwrap_or("unknown")
+                    .replace('-', "/")
             }
             Self::ByDateHour => {
                 // Extract date and hour from pipeline_ts
                 let parts: Vec<&str> = record.pipeline_ts.split('T').collect();
                 let date = parts.get(0).unwrap_or(&"unknown").replace('-', "/");
-                let hour = parts.get(1)
+                let hour = parts
+                    .get(1)
                     .and_then(|t| t.split(':').next())
                     .and_then(|h| h.parse::<u8>().ok())
                     .unwrap_or(0);
@@ -57,9 +63,16 @@ impl PartitionStrategy {
             }
             Self::BySizeCategory => {
                 // Extract size category from metadata or payload
-                let category = record.metadata.get("size_category")
+                let category = record
+                    .metadata
+                    .get("size_category")
                     .map(|s| s.as_str())
-                    .or_else(|| record.payload.get("ledger_size_category").and_then(|v| v.as_str()))
+                    .or_else(|| {
+                        record
+                            .payload
+                            .get("ledger_size_category")
+                            .and_then(|v| v.as_str())
+                    })
                     .unwrap_or("unknown");
                 category.to_lowercase()
             }
@@ -105,24 +118,23 @@ impl std::fmt::Debug for PartitionStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_pipeline::etl::LedgerSizeCategory;
     use std::collections::HashMap;
 
     fn make_record(seq: u64, date: &str, hour: u32) -> EtlRecord {
+        let mut metadata = HashMap::new();
+        metadata.insert("date_partition".into(), date.into());
         EtlRecord {
-            sequence: seq,
-            hash: format!("h{seq}"),
-            base_fee_xlm: 0.00001,
-            base_reserve_xlm: 0.5,
-            timestamp_epoch_ms: 0,
-            date_partition: date.into(),
-            hour_partition: hour,
-            tx_success_rate: 1.0,
-            avg_ops_per_tx: 2.0,
-            ledger_size_category: LedgerSizeCategory::Small,
-            pipeline_version: "1.0.0".into(),
-            enriched_at: chrono::Utc::now(),
-            tags: HashMap::new(),
+            id: format!("test-{seq}"),
+            source_topic: "ledger".into(),
+            partition: 0,
+            offset: seq as i64,
+            payload: serde_json::json!({
+                "hash": format!("h{seq}"),
+                "ledger_size_category": "small",
+            }),
+            metadata,
+            pipeline_ts: format!("{date}T{hour:02}:00:00Z"),
+            ledger_seq: Some(seq),
         }
     }
 

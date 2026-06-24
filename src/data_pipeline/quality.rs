@@ -81,7 +81,9 @@ fn get_sequence(record: &EtlRecord) -> u64 {
 }
 
 fn get_hash(record: &EtlRecord) -> String {
-    record.payload.get("hash")
+    record
+        .payload
+        .get("hash")
         .or_else(|| record.payload.get("ledger_hash"))
         .and_then(|v| v.as_str())
         .unwrap_or("")
@@ -89,27 +91,42 @@ fn get_hash(record: &EtlRecord) -> String {
 }
 
 fn get_base_fee_xlm(record: &EtlRecord) -> f64 {
-    record.payload.get("base_fee_xlm")
+    record
+        .payload
+        .get("base_fee_xlm")
         .or_else(|| record.payload.get("base_fee"))
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0)
 }
 
 fn get_tx_success_rate(record: &EtlRecord) -> f64 {
-    record.payload.get("tx_success_rate")
+    record
+        .payload
+        .get("tx_success_rate")
         .or_else(|| record.payload.get("success_rate"))
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0)
 }
 
 fn get_date_partition(record: &EtlRecord) -> String {
-    record.metadata.get("date_partition")
+    record
+        .metadata
+        .get("date_partition")
         .map(|s| s.to_string())
-        .unwrap_or_else(|| record.pipeline_ts.split('T').next().unwrap_or("").to_string())
+        .unwrap_or_else(|| {
+            record
+                .pipeline_ts
+                .split('T')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        })
 }
 
 fn get_avg_ops_per_tx(record: &EtlRecord) -> f64 {
-    record.payload.get("avg_ops_per_tx")
+    record
+        .payload
+        .get("avg_ops_per_tx")
         .or_else(|| record.payload.get("operations_per_transaction"))
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0)

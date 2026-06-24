@@ -92,9 +92,13 @@ pub async fn gateway_handler(
     let auth_result = state.auth.authenticate(&request).await;
     if let Err(e) = auth_result {
         let status = match &e {
-            auth::AuthError::TokenExpired | auth::AuthError::InvalidToken(_) => StatusCode::UNAUTHORIZED,
+            auth::AuthError::TokenExpired | auth::AuthError::InvalidToken(_) => {
+                StatusCode::UNAUTHORIZED
+            }
             auth::AuthError::MissingAuth => StatusCode::UNAUTHORIZED,
-            auth::AuthError::ApiKeyNotFound | auth::AuthError::ApiKeyDisabled => StatusCode::FORBIDDEN,
+            auth::AuthError::ApiKeyNotFound | auth::AuthError::ApiKeyDisabled => {
+                StatusCode::FORBIDDEN
+            }
             auth::AuthError::UnsupportedProvider(_) => StatusCode::BAD_REQUEST,
         };
         return error_response(status, "auth_error", &e.to_string());
@@ -138,10 +142,7 @@ pub async fn gateway_handler(
     }
 
     // 5. Request Transformation
-    let transformed = state
-        .transform_pipeline
-        .transform_request(request)
-        .await;
+    let transformed = state.transform_pipeline.transform_request(request).await;
 
     // 6. Route to correct version
     let routed = state.router.route(transformed).await;
@@ -166,9 +167,15 @@ pub async fn gateway_handler(
         latency_ms: start.elapsed().as_millis() as u64,
         client_id: auth_context.client_id.clone(),
         client_ip,
-        user_agent: ctx.headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(String::from),
+        user_agent: ctx
+            .headers
+            .get(header::USER_AGENT)
+            .and_then(|v| v.to_str().ok())
+            .map(String::from),
         request_id: None,
-        error_message: if final_response.status().is_client_error() || final_response.status().is_server_error() {
+        error_message: if final_response.status().is_client_error()
+            || final_response.status().is_server_error()
+        {
             Some(format!("{}", final_response.status()))
         } else {
             None

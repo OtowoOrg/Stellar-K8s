@@ -1,7 +1,7 @@
 //! ServiceMonitor management.
 
-use super::prelude::*;
 use super::helpers::*;
+use super::prelude::*;
 
 // ============================================================================
 // ServiceMonitor
@@ -136,4 +136,3 @@ pub async fn delete_canary_resources(
 
     Ok(())
 }
-

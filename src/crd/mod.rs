@@ -117,12 +117,12 @@ pub use stellar_federation::{
     StellarFederationSpec, StellarFederationStatus, TrafficRoutingPolicy,
 };
 pub use stellar_network_policy::{
-    AllowedDestination, Condition as NetworkPolicyCondition, DNSRule, EgressRule, GRPCRule, HTTPRule, HeaderMatch, IPBlock,
-    IngressRule, L7Rule, LabelSelector, LabelSelectorRequirement, MetadataMatch, NetworkPolicyPeer,
-    NetworkPolicyPort, SegmentSelector, StellarNetworkPolicy, StellarNetworkPolicySpec,
-    StellarNetworkPolicyStatus, StellarNetworkSegment, StellarNetworkSegmentSpec,
-    StellarNetworkSegmentStatus, StellarWorkloadProfile, StellarWorkloadProfileSpec, TLSRule,
-    WorkloadIdentity,
+    AllowedDestination, Condition as NetworkPolicyCondition, DNSRule, EgressRule, GRPCRule,
+    HTTPRule, HeaderMatch, IPBlock, IngressRule, L7Rule, LabelSelector, LabelSelectorRequirement,
+    MetadataMatch, NetworkPolicyPeer, NetworkPolicyPort, SegmentSelector, StellarNetworkPolicy,
+    StellarNetworkPolicySpec, StellarNetworkPolicyStatus, StellarNetworkSegment,
+    StellarNetworkSegmentSpec, StellarNetworkSegmentStatus, StellarWorkloadProfile,
+    StellarWorkloadProfileSpec, TLSRule, WorkloadIdentity,
 };
 pub use stellar_node::{
     BGPStatus, SnapshotBootstrapStatus, SpecValidationError, StellarNode, StellarNodeSpec,

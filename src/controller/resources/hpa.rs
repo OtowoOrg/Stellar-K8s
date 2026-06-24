@@ -1,7 +1,7 @@
 //! HPA management.
 
-use super::prelude::*;
 use super::helpers::*;
+use super::prelude::*;
 
 // ============================================================================
 // HorizontalPodAutoscaler — unchanged
@@ -28,4 +28,3 @@ pub async fn ensure_hpa(client: &Client, node: &StellarNode, dry_run: bool) -> R
     info!("HPA ensured for {}/{}", namespace, name);
     Ok(())
 }
-

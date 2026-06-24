@@ -1,8 +1,8 @@
 //! StatefulSet management.
 
-use super::prelude::*;
 use super::helpers::*;
 use super::pod_template::*;
+use super::prelude::*;
 
 // ============================================================================
 // StatefulSet (for Validators)
@@ -132,4 +132,3 @@ pub async fn delete_workload(client: &Client, node: &StellarNode, dry_run: bool)
 
     Ok(())
 }
-

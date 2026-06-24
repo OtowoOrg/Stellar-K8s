@@ -1,7 +1,7 @@
 //! CloudNativePG resources.
 
-use super::prelude::*;
 use super::helpers::*;
+use super::prelude::*;
 
 // ============================================================================
 // CloudNativePG (CNPG) Resources — unchanged
@@ -180,7 +180,10 @@ pub async fn ensure_cnpg_pooler(client: &Client, node: &StellarNode, dry_run: bo
     Ok(())
 }
 
-pub(crate) fn build_cnpg_pooler(node: &StellarNode, config: &crate::crd::PgBouncerConfig) -> Pooler {
+pub(crate) fn build_cnpg_pooler(
+    node: &StellarNode,
+    config: &crate::crd::PgBouncerConfig,
+) -> Pooler {
     let mut labels = standard_labels(node);
     labels.insert(
         "app.kubernetes.io/component".to_string(),
@@ -254,4 +257,3 @@ pub async fn delete_cnpg_resources(
 
     Ok(())
 }
-

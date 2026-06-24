@@ -1,8 +1,8 @@
 //! Reconcile dispatch.
 
-use super::prelude::*;
 use super::apply::apply_stellar_node;
 use super::cleanup::cleanup_stellar_node;
+use super::prelude::*;
 use super::state::ControllerState;
 
 /// The core reconciliation state machine for StellarNode resources.
@@ -110,4 +110,3 @@ pub(crate) fn reconcile(
     }
     .boxed()
 }
-

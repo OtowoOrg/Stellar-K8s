@@ -1,7 +1,7 @@
 //! Ingress management.
 
-use super::prelude::*;
 use super::helpers::*;
+use super::prelude::*;
 
 // ============================================================================
 // Ingress — called by the reconciler when spec.ingress is configured
@@ -403,4 +403,3 @@ pub async fn delete_ingress(client: &Client, node: &StellarNode, dry_run: bool) 
 
     Ok(())
 }
-

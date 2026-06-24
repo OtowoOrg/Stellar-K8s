@@ -156,7 +156,9 @@ impl AutomationExecutor {
                     if let Some(emit) = &self.emit_fn {
                         let ev = ProcessingEvent::new(
                             event_type.clone(),
-                            crate::event_processing::schema::EventSource::External("automation".into()),
+                            crate::event_processing::schema::EventSource::External(
+                                "automation".into(),
+                            ),
                             trigger.aggregate_id.clone(),
                             trigger.namespace.clone(),
                             payload.clone(),

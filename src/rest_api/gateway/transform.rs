@@ -56,11 +56,10 @@ impl TransformRule {
         match self {
             TransformRule::AddHeaders(headers) => {
                 for (key, value) in headers {
-                    req.headers_mut()
-                        .insert(
-                            key.as_str().parse::<http::HeaderName>().unwrap(),
-                            value.parse().unwrap(),
-                        );
+                    req.headers_mut().insert(
+                        key.as_str().parse::<http::HeaderName>().unwrap(),
+                        value.parse().unwrap(),
+                    );
                 }
             }
             TransformRule::RemoveHeaders(names) => {
@@ -131,11 +130,10 @@ impl TransformRule {
         match self {
             TransformRule::AddHeaders(headers) => {
                 for (key, value) in headers {
-                    res.headers_mut()
-                        .insert(
-                            key.as_str().parse::<http::HeaderName>().unwrap(),
-                            value.parse().unwrap(),
-                        );
+                    res.headers_mut().insert(
+                        key.as_str().parse::<http::HeaderName>().unwrap(),
+                        value.parse().unwrap(),
+                    );
                 }
             }
             TransformRule::RemoveHeaders(names) => {

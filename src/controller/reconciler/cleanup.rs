@@ -1,7 +1,7 @@
 //! Cleanup on deletion.
 
-use super::prelude::*;
 use super::events::ActionType;
+use super::prelude::*;
 use super::state::ControllerState;
 
 pub(crate) fn cleanup_stellar_node(

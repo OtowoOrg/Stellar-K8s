@@ -1,8 +1,8 @@
 //! Deployment management.
 
-use super::prelude::*;
 use super::helpers::*;
 use super::pod_template::*;
+use super::prelude::*;
 
 // ============================================================================
 // Deployment (for Horizon and Soroban RPC)
@@ -133,4 +133,3 @@ pub(crate) fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deploym
         status: None,
     }
 }
-

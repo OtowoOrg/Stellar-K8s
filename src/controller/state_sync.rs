@@ -304,7 +304,11 @@ pub fn build_state_sync_sidecar(node: &StellarNode) -> Container {
         .map(|s| s.stellar_core_url.clone())
         .unwrap_or_else(|| "http://localhost:11626".to_string());
 
-    let network_passphrase = node.spec.network.passphrase(&node.spec.custom_network_passphrase).to_string();
+    let network_passphrase = node
+        .spec
+        .network
+        .passphrase(&node.spec.custom_network_passphrase)
+        .to_string();
 
     let mut env = vec![
         EnvVar {
@@ -660,7 +664,11 @@ async fn fetch_local_ledger_state(node: &StellarNode) -> Result<LedgerStateSnaps
                     .and_then(|s| s.ledger_sequence)
                     .unwrap_or(0),
                 ledger_hash: "unknown".to_string(),
-                network_passphrase: node.spec.network.passphrase(&node.spec.custom_network_passphrase).to_string(),
+                network_passphrase: node
+                    .spec
+                    .network
+                    .passphrase(&node.spec.custom_network_passphrase)
+                    .to_string(),
                 captured_at: Utc::now().to_rfc3339(),
                 core_version: "unknown".to_string(),
                 in_sync: false,

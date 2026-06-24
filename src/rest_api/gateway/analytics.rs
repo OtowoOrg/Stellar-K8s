@@ -465,7 +465,7 @@ impl GatewayMetrics {
             requests_by_status: Default::default(),
             requests_by_path: Default::default(),
             latency_histogram: prometheus_client::metrics::histogram::Histogram::new(
-                vec![0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0].into_iter()
+                vec![0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0].into_iter(),
             ),
         }
     }
@@ -474,13 +474,17 @@ impl GatewayMetrics {
     pub fn record_request(&self, call: &ApiCall) {
         self.total_requests.inc();
 
-        self.requests_by_method.get_or_create(&MethodLabel {
-            method: call.method.clone(),
-        }).inc();
+        self.requests_by_method
+            .get_or_create(&MethodLabel {
+                method: call.method.clone(),
+            })
+            .inc();
 
-        self.requests_by_status.get_or_create(&StatusLabel {
-            status: call.status.to_string(),
-        }).inc();
+        self.requests_by_status
+            .get_or_create(&StatusLabel {
+                status: call.status.to_string(),
+            })
+            .inc();
 
         if call.status >= 400 {
             self.total_errors.inc();

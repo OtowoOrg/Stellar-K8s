@@ -1,7 +1,7 @@
 //! Service management.
 
-use super::prelude::*;
 use super::helpers::*;
+use super::prelude::*;
 
 // ============================================================================
 // Service
@@ -184,4 +184,3 @@ pub(crate) fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
         status: None,
     }
 }
-

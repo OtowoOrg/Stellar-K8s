@@ -1,7 +1,7 @@
 //! Apply reconciliation path.
 
-use super::prelude::*;
 use super::events::ActionType;
+use super::prelude::*;
 use super::state::ControllerState;
 use super::support::*;
 
@@ -1902,4 +1902,3 @@ pub(crate) fn apply_stellar_node(
     }
     .boxed()
 }
-

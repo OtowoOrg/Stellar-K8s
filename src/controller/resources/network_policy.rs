@@ -1,7 +1,7 @@
 //! NetworkPolicy management.
 
-use super::prelude::*;
 use super::helpers::*;
+use super::prelude::*;
 
 // ============================================================================
 // NetworkPolicy — unchanged
@@ -516,4 +516,3 @@ pub async fn delete_network_policy(
 
     Ok(())
 }
-

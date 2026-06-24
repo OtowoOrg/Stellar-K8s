@@ -1,7 +1,7 @@
 //! Controller loop entry point.
 
-use super::prelude::*;
 use super::error_policy::error_policy;
+use super::prelude::*;
 use super::reconcile::reconcile;
 use super::state::ControllerState;
 

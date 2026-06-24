@@ -30,11 +30,23 @@ pub const REQUIRED_GH_LABELS: &[&str] = &["ci", "security", "stellar-wave"];
 /// Tools that must be present for local development and CI to function.
 /// Each entry is `(binary, install_hint)`.
 pub const REQUIRED_LOCAL_TOOLS: &[(&str, &str)] = &[
-    ("docker",  "Install Docker Engine: https://docs.docker.com/engine/install/"),
-    ("kind",    "Install kind: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"),
-    ("kubectl", "Install kubectl: https://kubernetes.io/docs/tasks/tools/"),
-    ("helm",    "Install Helm 3: https://helm.sh/docs/intro/install/"),
-    ("cargo",   "Install Rust via rustup: https://rustup.rs/"),
+    (
+        "docker",
+        "Install Docker Engine: https://docs.docker.com/engine/install/",
+    ),
+    (
+        "kind",
+        "Install kind: https://kind.sigs.k8s.io/docs/user/quick-start/#installation",
+    ),
+    (
+        "kubectl",
+        "Install kubectl: https://kubernetes.io/docs/tasks/tools/",
+    ),
+    (
+        "helm",
+        "Install Helm 3: https://helm.sh/docs/intro/install/",
+    ),
+    ("cargo", "Install Rust via rustup: https://rustup.rs/"),
 ];
 
 const GH_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -149,7 +161,11 @@ fn check_tool_available(binary: &str) -> std::result::Result<String, ()> {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         // Some tools print version to stderr (e.g. older kubectl)
-        let version_line = if stdout.trim().is_empty() { &stderr } else { &stdout };
+        let version_line = if stdout.trim().is_empty() {
+            &stderr
+        } else {
+            &stdout
+        };
         Ok(version_line.lines().next().unwrap_or("").to_string())
     } else {
         Err(())
@@ -515,9 +531,10 @@ mod tests {
 
     #[test]
     fn local_preflight_fails_for_nonexistent_tool() {
-        let fake_tools: &[(&str, &str)] = &[
-            ("__nonexistent_binary_xyz__", "Install from https://example.com"),
-        ];
+        let fake_tools: &[(&str, &str)] = &[(
+            "__nonexistent_binary_xyz__",
+            "Install from https://example.com",
+        )];
         let result = run_local_preflight_with_tools(fake_tools);
         assert!(result.is_err(), "missing binary must cause failure");
         let msg = result.unwrap_err().to_string();

@@ -152,13 +152,16 @@ impl PluginManager {
 
         drop(plugins);
         let mut settings = self.settings.write().await;
-        settings.insert(name, PluginSettings {
-            name: plugin_name,
-            version: plugin_version,
-            enabled: true,
-            config: HashMap::new(),
-            hooks: plugin_hooks,
-        });
+        settings.insert(
+            name,
+            PluginSettings {
+                name: plugin_name,
+                version: plugin_version,
+                enabled: true,
+                config: HashMap::new(),
+                hooks: plugin_hooks,
+            },
+        );
     }
 
     /// Unregister a plugin

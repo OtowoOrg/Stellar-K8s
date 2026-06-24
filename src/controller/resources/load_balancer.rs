@@ -1,7 +1,7 @@
 //! MetalLB load balancer stubs.
 
-use super::prelude::*;
 use super::helpers::*;
+use super::prelude::*;
 
 // ============================================================================
 // LoadBalancer Service (MetalLB Integration) — stubs, wiring in progress
@@ -51,4 +51,3 @@ pub async fn delete_service(client: &Client, node: &StellarNode, dry_run: bool) 
 
     Ok(())
 }
-

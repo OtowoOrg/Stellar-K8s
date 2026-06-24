@@ -217,13 +217,13 @@ impl BatchSummaryReport {
     }
 }
 
-pub use events::ActionType;
-pub use controller::run_controller;
-pub use state::ControllerState;
-pub use BatchSummaryReport;
-#[cfg(feature = "reconciler-fuzz")]
-pub use fuzz::reconcile_for_fuzz;
 pub(crate) use apply::apply_stellar_node;
 pub(crate) use cleanup::cleanup_stellar_node;
+pub use controller::run_controller;
 pub(crate) use error_policy::error_policy;
+pub use events::ActionType;
+#[cfg(feature = "reconciler-fuzz")]
+pub use fuzz::reconcile_for_fuzz;
 pub(crate) use reconcile::reconcile;
+pub use state::ControllerState;
+pub use BatchSummaryReport;

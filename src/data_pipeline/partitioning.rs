@@ -36,13 +36,19 @@ impl PartitionStrategy {
         let value = match self {
             Self::ByDate => {
                 // Extract date from pipeline_ts (ISO-8601 format)
-                record.pipeline_ts.split('T').next().unwrap_or("unknown").replace('-', "/")
+                record
+                    .pipeline_ts
+                    .split('T')
+                    .next()
+                    .unwrap_or("unknown")
+                    .replace('-', "/")
             }
             Self::ByDateHour => {
                 // Extract date and hour from pipeline_ts
                 let parts: Vec<&str> = record.pipeline_ts.split('T').collect();
                 let date = parts.get(0).unwrap_or(&"unknown").replace('-', "/");
-                let hour = parts.get(1)
+                let hour = parts
+                    .get(1)
                     .and_then(|t| t.split(':').next())
                     .and_then(|h| h.parse::<u8>().ok())
                     .unwrap_or(0);
@@ -57,9 +63,16 @@ impl PartitionStrategy {
             }
             Self::BySizeCategory => {
                 // Extract size category from metadata or payload
-                let category = record.metadata.get("size_category")
+                let category = record
+                    .metadata
+                    .get("size_category")
                     .map(|s| s.as_str())
-                    .or_else(|| record.payload.get("ledger_size_category").and_then(|v| v.as_str()))
+                    .or_else(|| {
+                        record
+                            .payload
+                            .get("ledger_size_category")
+                            .and_then(|v| v.as_str())
+                    })
                     .unwrap_or("unknown");
                 category.to_lowercase()
             }

@@ -287,4 +287,3 @@ fn delete_params(dry_run: bool) -> DeleteParams {
         DeleteParams::default()
     }
 }
-

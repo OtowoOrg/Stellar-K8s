@@ -18,7 +18,7 @@ mod service;
 mod service_monitor;
 mod statefulset;
 #[cfg(test)]
-mod test_helpers;
+mod builders_for_tests;
 
 pub(crate) use helpers::{
     apply_probe_override_pub, merge_service_annotations, merge_service_metadata_labels,
@@ -47,7 +47,7 @@ pub use service_monitor::{
 pub use statefulset::{delete_workload, ensure_statefulset};
 
 #[cfg(test)]
-pub(crate) use test_helpers::{
+pub(crate) use builders_for_tests::{
     build_config_map_for_test, build_deployment_for_test, build_pdb_for_test, build_pvc_for_test,
     build_service_for_test, build_statefulset_for_test,
 };

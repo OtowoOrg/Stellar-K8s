@@ -118,11 +118,16 @@ Run a quick check to ensure everything is configured correctly:
 # Check all required tools are installed
 make preflight
 
-# Then run a fast compile/format check
+# Then run the repository health check (recommended before opening a PR)
+make health
+
+# Or run a fast compile/format check only
 make quick
 ```
 
 `make preflight` validates that `docker`, `kind`, `kubectl`, `helm`, and `cargo` are all in your `PATH` and prints an install hint for any that are missing. Fix any gaps before proceeding.
+
+`make health` runs format, lint, tests, API docs drift, and shellcheck (when available) in one command and stops at the first failure with a clear summary.
 
 ---
 
@@ -409,8 +414,9 @@ make clean         # Remove build artifacts
 
 ```bash
 make preflight     # Validate all required tools are installed (run this first)
+make health        # Recommended: format + lint + tests + docs (+ shellcheck)
 make quick         # Fast pre-commit check (format + compile)
-make validate      # Full local validation: format + lint + compile check
+make validate      # Fast compile path: format + lint + compile check (no tests)
 make ci-local      # Full CI pipeline locally (format + lint + audit + test + build)
 ```
 
@@ -681,8 +687,9 @@ kubectl stellar --help
 # Setup
 make dev-setup                    # One-time setup
 make preflight                    # Validate required tools are installed
+make health                       # Common health gate (format, lint, test, docs)
 make quick                        # Fast pre-commit check
-make validate                     # Format + lint + compile check
+make validate                     # Format + lint + compile check (no tests)
 make ci-local                     # Full CI validation
 
 # Development
@@ -716,6 +723,8 @@ E2E_OPERATOR_IMAGE=stellar-operator:dev  # Custom operator image for E2E
 ## Repo Health Checklist
 
 Use this checklist before merging any PR that touches code, scripts, or documentation. It captures the minimum bar to keep the repository clean and navigable.
+
+Run `make health` first — it executes format, lint, tests, and docs checks in one command and stops at the first failure.
 
 ### Code Quality
 

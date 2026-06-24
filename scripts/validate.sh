@@ -10,6 +10,9 @@
 #   2. Lint             — cargo clippy (same flags as Makefile `lint` target)
 #   3. Compile check    — cargo test --no-run (catches compile errors only)
 #
+# For the full contributor health gate (includes tests and docs), use:
+#   make health
+#
 # Environment variables:
 #   K8S_OPENAPI_ENABLED_VERSION  Kubernetes API version for k8s-openapi codegen
 #                                (default: 1.30, must match Makefile)

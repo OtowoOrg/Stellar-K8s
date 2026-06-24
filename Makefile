@@ -1,4 +1,4 @@
-.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart validate preflight
+.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local health benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart validate preflight
 
 # Default target
 .DEFAULT_GOAL := help
@@ -80,6 +80,9 @@ docker-multiarch: ## Build multi-arch Docker image
 ci-local: fmt-check lint audit test build ## Run full CI locally
 	@echo ""
 	@echo "✓ All CI checks passed!"
+
+health: ## Run common repository health checks (format, lint, test, docs)
+	@bash scripts/repo-health.sh
 
 quick: fmt-check ## Quick pre-commit check
 	@$(CARGO) check --workspace
@@ -229,6 +232,9 @@ quickstart: ## End-to-end local quickstart: kind cluster + CRD + operator + samp
 
 validate: ## Run local validation script (format + lint + compile)
 	@bash scripts/validate.sh
+
+# For the full contributor health gate (format + lint + tests + docs), use:
+#   make health
 
 preflight: ## Validate required local tools are installed (docker, kind, kubectl, helm, cargo)
 	@echo "→ Running local development preflight checks..."

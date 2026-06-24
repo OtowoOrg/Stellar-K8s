@@ -12,3 +12,4 @@ pub async fn reconcile_for_fuzz(
     ctx: Arc<ControllerState>,
 ) -> Result<Action> {
     reconcile(obj, ctx).await
+}

@@ -429,7 +429,7 @@ pub struct MethodLabel {
     pub method: String,
 }
 
-/// Label for HTTP status metrics  
+/// Label for HTTP status metrics
 #[derive(Clone, Debug, Hash, PartialEq, Eq, prometheus_client::encoding::EncodeLabelSet)]
 pub struct StatusLabel {
     pub status: String,

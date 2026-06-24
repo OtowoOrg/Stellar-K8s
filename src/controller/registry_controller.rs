@@ -31,10 +31,7 @@ pub async fn reconcile_stellar_registry(
         return Ok(failed_status(e));
     }
 
-    let mut status = registry
-        .status
-        .clone()
-        .unwrap_or_else(StellarRegistryStatus::default);
+    let mut status = registry.status.clone().unwrap_or_default();
 
     status.phase = RegistryPhase::Scanning;
 

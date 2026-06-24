@@ -25,7 +25,6 @@ mod tests {
             drill_schedule: None,
             policy_ref: None,
             archive_integrity_config: None,
-            policy_ref: None,
         }
     }
 
@@ -49,7 +48,6 @@ mod tests {
             drill_schedule: None,
             policy_ref: None,
             archive_integrity_config: None,
-            policy_ref: None,
         };
         // When enabled is false the reconciler returns Ok(None).
         // We verify the shape of the config to confirm the guard would fire.

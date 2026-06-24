@@ -210,14 +210,18 @@ mod tests {
 
     #[test]
     fn default_poll_interval_is_reasonable() {
-        assert!(
-            DEFAULT_POLL_INTERVAL_SECS >= 60,
-            "poll interval should be at least 60s"
-        );
-        assert!(
-            DEFAULT_POLL_INTERVAL_SECS <= 3600,
-            "poll interval should be at most 1h"
-        );
+        const {
+            assert!(
+                DEFAULT_POLL_INTERVAL_SECS >= 60,
+                "poll interval should be at least 60s"
+            );
+        };
+        const {
+            assert!(
+                DEFAULT_POLL_INTERVAL_SECS <= 3600,
+                "poll interval should be at most 1h"
+            );
+        };
     }
 
     #[test]

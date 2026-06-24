@@ -415,8 +415,12 @@ fn percentile(sorted: &[u64], p: usize) -> u64 {
     if sorted.is_empty() {
         return 0;
     }
-    let index = (sorted.len() * p / 100).min(sorted.len() - 1);
-    sorted[index]
+    let index = sorted
+        .len()
+        .saturating_mul(p)
+        .div_ceil(100)
+        .saturating_sub(1);
+    sorted[index.min(sorted.len() - 1)]
 }
 
 /// Label for HTTP method metrics
@@ -425,7 +429,7 @@ pub struct MethodLabel {
     pub method: String,
 }
 
-/// Label for HTTP status metrics  
+/// Label for HTTP status metrics
 #[derive(Clone, Debug, Hash, PartialEq, Eq, prometheus_client::encoding::EncodeLabelSet)]
 pub struct StatusLabel {
     pub status: String,

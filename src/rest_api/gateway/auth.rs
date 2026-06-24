@@ -391,7 +391,7 @@ mod tests {
     fn test_auth_config_defaults() {
         let config = AuthConfig::default();
         assert!(config.jwt_secret.is_none());
-        assert!(config.allow_anonymous);
+        assert!(!config.allow_anonymous);
         assert!(config.k8s_auth_enabled);
     }
 

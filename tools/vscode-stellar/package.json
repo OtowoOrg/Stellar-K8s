@@ -1,0 +1,25 @@
+{
+  "name": "stellar-k8s-dev",
+  "displayName": "Stellar-K8s Developer Tools",
+  "description": "Port forwarding, log streaming, and remote debugging for Stellar-K8s",
+  "version": "0.1.0",
+  "publisher": "stellarroute",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "stellar.portForward",
+        "title": "Stellar: Port Forward Operator API"
+      },
+      {
+        "command": "stellar.streamLogs",
+        "title": "Stellar: Stream Node Logs"
+      }
+    ]
+  }
+}

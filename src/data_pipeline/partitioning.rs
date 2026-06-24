@@ -121,13 +121,18 @@ mod tests {
     use std::collections::HashMap;
 
     fn make_record(seq: u64, date: &str, hour: u32) -> EtlRecord {
+        let mut metadata = HashMap::new();
+        metadata.insert("date_partition".into(), date.into());
         EtlRecord {
-            id: format!("test:{seq}"),
-            source_topic: "test".into(),
+            id: format!("test-{seq}"),
+            source_topic: "ledger".into(),
             partition: 0,
             offset: seq as i64,
-            payload: serde_json::json!({}),
-            metadata: HashMap::new(),
+            payload: serde_json::json!({
+                "hash": format!("h{seq}"),
+                "ledger_size_category": "small",
+            }),
+            metadata,
             pipeline_ts: format!("{date}T{hour:02}:00:00Z"),
             ledger_seq: Some(seq),
         }

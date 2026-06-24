@@ -305,26 +305,25 @@ impl DataQualityEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use std::collections::HashMap;
 
     fn good_record(seq: u64) -> EtlRecord {
+        let mut metadata = HashMap::new();
+        metadata.insert("date_partition".into(), "2024-01-15".into());
         EtlRecord {
-            id: format!("test:{seq}"),
-            source_topic: "test".into(),
+            id: format!("test-{seq}"),
+            source_topic: "ledger".into(),
             partition: 0,
             offset: seq as i64,
-            payload: json!({
-                "ledger_sequence": seq,
+            payload: serde_json::json!({
                 "hash": format!("hash_{seq:016x}"),
                 "base_fee_xlm": 0.00001,
+                "base_reserve_xlm": 0.5,
                 "tx_success_rate": 0.98,
                 "avg_ops_per_tx": 2.5,
+                "ledger_size_category": "medium",
             }),
-            metadata: HashMap::from([
-                ("date_partition".into(), "2024-01-15".into()),
-                ("pipeline_version".into(), "1.0.0".into()),
-            ]),
+            metadata,
             pipeline_ts: "2024-01-15T12:00:00Z".into(),
             ledger_seq: Some(seq),
         }
@@ -342,9 +341,6 @@ mod tests {
         let engine = DataQualityEngine::with_default_rules();
         let mut r = good_record(0);
         r.ledger_seq = Some(0);
-        if let Some(obj) = r.payload.as_object_mut() {
-            obj.insert("ledger_sequence".into(), json!(0));
-        }
         let violations = engine.validate(&r);
         assert!(violations.iter().any(|v| v.severity == Severity::Critical));
     }
@@ -353,9 +349,7 @@ mod tests {
     fn test_invalid_success_rate_is_error() {
         let engine = DataQualityEngine::with_default_rules();
         let mut r = good_record(1);
-        if let Some(obj) = r.payload.as_object_mut() {
-            obj.insert("tx_success_rate".into(), json!(1.5));
-        }
+        r.payload["tx_success_rate"] = serde_json::json!(1.5);
         let violations = engine.validate(&r);
         assert!(violations
             .iter()

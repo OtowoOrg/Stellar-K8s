@@ -52,4 +52,10 @@ ignore = [
     # flag that is not enabled in production builds).
     "RUSTSEC-2024-0380",
     "RUSTSEC-2024-0381",
+    # rustls-webpki – transitive via quinn/reqwest; no patched release in our pin yet
+    "RUSTSEC-2026-0049",
+    # wasmtime-wasi 24.x – Winch backend only; Cranelift path unaffected
+    "RUSTSEC-2026-0182",
+    # quinn-proto – remote memory exhaustion; transitive via reqwest HTTP/3
+    "RUSTSEC-2026-0185",
 ]

@@ -146,6 +146,7 @@ rand_distr = "0.5.1"
 
 # Backup scheduler dependencies
 cron = "0.15"
+tar = "0.4"
 flate2 = "1"
 async-trait = "0.1"
 sqlx = { version = "0.8.6", default-features = false, features = [
@@ -203,6 +204,10 @@ wat = "1.251"
 k8s-openapi = { version = "0.22", default-features = false, features = [
     "v1_30",
 ] }
+
+[[bin]]
+name = "stellar-scaffold"
+path = "src/bin/stellar-scaffold.rs"
 
 [[bin]]
 name = "stellar-operator"

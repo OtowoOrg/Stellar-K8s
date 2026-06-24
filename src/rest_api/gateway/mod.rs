@@ -206,7 +206,7 @@ fn error_response(status: StatusCode, code: &str, message: &str) -> Response {
 }
 
 /// Gateway configuration
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct GatewayConfig {
     pub auth: AuthConfig,
     pub rate_limit: RateLimitConfig,
@@ -219,15 +219,4 @@ pub struct PluginConfig {
     pub name: String,
     pub enabled: bool,
     pub config: std::collections::HashMap<String, String>,
-}
-
-impl Default for GatewayConfig {
-    fn default() -> Self {
-        Self {
-            auth: AuthConfig::default(),
-            rate_limit: RateLimitConfig::default(),
-            router: RouterConfig::default(),
-            plugins: vec![],
-        }
-    }
 }

@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn export_pdf_produces_pdf_bytes() {
-        let bytes = export_pdf(&sample_entries()).expect("export_pdf failed");
+        let bytes = export_pdf(&sample_entries(), None).expect("export_pdf failed");
         // PDF files start with the magic bytes %PDF
         assert!(bytes.starts_with(b"%PDF"), "output is not a PDF");
         assert!(bytes.len() > 1024, "PDF is suspiciously small");
@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn export_pdf_empty_entries() {
-        let bytes = export_pdf(&[]).expect("export_pdf failed on empty");
+        let bytes = export_pdf(&[], None).expect("export_pdf failed on empty");
         assert!(bytes.starts_with(b"%PDF"));
     }
 }

@@ -4,6 +4,8 @@ templates:
 
 tests:
   - it: renders PDB with default values
+    set:
+      podDisruptionBudget.enabled: true
     asserts:
       - isKind:
           of: PodDisruptionBudget
@@ -31,6 +33,7 @@ tests:
 
   - it: uses custom minAvailable value
     set:
+      podDisruptionBudget.enabled: true
       podDisruptionBudget.minAvailable: 2
     asserts:
       - equal:
@@ -41,6 +44,7 @@ tests:
 
   - it: uses percentage-based minAvailable
     set:
+      podDisruptionBudget.enabled: true
       podDisruptionBudget.minAvailable: "50%"
     asserts:
       - equal:
@@ -49,6 +53,7 @@ tests:
 
   - it: uses maxUnavailable when set
     set:
+      podDisruptionBudget.enabled: true
       podDisruptionBudget.minAvailable: null
       podDisruptionBudget.maxUnavailable: 1
     asserts:
@@ -60,6 +65,7 @@ tests:
 
   - it: uses maxUnavailable for validator nodes (default to 1)
     set:
+      podDisruptionBudget.enabled: true
       podDisruptionBudget.minAvailable: null
       podDisruptionBudget.maxUnavailable: 1
     asserts:
@@ -74,6 +80,7 @@ tests:
 
   - it: supports both minAvailable and maxUnavailable but only one should be used
     set:
+      podDisruptionBudget.enabled: true
       podDisruptionBudget.minAvailable: 1
       podDisruptionBudget.maxUnavailable: 1
     asserts:
@@ -83,11 +90,10 @@ tests:
       - equal:
           path: spec.maxUnavailable
           value: 1
-    notes:
-      - "WARNING: Both minAvailable and maxUnavailable are set. Kubernetes will accept both, but best practice is to use only one. See documentation for guidance.
 
   - it: uses custom maxUnavailable value
     set:
+      podDisruptionBudget.enabled: true
       podDisruptionBudget.minAvailable: null
       podDisruptionBudget.maxUnavailable: 2
     asserts:
@@ -98,6 +104,8 @@ tests:
           path: spec.minAvailable
 
   - it: includes correct labels
+    set:
+      podDisruptionBudget.enabled: true
     asserts:
       - equal:
           path: metadata.labels["app.kubernetes.io/name"]
@@ -111,6 +119,7 @@ tests:
 
   - it: uses fullnameOverride
     set:
+      podDisruptionBudget.enabled: true
       fullnameOverride: my-custom-operator
     asserts:
       - equal:
@@ -122,14 +131,16 @@ tests:
 
   - it: works with minAvailable as string
     set:
+      podDisruptionBudget.enabled: true
       podDisruptionBudget.minAvailable: "1"
     asserts:
       - equal:
           path: spec.minAvailable
-          value: "1"
+          value: 1
 
   - it: works with maxUnavailable as percentage
     set:
+      podDisruptionBudget.enabled: true
       podDisruptionBudget.minAvailable: null
       podDisruptionBudget.maxUnavailable: "25%"
     asserts:

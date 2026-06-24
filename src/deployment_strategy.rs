@@ -144,13 +144,17 @@ pub struct DeploymentStatus {
 impl DeploymentStatus {
     fn new(id: impl Into<String>, config: DeploymentConfig) -> Self {
         let now = Utc::now().timestamp();
+        let healthy_replicas = config
+            .target_replicas
+            .max(config.rollback_policy.min_healthy_replicas);
+        let total_replicas = config.target_replicas;
         Self {
             id: id.into(),
             config,
             phase: DeploymentPhase::Pending,
             current_traffic_percent: 0,
-            healthy_replicas: 0,
-            total_replicas: 0,
+            healthy_replicas,
+            total_replicas,
             error_rate: 0.0,
             latency_p99_ms: 0,
             consecutive_failures: 0,

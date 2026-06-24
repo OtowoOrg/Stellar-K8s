@@ -168,15 +168,16 @@ mod tests {
         });
         let plan = QueryOptimizer::plan("/accounts/GABC", true);
 
-        let call_count = std::cell::RefCell::new(0);
+        let call_count = std::cell::Cell::new(0);
+
         QueryOptimizer::execute(&cache, &plan, || {
-            *call_count.borrow_mut() += 1;
+            call_count.set(call_count.get() + 1);
             b"fetched".to_vec()
         });
         QueryOptimizer::execute(&cache, &plan, || {
-            *call_count.borrow_mut() += 1;
+            call_count.set(call_count.get() + 1);
             b"fetched".to_vec()
         });
-        assert_eq!(*call_count.borrow(), 1);
+        assert_eq!(call_count.get(), 1);
     }
 }

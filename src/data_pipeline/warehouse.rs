@@ -216,19 +216,25 @@ pub fn create_adapter(config: WarehouseConfig) -> Box<dyn WarehouseAdapter> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use std::collections::HashMap as HM;
 
     fn sample_etl_record(seq: u64) -> EtlRecord {
+        let mut metadata = HM::new();
+        metadata.insert("date_partition".into(), "2024-01-15".into());
         EtlRecord {
-            id: format!("test:{seq}"),
-            source_topic: "test".into(),
+            id: format!("test-{seq}"),
+            source_topic: "ledger".into(),
             partition: 0,
             offset: seq as i64,
             payload: serde_json::json!({
-                "ledger_sequence": seq,
                 "hash": format!("h{seq}"),
+                "base_fee_xlm": 0.00001,
+                "base_reserve_xlm": 0.5,
+                "tx_success_rate": 1.0,
+                "avg_ops_per_tx": 2.0,
+                "ledger_size_category": "small",
             }),
-            metadata: HashMap::from([("pipeline_version".into(), "1.0.0".into())]),
+            metadata,
             pipeline_ts: "2024-01-15T00:00:00Z".into(),
             ledger_seq: Some(seq),
         }

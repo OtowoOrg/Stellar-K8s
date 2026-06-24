@@ -167,7 +167,13 @@ impl PluginManager {
     /// Unregister a plugin
     pub async fn unregister(&self, name: &str) -> bool {
         let mut plugins = self.plugins.write().await;
-        plugins.remove(name).is_some()
+        let removed = plugins.remove(name).is_some();
+        drop(plugins);
+        if removed {
+            let mut settings = self.settings.write().await;
+            settings.remove(name);
+        }
+        removed
     }
 
     /// Enable/disable a plugin
@@ -233,10 +239,8 @@ impl PluginManager {
                 plugin.post_request(ctx).await;
             }
 
-            if ctx.response_status.is_some() {
-                if plugin.hooks().contains(&PluginHook::PostResponse) {
-                    plugin.post_response(ctx).await;
-                }
+            if ctx.response_status.is_some() && plugin.hooks().contains(&PluginHook::PostResponse) {
+                plugin.post_response(ctx).await;
             }
         }
     }

@@ -73,6 +73,7 @@ pub mod types;
 pub mod stellar_aiops;
 pub mod stellar_disaster_recovery;
 pub mod stellar_gitops;
+pub mod stellar_registry;
 pub mod stellar_security;
 
 #[cfg(test)]
@@ -165,6 +166,12 @@ pub use stellar_disaster_recovery::{
 pub use stellar_gitops::{
     ArgoCDConfig, ArgoCDSyncPolicy, FluxCDConfig, GitOpsProvider, ProgressiveDeliveryConfig,
     StellarGitOpsConfig, StellarGitOpsConfigSpec, StellarGitOpsConfigStatus, SyncStatus,
+};
+pub use stellar_registry::{
+    AdmissionPolicy, AutoPatchConfig, ComplianceReport, GarbageCollectionConfig, MirrorStatus,
+    RegistryMirror, RegistryPhase, RegistryProxyConfig, ScannerBackend, ScanningConfig,
+    SigningConfig, StellarRegistry, StellarRegistrySpec, StellarRegistryStatus,
+    VulnerabilitySummary,
 };
 pub use stellar_security::{
     AutomatedScanningConfig, ComplianceFramework, ComplianceStatus as SecurityComplianceStatus,

@@ -183,5 +183,3 @@ pub(crate) fn cleanup_stellar_node(
     }
     .boxed()
 }
-
-/// Fetch the ready replicas from the Deployment or StatefulSet status

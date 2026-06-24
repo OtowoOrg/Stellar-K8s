@@ -32,37 +32,37 @@ pub use crate::error::{Error, Result};
 pub use crate::infra;
 pub use crate::plugin_sdk::{HookResult, ReconcileContext};
 
-pub use crate::controller::archive_health::{
+pub(crate) use crate::controller::archive_health::{
     calculate_backoff, check_archive_integrity, check_archive_integrity_random,
     check_history_archive_health, ArchiveHealthResult, ArchiveIntegrityCheckResult,
     ARCHIVE_LAG_THRESHOLD,
 };
-pub use crate::controller::audit_worker::AuditWorker;
+pub(crate) use crate::controller::audit_worker::AuditWorker;
 pub use crate::controller::conditions;
 pub use crate::controller::cross_cloud_failover;
-pub use crate::controller::cve_reconciler;
+pub(crate) use crate::controller::cve_reconciler;
 pub use crate::controller::disk_scaler;
 pub use crate::controller::dr;
 pub use crate::controller::dr_drill;
-pub use crate::controller::finalizers::STELLAR_NODE_FINALIZER;
-pub use crate::controller::health;
+pub(crate) use crate::controller::finalizers::STELLAR_NODE_FINALIZER;
+pub(crate) use crate::controller::health;
 pub use crate::controller::kms_secret;
 pub use crate::controller::label_propagation::LabelPropagator;
 pub use crate::controller::maintenance;
 #[cfg(feature = "metrics")]
-pub use crate::controller::metrics;
+pub(crate) use crate::controller::metrics;
 pub use crate::controller::mtls;
 pub use crate::controller::oci_snapshot;
 pub use crate::controller::operator_config::{hardcoded_defaults, OperatorConfig};
 pub use crate::controller::peer_discovery;
 pub use crate::controller::pss;
-pub use crate::controller::remediation;
-pub use crate::controller::resources;
-pub use crate::controller::secret_watcher;
+pub(crate) use crate::controller::remediation;
+pub(crate) use crate::controller::resources;
+pub(crate) use crate::controller::secret_watcher;
 pub use crate::controller::service_mesh;
 pub use crate::controller::spot_drain;
-pub use crate::controller::sync_scale;
-pub use crate::controller::sync_state_monitor;
+pub(crate) use crate::controller::sync_scale;
+pub(crate) use crate::controller::sync_state_monitor;
 pub use crate::controller::vpa as vpa_controller;
-pub use crate::controller::vsl;
+pub(crate) use crate::controller::vsl;
 pub use chrono::Utc;

@@ -1,6 +1,10 @@
 //! Apply reconciliation path.
 
 use super::events::ActionType;
+use super::events::{
+    emit_spec_validation_event, format_spec_validation_errors, publish_object_event, recorder_for,
+    workload_resource_exists,
+};
 use super::prelude::*;
 use super::state::ControllerState;
 use super::support::*;

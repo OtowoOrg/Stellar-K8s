@@ -2,12 +2,12 @@
 
 use super::prelude::*;
 
-fn recorder_for(client: &Client, reporter: &Reporter, node: &StellarNode) -> Recorder {
+pub(crate) fn recorder_for(client: &Client, reporter: &Reporter, node: &StellarNode) -> Recorder {
     Recorder::new(client.clone(), reporter.clone(), node.object_ref(&()))
 }
 
 /// Publish a Kubernetes Event attached to the StellarNode using kube-rs [`Recorder`].
-async fn publish_object_event(
+pub(crate) async fn publish_object_event(
     recorder: &Recorder,
     type_: EventType,
     reason: &str,
@@ -55,7 +55,7 @@ pub(crate) fn publish_stellar_event_owned(
 }
 
 /// Returns whether the primary workload (Deployment or StatefulSet) for this node already exists.
-async fn workload_resource_exists(client: &Client, node: &StellarNode) -> Result<bool> {
+pub(crate) async fn workload_resource_exists(client: &Client, node: &StellarNode) -> Result<bool> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = node.name_any();
     match node.spec.node_type {
@@ -79,7 +79,7 @@ async fn workload_resource_exists(client: &Client, node: &StellarNode) -> Result
 }
 
 /// Format structured spec validation errors into a user-friendly message
-fn format_spec_validation_errors(errors: &[SpecValidationError]) -> String {
+pub(crate) fn format_spec_validation_errors(errors: &[SpecValidationError]) -> String {
     let mut msg = String::from("Spec validation failed with the following issues:\n");
     for e in errors {
         msg.push_str(&format!(
@@ -91,7 +91,7 @@ fn format_spec_validation_errors(errors: &[SpecValidationError]) -> String {
 }
 
 /// Emit a single grouped Kubernetes Event for all spec validation errors
-async fn emit_spec_validation_event(
+pub(crate) async fn emit_spec_validation_event(
     client: &Client,
     reporter: &Reporter,
     node: &StellarNode,

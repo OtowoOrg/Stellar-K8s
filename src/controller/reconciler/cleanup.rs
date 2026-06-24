@@ -1,6 +1,7 @@
 //! Cleanup on deletion.
 
 use super::events::ActionType;
+use super::events::{publish_object_event, recorder_for};
 use super::prelude::*;
 use super::state::ControllerState;
 

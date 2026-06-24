@@ -1,5 +1,6 @@
 //! HPA management.
 
+use super::alerting::build_hpa;
 use super::helpers::*;
 use super::prelude::*;
 

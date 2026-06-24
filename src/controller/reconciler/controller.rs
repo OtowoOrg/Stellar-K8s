@@ -4,6 +4,7 @@ use super::error_policy::error_policy;
 use super::prelude::*;
 use super::reconcile::reconcile;
 use super::state::ControllerState;
+use super::BatchSummaryReport;
 
 /// Main entry point to start the controller
 ///

@@ -2,8 +2,8 @@
 
 use super::prelude::*;
 
-const DIAGNOSTIC_SIDECAR_DEFAULT_CPU: &str = "50m";
-const DIAGNOSTIC_SIDECAR_DEFAULT_MEMORY: &str = "64Mi";
+pub(crate) const DIAGNOSTIC_SIDECAR_DEFAULT_CPU: &str = "50m";
+pub(crate) const DIAGNOSTIC_SIDECAR_DEFAULT_MEMORY: &str = "64Mi";
 
 /// Get the standard labels for a StellarNode's resources
 pub(crate) fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {

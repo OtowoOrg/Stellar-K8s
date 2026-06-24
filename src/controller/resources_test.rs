@@ -602,7 +602,7 @@ peer-2 = "G..."
     #[test]
     fn test_service_has_standard_labels_and_owner_ref() {
         let node = make_node(NodeType::Horizon);
-        let svc = build_service(&node, false);
+        let svc = build_service_for_test(&node);
         assert_standard_labels(&svc.metadata, &node);
         assert_owner_reference(&svc.metadata, &node);
     }

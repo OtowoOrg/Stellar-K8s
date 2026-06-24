@@ -1,6 +1,7 @@
 //! Event recording helpers.
 
 use super::prelude::*;
+use super::state::ControllerState;
 
 pub(crate) fn recorder_for(client: &Client, reporter: &Reporter, node: &StellarNode) -> Recorder {
     Recorder::new(client.clone(), reporter.clone(), node.object_ref(&()))

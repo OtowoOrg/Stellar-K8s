@@ -1,6 +1,7 @@
 //! PersistentVolumeClaim management.
 
 use super::helpers::*;
+use super::pdb::{build_pvc, pvc_needs_update, resolve_pvc_storage_class};
 use super::prelude::*;
 
 // ============================================================================

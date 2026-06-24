@@ -184,7 +184,7 @@ pub(crate) fn build_pod_template(
         if dr_config.enabled
             && dr_config.sync_strategy == crate::crd::DRSyncStrategy::StreamingLedger
         {
-            let sidecar = super::state_sync::build_state_sync_sidecar(node);
+            let sidecar = crate::controller::state_sync::build_state_sync_sidecar(node);
             pod_spec.containers.push(sidecar);
         }
     }

@@ -2,6 +2,7 @@
 
 use super::helpers::*;
 use super::prelude::*;
+use super::service_monitor::delete_alerting;
 
 // ============================================================================
 // Alerting — unchanged

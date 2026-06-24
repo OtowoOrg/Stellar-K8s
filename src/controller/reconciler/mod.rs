@@ -74,6 +74,7 @@ impl ToControllerStateArc for &Arc<ControllerState> {
         (*self).clone()
     }
 }
+#[macro_export]
 macro_rules! emit_event {
     ($client:expr, $reporter:expr, $node:expr, $type:expr, $reason:expr, $action:expr, $note:expr $(,)?) => {
         $crate::controller::reconciler::events::emit_event_owned(
@@ -88,6 +89,7 @@ macro_rules! emit_event {
     };
 }
 
+#[macro_export]
 macro_rules! publish_stellar_event {
     ($client:expr, $reporter:expr, $node:expr, $type:expr, $reason:expr, $action:expr, $note:expr $(,)?) => {
         $crate::controller::reconciler::events::publish_stellar_event_owned(
@@ -102,6 +104,7 @@ macro_rules! publish_stellar_event {
     };
 }
 
+#[macro_export]
 macro_rules! apply_or_emit {
     ($ctx:expr, $node:expr, $action:expr, $info:expr, clones: [$($clone:ident),*], $closure:expr $(,)?) => {
         {

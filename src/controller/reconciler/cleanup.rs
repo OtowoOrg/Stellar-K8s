@@ -4,7 +4,7 @@ use super::events::ActionType;
 use super::events::{publish_object_event, recorder_for};
 use super::prelude::*;
 use super::state::ControllerState;
-use super::{apply_or_emit, publish_stellar_event, ToControllerStateArc, ToStellarNodeArc};
+use super::{ToControllerStateArc, ToStellarNodeArc};
 
 pub(crate) fn cleanup_stellar_node(
     client: Client,

@@ -8,9 +8,7 @@ use super::events::{
 use super::prelude::*;
 use super::state::ControllerState;
 use super::support::*;
-use super::{
-    apply_or_emit, emit_event, publish_stellar_event, ToControllerStateArc, ToStellarNodeArc,
-};
+use super::{ToControllerStateArc, ToStellarNodeArc};
 
 pub(crate) fn apply_stellar_node(
     client: Client,

@@ -10,7 +10,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::reconciler::*;
-    use crate::controller::reconciler::support::apply_phase_conditions;
+    use crate::controller::reconciler::apply_phase_conditions;
     use crate::controller::{AnomalyDetector, AuditLog, AuditRecorder, JobRegistry};
     use crate::crd::{
         CaptiveCoreConfig, Condition, HorizonConfig, ManagedDatabaseConfig, NodeType,

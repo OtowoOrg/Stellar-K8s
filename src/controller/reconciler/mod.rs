@@ -226,3 +226,6 @@ pub use events::ActionType;
 pub use fuzz::reconcile_for_fuzz;
 pub(crate) use reconcile::reconcile;
 pub use state::ControllerState;
+
+#[cfg(test)]
+pub(crate) use support::apply_phase_conditions;

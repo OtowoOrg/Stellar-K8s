@@ -7,8 +7,11 @@ use axum::{body::Body, extract::Request, response::Response};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tokio::sync::RwLock;
+
+static VERSION_PREFIX_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^/v\d+(\.\d+)?/").expect("version prefix regex is valid"));
 
 /// API Version
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -28,18 +31,14 @@ impl ApiVersion {
             minor: Some(minor),
         }
     }
-
-    pub fn to_string(&self) -> String {
-        match self.minor {
-            Some(m) => format!("v{}.{}", self.major, m),
-            None => format!("v{}", self.major),
-        }
-    }
 }
 
 impl std::fmt::Display for ApiVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        match self.minor {
+            Some(m) => write!(f, "v{}.{}", self.major, m),
+            None => write!(f, "v{}", self.major),
+        }
     }
 }
 
@@ -147,20 +146,19 @@ impl RouteRule {
     }
 
     /// Check if this rule matches a request
+    #[allow(clippy::regex_creation_in_loops)]
     pub fn matches(&self, req: &Request<Body>) -> bool {
         // Check version
         if let Some(ref required) = self.version {
             let path = req.uri().path();
-            if !path.starts_with(&format!("/{}/", required.to_string())) {
+            if !path.starts_with(&format!("/{}/", required)) {
                 return false;
             }
         }
 
         // Check method
-        if !self.methods.is_empty() {
-            if !self.methods.contains(req.method()) {
-                return false;
-            }
+        if !self.methods.is_empty() && !self.methods.contains(req.method()) {
+            return false;
         }
 
         // Check path pattern
@@ -310,9 +308,7 @@ impl VersionedRouter {
                 if rule.strip_version {
                     let path = final_req.uri().path().to_string();
                     // Remove /v1/ or /v1.x/ prefix
-                    let new_path = Regex::new(r"^/v\d+(\.\d+)?/")
-                        .map(|re| re.replace(&path, "/").to_string())
-                        .unwrap_or(path);
+                    let new_path = VERSION_PREFIX_RE.replace(&path, "/").to_string();
                     *final_req.uri_mut() = new_path.parse().unwrap();
                 }
 

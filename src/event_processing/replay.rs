@@ -146,6 +146,11 @@ impl EventReplayStore {
     pub async fn len(&self) -> usize {
         self.buffer.read().await.len()
     }
+
+    /// Returns true when no events are buffered.
+    pub async fn is_empty(&self) -> bool {
+        self.len().await == 0
+    }
 }
 
 #[cfg(test)]

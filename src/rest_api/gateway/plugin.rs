@@ -239,10 +239,8 @@ impl PluginManager {
                 plugin.post_request(ctx).await;
             }
 
-            if ctx.response_status.is_some() {
-                if plugin.hooks().contains(&PluginHook::PostResponse) {
-                    plugin.post_response(ctx).await;
-                }
+            if ctx.response_status.is_some() && plugin.hooks().contains(&PluginHook::PostResponse) {
+                plugin.post_response(ctx).await;
             }
         }
     }

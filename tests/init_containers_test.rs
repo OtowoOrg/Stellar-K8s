@@ -38,7 +38,7 @@ fn make_init_container_with_volume(
 
 #[test]
 fn init_containers_are_ordered_by_array_index() {
-    let containers = vec![
+    let containers = [
         make_init_container("step-1", "alpine", vec!["echo", "first"]),
         make_init_container("step-2", "alpine", vec!["echo", "second"]),
         make_init_container("step-3", "alpine", vec!["echo", "third"]),
@@ -224,7 +224,7 @@ fn init_container_without_command_is_valid() {
 #[test]
 fn multiple_init_containers_all_must_succeed_before_main_starts() {
     // This is a Kubernetes guarantee; document it with an assertion on ordering.
-    let init_containers = vec![
+    let init_containers = [
         make_init_container("check-db", "wait-for-it", vec!["db:5432"]),
         make_init_container(
             "run-migrations",

@@ -1,4 +1,4 @@
-use chrono;
+use chrono::Utc;
 use k8s_openapi::api::core::v1::{Container, Pod, PodSpec};
 use kube::api::ObjectMeta;
 use stellar_k8s::controller::health_check_sidecar::SyncStatus;
@@ -99,7 +99,7 @@ fn test_node_unready_during_sync() {
         is_synced: false,
         ledger_num: 100,
         network_ledger: 200,
-        last_check: chrono::Utc::now().timestamp(),
+        last_check: Utc::now().timestamp(),
     };
 
     assert!(!sync_status.is_synced);
@@ -117,7 +117,7 @@ fn test_node_ready_when_synced() {
         is_synced: true,
         ledger_num: 1000,
         network_ledger: 1005,
-        last_check: chrono::Utc::now().timestamp(),
+        last_check: Utc::now().timestamp(),
     };
 
     assert!(sync_status.is_synced);
@@ -134,14 +134,14 @@ fn test_validator_sync_threshold() {
         is_synced: true,
         ledger_num: 1000,
         network_ledger: 1010, // Exactly at threshold
-        last_check: chrono::Utc::now().timestamp(),
+        last_check: Utc::now().timestamp(),
     };
 
     let unsynced_status = SyncStatus {
         is_synced: false,
         ledger_num: 1000,
         network_ledger: 1011, // Just over threshold
-        last_check: chrono::Utc::now().timestamp(),
+        last_check: Utc::now().timestamp(),
     };
 
     assert!(synced_status.is_synced);
@@ -155,14 +155,14 @@ fn test_horizon_sync_threshold() {
         is_synced: true,
         ledger_num: 1000,
         network_ledger: 1005, // Exactly at threshold
-        last_check: chrono::Utc::now().timestamp(),
+        last_check: Utc::now().timestamp(),
     };
 
     let unsynced_status = SyncStatus {
         is_synced: false,
         ledger_num: 1000,
         network_ledger: 1006, // Just over threshold
-        last_check: chrono::Utc::now().timestamp(),
+        last_check: Utc::now().timestamp(),
     };
 
     assert!(synced_status.is_synced);

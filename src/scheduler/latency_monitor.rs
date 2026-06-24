@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn test_benchmark_avg_and_max_computed() {
         // Simulate what evaluate_and_benchmark does with latency samples
-        let samples = vec![10.0_f64, 50.0, 200.0];
+        let samples = [10.0_f64, 50.0, 200.0];
         let sum: f64 = samples.iter().sum();
         let avg = sum / samples.len() as f64;
         let max = samples.iter().cloned().reduce(f64::max).unwrap();
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn test_benchmark_above_threshold_count() {
         let threshold = 150.0_f64;
-        let samples = vec![10.0_f64, 50.0, 200.0, 300.0];
+        let samples = [10.0_f64, 50.0, 200.0, 300.0];
         let above = samples.iter().filter(|&&l| l > threshold).count();
         assert_eq!(above, 2);
     }

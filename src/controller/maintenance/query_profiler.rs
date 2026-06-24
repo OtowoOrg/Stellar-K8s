@@ -103,7 +103,8 @@ impl QueryProfiler {
                     for cap in equality_re.captures_iter(&query.query) {
                         if let Some(col_match) = cap.get(1) {
                             let column = col_match.as_str();
-                            let column = column.split('.').last().unwrap_or(column).to_string();
+                            let column =
+                                column.split('.').next_back().unwrap_or(column).to_string();
                             if !columns.contains(&column) {
                                 columns.push(column);
                             }

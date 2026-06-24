@@ -2,6 +2,7 @@
 
 use super::prelude::*;
 use super::ToStellarNodeArc;
+use crate::publish_stellar_event;
 
 pub(crate) async fn get_ready_replicas(client: &Client, node: &StellarNode) -> Result<i32> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());

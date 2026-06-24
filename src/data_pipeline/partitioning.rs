@@ -118,24 +118,18 @@ impl std::fmt::Debug for PartitionStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_pipeline::etl::LedgerSizeCategory;
     use std::collections::HashMap;
 
     fn make_record(seq: u64, date: &str, hour: u32) -> EtlRecord {
         EtlRecord {
-            sequence: seq,
-            hash: format!("h{seq}"),
-            base_fee_xlm: 0.00001,
-            base_reserve_xlm: 0.5,
-            timestamp_epoch_ms: 0,
-            date_partition: date.into(),
-            hour_partition: hour,
-            tx_success_rate: 1.0,
-            avg_ops_per_tx: 2.0,
-            ledger_size_category: LedgerSizeCategory::Small,
-            pipeline_version: "1.0.0".into(),
-            enriched_at: chrono::Utc::now(),
-            tags: HashMap::new(),
+            id: format!("test:{seq}"),
+            source_topic: "test".into(),
+            partition: 0,
+            offset: seq as i64,
+            payload: serde_json::json!({}),
+            metadata: HashMap::new(),
+            pipeline_ts: format!("{date}T{hour:02}:00:00Z"),
+            ledger_seq: Some(seq),
         }
     }
 

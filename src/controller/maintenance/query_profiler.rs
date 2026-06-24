@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn recommend_indexes_parses_where_clauses() {
         let profiler = QueryProfiler {
-            pool: PgPool::connect_lazy("postgres://localhost/test"),
+            pool: PgPool::connect_lazy("postgres://localhost/test").expect("test pool"),
         };
         let query = SlowQuery {
             query: "SELECT * FROM payments WHERE payment_id = $1 AND ledger_seq = $2".into(),

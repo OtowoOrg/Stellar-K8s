@@ -758,19 +758,10 @@ mod tests {
                     failover_dns: None,
                     health_check_interval: 30,
                     drill_schedule: None,
+                    policy_ref: None,
+                    archive_integrity_config: None,
                 }),
-                pod_anti_affinity: Default::default(),
-                topology_spread_constraints: None,
-                cve_handling: None,
-                snapshot_schedule: None,
-                restore_from_snapshot: None,
-                read_replica_config: None,
-                read_pool_endpoint: None,
-                db_maintenance_config: None,
-                oci_snapshot: None,
-                service_mesh: None,
-                forensic_snapshot: None,
-                resource_meta: None,
+                ..Default::default()
             },
             status: None,
         }
@@ -950,7 +941,7 @@ mod tests {
     #[test]
     fn test_consistency_under_high_load() {
         // Simulate 1000 ledger advances with random jitter (0-3 ledgers behind)
-        let mut primary_seq = 1_000_000;
+        let mut primary_seq: u64 = 1_000_000;
         let mut standby_seq = 1_000_000;
 
         for i in 0..1000 {

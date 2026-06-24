@@ -24,6 +24,7 @@ mod tests {
             health_check_interval: 30,
             drill_schedule: None,
             archive_integrity_config: None,
+            policy_ref: None,
         }
     }
 
@@ -46,6 +47,7 @@ mod tests {
             health_check_interval: 30,
             drill_schedule: None,
             archive_integrity_config: None,
+            policy_ref: None,
         };
         // When enabled is false the reconciler returns Ok(None).
         // We verify the shape of the config to confirm the guard would fire.

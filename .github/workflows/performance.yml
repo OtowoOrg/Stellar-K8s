@@ -12,12 +12,6 @@ on:
       - ".github/workflows/performance.yml"
       - ".github/actions/setup-perf-env/**"
       - ".github/actions/compare-benchmarks/**"
-  pull_request:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "benchmarks/**"
-      - ".github/workflows/performance.yml"
   workflow_dispatch:
     inputs:
       suite:

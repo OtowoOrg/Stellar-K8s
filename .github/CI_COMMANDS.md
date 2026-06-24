@@ -29,17 +29,9 @@ All reusable logic lives under `.github/actions/`:
 - **Removed duplicate** system-dependency install blocks (now in `setup-rust`).
 - **Removed duplicate** `actions/checkout@v6` references (standardised on `@v4`).
 - `lint` and `security-audit` run in **parallel** (both depend only on `changes`).
-- `test` and `coverage` run in **parallel** (both depend on `lint` + `security-audit`).
-
-### `pre-commit.yml`
-- Uses `setup-rust` composite action — no more duplicated apt-get blocks.
-- Added `concurrency` group to cancel stale runs.
-
-### `commit-lint.yml`
-- Fixed invalid action versions (`actions/checkout@v6`, `actions/setup-node@v6`
-  → `@v4`).
-- Pinned commitlint packages to major version `@19`.
-- Added `concurrency` group.
+- `test` runs on every PR; `coverage` runs on **main pushes only** (tarpaulin is slow).
+- Removed standalone `pre-commit.yml` and `commit-lint.yml` workflows — lint/format
+  is covered by the main `ci.yml` `lint` job.
 
 ### Estimated time reduction
 Parallel lint + audit + test/coverage, combined with shared caching, reduces
@@ -65,8 +57,9 @@ the critical path by ~35–40% compared to the previous sequential layout.
 
 ### `verify-operator-boot.yml`
 - Uses `setup-rust` composite action.
-- Added `concurrency` group to cancel stale PR runs.
-- Artifact name now includes `github.run_id` to avoid collisions.
+- Runs on **main pushes** and `workflow_dispatch` only (kind-cluster boot check is
+  too heavy for every contributor PR).
+- Artifact name includes `github.run_id` to avoid collisions.
 
 ---
 
@@ -75,6 +68,7 @@ the critical path by ~35–40% compared to the previous sequential layout.
 ### `performance.yml` (unified pipeline)
 - **Replaces** the former `benchmark.yml`, `performance-regression.yml`, and
   `webhook-benchmark.yml` with a single matrix-driven workflow.
+- Runs on **main pushes** (path-filtered) and `workflow_dispatch` — not on PRs.
 - **Shared build job** produces the operator binary and Docker image once; all
   three suites (operator, regression, webhook) download the same artifact.
 - **Matrix execution** runs operator and regression suites via `setup-perf-env`,
@@ -87,6 +81,7 @@ the critical path by ~35–40% compared to the previous sequential layout.
 ## Release & Multi-Arch Workflows (#665)
 
 ### `multiarch-build.yml`
+- Runs on **main pushes** (path-filtered) and `workflow_dispatch` — not on PRs.
 - Per-platform GHA cache scopes (`multiarch-amd64`, `multiarch-arm64`) prevent
   cross-arch cache pollution and improve cache hit rates.
 - `arch-benchmark` jobs use `setup-rust` composite action.

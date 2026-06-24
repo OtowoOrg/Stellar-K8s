@@ -10,8 +10,6 @@ name: "Verify Operator Boot"
 
 on:
   push:
-    branches: [main, "fix/issue-146-*"]
-  pull_request:
     branches: [main]
   workflow_dispatch:
 

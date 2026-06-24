@@ -25,7 +25,7 @@ pub(crate) use helpers::{
     owner_reference, resource_name, standard_labels,
 };
 
-pub use alerting::ensure_alerting;
+pub use alerting::{delete_hpa, ensure_alerting};
 pub use cnpg::{delete_cnpg_resources, ensure_cnpg_cluster, ensure_cnpg_pooler};
 pub use config_map::{delete_config_map, ensure_config_map};
 pub use deployment::{ensure_canary_deployment, ensure_deployment};
@@ -41,8 +41,7 @@ pub use pdb_extra::{delete_pdb, ensure_pdb};
 pub use pvc::ensure_pvc;
 pub use service::{ensure_canary_service, ensure_service};
 pub use service_monitor::{
-    delete_alerting, delete_canary_resources, delete_hpa, delete_service_monitor,
-    ensure_service_monitor,
+    delete_alerting, delete_canary_resources, delete_service_monitor, ensure_service_monitor,
 };
 pub use statefulset::{delete_workload, ensure_statefulset};
 
@@ -53,8 +52,8 @@ pub(crate) use builders_for_tests::{
 };
 pub(crate) use config_map::build_config_map;
 pub(crate) use deployment::build_deployment;
-pub(crate) use helpers::build_pvc;
 pub(crate) use network_policy::build_network_policy;
+pub(crate) use pdb::build_pvc;
 pub(crate) use pdb_extra::build_pdb;
 pub(crate) use pod_template::build_topology_spread_constraints;
 pub(crate) use pod_template::{build_horizon_migration_container, merge_workload_affinity};

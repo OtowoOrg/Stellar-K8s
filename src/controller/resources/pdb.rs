@@ -7,7 +7,7 @@ use super::prelude::*;
 // PodDisruptionBudget
 // ============================================================================
 
-fn resolve_pvc_storage_class(
+pub(crate) fn resolve_pvc_storage_class(
     node: &StellarNode,
     has_local_path: bool,
     has_local_storage: bool,
@@ -28,7 +28,10 @@ fn resolve_pvc_storage_class(
     }
 }
 
-fn pvc_needs_update(existing: &PersistentVolumeClaim, desired: &PersistentVolumeClaim) -> bool {
+pub(crate) fn pvc_needs_update(
+    existing: &PersistentVolumeClaim,
+    desired: &PersistentVolumeClaim,
+) -> bool {
     existing.spec != desired.spec
         || existing.metadata.labels != desired.metadata.labels
         || existing.metadata.annotations != desired.metadata.annotations

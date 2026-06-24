@@ -1,7 +1,6 @@
 //! Additional PDB builders.
 
 use super::helpers::*;
-use super::pdb::build_pdb;
 use super::prelude::*;
 
 // ============================================================================

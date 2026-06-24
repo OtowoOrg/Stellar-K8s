@@ -135,7 +135,7 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
     // Start Horizon Metrics Collector in the background
     #[cfg(feature = "rest-api")]
     {
-        use super::horizon_metrics_collector::spawn_horizon_metrics_collector;
+        use crate::controller::horizon_metrics_collector::spawn_horizon_metrics_collector;
         let collector_client = client.clone();
         let collector_store = state.metrics_store.clone();
         let collector_watch_ns = state.watch_namespace.clone();
@@ -153,7 +153,7 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
     }
 
     // Start Quorum Optimizer in the background
-    let quorum_optimizer = Arc::new(super::quorum::QuorumOptimizer::new(
+    let quorum_optimizer = Arc::new(crate::controller::quorum::QuorumOptimizer::new(
         client.clone(),
         state.event_reporter.clone(),
     ));

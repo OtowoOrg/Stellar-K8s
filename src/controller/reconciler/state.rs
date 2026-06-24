@@ -39,13 +39,13 @@ pub struct ControllerState {
     /// Timestamp of the last event received from the K8s watch stream
     pub last_event_received: std::sync::Arc<std::sync::atomic::AtomicU64>,
     /// Background job registry for the monitoring dashboard.
-    pub job_registry: std::sync::Arc<super::background_jobs::JobRegistry>,
+    pub job_registry: std::sync::Arc<crate::controller::background_jobs::JobRegistry>,
     /// In-memory audit log for admin activity.
-    pub audit_log: std::sync::Arc<super::audit_log::AuditLog>,
+    pub audit_log: std::sync::Arc<crate::controller::audit_log::AuditLog>,
     /// Unified audit recorder (in-memory log + optional sink).
-    pub audit_recorder: std::sync::Arc<super::audit_recorder::AuditRecorder>,
+    pub audit_recorder: std::sync::Arc<crate::controller::audit_recorder::AuditRecorder>,
     /// ML-based anomaly detector for operator behavior.
-    pub anomaly_detector: std::sync::Arc<super::anomaly_detection::AnomalyDetector>,
+    pub anomaly_detector: std::sync::Arc<crate::controller::anomaly_detection::AnomalyDetector>,
     /// Plugin registry for custom reconciliation hooks and sidecar injectors.
     pub plugin_registry: std::sync::Arc<crate::plugin_sdk::PluginRegistry>,
     /// Log analytics engine for pattern detection and anomaly reporting.

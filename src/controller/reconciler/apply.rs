@@ -59,7 +59,7 @@ pub(crate) fn apply_stellar_node(
 
         // Network safety check — must run before any resources are created.
         // Ensures no Mainnet node shares a namespace with a Testnet node (or vice versa).
-        if let Err(e) = super::network_isolation::check_network_safety(&client, &node).await {
+        if let Err(e) = crate::controller::network_isolation::check_network_safety(&client, &node).await {
             let msg = e.to_string();
             warn!(
                 "Network safety check failed for {}/{}: {}",
@@ -583,7 +583,7 @@ pub(crate) fn apply_stellar_node(
                         kms_secret::reconcile_vault_secret_rotation(&client, &node, seed_injection.as_ref(),
                         )
                         .await?;
-                        super::forensic_snapshot::reconcile_forensic_snapshot(&client, &node).await?;
+                        crate::controller::forensic_snapshot::reconcile_forensic_snapshot(&client, &node).await?;
                     }
                     NodeType::Horizon | NodeType::SorobanRpc => {
                         let current_version = get_current_deployment_version(&client, &node).await?;
@@ -633,8 +633,8 @@ pub(crate) fn apply_stellar_node(
                             )
                             .await?;
 
-                            let config = super::blue_green::BlueGreenConfig::default();
-                            let migration_success = super::blue_green::orchestrate_horizon_migration(
+                            let config = crate::controller::blue_green::BlueGreenConfig::default();
+                            let migration_success = crate::controller::blue_green::orchestrate_horizon_migration(
                                 &client,
                                 &node,
                                 &config,
@@ -1107,7 +1107,7 @@ pub(crate) fn apply_stellar_node(
         if node.spec.node_type == NodeType::Validator {
             if let Some(ref snapshot_config) = node.spec.snapshot_schedule {
                 if let Err(e) =
-                    super::snapshot::reconcile_snapshot(&client, &node, snapshot_config).await
+                    crate::controller::snapshot::reconcile_snapshot(&client, &node, snapshot_config).await
                 {
                     warn!(
                         "Snapshot reconciliation failed for {}/{}: {}",
@@ -1217,13 +1217,13 @@ pub(crate) fn apply_stellar_node(
             if let Some(pruning_policy) = &node.spec.pruning_policy {
                 if pruning_policy.enabled {
                     apply_or_emit!(&ctx, &node, ActionType::Update, "Archive Pruning", clones: [namespace, name], move |client: Client, _ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
-                        match super::pruning_reconciler::reconcile_pruning(&client, &node).await {
+                        match crate::controller::pruning_reconciler::reconcile_pruning(&client, &node).await {
                             Ok(Some(result)) => {
                                 info!(
                                     "Archive pruning completed for {}/{}: {} deleted, {} retained",
                                     namespace, name, result.deleted_count, result.retained_count
                                 );
-                                super::pruning_reconciler::update_pruning_status(&client, &node, result)
+                                crate::controller::pruning_reconciler::update_pruning_status(&client, &node, result)
                                     .await?;
                             }
                             Ok(None) => {
@@ -1790,33 +1790,33 @@ pub(crate) fn apply_stellar_node(
 
         // Cost estimation: annotate and export metric (non-fatal).
         {
-            let cost = super::cost::estimate_monthly_cost(&node);
-            if let Err(e) = super::cost::annotate_node_cost(&client, &node, cost).await {
+            let cost = crate::controller::cost::estimate_monthly_cost(&node);
+            if let Err(e) = crate::controller::cost::annotate_node_cost(&client, &node, cost).await {
                 warn!(
                     "Failed to annotate node cost for {}/{}: {:?}",
                     namespace, name, e
                 );
             }
             #[cfg(feature = "metrics")]
-            super::cost::report_cost_metric(&namespace, &name, &node.spec.node_type.to_string(), cost);
+            crate::controller::cost::report_cost_metric(&namespace, &name, &node.spec.node_type.to_string(), cost);
         }
 
         // 13. Stamp audit annotations for the permanent reconcile trail.
         {
-            use super::audit::actions;
+            use crate::controller::audit::actions;
             let action = match node.spec.node_type {
                 crate::crd::NodeType::Validator => actions::UPDATED_STATEFULSET,
                 crate::crd::NodeType::Horizon | crate::crd::NodeType::SorobanRpc => {
                     actions::UPDATED_DEPLOYMENT
                 }
             };
-            super::audit::patch_audit_annotations(&client, &node, action).await;
+            crate::controller::audit::patch_audit_annotations(&client, &node, action).await;
         }
 
         // 14. GitOps protocol upgrade — check if a timeline annotation is present and
         //     drive the next due upgrade step via ArgoCD or Flux.
         {
-            use super::gitops_upgrade::{
+            use crate::controller::gitops_upgrade::{
                 GitOpsEngine, GitOpsUpgradeController, ProtocolUpgradeTimeline,
             };
 

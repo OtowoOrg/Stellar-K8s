@@ -3,8 +3,8 @@
 use crate::controller::resource_meta::merge_resource_meta;
 
 // *** NEW: import kms_secret so we can accept SeedInjectionSpec ***
-use super::kms_secret;
-use super::label_propagation::LabelPropagator;
+use crate::controller::kms_secret;
+use crate::controller::label_propagation::LabelPropagator;
 
 use std::collections::{BTreeMap, BTreeSet};
 

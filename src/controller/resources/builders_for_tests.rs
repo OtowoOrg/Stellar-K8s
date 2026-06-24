@@ -1,7 +1,14 @@
 //! Test builder wrappers.
 
+use super::alerting::build_hpa;
+use super::config_map::build_config_map;
+use super::deployment::build_deployment;
 use super::helpers::*;
+use super::pdb::{build_pvc, pvc_needs_update, resolve_pvc_storage_class};
+use super::pdb_extra::build_pdb;
 use super::prelude::*;
+use super::service::build_service;
+use super::statefulset::build_statefulset;
 
 // ============================================================================
 // Test helpers — thin wrappers that expose private builders for unit tests

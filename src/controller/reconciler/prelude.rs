@@ -32,37 +32,37 @@ use crate::error::{Error, Result};
 use crate::infra;
 use crate::plugin_sdk::{HookResult, ReconcileContext};
 
-use super::archive_health::{
+use crate::controller::archive_health::{
     calculate_backoff, check_archive_integrity, check_archive_integrity_random,
     check_history_archive_health, ArchiveHealthResult, ArchiveIntegrityCheckResult,
     ARCHIVE_LAG_THRESHOLD,
 };
-use super::audit_worker::AuditWorker;
-use super::conditions;
-use super::cross_cloud_failover;
-use super::cve_reconciler;
-use super::disk_scaler;
-use super::dr;
-use super::dr_drill;
-use super::finalizers::STELLAR_NODE_FINALIZER;
-use super::health;
-use super::kms_secret;
-use super::label_propagation::LabelPropagator;
-use super::maintenance;
+use crate::controller::audit_worker::AuditWorker;
+use crate::controller::conditions;
+use crate::controller::cross_cloud_failover;
+use crate::controller::cve_reconciler;
+use crate::controller::disk_scaler;
+use crate::controller::dr;
+use crate::controller::dr_drill;
+use crate::controller::finalizers::STELLAR_NODE_FINALIZER;
+use crate::controller::health;
+use crate::controller::kms_secret;
+use crate::controller::label_propagation::LabelPropagator;
+use crate::controller::maintenance;
 #[cfg(feature = "metrics")]
-use super::metrics;
-use super::mtls;
-use super::oci_snapshot;
-use super::operator_config::{hardcoded_defaults, OperatorConfig};
-use super::peer_discovery;
-use super::pss;
-use super::remediation;
-use super::resources;
-use super::secret_watcher;
-use super::service_mesh;
-use super::spot_drain;
-use super::sync_scale;
-use super::sync_state_monitor;
-use super::vpa as vpa_controller;
-use super::vsl;
+use crate::controller::metrics;
+use crate::controller::mtls;
+use crate::controller::oci_snapshot;
+use crate::controller::operator_config::{hardcoded_defaults, OperatorConfig};
+use crate::controller::peer_discovery;
+use crate::controller::pss;
+use crate::controller::remediation;
+use crate::controller::resources;
+use crate::controller::secret_watcher;
+use crate::controller::service_mesh;
+use crate::controller::spot_drain;
+use crate::controller::sync_scale;
+use crate::controller::sync_state_monitor;
+use crate::controller::vpa as vpa_controller;
+use crate::controller::vsl;
 use chrono::Utc;

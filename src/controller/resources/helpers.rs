@@ -101,7 +101,7 @@ pub(crate) fn apply_probe_override_pub(
     apply_probe_override(base, override_cfg)
 }
 
-fn apply_probe_override(
+pub(crate) fn apply_probe_override(
     base: Option<k8s_openapi::api::core::v1::Probe>,
     override_cfg: Option<&crate::crd::types::ProbeOverride>,
 ) -> Option<k8s_openapi::api::core::v1::Probe> {
@@ -256,7 +256,7 @@ fn default_startup_probe(node_type: &crate::crd::NodeType) -> k8s_openapi::api::
 }
 
 /// Create PostParams with dry-run support
-fn post_params(dry_run: bool) -> PostParams {
+pub(crate) fn post_params(dry_run: bool) -> PostParams {
     if dry_run {
         PostParams {
             dry_run: true,
@@ -268,7 +268,7 @@ fn post_params(dry_run: bool) -> PostParams {
 }
 
 /// Create PatchParams with dry-run support
-fn patch_params(dry_run: bool) -> PatchParams {
+pub(crate) fn patch_params(dry_run: bool) -> PatchParams {
     let mut params = PatchParams::apply("stellar-operator").force();
     if dry_run {
         params.dry_run = true;
@@ -277,7 +277,7 @@ fn patch_params(dry_run: bool) -> PatchParams {
 }
 
 /// Create DeleteParams with dry-run support
-fn delete_params(dry_run: bool) -> DeleteParams {
+pub(crate) fn delete_params(dry_run: bool) -> DeleteParams {
     if dry_run {
         DeleteParams {
             dry_run: true,

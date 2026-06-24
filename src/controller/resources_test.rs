@@ -727,7 +727,7 @@ peer-2 = "G..."
     // Sidecar injection tests (#507)
     // -----------------------------------------------------------------------
 
-    use k8s_openapi::api::core::v1::{Container, VolumeMount};
+    use k8s_openapi::api::core::v1::Container;
 
     fn make_sidecar(name: &str) -> Container {
         Container {

@@ -1,6 +1,6 @@
 //! Unit tests for Pod Security Standard validation and security context helpers.
 
-use super::pss::*;
+use super::*;
 use crate::crd::types::{ContainerCapabilities, SeccompProfileOverride, StellarSecurityContext};
 
 // ── validate_stellar_security_context ────────────────────────────────────────

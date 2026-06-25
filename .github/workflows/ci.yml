@@ -168,9 +168,32 @@ jobs:
         if: needs.changes.outputs.rust_core == 'true'
         run: make fmt-check
 
-      - name: Run clippy
+      - name: Run clippy (deny all warnings as errors)
         if: needs.changes.outputs.rust_core == 'true'
-        run: make lint
+        run: |
+          set -euo pipefail
+          echo "→ Running cargo clippy with strict warnings-as-errors configuration..."
+          K8S_OPENAPI_ENABLED_VERSION=1.30 cargo clippy \
+            --workspace \
+            --all-targets \
+            --features "rest-api,metrics,admission-webhook,k8s-v1-30,reconciler-fuzz" \
+            -- \
+            -D clippy::correctness \
+            -D clippy::suspicious \
+            -D clippy::perf \
+            -D clippy::style \
+            -A clippy::new_without_default \
+            -A clippy::match_like_matches_macro \
+            -A clippy::match_result_ok \
+            -A clippy::needless_borrow \
+            -A clippy::get_first \
+            -A clippy::format_in_format_args \
+            -A clippy::single_match \
+            -A clippy::redundant_closure \
+            -A clippy::items_after_test_module \
+            -A clippy::approx_constant \
+            -A clippy::should_implement_trait
+          echo "✓ Clippy check passed — no warnings detected"
 
   # ── 4. Security audit (only when deps change) ────────────────────────────────
   security-audit:

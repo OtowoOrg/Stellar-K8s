@@ -515,7 +515,7 @@ For issues or questions:
 
 ## References
 
-- [Archive Pruning Documentation](docs/archive-pruning.md)
+- [Archive Pruning Documentation](archive-pruning.md)
 - [Pruning Implementation](PRUNING_IMPLEMENTATION.md)
-- [StellarNode API Reference](docs/api-reference.md)
+- [StellarNode API Reference](api-reference.md)
 - [Stellar History Archives](https://developers.stellar.org/docs/learn/storing-data/history-archives)

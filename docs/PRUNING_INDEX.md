@@ -390,8 +390,8 @@ These documents should be updated when:
 
 ## 🔗 Related Documentation
 
-- [Archive Pruning Requirements](docs/archive-pruning.md)
-- [StellarNode API Reference](docs/api-reference.md)
+- [Archive Pruning Requirements](archive-pruning.md)
+- [StellarNode API Reference](api-reference.md)
 - [Stellar History Archives](https://developers.stellar.org/docs/learn/storing-data/history-archives)
 - [Kubernetes Operators](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
 

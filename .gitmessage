@@ -1,0 +1,11 @@
+<type>(<scope>): <subject>
+# Brief description in present tense.
+# Limit the subject line to 50 characters.
+# Common types: feat, fix, docs, perf, refactor, style, test, ci, build, revert, chore.
+
+# Detailed body (optional, wrap at 72 characters):
+# Describe why this change is being made, what it fixes, and any side effects.
+
+# Footer (optional):
+# Signed-off-by: Your Name <your.email@example.com>
+# Fixes: #<issue_number>

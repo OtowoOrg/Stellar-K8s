@@ -65,3 +65,8 @@ rendered-output.yaml
 # Temporary Test Files
 test_*.rs
 starfield.html
+
+# Compiled binaries and WebAssembly artifacts
+*.wasm
+completions/
+

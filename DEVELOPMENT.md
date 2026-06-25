@@ -12,6 +12,7 @@ This guide walks you through setting up a local development environment for Stel
 - [Running E2E Tests](#running-e2e-tests)
 - [Useful Make Targets](#useful-make-targets)
 - [Development Workflow](#development-workflow)
+- [Regeneration of Auto-Generated Files](#regeneration-of-auto-generated-files)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -503,6 +504,72 @@ GitHub Actions runs these checks on every PR:
 
 See [.github/CI_COMMANDS.md](.github/CI_COMMANDS.md) for exact commands.
 
+### Git Commit & Changelog Conventions
+
+We strictly follow the **Conventional Commits** specification for all commit messages. This ensures a standardized, machine-readable history that is used to automatically generate releases and updates to the `CHANGELOG.md`.
+
+#### 1. Commit Format
+
+Each commit message consists of a **header**, a **body**, and a **footer**. The header has a **type**, a **scope** (optional), and a **subject**:
+
+```
+<type>(<scope>): <subject>
+
+[body]
+
+[footer]
+```
+
+The allowed types are:
+- `feat`: A new feature (mapped to **Added** in changelog)
+- `fix`: A bug fix (mapped to **Fixed** in changelog)
+- `docs`: Documentation changes (mapped to **Documentation** in changelog)
+- `perf`: Performance improvements (mapped to **Performance** in changelog)
+- `refactor`: Code restructuring without features/fixes (mapped to **Refactored** in changelog)
+- `style`: Formatting/styling changes (mapped to **Styling** in changelog)
+- `test`: Adding or fixing tests (mapped to **Testing** in changelog)
+- `ci`: Changes to CI/CD files/scripts (mapped to **Continuous Integration** in changelog)
+- `build`: Changes to build config or dependencies (mapped to **Build System** in changelog)
+- `revert`: Reverting a previous commit (mapped to **Reverted Changes** in changelog)
+- `chore`: Auxiliary/tooling updates (mapped to **Miscellaneous** in changelog)
+
+*Note: If a commit introduces a breaking change, append a `!` after the type/scope (e.g. `feat(api)!: break backward compatibility`).*
+
+#### 2. Commit Message Template
+
+To configure a local commit message template, write the following template to `.gitmessage` in your repository root:
+
+```
+<type>(<scope>): <subject>
+# Brief description in present tense.
+# Limit the subject line to 50 characters.
+# Common types: feat, fix, docs, perf, refactor, style, test, ci, build, revert, chore.
+
+# Detailed body (optional, wrap at 72 characters):
+# Describe why this change is being made, what it fixes, and any side effects.
+
+# Footer (optional):
+# Signed-off-by: Your Name <your.email@example.com>
+# Fixes: #<issue_number>
+```
+
+Then tell Git to use it:
+
+```bash
+git config commit.template .gitmessage
+```
+
+#### 3. Changelog Generation
+
+We use `git-cliff` to parse the Git history and compile the `CHANGELOG.md` file.
+
+To generate or update the changelog before a release:
+
+```bash
+# Installs git-cliff if missing and compiles the CHANGELOG.md
+make changelog
+```
+
 ---
 
 ## Troubleshooting
@@ -643,6 +710,59 @@ chmod +x ~/.local/bin/kubectl-stellar
 
 # Verify
 kubectl stellar --help
+```
+
+---
+
+## Regeneration of Auto-Generated Files
+
+Stellar-K8s uses several auto-generated manifests, documentation, and completion scripts to maintain parity between code definitions and deployment templates. Below are instructions on how to regenerate them.
+
+### 1. Custom Resource Definitions (CRDs)
+
+If you modify the struct definitions or validation markers in `src/crd/`, you must regenerate the CRD manifests:
+
+```bash
+# Generate CRD yaml definition
+make crd-gen
+
+# Verify it was generated at config/crd/stellarnode-crd.yaml
+git status
+```
+
+### 2. API Reference Documentation
+
+The API reference (`docs/api-reference.md`) is generated directly from the CRD schema. To regenerate it:
+
+```bash
+# Generate the docs using python script
+make generate-api-docs
+
+# In CI, we check if the documentation has drifted from code
+make check-api-docs
+```
+
+### 3. Shell Completions
+
+Tab-completion scripts for `stellar-operator` are generated automatically from CLI args using `stellar-completions`:
+
+```bash
+# Generate bash, zsh, and fish completion scripts in ./completions/
+make completions
+```
+
+Refer to the shell-completion section in `README.md` for shell installation instructions.
+
+### 4. WebAssembly Admission webhook Plugins
+
+Wasm plugins (e.g., `image-registry-validator` under `examples/plugins/`) are compiled target-independently to WebAssembly:
+
+```bash
+# Navigate to the plugin directory
+cd examples/plugins/image-registry-validator/
+
+# Compile to wasm32-unknown-unknown target
+./build.sh
 ```
 
 ---

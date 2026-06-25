@@ -23,22 +23,10 @@ We use a standard fork and pull request workflow for contributions:
 6. **Push to your fork** on GitHub.
 7. **Open a Pull Request** against the `main` branch of the upstream repository.
 
-   This will:
-   - Install Rust toolchain and components
-   - Install cargo-audit and cargo-watch
-   - Install pre-commit hooks for automatic code quality checks
-
-3. Run local checks before committing:
 ## 2. Branch Naming
 
 Please use descriptive branch names based on the nature of your contribution. We recommend the following prefixes:
 
-   # Run pre-commit hooks manually
-   make pre-commit
-
-   # Or comprehensive pre-push check
-   make ci-local
-   ```
 - `feat/` for new features (e.g., `feat/auto-mtls`)
 - `fix/` for bug fixes (e.g., `fix/panic-on-startup`)
 - `docs/` for documentation updates (e.g., `docs/update-architecture`)
@@ -101,6 +89,23 @@ Please do not delete the template sections. PRs with empty descriptions or unche
 - **Docker**: For building container images
 - **Cargo-audit**: For security scans (`cargo install cargo-audit`)
 
+### macOS Setup
+
+For macOS users, we provide an automated setup script that installs all necessary dependencies:
+
+```bash
+bash scripts/setup-mac.sh
+```
+
+This script will:
+- Install Homebrew (if not present)
+- Install Rust and update to latest stable
+- Install Docker, kubectl, kind, Helm, and GitHub CLI
+- Install cargo-audit and pre-commit
+- Verify all installations
+
+After running the script, follow the manual steps printed at the end (Docker Desktop startup, GitHub CLI authentication, etc.).
+
 ### Setup & Local Checks
 
 1. Setup development environment:
@@ -120,6 +125,10 @@ Please do not delete the template sections. PRs with empty descriptions or unche
 - **Shell scripts**: We lint scripts under `scripts/` with ShellCheck. Run `find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error` locally.
 - **Security**: All dependencies must be audited. We resolve all `RUSTSEC` advisories immediately.
 - **Error Handling**: Prefer the `Result<T>` type defined in `src/error.rs` using `thiserror`.
+
+## Glossary
+
+New to Stellar-K8s? Check out the [Glossary](docs/glossary.md) for definitions of common terms like [Validator](docs/glossary.md#validator), [Reconciliation](docs/glossary.md#reconciliation), [SCP](docs/glossary.md#scp-stellar-consensus-protocol), and [Horizon](docs/glossary.md#horizon).
 
 ## Need Help?
 If you're stuck, feel free to open a Draft PR or reach out in the repository's discussions/issues!

@@ -66,9 +66,18 @@ docker-build-ci: ## Reproducible CI Docker build (builds binaries in container)
 docker-multiarch: ## Build multi-arch Docker image
 	$(DOCKER) buildx build --platform linux/amd64,linux/arm64 -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
-ci-local: fmt-check lint audit test build ## Run full CI locally
+ci-local: fmt-check lint audit test build link-check ## Run full CI locally
 	@echo ""
 	@echo "✓ All CI checks passed!"
+
+link-check: ## Check markdown links
+	@echo "→ Running markdown link checker..."
+	@python3 scripts/check-links.py
+
+changelog: ## Generate/update CHANGELOG.md using git-cliff
+	@echo "→ Generating changelog..."
+	@command -v git-cliff >/dev/null 2>&1 || cargo install git-cliff
+	git-cliff --output CHANGELOG.md
 
 quick: fmt-check ## Quick pre-commit check
 	@$(CARGO) check --workspace

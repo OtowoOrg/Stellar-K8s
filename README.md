@@ -4,7 +4,7 @@
 
 # Stellar-K8s: Cloud-Native Stellar Infrastructure
 
-![Rust](https://img.shields.io/badge/Built%20with-Rust-orange?style=for-the-badge&logo=rust) ![Kubernetes](https://img.shields.io/badge/Kubernetes-Operator-blue?style=for-the-badge&logo=kubernetes) ![License](https://img.shields.io/badge/License-Apache%202.0-green?style=for-the-badge) ![CI/CD](https://img.shields.io/github/actions/workflow/status/stellar/stellar-k8s/ci.yml?style=for-the-badge&label=Build)
+![Rust](https://img.shields.io/badge/Built%20with-Rust-orange?style=for-the-badge&logo=rust) ![Kubernetes](https://img.shields.io/badge/Kubernetes-Operator-blue?style=for-the-badge&logo=kubernetes) ![License](https://img.shields.io/badge/License-Apache%202.0-green?style=for-the-badge) ![CI/CD](https://img.shields.io/github/actions/workflow/status/stellar/stellar-k8s/ci.yml?style=for-the-badge&label=Build) [![codecov](https://codecov.io/gh/TheCreatorNode/Stellar-K8s/branch/main/graph/badge.svg)](https://codecov.io/gh/TheCreatorNode/Stellar-K8s)
 
 > **Production-grade Stellar infrastructure in one command.**
 
@@ -47,6 +47,8 @@ Stellar-K8s follows the **Operator Pattern**, extending Kubernetes with a `Stell
 - **Rust 1.88+** (for local development)
   - CI/CD and Docker builds use Rust 1.93 for consistency
   - Contributors can use any Rust 1.88+ version locally
+
+> **New to Stellar-K8s?** See the [Glossary](docs/glossary.md) for definitions of common terms like [Validator](docs/glossary.md#validator), [Horizon](docs/glossary.md#horizon), [SCP](docs/glossary.md#scp-stellar-consensus-protocol), and [Reconciliation](docs/glossary.md#reconciliation).
 
 ---
 
@@ -287,17 +289,9 @@ featureFlags:
 
 ## 🤝 Contributing
 
-We welcome contributions! This project uses pre-commit hooks to ensure code quality. Please see our [Contributing Guide](CONTRIBUTING.md) for details on our development process, coding standards, and how to submit pull requests.
+We welcome contributions! This project uses pre-commit hooks to ensure code quality.
 
-### Quick Start for Contributors
-
-```bash
-# Setup development environment (includes pre-commit hooks)
-make dev-setup
-
-# Run pre-commit hooks manually
-make pre-commit
-```
+Please see our **[Contributing Guide](CONTRIBUTING.md)** for details on our workflow, commit conventions, and pull request guidelines. For development setup instructions, see the **[Development Guide](DEVELOPMENT.md)**.
 
 ---
 
@@ -581,36 +575,25 @@ make generate-api-docs
 
 ---
 
-## Development
+## 💻 Development
 
-### Prerequisites
+For detailed instructions on setting up a local development environment, building the project, running tests, and managing Kubernetes resources locally, please refer to the **[Development Guide](DEVELOPMENT.md)**.
 
-- Rust (latest stable)
-- Docker & Kubernetes cluster
-- Make
-
-### Quick Start
+### Quick Start Reference
 
 ```bash
-# Setup development environment
+# Setup development environment (includes pre-commit hooks)
 make dev-setup
 
-# Standard Development Targets
-make build         # Build release binary
-make test          # Run all tests
-make lint          # Run clippy
-make fmt           # Format code
-make docker-build  # Build Docker image
-make helm-lint     # Run Helm chart linting
-make crd-gen       # Generate CRDs
-make run-local     # Run operator locally in dev mode
-make clean         # Clean build artifacts
+# Run quick checks (format & cargo check)
+make quick
 
-# Full CI validation
-make ci-local
+# Run all tests
+make test
+
+# Build release binaries
+make build
 ```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines.
 
 ### Reconciler fuzzing
 

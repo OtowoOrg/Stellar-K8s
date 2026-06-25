@@ -282,8 +282,8 @@ If issues occur:
 
 - [Pruning Integration Guide](PRUNING_INTEGRATION_GUIDE.md)
 - [Pruning Implementation](PRUNING_IMPLEMENTATION.md)
-- [Archive Pruning Docs](docs/archive-pruning.md)
-- [API Reference](docs/api-reference.md)
+- [Archive Pruning Docs](archive-pruning.md)
+- [API Reference](api-reference.md)
 
 ## Sign-Off
 

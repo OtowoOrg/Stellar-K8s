@@ -30,7 +30,7 @@ This directory contains TLA+ formal models and documentation for formal verifica
 
 ### For Operations
 
-1. **Key guarantees**: See [FORMAL_VERIFICATION.md](FORMAL_VERIFICATION.md#conclusions)
+1. **Key guarantees**: See [FORMAL_VERIFICATION.md](../docs/FORMAL_VERIFICATION.md#conclusions)
 2. **What can go wrong**: See [EDGE_CASES.md](../docs/EDGE_CASES.md)
 3. **How to monitor**: See "Operational Recommendations" in FORMAL_VERIFICATION.md
 
@@ -412,7 +412,7 @@ If a violation found (TLC produces counterexample):
 ## Contact
 
 For questions about the formal verification:
-- Check [FORMAL_VERIFICATION.md](FORMAL_VERIFICATION.md#conclusions) for summary
+- Check [FORMAL_VERIFICATION.md](../docs/FORMAL_VERIFICATION.md#conclusions) for summary
 - See [EDGE_CASES.md](../docs/EDGE_CASES.md) for specific scenarios
 - Review code mapping in "Integration with Code" section
 

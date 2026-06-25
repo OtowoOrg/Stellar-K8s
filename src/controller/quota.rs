@@ -16,7 +16,6 @@
 //! - Use `LimitRange` to set per-pod defaults so that new containers
 //!   automatically receive sensible resource bounds even when the spec omits them.
 
-
 use k8s_openapi::api::core::v1::{LimitRange, ResourceQuota};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use kube::api::{Api, ListParams};

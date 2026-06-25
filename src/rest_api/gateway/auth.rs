@@ -2,11 +2,7 @@
 //!
 //! Supports multiple authentication methods: JWT, OAuth2, API Keys
 
-use axum::{
-    body::Body,
-    extract::Request,
-    http::header,
-};
+use axum::{body::Body, extract::Request, http::header};
 use chrono::Utc;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};

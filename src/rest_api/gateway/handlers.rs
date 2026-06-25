@@ -13,7 +13,6 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-
 use super::{
     auth::AuthConfig,
     openapi::OpenApiGenerator,

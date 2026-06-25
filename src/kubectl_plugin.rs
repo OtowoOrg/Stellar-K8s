@@ -960,10 +960,7 @@ async fn snapshot_restore(
     let vs_api_resource = volume_snapshot_api_resource();
     let vs_api: Api<kube::api::DynamicObject> =
         Api::namespaced_with(client.clone(), namespace, &vs_api_resource);
-    vs_api
-        .get(snapshot_name)
-        .await
-        .map_err(Error::KubeError)?;
+    vs_api.get(snapshot_name).await.map_err(Error::KubeError)?;
 
     // Patch the StellarNode spec to point at the snapshot.
     let node_api: Api<StellarNode> = Api::namespaced(client.clone(), namespace);

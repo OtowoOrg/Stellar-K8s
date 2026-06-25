@@ -281,7 +281,7 @@ async fn backup_to_file(
     // Create tar.gz
     use flate2::write::GzEncoder;
     use flate2::Compression;
-    
+
     use tar::Builder;
 
     let file = fs::File::create(&backup_path)?;

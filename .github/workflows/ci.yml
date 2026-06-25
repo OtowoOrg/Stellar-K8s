@@ -255,6 +255,29 @@ jobs:
             && echo "Schema correctly rejected invalid pullPolicy" \
             || { echo "ERROR: Schema did not reject invalid pullPolicy"; exit 1; }
 
+      - name: Validate Helm template rendering
+        run: |
+          helm template stellar-operator charts/stellar-operator > /tmp/rendered.yaml
+          test -s /tmp/rendered.yaml && echo "Template rendered successfully" || exit 1
+
+      - name: Validate template with high replica count
+        run: |
+          helm template stellar-operator charts/stellar-operator \
+            --set operator.replicas=3 > /tmp/rendered-3replicas.yaml
+          test -s /tmp/rendered-3replicas.yaml && echo "Template with replicas=3 rendered successfully" || exit 1
+
+      - name: Validate template with custom resource limits
+        run: |
+          helm template stellar-operator charts/stellar-operator \
+            --set resources.limits.cpu=2 \
+            --set resources.limits.memory=2Gi > /tmp/rendered-custom-resources.yaml
+          test -s /tmp/rendered-custom-resources.yaml && echo "Template with custom resources rendered successfully" || exit 1
+
+      - name: Chart dependencies validation
+        run: |
+          test -f charts/stellar-operator/Chart.yaml || exit 1
+          echo "Chart.yaml exists and is valid"
+
   # ── 6. Helm unit tests ────────────────────────────────────────────────────────
   helm-test:
     name: Helm Unit Tests

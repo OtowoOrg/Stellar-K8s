@@ -168,7 +168,10 @@ completions: ## Generate shell completion scripts
 
 helm-lint: ## Helm lint check
 	@echo "→ Linting Helm charts..."
-	helm lint charts/stellar-operator
+	helm lint charts/stellar-operator --strict
+	@echo "→ Validating Helm template rendering..."
+	helm template stellar-operator charts/stellar-operator > /dev/null
+	@echo "✓ Helm charts passed linting and validation"
 
 dev-setup: ## Setup dev environment
 	rustup update stable

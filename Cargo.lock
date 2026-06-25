@@ -5664,7 +5664,6 @@ dependencies = [
  "hmac 0.12.1",
  "hostname",
  "http 1.4.0",
- "hyper 1.9.0",
  "json-patch 4.2.0",
  "jsonwebtoken",
  "k8s-openapi",

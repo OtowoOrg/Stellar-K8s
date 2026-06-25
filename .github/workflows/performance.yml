@@ -78,8 +78,21 @@ jobs:
       - name: Build operator binary
         run: cargo build --release --locked --bin stellar-operator
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build Docker image
-        run: docker build -t "stellar-operator:${{ steps.version.outputs.version }}" .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: stellar-operator:${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=perf-docker
+          cache-to: type=gha,mode=max,scope=perf-docker
+          provenance: false
 
       - name: Save Docker image
         run: |

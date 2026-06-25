@@ -39,3 +39,6 @@ runs:
       uses: Swatinem/rust-cache@v2
       with:
         shared-key: ${{ inputs.cache-key }}
+        # Cache ~/.cargo/bin so cargo-installed tools (cargo-audit, tarpaulin,
+        # cargo-watch) are restored across runs without reinstalling.
+        cache-all-crates: true

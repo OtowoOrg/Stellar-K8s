@@ -1,5 +1,7 @@
 # Automated Secret Rotation for Database Credentials
 
+> **See also:** [Credentials & Secrets (Central Reference)](security/credentials-and-secrets.md) for a complete index of all secret-related documentation.
+
 ## Overview
 
 Stellar-K8s provides automated rotation of PostgreSQL database passwords for Stellar Core and Horizon nodes, ensuring zero-downtime credential updates and enhanced security posture.

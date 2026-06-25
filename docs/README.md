@@ -61,11 +61,13 @@ Production-grade Stellar infrastructure on Kubernetes. This directory contains a
 
 ## Security
 
-- [mTLS Guide](mtls-guide.md)
+- [Credentials and Secrets (Central Reference)](security/credentials-and-secrets.md)
+- [Secret Management Guide](secret-management-guide.md)
 - [Secret Rotation](secret-rotation.md)
 - [Secret Management (KMS)](secret-management-kms.md)
 - [Vault Tutorial](vault-stellar-tutorial.md)
 - [Production Security Hardening](production-security-hardening.md)
+- [mTLS Guide](mtls-guide.md)
 - [Gatekeeper Policies](gatekeeper-policies.md)
 - [Pod Security Standards](security/pss.md)
 - [Image Pinning](image-pinning.md)

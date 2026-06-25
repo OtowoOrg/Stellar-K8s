@@ -167,7 +167,7 @@ serde = { version = "1", features = ["derive"] }
 
 [features]
 default = ["rest-api", "metrics", "admission-webhook", "k8s-v1-30"]
-rest-api = ["axum", "tower", "tower-http"]
+rest-api = ["dep:axum", "dep:tower", "dep:tower-http"]
 metrics = ["prometheus-client", "once_cell"]
 kafka = ["dep:rdkafka", "dep:sasl2-sys"]
 nats = ["dep:async-nats"]
@@ -175,11 +175,10 @@ admission-webhook = [
     "wasmtime",
     "wasmtime-wasi",
     "tokio-rustls",
-    "axum",
-    "tower",
-    "tower-http",
+    "dep:axum",
+    "dep:tower",
+    "dep:tower-http",
 ]
-axum = ["dep:axum"]
 # Expose reconciler for state-machine fuzzing (reconcile_no_panic, event sequences)
 reconciler-fuzz = []
 

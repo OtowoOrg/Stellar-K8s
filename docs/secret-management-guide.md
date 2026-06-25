@@ -1,5 +1,7 @@
 # Secret Management Guide
 
+> **See also:** [Credentials & Secrets (Central Reference)](security/credentials-and-secrets.md) for a complete index of all secret-related documentation.
+
 Declarative secret management via the `StellarSecret` CRD with dynamic credentials,
 automatic rotation, KMS encryption, and multi-backend support.
 

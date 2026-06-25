@@ -767,14 +767,17 @@ Run `make health` first — it executes format, lint, tests, and docs checks in 
 
 ## Regenerating Manifests
 
-Several files in this repo are generated from a source of truth. Always regenerate them after changing the source.
+Several files in this repo are generated from a source of truth. Always regenerate them after changing the source. See the [Regeneration Guide](docs/development/regeneration-guide.md) for detailed instructions.
 
 | Generated file | Source of truth | Regeneration command |
 |---|---|---|
 | `docs/api-reference.md` | CRD types in `src/crd/` | `make generate-api-docs` |
 | `config/crd/*.yaml` | CRD structs in `src/crd/` | `make crd-gen` |
 | `bundle/manifests/*.yaml` | `config/manifests/bases/` + operator metadata | `make bundle` (requires operator-sdk) |
+| `charts/stellar-operator/templates/*.yaml` | Hand-written (see [guide](docs/development/regeneration-guide.md)) | `helm template` for validation |
 | Shell completions | CLI definitions in `src/cli.rs` | `make completions` |
+
+For detailed instructions on each regeneration step, see the [Regeneration Guide](docs/development/regeneration-guide.md).
 
 After running any of the above, commit the updated generated file alongside the source change in the same PR.
 

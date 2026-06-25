@@ -114,6 +114,11 @@ nav:
     - Sync Problems: troubleshooting/sync-problems.md
   - API Reference:
     - api-reference/index.md
+  - Security:
+    - Credentials & Secrets: security/credentials-and-secrets.md
+    - Pod Security Standards: security/pss.md
+  - Development:
+    - Regeneration Guide: development/regeneration-guide.md
   - Contributing:
     - contributing/index.md
     - Development Setup: contributing/development-setup.md

@@ -1,5 +1,7 @@
 # Production-oriented HashiCorp Vault + Stellar validators
 
+> **See also:** [Credentials & Secrets (Central Reference)](security/credentials-and-secrets.md) for a complete index of all secret-related documentation.
+
 This tutorial matches the native **`vaultRef`** seed source on `StellarNode` (see [`src/crd/seed_secret.rs`](../src/crd/seed_secret.rs)) and the Vault Agent Injector sidecar pattern.
 
 ## 1. Install Vault with injector

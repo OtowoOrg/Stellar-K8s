@@ -107,8 +107,7 @@ spec:
         app.kubernetes.io/component: otel-collector
     spec:
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       volumes:
         - name: config
           configMap:

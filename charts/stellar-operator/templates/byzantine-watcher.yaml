@@ -60,10 +60,7 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "stellar-operator.serviceAccountName" $root }}
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        fsGroup: 65532
+        {{- toYaml $root.Values.podSecurityContext | nindent 8 }}
       containers:
         - name: watcher
           image: "{{ $root.Values.byzantineWatcher.image.repository | default $root.Values.image.repository }}:{{ $root.Values.byzantineWatcher.image.tag | default $root.Values.image.tag | default $root.Chart.AppVersion }}"

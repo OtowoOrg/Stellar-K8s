@@ -32,15 +32,15 @@ python3 --version
 
 ## Regenerating CRD Manifests
 
-The StellarNode CRD and all other CRDs are generated from Rust types in `src/crd/`.
+All CRDs (StellarNode, StellarAutoscaler, StellarBenchmark, etc.) are generated from Rust types in `src/crd/`.
 
 ```bash
 make crd-gen
 ```
 
-This runs the `crdgen` binary which reads the `#[derive(JsonSchema)]` annotated structs and outputs updated CRD YAML files to `config/crd/`.
+This runs the `crdgen` binary which reads the `#[derive(CustomResource, JsonSchema)]` annotated structs and outputs all updated CRD YAML files to `config/crd/`.
 
-> **Note:** After modifying any `src/crd/*.rs` file, always run `make crd-gen` and commit the updated CRD alongside your Rust changes. The CI pipeline will fail if CRDs are stale.
+> **Note**: After modifying any `src/crd/*.rs` file, always run `make crd-gen` and commit the updated CRDs alongside your Rust changes. The CI pipeline will fail if CRDs are stale.
 
 ---
 

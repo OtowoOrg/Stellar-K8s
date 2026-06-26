@@ -151,7 +151,7 @@ apply-samples: install-crd ## Apply samples
 
 crd-gen: ## Generate CRDs
 	@echo "→ Generating CRDs..."
-	@$(CARGO) run --bin crdgen > config/crd/stellarnode-crd.yaml
+	@$(CARGO) run --bin crdgen
 
 completions: ## Generate shell completion scripts
 	@echo "→ Generating shell completions..."

@@ -47,6 +47,7 @@ jobs:
       rust_core: ${{ steps.detect.outputs.rust_core }}
       deps: ${{ steps.detect.outputs.deps }}
       examples: ${{ steps.detect.outputs.examples }}
+      docs: ${{ steps.detect.outputs.docs }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,7 +69,7 @@ jobs:
 
           # First push on a new branch has no before SHA — treat as full change
           if [[ -z "$BASE_SHA" || "$BASE_SHA" == "0000000000000000000000000000000000000000" ]]; then
-            for key in docker helm api_docs rust_core deps examples; do
+            for key in docker helm api_docs rust_core deps examples docs; do
               echo "${key}=true" >> "$GITHUB_OUTPUT"
             done
             exit 0
@@ -95,6 +96,9 @@ jobs:
           echo "deps=$(_match '^(Cargo\.toml|Cargo\.lock)')" >> "$GITHUB_OUTPUT"
           echo "examples=$(_match \
             '^(examples/|config/crd/|config/samples/)')" \
+            >> "$GITHUB_OUTPUT"
+          echo "docs=$(_match \
+            '^(docs/|scripts/check-links\.py|README\.md|CONTRIBUTING\.md|CHANGELOG\.md)')" \
             >> "$GITHUB_OUTPUT"
 
   # ── 2. Version consistency (main push only) ──────────────────────────────────
@@ -304,6 +308,8 @@ jobs:
   docs-link-check:
     name: Docs Link Checker
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.docs == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -348,11 +354,12 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    needs: [security-audit, lint]
+    needs: [security-audit, lint, docs-link-check]
     if: >-
       always() &&
       needs.lint.result == 'success' &&
-      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped')
+      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped') &&
+      (needs.docs-link-check.result == 'success' || needs.docs-link-check.result == 'skipped')
     steps:
       - uses: actions/checkout@v4
 
@@ -368,12 +375,13 @@ jobs:
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
-    needs: [security-audit, lint]
+    needs: [security-audit, lint, docs-link-check]
     if: >-
       github.event_name != 'pull_request' &&
       always() &&
       needs.lint.result == 'success' &&
-      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped')
+      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped') &&
+      (needs.docs-link-check.result == 'success' || needs.docs-link-check.result == 'skipped')
     steps:
       - uses: actions/checkout@v4
 
@@ -436,9 +444,10 @@ jobs:
       github.event_name != 'pull_request' &&
       needs.changes.outputs.docker == 'true' &&
       (needs.helm-test.result == 'success' || needs.helm-test.result == 'skipped') &&
-      (needs.api-docs.result == 'success' || needs.api-docs.result == 'skipped')
+      (needs.api-docs.result == 'success' || needs.api-docs.result == 'skipped') &&
+      (needs.docs-link-check.result == 'success' || needs.docs-link-check.result == 'skipped')
     runs-on: ubuntu-latest
-    needs: [changes, build, helm-test, api-docs]
+    needs: [changes, build, helm-test, api-docs, docs-link-check]
     env:
       DOCKER_PLATFORMS: linux/amd64
     permissions:

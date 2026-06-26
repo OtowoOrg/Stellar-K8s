@@ -74,9 +74,9 @@ Before opening a PR, confirm the following:
 Run these locally before submitting:
 
 ```bash
-cargo fmt --all
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test
+make fmt
+make lint
+make test
 make ci-local
 ```
 
@@ -167,17 +167,17 @@ bash scripts/setup-mac.sh  # macOS only
 ### Local checks
 
 ```bash
-cargo fmt --all
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test
+make fmt
+make lint
+make test
 make quick
 make ci-local
 ```
 
 ## 8. Coding Standards
 
-- Format Rust code with `cargo fmt`.
-- Use `cargo clippy --all-targets --all-features -- -D warnings` for linting.
+- Format Rust code with `make fmt`.
+- Use `make lint` for linting.
 - Add or update tests for code changes.
 - Document behavior changes in code comments and docs.
 - Keep PRs small and easy to review.

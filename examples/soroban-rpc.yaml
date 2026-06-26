@@ -15,11 +15,6 @@ spec:
 
   version: "21.1.0"
 
-  # Required rollout availability and spreading constraints.
-  maxUnavailable: 1
-  minAvailable: 1
-  topologySpreadConstraints: []
-
   # Soroban-specific settings including Captive Core.
   sorobanConfig:
     # Upstream Core instance for transaction submission.

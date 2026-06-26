@@ -1,7 +1,7 @@
 .PHONY: help \
 	fmt fmt-check lint audit \
 	build test ci-local quick watch \
-	docker-build docker-build-ci docker-multiarch \
+	docker-build docker-build-ci \
 	dev-setup pre-commit pre-commit-install run-local run-dev \
 	install-crd apply-samples crd-gen completions \
 	helm-lint link-check changelog \
@@ -93,8 +93,8 @@ docker-build-ci: ## Reproducible CI Docker build (builds binaries in container)
 	@echo "→ Building Docker image (CI mode)..."
 	DOCKER_BUILDKIT=1 $(DOCKER) build --target runtime -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
-docker-multiarch: ## Build multi-arch Docker image
-	$(DOCKER) buildx build --platform linux/amd64 -t $(IMAGE_NAME):$(IMAGE_TAG) .
+# Multi-arch builds are handled by CI: .github/workflows/multiarch-build.yml
+# To trigger a multi-arch build, push a tag or manually dispatch that workflow.
 
 link-check: ## Check markdown links
 	@echo "→ Running markdown link checker..."

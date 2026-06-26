@@ -1,0 +1,17 @@
+# Minimal StellarNode validator for quick start / CI smoke tests.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: minimal-validator
+  namespace: stellar
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  storage:
+    storageClass: standard
+    size: 50Gi
+    retentionPolicy: Delete
+  validatorConfig:
+    seedSecretRef: validator-seed
+    enableHistoryArchive: false

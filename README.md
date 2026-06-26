@@ -319,31 +319,9 @@ featureFlags:
 
 ## 🤝 Contributing
 
-We welcome contributions! This project uses pre-commit hooks to ensure code quality. Please see our [Contributing Guide](CONTRIBUTING.md) for details on our development process, coding standards, and how to submit pull requests.
+We welcome contributions! This project uses pre-commit hooks to ensure code quality.
 
-### Repo Health Checklist
-
-Before opening a PR, run through this quick checklist to keep the repo clean:
-
-- `make ci-local` — runs format check, lint, security audit, tests, and build in one step
-- `make fmt` — auto-formats all Rust code
-- `make lint` — runs clippy at the deny level
-- `make audit` — scans dependencies for known vulnerabilities
-- `shellcheck -S error scripts/*.sh` — validates shell scripts
-- `make generate-api-docs` — regenerates `docs/api-reference.md` after CRD changes
-- `make crd-gen` — regenerates `config/crd/` manifests after CRD type changes
-
-For the full checklist and expected conventions for docs, scripts, and code, see [DEVELOPMENT.md](DEVELOPMENT.md#repo-health-checklist), [CONTRIBUTING.md](CONTRIBUTING.md#9-repo-health-checklist), and [CONVENTIONS.md](CONVENTIONS.md).
-
-### Quick Start for Contributors
-
-```bash
-# Setup development environment (includes pre-commit hooks)
-make dev-setup
-
-# Run pre-commit hooks manually
-make pre-commit
-```
+Please see our **[Contributing Guide](CONTRIBUTING.md)** for details on our workflow, commit conventions, and pull request guidelines. For development setup instructions, see the **[Development Guide](DEVELOPMENT.md)**.
 
 ---
 
@@ -627,36 +605,25 @@ make generate-api-docs
 
 ---
 
-## Development
+## 💻 Development
 
-### Prerequisites
+For detailed instructions on setting up a local development environment, building the project, running tests, and managing Kubernetes resources locally, please refer to the **[Development Guide](DEVELOPMENT.md)**.
 
-- Rust (latest stable)
-- Docker & Kubernetes cluster
-- Make
-
-### Quick Start
+### Quick Start Reference
 
 ```bash
-# Setup development environment
+# Setup development environment (includes pre-commit hooks)
 make dev-setup
 
-# Standard Development Targets
-make build         # Build release binary
-make test          # Run all tests
-make lint          # Run clippy
-make fmt           # Format code
-make docker-build  # Build Docker image
-make helm-lint     # Run Helm chart linting
-make crd-gen       # Generate CRDs
-make run-local     # Run operator locally in dev mode
-make clean         # Clean build artifacts
+# Run quick checks (format & cargo check)
+make quick
 
-# Full CI validation
-make ci-local
+# Run all tests
+make test
+
+# Build release binaries
+make build
 ```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines.
 
 ### Reconciler fuzzing
 

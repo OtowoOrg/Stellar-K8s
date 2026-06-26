@@ -344,7 +344,7 @@ async fn main() {
     let cli = Cli::parse();
 
     if let Err(e) = run(cli).await {
-        eprintln!("Error: {e}");
+        eprintln!("kubectl-stellar v{}: Error: {e}", env!("CARGO_PKG_VERSION"));
         process::exit(1);
     }
 }

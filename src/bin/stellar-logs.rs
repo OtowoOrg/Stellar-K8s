@@ -401,7 +401,7 @@ async fn cmd_search(region: &str, args: &SearchArgs) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
@@ -409,9 +409,14 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    match &cli.command {
+    let result = match &cli.command {
         Commands::List(args) => cmd_list(&cli.region, args).await,
         Commands::Fetch(args) => cmd_fetch(&cli.region, args).await,
         Commands::Search(args) => cmd_search(&cli.region, args).await,
+    };
+
+    if let Err(e) = result {
+        eprintln!("stellar-logs v{}: Error: {:?}", env!("CARGO_PKG_VERSION"), e);
+        std::process::exit(1);
     }
 }

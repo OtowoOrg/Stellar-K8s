@@ -299,6 +299,60 @@ security:
   imagePolicy:
     allowLatestTag: false
 
+# Webhook configuration
+webhook:
+  # Number of webhook replicas
+  replicas: 2
+  # Webhook image configuration
+  image:
+    repository: "" # defaults to .Values.image.repository
+    tag: "" # defaults to .Values.image.tag / chart appVersion
+    pullPolicy: "" # defaults to .Values.image.pullPolicy
+    digest: "" # defaults to .Values.image.digest
+  # Webhook resource requests and limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Webhook ports
+  ports:
+    https: 8443
+    metrics: 9090
+  # PodDisruptionBudget configuration
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+    maxUnavailable: null
+  # Liveness probe configuration
+  livenessProbe:
+    initialDelaySeconds: 15
+    periodSeconds: 20
+  # Readiness probe configuration
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  # Affinity configuration
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: stellar-webhook
+            topologyKey: kubernetes.io/hostname
+  # Topology spread constraints
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: stellar-webhook
+
 # Network Isolation — prevents cross-network traffic between Mainnet and Testnet namespaces.
 #
 # When enabled, the Helm chart deploys namespace-level NetworkPolicies that block

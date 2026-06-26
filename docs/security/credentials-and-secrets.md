@@ -24,6 +24,7 @@ Stellar-K8s supports multiple strategies for managing sensitive credentials, fro
 | Validator seed (`STELLAR_SEED`) | Kubernetes Secret / Vault | Manual or `vaultRef` | Wallet / Stellar Core |
 | Database credentials (Horizon / Core) | Kubernetes Secret | Automatic (cron-based) | Generated / Provided |
 | mTLS certificates | Kubernetes Secret (operator-managed) | Automatic renewal | Operator CA |
+| Webhook TLS certificates | Kubernetes Secret (cert-manager-managed) | Automatic renewal (cert-manager) | cert-manager (self-signed or external issuer) |
 | Webhook HMAC key | Kubernetes Secret | Manual | Deployer |
 | API tokens / OIDC secrets | Kubernetes Secret / ExternalSecret | Manual or ESO | Identity provider |
 | S3 / cloud credentials | Kubernetes Secret / IRSA | Cloud IAM rotation | Cloud provider |

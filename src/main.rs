@@ -9,6 +9,7 @@ use crate::commands::doctor::run_doctor;
 use crate::commands::export_compliance::run_export_compliance;
 use crate::commands::info::run_info;
 use crate::commands::operator::run_operator;
+use crate::commands::preflight::run_preflight;
 use crate::commands::runbook::run_generate_runbook;
 use crate::commands::simulator::run_simulator;
 use crate::commands::webhook::run_webhook;
@@ -21,14 +22,14 @@ use stellar_k8s::version_check;
 use stellar_k8s::{incident, Error};
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() {
     let args = Args::parse();
 
     // Handle --version/-v flag
     if args.version {
         println!("stellar-cli v{}", env!("CARGO_PKG_VERSION"));
         println!("Build Date: {}", env!("BUILD_DATE"));
-        return Ok(());
+        return;
     }
 
     let offline = args.offline;
@@ -43,6 +44,8 @@ async fn main() -> Result<(), Error> {
         }
         Commands::Info(info_args) => run_info(info_args).await,
         Commands::CheckCrd => run_check_crd().await,
+        Commands::Doctor(doctor_args) => run_doctor(doctor_args).await,
+        Commands::Preflight(preflight_args) => run_preflight(preflight_args).await,
         Commands::PruneArchive(prune_args) => prune_archive(prune_args).await,
         Commands::Diff(diff_args) => diff(diff_args).await,
         Commands::GenerateRunbook(runbook_args) => run_generate_runbook(runbook_args).await,
@@ -81,7 +84,7 @@ async fn main() -> Result<(), Error> {
             };
 
             if let Err(e) = std::fs::create_dir_all(&out_dir) {
-                eprintln!("Failed to create directory {}: {}", out_dir.display(), e);
+                eprintln!("stellar-operator v{}: Failed to create directory {}: {}", env!("CARGO_PKG_VERSION"), out_dir.display(), e);
                 std::process::exit(1);
             }
 
@@ -103,7 +106,7 @@ async fn main() -> Result<(), Error> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to generate completion script: {}", e);
+                    eprintln!("stellar-operator v{}: Failed to generate completion script: {}", env!("CARGO_PKG_VERSION"), e);
                     std::process::exit(1);
                 }
             }
@@ -111,24 +114,67 @@ async fn main() -> Result<(), Error> {
         }
         Commands::Run(run_args) => {
             if let Err(e) = run_args.validate() {
-                eprintln!("error: {e}");
+                eprintln!("stellar-operator v{}: error: {e}", env!("CARGO_PKG_VERSION"));
                 process::exit(2);
             }
-            return run_operator(run_args).await;
+            match run_operator(run_args).await {
+                Ok(()) => return,
+                Err(e) => {
+                    eprintln!("stellar-operator v{}: Error: {e}", env!("CARGO_PKG_VERSION"));
+                    std::process::exit(1);
+                }
+            }
         }
-        Commands::Webhook(webhook_args) => return run_webhook(webhook_args).await,
-        Commands::Doctor(doctor_args) => return run_doctor(doctor_args).await,
+        Commands::Webhook(webhook_args) => match run_webhook(webhook_args).await {
+            Ok(()) => return,
+            Err(e) => {
+                eprintln!("stellar-operator v{}: Error: {e}", env!("CARGO_PKG_VERSION"));
+                std::process::exit(1);
+            }
+        },
+        Commands::Doctor(doctor_args) => match run_doctor(doctor_args).await {
+            Ok(()) => return,
+            Err(e) => {
+                eprintln!("stellar-operator v{}: Error: {e}", env!("CARGO_PKG_VERSION"));
+                std::process::exit(1);
+            }
+        },
         Commands::Benchmark(benchmark_args) => {
-            return run_benchmark_controller_cmd(benchmark_args).await
+            match run_benchmark_controller_cmd(benchmark_args).await {
+                Ok(()) => return,
+                Err(e) => {
+                    eprintln!("stellar-operator v{}: Error: {e}", env!("CARGO_PKG_VERSION"));
+                    std::process::exit(1);
+                }
+            }
         }
-        Commands::Simulator(cli) => return run_simulator(cli).await,
+        Commands::Simulator(cli) => match run_simulator(cli).await {
+            Ok(()) => return,
+            Err(e) => {
+                eprintln!("stellar-operator v{}: Error: {e}", env!("CARGO_PKG_VERSION"));
+                std::process::exit(1);
+            }
+        },
         Commands::BenchmarkCompare(compare_args) => {
-            return stellar_k8s::benchmark_compare::run_benchmark_compare(compare_args)
+            match stellar_k8s::benchmark_compare::run_benchmark_compare(compare_args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string()));
+                .map_err(|e| Error::ConfigError(e.to_string()))
+            {
+                Ok(()) => return,
+                Err(e) => {
+                    eprintln!("stellar-operator v{}: Error: {e}", env!("CARGO_PKG_VERSION"));
+                    std::process::exit(1);
+                }
+            }
         }
         Commands::ExportCompliance(export_args) => {
-            return run_export_compliance(export_args).await;
+            match run_export_compliance(export_args).await {
+                Ok(()) => return,
+                Err(e) => {
+                    eprintln!("stellar-operator v{}: Error: {e}", env!("CARGO_PKG_VERSION"));
+                    std::process::exit(1);
+                }
+            }
         }
         Commands::Backup { command } => match command {
             BackupCommands::Create(args) => run_backup(args)
@@ -147,5 +193,9 @@ async fn main() -> Result<(), Error> {
     };
 
     version_check::check_and_notify(offline).await;
-    result
+
+    if let Err(e) = result {
+        eprintln!("stellar-operator v{}: Error: {e}", env!("CARGO_PKG_VERSION"));
+        std::process::exit(1);
+    }
 }

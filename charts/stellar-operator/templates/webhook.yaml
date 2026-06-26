@@ -60,7 +60,7 @@ metadata:
     app.kubernetes.io/name: stellar-webhook
     app.kubernetes.io/component: admission-webhook
 spec:
-  replicas: 2
+  replicas: {{ .Values.webhook.replicas }}
   selector:
     matchLabels:
       app.kubernetes.io/name: stellar-webhook
@@ -71,7 +71,7 @@ spec:
         app.kubernetes.io/component: admission-webhook
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "9090"
+        prometheus.io/port: "{{ .Values.webhook.ports.metrics }}"
     spec:
       serviceAccountName: stellar-webhook
       automountServiceAccountToken: false
@@ -84,18 +84,22 @@ spec:
           type: RuntimeDefault
       containers:
         - name: webhook
-          image: '{{ if .Values.image.digest }}{{ .Values.image.repository }}@{{ .Values.image.digest }}{{ else }}{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}{{ end }}'
-          imagePullPolicy: '{{ .Values.image.pullPolicy }}'
+          {{- $repo := default .Values.image.repository .Values.webhook.image.repository }}
+          {{- $tag := default .Values.image.tag .Values.webhook.image.tag }}
+          {{- $pullPolicy := default .Values.image.pullPolicy .Values.webhook.image.pullPolicy }}
+          {{- $digest := default .Values.image.digest .Values.webhook.image.digest }}
+          image: '{{ if $digest }}{{ $repo }}@{{ $digest }}{{ else }}{{ $repo }}:{{ default .Chart.AppVersion $tag }}{{ end }}'
+          imagePullPolicy: '{{ $pullPolicy }}'
           args:
-            - "--webhook-port=8443"
-            - "--metrics-port=9090"
+            - "--webhook-port={{ .Values.webhook.ports.https }}"
+            - "--metrics-port={{ .Values.webhook.ports.metrics }}"
             - "--cert-dir=/certs"
           ports:
             - name: https
-              containerPort: 8443
+              containerPort: {{ .Values.webhook.ports.https }}
               protocol: TCP
             - name: metrics
-              containerPort: 9090
+              containerPort: {{ .Values.webhook.ports.metrics }}
               protocol: TCP
           securityContext:
             allowPrivilegeEscalation: false
@@ -104,26 +108,21 @@ spec:
               drop:
                 - ALL
           resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
+            {{- toYaml .Values.webhook.resources | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /healthz
               port: https
               scheme: HTTPS
-            initialDelaySeconds: 15
-            periodSeconds: 20
+            initialDelaySeconds: {{ .Values.webhook.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.webhook.livenessProbe.periodSeconds }}
           readinessProbe:
             httpGet:
               path: /ready
               port: https
               scheme: HTTPS
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: {{ .Values.webhook.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.webhook.readinessProbe.periodSeconds }}
           volumeMounts:
             - name: certs
               mountPath: /certs
@@ -139,22 +138,14 @@ spec:
           configMap:
             name: stellar-webhook-plugins
             optional: true
+      {{- if .Values.webhook.affinity }}
       affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app.kubernetes.io/name: stellar-webhook
-                topologyKey: kubernetes.io/hostname
+        {{- toYaml .Values.webhook.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.webhook.topologySpreadConstraints }}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: topology.kubernetes.io/zone
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: stellar-webhook
+        {{- toYaml .Values.webhook.topologySpreadConstraints | nindent 8 }}
+      {{- end }}
 ---
 # Service for the webhook
 apiVersion: v1
@@ -261,6 +252,7 @@ data:
       "plugins": []
     }
 ---
+{{- if .Values.webhook.podDisruptionBudget.enabled }}
 # PodDisruptionBudget for high availability
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -270,7 +262,13 @@ metadata:
   labels:
     app.kubernetes.io/name: stellar-webhook
 spec:
-  minAvailable: 1
+  {{- if .Values.webhook.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.webhook.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if .Values.webhook.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.webhook.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
   selector:
     matchLabels:
       app.kubernetes.io/name: stellar-webhook
+{{- end }}

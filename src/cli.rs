@@ -70,6 +70,8 @@ pub enum Commands {
     CheckCrd,
     /// Verify local CLI tooling, Kubernetes context, and operator permissions
     Doctor(DoctorArgs),
+    /// Run preflight checks for local tools and GitHub label readiness
+    Preflight(PreflightArgs),
     /// Prune old history archive checkpoints
     PruneArchive(PruneArchiveArgs),
     /// Show difference between desired and live cluster state
@@ -104,6 +106,22 @@ pub enum Commands {
         #[command(subcommand)]
         command: BackupCommands,
     },
+}
+
+#[derive(Parser, Debug)]
+#[command(
+    about = "Run preflight checks for local tools and GitHub label readiness",
+    long_about = "Runs preflight checks to verify that all required local tools are installed \
+        and optionally checks that required GitHub labels are present for a repository.\n\n\
+        EXAMPLES:\n  \
+        stellar-operator preflight\n  \
+        stellar-operator preflight --github-repo OtowoOrg/Stellar-K8s"
+)]
+pub struct PreflightArgs {
+    /// GitHub repository in owner/repo format used for label readiness preflight.
+    /// If omitted, GitHub preflight is skipped.
+    #[arg(long, env = "GITHUB_REPOSITORY")]
+    pub github_repo: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]

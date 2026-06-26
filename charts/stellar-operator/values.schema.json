@@ -154,6 +154,77 @@
     },
     "scpAnalytics": {
       "type": "object"
+    },
+    "webhook": {
+      "type": "object",
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "enum": ["Always", "IfNotPresent", "Never"]
+            },
+            "digest": {
+              "type": "string"
+            }
+          }
+        },
+        "resources": {
+          "type": "object"
+        },
+        "ports": {
+          "type": "object",
+          "properties": {
+            "https": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "metrics": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
+        },
+        "podDisruptionBudget": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minAvailable": {
+              "type": ["integer", "null"]
+            },
+            "maxUnavailable": {
+              "type": ["integer", "null"]
+            }
+          }
+        },
+        "livenessProbe": {
+          "type": "object"
+        },
+        "readinessProbe": {
+          "type": "object"
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "topologySpreadConstraints": {
+          "type": "array"
+        }
+      }
     }
   },
   "additionalProperties": true

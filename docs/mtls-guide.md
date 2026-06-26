@@ -1,13 +1,14 @@
 # mTLS Setup and Certificate Rotation Guide
 
-This guide explains how to enable mTLS for the operator, how node certificates are provisioned, and how to rotate certificates safely.
+This guide explains how to enable mTLS for the operator, how node certificates are provisioned, how to rotate certificates safely, and how to manage webhook TLS certificates.
 
 ## Scope
 
-This repository currently manages mTLS in two places:
+This repository currently manages TLS in three places:
 
 - Operator REST API mTLS (server cert + CA, with automatic server cert rotation)
 - StellarNode workload certs (per-node client cert secret, recreated on reconcile if missing)
+- Admission webhook TLS certificates (cert-manager-managed, with automatic renewal)
 
 ## Certificate and Secret Model
 
@@ -209,9 +210,67 @@ kubectl -n stellar-system logs deploy/stellar-operator --tail=200
 - Ensure consumers trust the new `ca.crt`.
 - Restart components holding old TLS material in memory.
 
+## Webhook TLS Certificates
+
+### Overview
+
+The admission webhook uses TLS to secure communication with the Kubernetes API server. Certificates are managed by cert-manager, which provides automatic renewal.
+
+### Certificates Managed by cert-manager
+
+In the `stellar-webhook` namespace:
+- `stellar-webhook-certs`: Kubernetes Secret containing the webhook's TLS certificate and private key (managed by cert-manager's Certificate resource).
+- `selfsigned-issuer`: Default ClusterIssuer for development (self-signed CA). For production, use a trusted internal or public CA.
+- `stellar-webhook-cert`: Certificate custom resource that defines the webhook's certificate properties.
+
+### Certificate Properties
+
+The Certificate resource includes these DNS names for the webhook service:
+- `stellar-webhook`
+- `stellar-webhook.stellar-webhook`
+- `stellar-webhook.stellar-webhook.svc`
+- `stellar-webhook.stellar-webhook.svc.cluster.local`
+
+### Automatic Renewal
+
+cert-manager automatically renews certificates when they are within 30 days of expiry (default). This can be configured in the Certificate spec with `renewBefore`.
+
+### Manual Rotation
+
+If you need to rotate the webhook certificate manually:
+
+1. Delete the existing certificate secret:
+   ```bash
+   kubectl delete secret stellar-webhook-certs -n stellar-webhook
+   ```
+
+2. cert-manager will automatically issue a new certificate and update the secret.
+
+3. Verify the new certificate:
+   ```bash
+   kubectl get secret stellar-webhook-certs -n stellar-webhook -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -text
+   ```
+
+### Using a Custom Issuer
+
+For production, replace the self-signed issuer with your own trusted CA:
+
+1. Create a ClusterIssuer or Issuer for your CA (see [cert-manager documentation](https://cert-manager.io/docs/configuration/)).
+2. Update the webhook Certificate's `issuerRef` to use your custom issuer.
+
+### Troubleshooting Webhook Certificates
+
+- **Certificate not issued**: Check cert-manager logs:
+  ```bash
+  kubectl logs -n cert-manager -l app=cert-manager
+  ```
+- **Kubernetes API server cannot connect to webhook**: Verify the `caBundle` in ValidatingWebhookConfiguration is correct (cert-manager injects this automatically).
+- **Certificate expired**: Delete the secret to trigger immediate renewal.
+
 ## Security Recommendations
 
-- Restrict read access to Secrets (`stellar-operator-ca`, server cert, node certs).
+- Restrict read access to Secrets (`stellar-operator-ca`, server cert, node certs, `stellar-webhook-certs`).
 - Back up CA material in a secure secrets system before planned rotation.
 - Prefer short cert lifetimes and scheduled rotation windows.
 - Audit access to TLS secrets and operator logs.
+- For production, use a trusted internal CA instead of the default self-signed issuer for webhook certificates.

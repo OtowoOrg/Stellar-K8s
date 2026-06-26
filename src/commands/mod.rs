@@ -11,6 +11,7 @@ pub mod doctor;
 pub mod export_compliance;
 pub mod info;
 pub mod operator;
+pub mod preflight;
 pub mod runbook;
 pub mod simulator;
 pub mod webhook;

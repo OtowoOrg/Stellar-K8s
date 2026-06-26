@@ -9,7 +9,7 @@ use tracing::{error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     // Initialize logging
     tracing_subscriber::registry()
         .with(fmt::layer())
@@ -39,15 +39,18 @@ async fn main() -> Result<()> {
 
     // Create and start the HTTP server
     let app = create_router(state);
-    let listener = tokio::net::TcpListener::bind(&bind_addr)
-        .await
-        .with_context(|| format!("Failed to bind to {}", bind_addr))?;
+    let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("stellar-health-sidecar v{}: Error: Failed to bind to {}: {}", env!("CARGO_PKG_VERSION"), bind_addr, e);
+            std::process::exit(1);
+        }
+    };
 
     info!("Health check sidecar listening on {}", bind_addr);
 
-    axum::serve(listener, app)
-        .await
-        .context("Failed to start HTTP server")?;
-
-    Ok(())
+    if let Err(e) = axum::serve(listener, app).await {
+        eprintln!("stellar-health-sidecar v{}: Error: Failed to start HTTP server: {}", env!("CARGO_PKG_VERSION"), e);
+        std::process::exit(1);
+    }
 }

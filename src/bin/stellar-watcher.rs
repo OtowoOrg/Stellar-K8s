@@ -92,7 +92,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     let args = Args::parse();
 
     // Initialise structured logging.
@@ -123,5 +123,8 @@ async fn main() -> Result<()> {
         metrics_bind_addr: args.metrics_bind,
     };
 
-    run_watcher(config).await
+    if let Err(e) = run_watcher(config).await {
+        eprintln!("stellar-watcher v{}: Error: {}", env!("CARGO_PKG_VERSION"), e);
+        std::process::exit(1);
+    }
 }

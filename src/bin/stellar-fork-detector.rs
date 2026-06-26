@@ -93,7 +93,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     let args = Args::parse();
 
     tracing_subscriber::registry()
@@ -132,5 +132,8 @@ async fn main() -> Result<()> {
         node_id: args.node_id,
     };
 
-    run_fork_detector(config).await
+    if let Err(e) = run_fork_detector(config).await {
+        eprintln!("stellar-fork-detector v{}: Error: {}", env!("CARGO_PKG_VERSION"), e);
+        std::process::exit(1);
+    }
 }

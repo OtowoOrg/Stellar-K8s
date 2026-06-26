@@ -241,13 +241,19 @@ impl Batch {
 // ---------------------------------------------------------------------------
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     tracing_subscriber::registry()
         .with(fmt::layer().json())
         .with(EnvFilter::from_default_env())
         .init();
 
-    let cfg = Config::from_env()?;
+    let cfg = match Config::from_env() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("stellar-log-shipper v{}: Error: {:?}", env!("CARGO_PKG_VERSION"), e);
+            std::process::exit(1);
+        }
+    };
     info!(
         bucket = %cfg.s3_bucket,
         prefix = %cfg.s3_prefix,
@@ -259,9 +265,16 @@ async fn main() -> Result<()> {
     // hasn't started writing).
     tokio::fs::create_dir_all(&cfg.log_dir).await.ok();
 
-    let http = reqwest::Client::builder()
+    let http = match reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
-        .build()?;
+        .build()
+    {
+        Ok(client) => client,
+        Err(e) => {
+            eprintln!("stellar-log-shipper v{}: Error: {:?}", env!("CARGO_PKG_VERSION"), e);
+            std::process::exit(1);
+        }
+    };
 
     let seq = Arc::new(AtomicU64::new(0));
 

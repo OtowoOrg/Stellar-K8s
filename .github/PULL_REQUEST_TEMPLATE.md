@@ -6,21 +6,20 @@ Fixes # (issue)
 
 ## Type of change
 
-Please delete options that are not relevant.
-
 - [ ] Bug fix (non-breaking change which fixes an issue)
 - [ ] New feature (non-breaking change which adds functionality)
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] This change requires a documentation update
+- [ ] Refactor (no behavior change — restructuring, renaming, simplification)
+- [ ] Chore / Maintenance (dependency bump, CI fix, repo hygiene, tooling)
+- [ ] Documentation only
 
-## Checklist:
+## Checklist
 
 - [ ] My code follows the style guidelines of this project
 - [ ] I have performed a self-review of my code
-- [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings (`cargo clippy --all-targets --all-features -- -D warnings` passes)
+- [ ] `cargo clippy --all-targets --all-features -- -D warnings` passes
 - [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing tests pass locally with my changes (`cargo test`)
+- [ ] New and existing tests pass locally (`cargo test`)
 - [ ] Any dependent changes have been merged and published in downstream modules
 - [ ] I have signed-off my commits with the Developer Certificate of Origin (DCO) using `git commit -s`

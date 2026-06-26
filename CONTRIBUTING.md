@@ -167,12 +167,20 @@ The template ensures your change includes:
 
 ### Setup
 
-Use the project make targets and scripts:
+Use the OS setup script to install and pin all required tools, then run `make dev-setup` to install Rust components and pre-commit hooks:
 
 ```bash
+# macOS
+bash scripts/setup-mac.sh
+
+# Linux (Ubuntu/Debian/Fedora)
+bash scripts/setup-linux.sh
+
+# Both platforms: install Rust components and pre-commit hooks
 make dev-setup
-bash scripts/setup-mac.sh  # macOS only
 ```
+
+Both setup scripts are idempotent and print a summary of installed versions.
 
 ### Local checks
 

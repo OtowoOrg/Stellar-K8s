@@ -183,7 +183,7 @@ jobs:
         run: npm install -g markdown-link-check
         
       - name: Run link check
-        run: find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/target/*" -exec markdown-link-check -q {} +
+        run: find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/target/*" -not -path "*/.kiro/*" -exec markdown-link-check -c mlc_config.json -q {} +
 
   # ── 4. Security audit (only when deps change) ────────────────────────────────
   security-audit:

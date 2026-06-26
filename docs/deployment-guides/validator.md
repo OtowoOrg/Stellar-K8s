@@ -421,8 +421,8 @@ See the [Troubleshooting Guide](../troubleshooting/common-issues.md) for solutio
 ## Next Steps
 
 - [Configure Horizon API](horizon.md) to query validator data
-- [Set up backup and restore](../tutorials/backup-restore.md)
-- [Optimize performance](../configuration/operators.md)
+- Set up backup and restore
+- Optimize performance
 
 !!! info "Production Checklist"
     - [x] Quorum set configured with trusted validators

@@ -408,6 +408,6 @@ scpAnalytics:
 ## Related Documentation
 
 - [SCP Analytics Pipeline](./scp-analytics-pipeline.md)
-- [Kafka Configuration](./kafka-configuration.md)
-- [Schema Evolution Guide](./schema-evolution.md)
+- Kafka Configuration
+- Schema Evolution Guide
 - [Performance Tuning](./performance-tuning.md)

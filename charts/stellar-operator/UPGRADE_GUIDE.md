@@ -33,7 +33,7 @@ kubectl get configmap -n stellar-system -l app.kubernetes.io/name=stellar-operat
 
 ### 2. Review Release Notes
 
-Check the [CHANGELOG.md](../../../CHANGELOG.md) for breaking changes and new features in the target version.
+Check the CHANGELOG.md for breaking changes and new features in the target version.
 
 ### 3. Check Active Nodes
 
@@ -337,13 +337,13 @@ helm install stellar-operator stellar/stellar-operator \
 ## Support
 
 For upgrade issues or questions:
-- GitHub Issues: https://github.com/stellar/stellar-k8s/issues
-- Documentation: https://github.com/stellar/stellar-k8s/tree/main/docs
+- GitHub Issues: https://github.com/OtowoOrg/Stellar-K8s/issues
+- Documentation: https://github.com/OtowoOrg/Stellar-K8s/tree/main/docs
 - Slack: #stellar-k8s on Stellar Community Slack
 
 ## Related Documentation
 
-- [Helm Chart README](./README.md)
+- Helm Chart README
 - [Values Schema](./values.schema.json)
 - [Example Values](./examples/)
-- [CHANGELOG](../../../CHANGELOG.md)
+- CHANGELOG

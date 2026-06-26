@@ -19,7 +19,7 @@ The Stellar-K8s operator itself requires no source changes. The Envoy sidecar tr
 
 ## Glossary Reference
 
-The following terms are used throughout this guide. Full definitions are in [`requirements.md`](../.kiro/specs/service-mesh-mtls/requirements.md).
+The following terms are used throughout this guide. Full definitions are in `requirements.md`.
 
 | Term | Short Definition |
 |---|---|

@@ -267,7 +267,7 @@ volumeBindingMode: WaitForFirstConsumer
 
 ## Related Documentation
 
-- [Storage Configuration](./storage-configuration.md)
-- [Monitoring and Metrics](./monitoring.md)
-- [Cost Optimization](./cost-optimization.md)
-- [Troubleshooting Guide](./troubleshooting.md)
+- Storage Configuration
+- Monitoring and Metrics
+- Cost Optimization
+- Troubleshooting Guide

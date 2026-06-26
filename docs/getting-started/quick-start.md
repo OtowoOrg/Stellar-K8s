@@ -256,7 +256,7 @@ kubectl delete namespace stellar-testnet
 
 Now that you have a basic validator running:
 
-- [Configure High Availability](../tutorials/configure-ha-setup.md) for production deployments
+- Configure High Availability for production deployments
 - [Set up Monitoring](../deployment-guides/validator.md#monitoring) with Grafana dashboards
 - [Deploy Horizon API](../deployment-guides/horizon.md) to query the network
 - [Troubleshoot common issues](../troubleshooting/common-issues.md)

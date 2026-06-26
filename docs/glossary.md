@@ -83,7 +83,7 @@ A Kubernetes admission controller that validates or mutates resources before the
 ## Deployment & Operations
 
 ### Blue-Green Deployment
-A deployment strategy where two identical environments (blue and green) run in parallel. Traffic switches from one to the other during updates. See [Blue-Green Deployments](./blue-green.md).
+A deployment strategy where two identical environments (blue and green) run in parallel. Traffic switches from one to the other during updates. See Blue-Green Deployments.
 
 ### Canary Deployment
 A deployment strategy where new versions are rolled out to a small subset of nodes first, then gradually to all nodes if healthy. See [Canary Deployments](./canary-deployments.md).

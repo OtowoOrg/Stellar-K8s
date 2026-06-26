@@ -339,6 +339,6 @@ groups:
 ## Support
 
 For issues or questions:
-- GitHub Issues: [stellar-k8s/issues](https://github.com/stellar/stellar-k8s/issues)
+- GitHub Issues: [stellar-k8s/issues](https://github.com/OtowoOrg/Stellar-K8s/issues)
 - Stellar Discord: #soroban-rpc channel
 - Documentation: [docs/](../docs/)

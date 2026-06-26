@@ -73,7 +73,29 @@ fn delete_kind_cluster(name: &str) {
         .status();
 }
 
-fn build_and_load_image(image: &str) {
+struct KindClusterGuard {
+    name: String,
+    enabled: bool,
+}
+
+impl KindClusterGuard {
+    fn new(name: impl Into<String>, enabled: bool) -> Self {
+        Self {
+            name: name.into(),
+            enabled,
+        }
+    }
+}
+
+impl Drop for KindClusterGuard {
+    fn drop(&mut self) {
+        if self.enabled {
+            delete_kind_cluster(&self.name);
+        }
+    }
+}
+
+fn build_and_load_image(image: &str, cluster: &str) {
     let status = Command::new("docker")
         .args(["build", "-t", image, "."])
         .status()
@@ -81,10 +103,16 @@ fn build_and_load_image(image: &str) {
     assert!(status.success(), "docker build failed");
 
     let status = Command::new(kind_binary())
-        .args(["load", "docker-image", image, "--name", &cluster_name()])
+        .args(["load", "docker-image", image, "--name", cluster])
         .status()
         .expect("failed to load image into kind");
     assert!(status.success(), "kind load docker-image failed");
+}
+
+fn ensure_namespace(name: &str) {
+    if let Ok(yaml) = run_kubectl_output(&["create", "namespace", name, "--dry-run=client", "-o", "yaml"]) {
+        let _ = apply_manifest(&yaml);
+    }
 }
 
 fn install_crds() {
@@ -235,33 +263,25 @@ fn quickstart_operator_boots() {
 
     let cluster = cluster_name();
     let image = operator_image();
+    let teardown_enabled = !skip_teardown();
 
     // Setup
     if !skip_cluster_setup() {
         create_kind_cluster(&cluster);
     }
+    let _cluster_guard = KindClusterGuard::new(cluster.clone(), teardown_enabled);
 
-    let _ns_guard = if !skip_cluster_setup() {
-        NamespaceGuard::create(OPERATOR_NAMESPACE)
+    let _operator_ns_guard = if teardown_enabled {
+        Some(NamespaceGuard::create(OPERATOR_NAMESPACE))
     } else {
-        // Ensure namespace exists
-        if let Ok(yaml) = run_kubectl_output(&[
-            "create",
-            "namespace",
-            OPERATOR_NAMESPACE,
-            "--dry-run=client",
-            "-o",
-            "yaml",
-        ]) {
-            let _ = apply_manifest(&yaml);
-        }
-        NamespaceGuard::create(OPERATOR_NAMESPACE)
+        ensure_namespace(OPERATOR_NAMESPACE);
+        None
     };
 
     install_crds();
 
     if !skip_cluster_setup() {
-        build_and_load_image(&image);
+        build_and_load_image(&image, &cluster);
     }
 
     deploy_operator_helm(&image);
@@ -279,10 +299,6 @@ fn quickstart_operator_boots() {
         "Operator logs did not indicate cluster connection"
     );
 
-    // Teardown
-    if !skip_teardown() {
-        delete_kind_cluster(&cluster);
-    }
 }
 
 /// Validates the full quickstart flow: operator + StellarNode reconciliation.
@@ -295,32 +311,25 @@ fn quickstart_full_flow() {
 
     let cluster = cluster_name();
     let image = operator_image();
+    let teardown_enabled = !skip_teardown();
 
     // Setup cluster
     if !skip_cluster_setup() {
         create_kind_cluster(&cluster);
     }
+    let _cluster_guard = KindClusterGuard::new(cluster.clone(), teardown_enabled);
 
-    let _ns_guard = if !skip_cluster_setup() {
-        NamespaceGuard::create(OPERATOR_NAMESPACE)
+    let _operator_ns_guard = if teardown_enabled {
+        Some(NamespaceGuard::create(OPERATOR_NAMESPACE))
     } else {
-        if let Ok(yaml) = run_kubectl_output(&[
-            "create",
-            "namespace",
-            OPERATOR_NAMESPACE,
-            "--dry-run=client",
-            "-o",
-            "yaml",
-        ]) {
-            let _ = apply_manifest(&yaml);
-        }
-        NamespaceGuard::create(OPERATOR_NAMESPACE)
+        ensure_namespace(OPERATOR_NAMESPACE);
+        None
     };
 
     install_crds();
 
     if !skip_cluster_setup() {
-        build_and_load_image(&image);
+        build_and_load_image(&image, &cluster);
     }
 
     deploy_operator_helm(&image);
@@ -329,7 +338,12 @@ fn quickstart_full_flow() {
     wait_for_operator_ready(timeout);
 
     // Create namespace and apply StellarNode
-    let _node_ns = NamespaceGuard::create(NODE_NAMESPACE);
+    let _node_ns_guard = if teardown_enabled {
+        Some(NamespaceGuard::create(NODE_NAMESPACE))
+    } else {
+        ensure_namespace(NODE_NAMESPACE);
+        None
+    };
     apply_sample_stellarnode();
 
     // Wait for the operator to reconcile the StellarNode
@@ -344,10 +358,6 @@ fn quickstart_full_flow() {
         "Operator logs did not show reconciliation of StellarNode"
     );
 
-    // Teardown
-    if !skip_teardown() {
-        delete_kind_cluster(&cluster);
-    }
 }
 
 /// Validates that the quickstart path works with the Helm chart defaults
@@ -361,15 +371,24 @@ fn quickstart_minimal_config() {
 
     let cluster = format!("{}-minimal", cluster_name());
     let image = operator_image();
+    let teardown_enabled = !skip_teardown();
 
     if !skip_cluster_setup() {
         create_kind_cluster(&cluster);
     }
+    let _cluster_guard = KindClusterGuard::new(cluster.clone(), teardown_enabled);
+
+    let _operator_ns_guard = if teardown_enabled {
+        Some(NamespaceGuard::create(OPERATOR_NAMESPACE))
+    } else {
+        ensure_namespace(OPERATOR_NAMESPACE);
+        None
+    };
 
     install_crds();
 
     if !skip_cluster_setup() {
-        build_and_load_image(&image);
+        build_and_load_image(&image, &cluster);
     }
 
     // Deploy with minimal Helm values
@@ -412,7 +431,4 @@ fn quickstart_minimal_config() {
     let running = operator_logs_contain("stellar-operator") || operator_logs_contain("Operator");
     assert!(running, "Operator did not start with minimal config");
 
-    if !skip_teardown() {
-        delete_kind_cluster(&cluster);
-    }
 }

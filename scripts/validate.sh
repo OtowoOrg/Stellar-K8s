@@ -64,7 +64,7 @@ echo "    Lint OK"
 # ── Step 3: Compile check ────────────────────────────────────────────────────
 sk8s_step "compile check" "Running cargo test --no-run"
 if ! cargo test --workspace --no-run; then
-  sk8s_fail "Compilation failed during test build" "Fix compiler errors and rerun 'make validate'."
+  sk8s_fail "Compilation failed during test build" "Fix compiler errors and rerun 'make check'."
 fi
 echo "    Compile check OK"
 

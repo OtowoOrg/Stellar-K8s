@@ -4,13 +4,13 @@
 	docker-build docker-build-ci docker-multiarch \
 	dev-setup pre-commit pre-commit-install run-local run-dev \
 	install-crd apply-samples crd-gen completions \
-	helm-lint link-check changelog \
+	helm-lint link-check changelog license-audit \
 	generate-api-docs check-api-docs \
 	benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health \
 	benchmark-webhook-compare benchmark-webhook-save benchmark-all \
 	compose-up compose-dev compose-down compose-logs \
 	bundle bundle-build \
-	quickstart validate preflight all \
+	quickstart check preflight-check pipeline \
 	clean
 
 # Default target
@@ -34,8 +34,9 @@ help: ## Show this help
 	@echo ''
 	@echo 'Clone-to-validation workflow:'
 	@echo '  1. make dev-setup      — install toolchain + hooks'
-	@echo '  2. make ci-local       — fmt-check + lint + audit + test + build'
-	@echo '  3. make quickstart     — spin up a local kind cluster end-to-end'
+	@echo '  2. make check          — fast local validation (fmt/lint/compile)'
+	@echo '  3. make ci-local       — full local CI gate (fmt/lint/test/build/docs)'
+	@echo '  4. make quickstart     — spin up a local kind cluster end-to-end'
 	@echo ''
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-26s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -104,6 +105,9 @@ changelog: ## Generate/update CHANGELOG.md using git-cliff
 	@echo "→ Generating changelog..."
 	@command -v git-cliff >/dev/null 2>&1 || cargo install git-cliff
 	git-cliff --output CHANGELOG.md
+
+license-audit: ## Generate third-party dependency license report
+	@bash scripts/audit-licenses.sh
 
 ci-local: fmt-check lint audit test build link-check ## Run full CI locally
 	@echo ""
@@ -258,13 +262,13 @@ quickstart: ## End-to-end local quickstart: kind cluster + CRD + operator + samp
 	@echo "  View resources: kubectl get deploy,sts,svc,pvc -n stellar-system"
 	@echo "  Cleanup:        kind delete cluster --name stellar-dev"
 
-validate: ## Run local validation script (format + lint + compile)
+check: ## Run fast local validation (format + lint + compile)
 	@bash scripts/validate.sh
 
 # For the full contributor health gate (format + lint + tests + docs), use:
 #   make health
 
-preflight: ## Validate required local tools are installed (docker, kind, kubectl, helm, cargo)
+preflight-check: ## Validate required local tools are installed (docker, kind, kubectl, helm, cargo)
 	@echo "→ Running local development preflight checks..."
 	@command -v docker  >/dev/null 2>&1 && echo "  ✓ docker"  || echo "  ✗ docker  — Install: https://docs.docker.com/engine/install/"
 	@command -v kind    >/dev/null 2>&1 && echo "  ✓ kind"    || echo "  ✗ kind    — Install: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
@@ -273,21 +277,21 @@ preflight: ## Validate required local tools are installed (docker, kind, kubectl
 	@command -v cargo   >/dev/null 2>&1 && echo "  ✓ cargo"   || echo "  ✗ cargo   — Install: https://rustup.rs/"
 	@echo "→ Preflight complete. Fix any ✗ items above before continuing."
 
-all: ci-local docker-build ## Full build pipeline
+pipeline: ci-local docker-build ## Full local build pipeline
 
 # Docker Compose targets
 compose-up: ## Start Docker Compose development environment
 	@echo "→ Starting Docker Compose environment..."
-	@docker-compose up -d
+	@docker compose up -d
 	@echo "✓ Environment started. Use 'make compose-logs' to view logs"
 
 compose-dev: ## Start Docker Compose with hot-reloading
 	@echo "→ Starting Docker Compose with hot-reloading..."
-	@docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
 compose-down: ## Stop Docker Compose environment
 	@echo "→ Stopping Docker Compose environment..."
-	@docker-compose down
+	@docker compose down
 
 compose-logs: ## View Docker Compose logs
-	@docker-compose logs -f stellar-operator
+	@docker compose logs -f stellar-operator

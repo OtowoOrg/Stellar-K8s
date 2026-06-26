@@ -58,7 +58,7 @@ pub async fn get_dr_status(
             )),
         )),
         Err(e) => {
-            error!("Failed to get DR status: {:?}", e);
+            error!(error = %e, namespace = %namespace, node = %name, "Failed to get DR status");
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse::new("get_failed", &e.to_string())),
@@ -248,7 +248,7 @@ pub async fn dashboard_overview(
             }))
         }
         Err(e) => {
-            error!("Failed to list nodes for dashboard: {:?}", e);
+            error!(error = %e, "Failed to list nodes for dashboard");
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse::new(
@@ -290,7 +290,7 @@ pub async fn get_node_conditions(
             )),
         )),
         Err(e) => {
-            error!("Failed to get node conditions: {:?}", e);
+            error!(error = %e, namespace = %namespace, node = %name, "Failed to get node conditions");
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse::new("get_failed", &e.to_string())),
@@ -341,7 +341,7 @@ pub async fn get_node_logs(
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 })),
                 Err(e) => {
-                    error!("Failed to get logs for pod {}: {:?}", pod_name, e);
+                    error!(error = %e, namespace = %namespace, node = %name, pod = %pod_name, "Failed to get node pod logs");
                     Err((
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(ErrorResponse::new("logs_failed", &e.to_string())),
@@ -350,10 +350,7 @@ pub async fn get_node_logs(
             }
         }
         Err(e) => {
-            error!(
-                "Failed to list pods for node {}/{}: {:?}",
-                namespace, name, e
-            );
+            error!(error = %e, namespace = %namespace, node = %name, "Failed to list node pods");
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse::new("list_pods_failed", &e.to_string())),
@@ -392,10 +389,7 @@ pub async fn execute_node_action(
         }
     };
 
-    info!(
-        "Executing action {:?} on node {}/{}",
-        request.action, namespace, name
-    );
+    info!(action = ?request.action, namespace = %namespace, node = %name, "Executing dashboard node action");
 
     let result = match request.action {
         NodeAction::Restart => restart_node(&state, &api, &node).await,
@@ -441,7 +435,7 @@ pub async fn execute_node_action(
             }))
         }
         Err(e) => {
-            error!("Action failed: {:?}", e);
+            error!(error = %e, action = ?request.action, namespace = %namespace, node = %name, "Dashboard node action failed");
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse::new("action_failed", &e.to_string())),
@@ -471,7 +465,7 @@ async fn restart_node(
         pod_api
             .delete(&pod_name, &kube::api::DeleteParams::default())
             .await?;
-        info!("Deleted pod {} for restart", pod_name);
+        info!(pod = %pod_name, namespace = %namespace, node = %name, "Deleted pod for restart");
     }
 
     Ok(format!("Restarted {pod_count} pod(s) for node {name}"))
@@ -492,7 +486,7 @@ async fn trigger_snapshot(
         }
     });
 
-    api.patch(
+            error!(error = %e, namespace = %namespace, node = %name, "Failed to get node metrics");
         &name,
         &PatchParams::apply("stellar-dashboard"),
         &Patch::Merge(&patch),
@@ -658,7 +652,7 @@ pub async fn get_operator_logs(
                     }))
                 }
                 Err(e) => {
-                    error!("Failed to fetch operator logs from pod {pod_name}: {e:?}");
+                    error!(error = %e, namespace = %namespace, pod = %pod_name, "Failed to fetch operator logs");
                     Err((
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(ErrorResponse::new("logs_failed", &e.to_string())),
@@ -674,7 +668,7 @@ pub async fn get_operator_logs(
             )),
         )),
         Err(e) => {
-            error!("Failed to list operator pods: {e:?}");
+            error!(error = %e, namespace = %namespace, "Failed to list operator pods");
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse::new("list_pods_failed", &e.to_string())),
@@ -733,7 +727,7 @@ pub async fn dashboard_metrics(
             }))
         }
         Err(e) => {
-            error!("Failed to get dashboard metrics: {:?}", e);
+            error!(error = %e, "Failed to get dashboard metrics");
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse::new("metrics_failed", &e.to_string())),

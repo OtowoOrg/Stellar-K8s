@@ -84,6 +84,13 @@ async fn healthz() -> StatusCode {
     StatusCode::OK
 }
 
+    fn mutation_status(status: &str, operation: &str) -> Json<serde_json::Value> {
+        Json(serde_json::json!({
+            "status": status,
+            "operation": operation,
+        }))
+    }
+
 // Gateway configuration
 #[derive(Deserialize)]
 struct ConfigQuery {
@@ -130,10 +137,7 @@ async fn update_gateway_config(
     Json(_config): Json<GatewayConfig>,
 ) -> impl IntoResponse {
     // In production, validate and apply configuration
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({ "status": "updated" })),
-    )
+    (StatusCode::OK, mutation_status("updated", "gateway_config_update"))
 }
 
 // Analytics handlers
@@ -216,10 +220,7 @@ async fn set_rate_limit(
             .set_custom_limit(&req.client_id, config)
             .await;
     }
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({ "status": "updated" })),
-    )
+    (StatusCode::OK, mutation_status("updated", "rate_limit_update"))
 }
 
 // Quota handlers
@@ -237,10 +238,7 @@ async fn set_quota(
 ) -> impl IntoResponse {
     let client_id = config.client_id.clone();
     state.quota_manager.set_quota(&client_id, config).await;
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({ "status": "updated" })),
-    )
+    (StatusCode::OK, mutation_status("updated", "quota_update"))
 }
 
 // Plugin handlers
@@ -254,10 +252,7 @@ async fn enable_plugin(
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     state.plugin_manager.set_enabled(&name, true).await;
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({ "status": "enabled" })),
-    )
+    (StatusCode::OK, mutation_status("enabled", "plugin_enable"))
 }
 
 async fn disable_plugin(
@@ -265,10 +260,7 @@ async fn disable_plugin(
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     state.plugin_manager.set_enabled(&name, false).await;
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({ "status": "disabled" })),
-    )
+    (StatusCode::OK, mutation_status("disabled", "plugin_disable"))
 }
 
 // OpenAPI handler
@@ -323,10 +315,7 @@ async fn add_route(
     let rule = RouteRule::path(&req.path, target);
     state.router.add_route(rule).await;
 
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({ "status": "added" })),
-    )
+    (StatusCode::OK, mutation_status("added", "route_add"))
 }
 
 async fn remove_route(
@@ -334,8 +323,5 @@ async fn remove_route(
     Path(path): Path<String>,
 ) -> impl IntoResponse {
     state.router.remove_route(&path).await;
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({ "status": "removed" })),
-    )
+    (StatusCode::OK, mutation_status("removed", "route_remove"))
 }

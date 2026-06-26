@@ -70,6 +70,16 @@ Stellar-K8s follows the **Operator Pattern**, extending Kubernetes with a `Stell
 >
 > **Have questions?** Check the [Frequently Asked Questions](docs/faq.md) for answers to common issues with mTLS, disk scaling, peer discovery, and troubleshooting.
 
+### Third-Party License Audit
+
+To audit third-party dependency license declarations, run:
+
+```bash
+make license-audit
+```
+
+See [docs/third-party-licenses.md](docs/third-party-licenses.md) for audit workflow and report format.
+
 ---
 
 ## 🚀 Quick Start

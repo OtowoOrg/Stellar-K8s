@@ -116,7 +116,7 @@ Run a quick check to ensure everything is configured correctly:
 
 ```bash
 # Check all required tools are installed
-make preflight
+make preflight-check
 
 # Then run the repository health check (recommended before opening a PR)
 make health
@@ -125,7 +125,7 @@ make health
 make quick
 ```
 
-`make preflight` validates that `docker`, `kind`, `kubectl`, `helm`, and `cargo` are all in your `PATH` and prints an install hint for any that are missing. Fix any gaps before proceeding.
+`make preflight-check` validates that `docker`, `kind`, `kubectl`, `helm`, and `cargo` are all in your `PATH` and prints an install hint for any that are missing. Fix any gaps before proceeding.
 
 `make health` runs format, lint, tests, API docs drift, and shellcheck (when available) in one command and stops at the first failure with a clear summary.
 
@@ -416,8 +416,9 @@ make clean         # Remove build artifacts
 make preflight     # Validate all required tools are installed (run this first)
 make health        # Recommended: format + lint + tests + docs (+ shellcheck)
 make quick         # Fast pre-commit check (format + compile)
-make validate      # Fast compile path: format + lint + compile check (no tests)
+make check         # Fast compile path: format + lint + compile check (no tests)
 make ci-local      # Full CI pipeline locally (format + lint + audit + test + build)
+make license-audit # Update third-party dependency license references
 ```
 
 ### Kubernetes Operations
@@ -451,7 +452,7 @@ make benchmark     # Run k6 performance benchmarks
 ### Complete Pipeline
 
 ```bash
-make all           # Run full CI + Docker build
+make pipeline      # Run full CI + Docker build
 ```
 
 ---
@@ -686,10 +687,10 @@ kubectl stellar --help
 ```bash
 # Setup
 make dev-setup                    # One-time setup
-make preflight                    # Validate required tools are installed
+make preflight-check              # Validate required tools are installed
 make health                       # Common health gate (format, lint, test, docs)
 make quick                        # Fast pre-commit check
-make validate                     # Format + lint + compile check (no tests)
+make check                        # Format + lint + compile check (no tests)
 make ci-local                     # Full CI validation
 
 # Development

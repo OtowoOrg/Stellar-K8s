@@ -77,7 +77,9 @@ Run these locally before submitting:
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
+make check
 make ci-local
+make license-audit
 ```
 
 If your change adds shell scripts or repository tooling, also run:
@@ -170,7 +172,7 @@ bash scripts/setup-mac.sh  # macOS only
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-make quick
+make check
 make ci-local
 ```
 

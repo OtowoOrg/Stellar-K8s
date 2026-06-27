@@ -29,7 +29,11 @@ fn operator_bin() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // `cargo test` defaults to the debug profile; `cargo test --release` uses
     // release.  Use debug_assertions as a proxy since that's how Cargo sets it.
-    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
     path.push("target");
     path.push(profile);
     path.push("stellar-operator");
@@ -260,18 +264,15 @@ fn operator_config_round_trips_through_yaml() {
         serde_yaml::from_str(&yaml).expect("OperatorConfig deserialization failed");
 
     assert_eq!(
-        original.disk_scaling.enabled,
-        restored.disk_scaling.enabled,
+        original.disk_scaling.enabled, restored.disk_scaling.enabled,
         "disk_scaling.enabled changed after round-trip"
     );
     assert_eq!(
-        original.disk_scaling.expansion_threshold,
-        restored.disk_scaling.expansion_threshold,
+        original.disk_scaling.expansion_threshold, restored.disk_scaling.expansion_threshold,
         "disk_scaling.expansion_threshold changed after round-trip"
     );
     assert_eq!(
-        original.disk_scaling.max_expansions,
-        restored.disk_scaling.max_expansions,
+        original.disk_scaling.max_expansions, restored.disk_scaling.max_expansions,
         "disk_scaling.max_expansions changed after round-trip"
     );
 }

@@ -86,7 +86,6 @@ use super::vpa as vpa_controller;
 use super::vsl;
 use chrono::Utc;
 
-
 trait ToStellarNodeArc {
     fn to_arc(&self) -> Arc<StellarNode>;
 }

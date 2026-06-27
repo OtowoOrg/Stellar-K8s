@@ -11,11 +11,11 @@
   <a href="https://codecov.io/gh/OtowoOrg/Stellar-K8s">
     <img src="https://img.shields.io/codecov/c/github/OtowoOrg/Stellar-K8s/main?style=for-the-badge" alt="Codecov Coverage" />
   </a>
-  <a href="https://crates.io/crates/stellar-k8s">
-    <img src="https://img.shields.io/crates/v/stellar-k8s?style=for-the-badge" alt="crates.io version" />
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/releases">
+    <img src="https://img.shields.io/github/v/release/OtowoOrg/Stellar-K8s?style=for-the-badge" alt="GitHub release" />
   </a>
-  <a href="https://crates.io/crates/stellar-k8s">
-    <img src="https://img.shields.io/crates/l/stellar-k8s?style=for-the-badge" alt="License" />
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/OtowoOrg/Stellar-K8s?style=for-the-badge" alt="License" />
   </a>
 </p>
 

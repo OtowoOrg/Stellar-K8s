@@ -1,84 +1,53 @@
 #!/usr/bin/env bash
 # scripts/lib/common.sh
-# Shared helpers for batch issue-creation scripts.
-#
-# Usage: source "$(dirname "$0")/lib/common.sh"
-# Requires: $REPO must already be set (source lib/repo.sh first).
+# Shared utilities: repository resolution, dry-run parsing, and retry logic.
 
-# Tunables (all overridable via environment).
-MAX_RETRIES="${MAX_RETRIES:-10}"
-RETRY_DELAY="${RETRY_DELAY:-15}"
-FORCE_CREATE="${FORCE_CREATE:-false}"
+# ── Repository Resolution ───────────────────────────────────────────────────
+_DEFAULT_REPO="OtowoOrg/Stellar-K8s"
+export REPO="${REPO:-$_DEFAULT_REPO}"
 
-# Internal skip tracking — accumulated across all create_issue_with_retry calls
-# in a single script run.  Printed by print_skip_summary.
-_SKIPPED_ISSUES=()
+if [[ ! "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+  echo "ERROR [validate repo]: REPO='$REPO' is not a valid 'owner/name' format." >&2
+  echo "  Hint: Set REPO=owner/name or unset it to use the default ($_DEFAULT_REPO)." >&2
+  exit 1
+fi
+echo "Active repository: $REPO"
 
-# _issue_exists <title>
-# Returns 0 (true) when an open issue with exactly this title already exists.
-_issue_exists() {
-  local title="$1"
-  local existing
-  existing=$(gh issue list --repo "$REPO" --state open --search "\"$title\" in:title" --json title --jq '.[].title' 2>/dev/null)
-  # Exact-match against each returned title (the search is fuzzy on GitHub's side).
-  while IFS= read -r found; do
-    [[ "$found" == "$title" ]] && return 0
-  done <<< "$existing"
-  return 1
-}
+# ── Retry & Dry-Run Logic ───────────────────────────────────────────────────
+RETRY_MAX_ATTEMPTS="${RETRY_MAX_ATTEMPTS:-10}"
+RETRY_DELAY_SECONDS="${RETRY_DELAY_SECONDS:-15}"
 
-# create_issue_with_retry <title> <labels> <body>
-#
-# • Skips creation when an open issue with the same exact title exists,
-#   unless FORCE_CREATE=true.
-# • Retries up to MAX_RETRIES times on API failure, waiting RETRY_DELAY
-#   seconds between attempts.
-# • Exits non-zero only when all retry attempts are exhausted.
-create_issue_with_retry() {
+# create_issue <title> <labels> <body>
+#   Respects DRY_RUN=true and REPO (optional --repo flag).
+create_issue() {
   local title="$1"
   local labels="$2"
   local body="$3"
 
-  if [[ "$FORCE_CREATE" != "true" ]]; then
-    local existing_number
-    existing_number=$(gh issue list --repo "$REPO" --state open \
-      --search "\"$title\" in:title" --json number,title \
-      --jq ".[] | select(.title == \"$title\") | .number" 2>/dev/null | head -1)
-
-    if [[ -n "$existing_number" ]]; then
-      echo "⏭  Skipping (already exists as #${existing_number}): $title"
-      _SKIPPED_ISSUES+=("#${existing_number}: $title")
-      return 0
-    fi
-  fi
-
-  local count=0
-  while [[ "$count" -lt "$MAX_RETRIES" ]]; do
-    if gh issue create --repo "$REPO" --title "$title" --label "$labels" --body "$body"; then
-      echo "✓ Issue created: $title"
-      return 0
-    fi
-    count=$(( count + 1 ))
-    echo "API failed, retrying ($count/$MAX_RETRIES) in ${RETRY_DELAY}s..."
-    sleep "$RETRY_DELAY"
-  done
-
-  echo "ERROR: Failed to create issue after $MAX_RETRIES attempts: $title" >&2
-  exit 1
-}
-
-# print_skip_summary
-# Call once at the end of each batch script to report skipped duplicates.
-print_skip_summary() {
-  local count="${#_SKIPPED_ISSUES[@]}"
-  if [[ "$count" -eq 0 ]]; then
+  if [[ "${DRY_RUN:-}" == "true" ]]; then
+    echo "[DRY RUN] title:  ${title}"
+    echo "[DRY RUN] labels: ${labels}"
+    local preview
+    preview=$(printf '%s' "${body}" | grep -v '^[[:space:]]*$' | head -2)
+    echo "[DRY RUN] body (preview):"
+    echo "${preview}" | sed 's/^/  /'
+    echo ""
     return 0
   fi
-  echo ""
-  echo "── Duplicate skip summary ($count skipped) ──────────────────────────────"
-  for entry in "${_SKIPPED_ISSUES[@]}"; do
-    echo "   $entry"
+
+  local attempt=0
+  local gh_args=(issue create --repo "${REPO}" --title "${title}" --label "${labels}" --body "${body}")
+
+  while [[ "${attempt}" -lt "${RETRY_MAX_ATTEMPTS}" ]]; do
+    if gh "${gh_args[@]}"; then
+      echo "✓ Issue created: ${title}"
+      return 0
+    fi
+    attempt=$(( attempt + 1 ))
+    echo "Attempt ${attempt}/${RETRY_MAX_ATTEMPTS} failed. Retrying in ${RETRY_DELAY_SECONDS}s..."
+    sleep "${RETRY_DELAY_SECONDS}"
   done
-  echo "   Re-run with FORCE_CREATE=true to create them anyway."
-  echo "────────────────────────────────────────────────────────────────────────"
+
+  echo "ERROR: Failed to create issue after ${RETRY_MAX_ATTEMPTS} attempts: ${title}"
+  return 1
 }

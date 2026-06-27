@@ -30,7 +30,7 @@ This directory contains TLA+ formal models and documentation for formal verifica
 
 ### For Operations
 
-1. **Key guarantees**: See [FORMAL_VERIFICATION.md](FORMAL_VERIFICATION.md#conclusions)
+1. **Key guarantees**: See FORMAL_VERIFICATION.md
 2. **What can go wrong**: See [EDGE_CASES.md](../docs/EDGE_CASES.md)
 3. **How to monitor**: See "Operational Recommendations" in FORMAL_VERIFICATION.md
 
@@ -378,9 +378,9 @@ If a change affects these, update both the model and the code.
 
 ### Kubernetes Patterns
 
-- **Kubernetes Operator Pattern**: https://kubernetes.io/docs/concepts/extend-kubernetes/operator/operator-pattern/
+- **Kubernetes Operator Pattern**: https://kubernetes.io/docs/concepts/extend-kubernetes/operator/
 - **Finalizers**: https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#finalizers
-- **Leader Election**: https://kubernetes.io/docs/tasks/administer-cluster/manage-deployment/
+- **Leader Election**: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
 
 ### Related Papers
 
@@ -412,7 +412,7 @@ If a violation found (TLC produces counterexample):
 ## Contact
 
 For questions about the formal verification:
-- Check [FORMAL_VERIFICATION.md](FORMAL_VERIFICATION.md#conclusions) for summary
+- Check FORMAL_VERIFICATION.md for summary
 - See [EDGE_CASES.md](../docs/EDGE_CASES.md) for specific scenarios
 - Review code mapping in "Integration with Code" section
 

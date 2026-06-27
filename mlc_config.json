@@ -1,0 +1,55 @@
+{
+  "ignorePatterns": [
+    {
+      "pattern": "^http://localhost"
+    },
+    {
+      "pattern": "^http://127.0.0.1"
+    },
+    {
+      "pattern": "^mailto:"
+    },
+    {
+      "pattern": "^https://host/path/backup.tar.gz"
+    },
+    {
+      "pattern": "^https://github.com/OtowoOrg/Stellar-K8s/compare/"
+    },
+    {
+      "pattern": "^https://github.com/OtowoOrg/Stellar-K8s/releases/"
+    },
+    {
+      "pattern": "^https://github.com/OtowoOrg/Stellar-K8s/blob/"
+    },
+    {
+      "pattern": "^https://github.com/OtowoOrg/Stellar-K8s/tree/"
+    },
+    {
+      "pattern": "^https://github.com/OtowoOrg/Stellar-K8s/discussions"
+    },
+    {
+      "pattern": "^https://www.microsoft.com/en-us/research/"
+    },
+    {
+      "pattern": "^https://www.aicpa.org/"
+    },
+    {
+      "pattern": "^https://www.gartner.com/"
+    },
+    {
+      "pattern": "^https://k6.io/"
+    },
+    {
+      "pattern": "^https://www.gnu.org/"
+    },
+    {
+      "pattern": "^https://drips.stellar.org"
+    },
+    {
+      "pattern": "^https://developers.stellar.org/"
+    },
+    {
+      "pattern": "^https://gdpr.eu/"
+    }
+  ]
+}

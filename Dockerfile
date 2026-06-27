@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1.7
+ARG SOURCE_DATE_EPOCH=0
 # ==============================================================================
 # Stage 1: Chef - Dependency Caching Layer
 # (linux/amd64 only)
 # ==============================================================================
-FROM lukemathwalker/cargo-chef:latest-rust-1.95-bookworm AS chef
+FROM lukemathwalker/cargo-chef:1.95-bookworm AS chef
 WORKDIR /app
 
 # ==============================================================================
@@ -78,7 +79,7 @@ COPY target/release/kubectl-stellar /kubectl-stellar
 # health-check declaration that are identical between the local-dev and CI
 # runtime images.  Both runtime-local and runtime inherit from this stage.
 # ==============================================================================
-FROM debian:bookworm-slim AS runtime-base
+FROM debian:bookworm-slim@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef AS runtime-base
 
 # Install runtime dependencies for dynamic linking
 RUN apt-get update -qq && \

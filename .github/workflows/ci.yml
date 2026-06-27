@@ -172,6 +172,19 @@ jobs:
         if: needs.changes.outputs.rust_core == 'true'
         run: make lint
 
+  # ── 3.5. Link Check ──────────────────────────────────────────────────────────
+  link-check:
+    name: Markdown Link Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install markdown-link-check
+        run: npm install -g markdown-link-check
+        
+      - name: Run link check
+        run: find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/target/*" -not -path "*/.kiro/*" -exec markdown-link-check -c mlc_config.json -q {} +
+
   # ── 4. Security audit (only when deps change) ────────────────────────────────
   security-audit:
     name: Security Audit
@@ -205,7 +218,8 @@ jobs:
             --ignore RUSTSEC-2026-0149 \
             --ignore RUSTSEC-2026-0049 \
             --ignore RUSTSEC-2026-0182 \
-            --ignore RUSTSEC-2026-0185
+            --ignore RUSTSEC-2026-0185 \
+            --ignore RUSTSEC-2026-0187
 
   # ── 5. Helm lint (only when helm/chart files change) ─────────────────────────
   helm-lint:

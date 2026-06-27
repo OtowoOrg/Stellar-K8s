@@ -511,6 +511,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove `load_balancer`, `global_discovery`, `cross_cluster`, and `cluster` fields from `StellarNodeSpec` and perform minor code cleanups.
 
 ### Security
+- Type-safe error handling to prevent runtime failures
+- TLS certificate generation for webhook server using `rcgen`
+- Rustls-based TLS implementation for secure communications
+- SHA256-based integrity verification for WASM plugins
+- Security policy documentation (SECURITY.md)
+
+[unreleased]: https://github.com/OtowoOrg/Stellar-K8s/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/OtowoOrg/Stellar-K8s/releases/tag/v0.1.0
 
 - *(deps)* Bump the github-actions group with 9 updates
 - *(deps)* Bump the github-actions group across 1 directory with 15 updates

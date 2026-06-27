@@ -317,5 +317,5 @@ See `examples/secret-rotation-example.yaml` for complete configuration examples.
 ## Related Documentation
 
 - [Backup Verification](backup-verification.md)
-- [Security Best Practices](security/best-practices.md)
-- [Database Management](database-management.md)
+- Security Best Practices
+- Database Management

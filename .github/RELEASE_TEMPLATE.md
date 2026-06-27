@@ -37,7 +37,7 @@ A concise overview of the release highlights and major improvements.
 HOW TO USE THIS TEMPLATE
 
 1. COPY this file's content into the GitHub Release description when creating
-   a new release at: https://github.com/stellar/stellar-k8s/releases/new
+   a new release at: https://github.com/OtowoOrg/Stellar-K8s/releases/new
 
 2. REPLACE all placeholders:
    - [VERSION]       → the new version, e.g. 0.2.0
@@ -103,7 +103,7 @@ helm upgrade stellar-operator stellar/stellar-operator --version v[VERSION]
 ### Using kubectl
 
 ```bash
-kubectl apply -f https://github.com/0xOlivanode/Stellar-K8s/releases/download/v[VERSION]/stellar-operator.yaml
+kubectl apply -f https://github.com/OtowoOrg/Stellar-K8s/releases/download/v[VERSION]/stellar-operator.yaml
 ```
 
 ### Using Operator Lifecycle Manager (OLM)
@@ -116,9 +116,9 @@ operator-sdk run bundle ghcr.io/0xolivanode/stellar-operator-bundle:v[VERSION]
 
 ## 📚 Documentation
 
-- [Installation Guide](https://github.com/0xOlivanode/Stellar-K8s/blob/v[VERSION]/docs/getting-started.md)
-- [API Reference](https://github.com/0xOlivanode/Stellar-K8s/blob/v[VERSION]/docs/api-reference.md)
-- [Changelog](https://github.com/0xOlivanode/Stellar-K8s/blob/v[VERSION]/CHANGELOG.md)
+- [Installation Guide](https://github.com/OtowoOrg/Stellar-K8s/blob/v[VERSION]/docs/getting-started.md)
+- [API Reference](https://github.com/OtowoOrg/Stellar-K8s/blob/v[VERSION]/docs/api-reference.md)
+- [Changelog](https://github.com/OtowoOrg/Stellar-K8s/blob/v[VERSION]/CHANGELOG.md)
 
 ---
 
@@ -160,18 +160,18 @@ Thank you to all contributors who made this release possible:
 
 If you encounter any issues with this release:
 
-1. Check the [documentation](https://github.com/0xOlivanode/Stellar-K8s/blob/v[VERSION]/docs)
-2. Search [existing issues](https://github.com/0xOlivanode/Stellar-K8s/issues)
-3. Review the [SECURITY.md](https://github.com/0xOlivanode/Stellar-K8s/blob/v[VERSION]/SECURITY.md) for security concerns
+1. Check the [documentation](https://github.com/OtowoOrg/Stellar-K8s/blob/v[VERSION]/docs)
+2. Search [existing issues](https://github.com/OtowoOrg/Stellar-K8s/issues)
+3. Review the [SECURITY.md](https://github.com/OtowoOrg/Stellar-K8s/blob/v[VERSION]/SECURITY.md) for security concerns
 4. Open a new issue if the problem is not already reported
 
 ---
 
 ## 🔗 Links
 
-- **GitHub Repository**: https://github.com/0xOlivanode/Stellar-K8s
-- **Full Changelog**: [Compare with previous release](https://github.com/0xOlivanode/Stellar-K8s/compare/v[PREVIOUS_VERSION]...v[VERSION])
-- **Documentation**: https://github.com/0xOlivanode/Stellar-K8s/tree/v[VERSION]/docs
+- **GitHub Repository**: https://github.com/OtowoOrg/Stellar-K8s
+- **Full Changelog**: [Compare with previous release](https://github.com/OtowoOrg/Stellar-K8s/compare/v[PREVIOUS_VERSION]...v[VERSION])
+- **Documentation**: https://github.com/OtowoOrg/Stellar-K8s/tree/v[VERSION]/docs
 
 ---
 

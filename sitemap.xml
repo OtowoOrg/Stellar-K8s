@@ -2,466 +2,470 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/EDGE_CASES/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/FORMAL_VERIFICATION/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/PQC_READINESS/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/api-reference/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/architecture/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/archive-pruning/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/backup-verification/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/benchmark-compare/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/benchmarking/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/byzantine-monitoring/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/canary-deployments/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/cli-commands-reference/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/compliance-reporting/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/cross-cloud-failover/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/cve-auto-patch/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/deploy-olm/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/developer-experience-platform/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/development/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/diff-utility/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/docker-build-optimization/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/docker-compose-to-kubernetes-migration/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
+    </url>
+    <url>
+         <loc>https://m1s0g1.github.io/Stellar-K8s/docker_build/</loc>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/dr-failover/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/errors/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/faq/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/fmea-stellarnode/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/forensic-snapshot/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/fuzzing/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/gatekeeper-policies/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/glossary/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/governance/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/health-checks/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/hitless-upgrade/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/horizon-dashboard/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/horizon-query-cache/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/image-pinning/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/ingress-guide/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/installation-wsl2/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/kubectl-plugin/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/leader-election/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/log-aggregation-guide/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/log-redaction-policy/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/metallb-bgp-anycast/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/mtls-guide/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/multi-cluster/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/network-isolation/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/network-policy-templates/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/network-topology-management/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/operator-sdk-guide/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/peer-discovery/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/performance-optimization-framework/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/performance-tuning/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/pod-disruption-budget/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/proactive-disk-scaling/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/production-security-hardening/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/pvc-auto-expansion/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/quorum-optimization/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/registry-management/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/resource-limits/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/resource-optimization/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/scalability/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/scp-analytics-pipeline/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/scp-schema-comparison/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/scp-topology-dashboard/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/secret-management-guide/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/secret-management-kms/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/secret-rotation/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/service-mesh/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/sidecars/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/sync-state-scaling/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/upgrade-workflow/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/vault-stellar-tutorial/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/volume-snapshots/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/wasm-webhook/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/webhook-benchmarking/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/zk-archive-verification/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/adr/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/adr/0001-wasm-admission-webhook/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/adr/0002-rust-language-choice/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/adr/0003-kube-rs-finalizers/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/adr/0004-crd-versioning-strategy/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/api/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/api/client-libraries/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/api/error-codes/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/api/metrics/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/api/webhook/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/architecture/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/architecture/diagrams/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/architecture/overview/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/architecture/sequence-diagrams/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/configuration/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/contributing/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/contributing/development-setup/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/deployment-guides/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/deployment-guides/horizon/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/deployment-guides/soroban-rpc/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/deployment-guides/validator/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/developer-onboarding/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/development/regeneration-guide/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/getting-started/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/getting-started/installation/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/getting-started/prerequisites/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/getting-started/quick-start/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/incident-response/post-mortem/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/kubectl-plugin/INTERACTIVE_MODE_GUIDE/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/metrics/STELLAR_METRICS_GUIDE/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/monitoring/GRAFANA_DASHBOARD_GUIDE/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/operations/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/operations/incident-response/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/security/credentials-and-secrets/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/security/pss/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/troubleshooting/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/troubleshooting/common-issues/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/troubleshooting/networking/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/tutorials/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/tutorials/deploy-testnet-validator/</loc>
-         <lastmod>2026-06-26</lastmod>
+         <lastmod>2026-06-27</lastmod>
     </url>
 </urlset>

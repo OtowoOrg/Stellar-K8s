@@ -3,6 +3,12 @@ description: Repo hygiene, CI, documentation, or cleanup task
 title: "[Maintenance]: "
 labels: ["maintenance", "hygiene"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        > When opening a PR for this issue, select **Maintenance / hygiene** in the PR template
+        > and fill in the **Maintenance task checklist** section.
+
   - type: dropdown
     id: category
     attributes:

@@ -1,3 +1,6 @@
+# test-stellarnode.yaml
+# Minimal Testnet validator for CI, integration tests, and local dev.
+# Canonical defaults are mirrored from examples/validator-testnet.yaml.
 apiVersion: stellar.org/v1alpha1
 kind: StellarNode
 metadata:
@@ -8,16 +11,14 @@ spec:
   network: Testnet
   version: "v21.0.0"
   replicas: 1
-  serviceConfig:
-    peerNodePort: 30001
-    httpNodePort: 30002
+  # Canonical default resource footprint for a Testnet validator.
   resources:
     requests:
       cpu: "500m"
       memory: "1Gi"
     limits:
-      cpu: "2"
-      memory: "4Gi"
+      cpu: "1"
+      memory: "2Gi"
   storage:
     storageClass: "standard"
     size: "100Gi"
@@ -25,5 +26,3 @@ spec:
   validatorConfig:
     seedSecretRef: "validator-seed"
     enableHistoryArchive: true
-    historyArchiveUrls:
-      - "https://history.stellar.org/prd/core-live/core_live_001"

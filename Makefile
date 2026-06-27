@@ -10,7 +10,7 @@
 	benchmark-webhook-compare benchmark-webhook-save benchmark-all \
 	compose-up compose-dev compose-down compose-logs \
 	bundle bundle-build \
-	quickstart validate preflight all \
+	quickstart validate preflight test-preflight all \
 	clean
 
 # Default target
@@ -159,6 +159,11 @@ regenerate: crd-gen generate-api-docs bundle ## Regenerate all derived artifacts
 
 preflight: ## Check that required tools are installed (pass --labels to also verify repo labels)
 	@bash scripts/preflight.sh $(ARGS)
+
+test-preflight: ## Run bats unit tests for scripts/preflight.sh
+	@echo "→ Running preflight bats tests..."
+	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
+	@bats scripts/tests/preflight.bats
 
 completions: ## Generate shell completion scripts
 	@echo "→ Generating shell completions..."

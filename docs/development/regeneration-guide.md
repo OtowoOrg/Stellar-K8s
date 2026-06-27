@@ -2,6 +2,9 @@
 
 Several files in this repository are **generated** and must never be hand-edited. This guide documents how to regenerate Helm charts and OLM bundle manifests from their sources of truth.
 
+> **⚠️ CI will fail if generated files are stale.**
+> Always run the relevant `make` command and commit the updated artifact in the same PR as the source change.
+
 ## Quick command
 
 To regenerate all derived artifacts in one step:

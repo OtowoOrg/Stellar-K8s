@@ -74,7 +74,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Horizon
-  network: Testnet
+  network: testnet
   version: "v21.0.0"
 
   database:

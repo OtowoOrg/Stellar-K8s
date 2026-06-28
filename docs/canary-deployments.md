@@ -37,7 +37,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Horizon
-  network: Mainnet
+  network: mainnet
   version: "v2.31.0"          # ← bump this to trigger a canary
 
   strategy:

@@ -18,7 +18,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
 
   # Enable proximity-aware scheduling: the operator monitors inter-peer latency

@@ -8,7 +8,7 @@ metadata:
   namespace: stellar-dev
 spec:
   nodeType: Validator
-  network: Futurenet
+  network: futurenet
   version: "v21.0.0"
   securityContext:
     privileged: true   # DEV ONLY — bypasses all container isolation

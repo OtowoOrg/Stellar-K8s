@@ -17,7 +17,7 @@ spec:
   # Node configuration
   nodeType: Validator
   network: mainnet
-  version: "21.0.0"
+  version: "v21.0.0"
   historyMode: Full
   
   # SCP Analytics configuration

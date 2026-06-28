@@ -83,7 +83,7 @@ metadata:
   namespace: stellar-system
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   drConfig:
     enabled: true
@@ -105,7 +105,7 @@ metadata:
   namespace: stellar-system
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   drConfig:
     enabled: true

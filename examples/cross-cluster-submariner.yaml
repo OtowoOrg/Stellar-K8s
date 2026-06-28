@@ -16,7 +16,7 @@ metadata:
   namespace: stellar-nodes
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
 
   # Cluster identifier for this deployment
@@ -124,7 +124,7 @@ metadata:
   namespace: stellar-nodes
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
 
 

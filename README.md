@@ -125,7 +125,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Validator
-  network: Testnet
+  network: testnet
   version: "v21.0.0"
   storage:
     storageClass: "standard"

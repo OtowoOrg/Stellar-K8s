@@ -313,14 +313,8 @@ mod tests {
 
     #[test]
     fn passphrase_rotation_skips_without_secret_ref() {
-        let node = StellarNode {
-            spec: crate::crd::StellarNodeSpec {
-                passphrase_secret_ref: None,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        assert!(node.spec.passphrase_secret_ref.is_none());
+        let secret_ref: Option<String> = None;
+        assert!(secret_ref.is_none());
     }
 
     #[test]

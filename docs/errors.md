@@ -22,10 +22,14 @@ This document provides details on all error variants encountered in the Stellar-
 | **SK8S-016** | `IoError` | Standard Input/Output operational error. | Ensure the operator has sufficient privileges to interact with filesystem paths it’s expected to access (mounts, caching paths). |
 | **SK8S-017** | `MaintenanceError` | Stellar node database maintenance failed. | Typical reasons include PostgreSQL resource exhaustion, permission issues, or conflicting processes locking the DB tables. |
 | **SK8S-018** | `SqlxError` | General SQL database execution error. | Directly check the node database connectivity. Look for slow query executions or out-of-memory errors on the DB instance. |
+| **SK8S-019** | `KubeconfigError` | Failed to load or parse the local Kubeconfig file. | Ensure `KUBECONFIG` is set or `~/.kube/config` exists and is valid. Check file permissions. |
+| **SK8S-020** | `ZipError` | Failure during compression or extraction of node snapshots. | Verify the snapshot archive is not corrupted and that the operator has sufficient disk space. |
+| **SK8S-021** | `NetworkSafetyViolation` | Mainnet and Testnet nodes detected in the same namespace. | Deploy Mainnet and Testnet nodes in separate namespaces to prevent ledger contamination. |
+| **SK8S-022** | `InternalError` | Unexpected internal state that does not fit other categories. | Check operator logs for the `[SK8S-022]` prefix. File a bug report if the state is unrecoverable. |
 
 ## General Troubleshooting
 When encountering these errors, the primary source of detailed insight will be the operator logs. You can fetch them with:
 ```bash
-kubectl logs -n stellar-k8s-system deploy/stellar-operator
+kubectl logs -n stellar-system deploy/stellar-operator
 ```
 Look for the `[SK8S-XXX]` prefix in the logging output for rapid filtering.

@@ -191,7 +191,7 @@ make test
 cargo test --workspace --all-features --verbose
 ```
 
-This runs **62+ tests** including:
+This runs **1000+ tests** including:
 - 52 `StellarNodeSpec` validation tests (CRD schema validation)
 - 5 kubectl plugin tests (output formatting)
 - Controller reconciliation logic tests
@@ -667,6 +667,7 @@ kubectl stellar --help
 
 ### Documentation
 
+- [docs/errors.md](docs/errors.md) - Error code reference (SK8S-001 through SK8S-022)
 - [docs/kubectl-plugin.md](docs/kubectl-plugin.md) - kubectl-stellar plugin guide
 - [docs/health-checks.md](docs/health-checks.md) - Health check implementation
 - [docs/peer-discovery.md](docs/peer-discovery.md) - Peer discovery guide

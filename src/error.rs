@@ -144,40 +144,11 @@ impl Error {
         )
     }
 
-    /// Convert to a human-readable message for status updates
+    /// Convert to a human-readable message for status updates.
+    ///
+    /// Delegates to `Display` so there is a single source of truth for error formatting.
     pub fn status_message(&self) -> String {
-        match self {
-            Error::KubeError(e) => format!("[SK8S-001] Kubernetes error: {e}"),
-            Error::SerializationError(e) => format!("[SK8S-002] Serialization error: {e}"),
-            Error::FinalizerError(msg) => format!("[SK8S-003] Finalizer error: {msg}"),
-            Error::ConfigError(msg) => format!("[SK8S-004] Configuration error: {msg}"),
-            Error::ValidationError(msg) => format!("[SK8S-005] Validation failed: {msg}"),
-            Error::NotFound {
-                kind,
-                name,
-                namespace,
-            } => format!("[SK8S-006] Resource not found: {kind}/{name} in namespace {namespace}"),
-            Error::InvalidNodeType(msg) => format!("[SK8S-007] Invalid node type: {msg}"),
-            Error::MissingRequiredField { field, node_type } => {
-                format!("[SK8S-008] Missing {field} for {node_type} node")
-            }
-            Error::ArchiveHealthCheckError(msg) => {
-                format!("[SK8S-009] Archive health check failed: {msg}")
-            }
-            Error::HttpError(e) => format!("[SK8S-010] HTTP request failed: {e}"),
-            Error::RemediationError(msg) => format!("[SK8S-011] Remediation failed: {msg}"),
-            Error::PluginError(msg) => format!("[SK8S-012] Plugin error: {msg}"),
-            Error::WebhookError(msg) => format!("[SK8S-013] Webhook error: {msg}"),
-            Error::NetworkError(msg) => format!("[SK8S-014] Network error: {msg}"),
-            Error::CertificateError(e) => format!("[SK8S-015] Certificate error: {e}"),
-            Error::IoError(e) => format!("[SK8S-016] I/O error: {e}"),
-            Error::MaintenanceError(msg) => format!("[SK8S-017] Database maintenance error: {msg}"),
-            Error::SqlxError(e) => format!("[SK8S-018] SQL error: {e}"),
-            Error::KubeconfigError(e) => format!("[SK8S-019] Kubeconfig error: {e}"),
-            Error::ZipError(e) => format!("[SK8S-020] Zip error: {e}"),
-            Error::NetworkSafetyViolation(v) => format!("[SK8S-021] Network safety violation: {v}"),
-            Error::InternalError(msg) => format!("[SK8S-022] Internal error: {msg}"),
-        }
+        self.to_string()
     }
 }
 
@@ -246,13 +217,12 @@ mod tests {
 
     #[test]
     fn test_kube_error_status_message() {
-        // Test that KubeError status_message includes error code and description
+        // status_message delegates to Display, so the output must match to_string().
         let kube_serde_err =
             kube::Error::SerdeError(serde_json::from_str::<serde_json::Value>("bad").unwrap_err());
         let our_err = Error::KubeError(kube_serde_err);
-        let status = our_err.status_message();
-        assert!(status.contains("[SK8S-001]"));
-        assert!(status.contains("Kubernetes error"));
+        assert_eq!(our_err.status_message(), our_err.to_string());
+        assert!(our_err.status_message().contains("[SK8S-001]"));
     }
 
     #[test]
@@ -308,15 +278,13 @@ mod tests {
             "[SK8S-004] Configuration error: invalid config"
         );
 
+        // Since status_message() now delegates to Display, to_string() == status_message().
         let validation_err = Error::ValidationError("invalid".to_string());
         assert_eq!(
             validation_err.to_string(),
             "[SK8S-005] Node validation error: invalid"
         );
-        assert_eq!(
-            validation_err.status_message(),
-            "[SK8S-005] Validation failed: invalid"
-        );
+        assert_eq!(validation_err.status_message(), validation_err.to_string());
 
         let not_found_err = Error::NotFound {
             kind: "Pod".to_string(),
@@ -327,20 +295,14 @@ mod tests {
             not_found_err.to_string(),
             "[SK8S-006] Resource not found: Pod/test-pod in namespace default"
         );
-        assert_eq!(
-            not_found_err.status_message(),
-            "[SK8S-006] Resource not found: Pod/test-pod in namespace default"
-        );
+        assert_eq!(not_found_err.status_message(), not_found_err.to_string());
 
         let invalid_node_err = Error::InvalidNodeType("bad_type".to_string());
         assert_eq!(
             invalid_node_err.to_string(),
             "[SK8S-007] Invalid node type: bad_type"
         );
-        assert_eq!(
-            invalid_node_err.status_message(),
-            "[SK8S-007] Invalid node type: bad_type"
-        );
+        assert_eq!(invalid_node_err.status_message(), invalid_node_err.to_string());
 
         let missing_field_err = Error::MissingRequiredField {
             field: "image".to_string(),
@@ -350,70 +312,46 @@ mod tests {
             missing_field_err.to_string(),
             "[SK8S-008] Missing required field: image for node type core"
         );
-        assert_eq!(
-            missing_field_err.status_message(),
-            "[SK8S-008] Missing image for core node"
-        );
+        assert_eq!(missing_field_err.status_message(), missing_field_err.to_string());
 
         let archive_health_err = Error::ArchiveHealthCheckError("unreachable".to_string());
         assert_eq!(
             archive_health_err.to_string(),
             "[SK8S-009] Archive health check failed: unreachable"
         );
-        assert_eq!(
-            archive_health_err.status_message(),
-            "[SK8S-009] Archive health check failed: unreachable"
-        );
+        assert_eq!(archive_health_err.status_message(), archive_health_err.to_string());
 
         let remediation_err = Error::RemediationError("failed to restart".to_string());
         assert_eq!(
             remediation_err.to_string(),
             "[SK8S-011] Remediation failed: failed to restart"
         );
-        assert_eq!(
-            remediation_err.status_message(),
-            "[SK8S-011] Remediation failed: failed to restart"
-        );
+        assert_eq!(remediation_err.status_message(), remediation_err.to_string());
 
         let plugin_err = Error::PluginError("crash".to_string());
         assert_eq!(plugin_err.to_string(), "[SK8S-012] Plugin error: crash");
-        assert_eq!(
-            plugin_err.status_message(),
-            "[SK8S-012] Plugin error: crash"
-        );
+        assert_eq!(plugin_err.status_message(), plugin_err.to_string());
 
         let webhook_err = Error::WebhookError("timeout".to_string());
         assert_eq!(webhook_err.to_string(), "[SK8S-013] Webhook error: timeout");
-        assert_eq!(
-            webhook_err.status_message(),
-            "[SK8S-013] Webhook error: timeout"
-        );
+        assert_eq!(webhook_err.status_message(), webhook_err.to_string());
 
         let network_err = Error::NetworkError("offline".to_string());
         assert_eq!(network_err.to_string(), "[SK8S-014] Network error: offline");
-        assert_eq!(
-            network_err.status_message(),
-            "[SK8S-014] Network error: offline"
-        );
+        assert_eq!(network_err.status_message(), network_err.to_string());
 
         let io_err = Error::IoError(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "file not found",
         ));
         assert_eq!(io_err.to_string(), "[SK8S-016] I/O error: file not found");
-        assert_eq!(
-            io_err.status_message(),
-            "[SK8S-016] I/O error: file not found"
-        );
+        assert_eq!(io_err.status_message(), io_err.to_string());
 
         let maintenance_err = Error::MaintenanceError("db locked".to_string());
         assert_eq!(
             maintenance_err.to_string(),
             "[SK8S-017] Database maintenance error: db locked"
         );
-        assert_eq!(
-            maintenance_err.status_message(),
-            "[SK8S-017] Database maintenance error: db locked"
-        );
+        assert_eq!(maintenance_err.status_message(), maintenance_err.to_string());
     }
 }

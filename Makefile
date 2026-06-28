@@ -277,15 +277,6 @@ validate: ## Run local validation script (format + lint + compile)
 # For the full contributor health gate (format + lint + tests + docs), use:
 #   make health
 
-preflight: ## Validate required local tools are installed (docker, kind, kubectl, helm, cargo)
-	@echo "→ Running local development preflight checks..."
-	@command -v docker  >/dev/null 2>&1 && echo "  ✓ docker"  || echo "  ✗ docker  — Install: https://docs.docker.com/engine/install/"
-	@command -v kind    >/dev/null 2>&1 && echo "  ✓ kind"    || echo "  ✗ kind    — Install: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
-	@command -v kubectl >/dev/null 2>&1 && echo "  ✓ kubectl" || echo "  ✗ kubectl — Install: https://kubernetes.io/docs/tasks/tools/"
-	@command -v helm    >/dev/null 2>&1 && echo "  ✓ helm"    || echo "  ✗ helm    — Install: https://helm.sh/docs/intro/install/"
-	@command -v cargo   >/dev/null 2>&1 && echo "  ✓ cargo"   || echo "  ✗ cargo   — Install: https://rustup.rs/"
-	@echo "→ Preflight complete. Fix any ✗ items above before continuing."
-
 all: ci-local docker-build ## Full build pipeline
 
 # Docker Compose targets

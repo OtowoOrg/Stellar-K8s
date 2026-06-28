@@ -16,6 +16,22 @@ This guide walks you through setting up a local development environment for Stel
 
 > **Regenerating CRDs, Helm charts, or the OLM bundle?** See [docs/development/regeneration-guide.md](docs/development/regeneration-guide.md).
 
+### Removed maintenance scripts
+
+The following one-off scripts were removed as part of repository hygiene (#1002). Use the supported replacements instead:
+
+| Removed | Replacement |
+|---------|-------------|
+| `scripts/cleanup_root.sh` | Manual cleanup; no automated replacement |
+| `scripts/organize_scripts.sh` | Batch scripts live under `scripts/archive/` |
+| `scripts/harden-cluster.sh` | See `docs/production-security-hardening.md` |
+| `scripts/dev-utils/*` | `make dev-setup`, `make preflight`, `make validate` |
+| `benchmarks/test-webhook-local.sh` | `make benchmark-webhook` |
+| `benchmarks/run-proximity-benchmark.sh` | `make benchmark` |
+| `config/samples/benchmark-compare-example.sh` | `benchmarks/run-regression-test.sh` |
+| `src/update_check.rs` | `src/version_check.rs` (used by the operator binary) |
+| `src/kubectl_plugin/interactive.rs` | Standard kubectl-stellar subcommands |
+
 ---
 
 ## Prerequisites

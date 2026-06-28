@@ -71,6 +71,7 @@ pub mod types;
 
 // New Epic CRDs (Wave 5)
 pub mod stellar_aiops;
+pub mod stellar_database;
 pub mod stellar_disaster_recovery;
 pub mod stellar_gitops;
 pub mod stellar_registry;
@@ -157,6 +158,12 @@ pub use stellar_aiops::{
     CapacityPlanningConfig, ChatOpsConfig, OperationalStatus, PredictiveMaintenanceConfig,
     RootCauseAnalysisConfig, SlackIntegration, StellarAIOps, StellarAIOpsSpec, StellarAIOpsStatus,
     TeamsIntegration,
+};
+pub use stellar_database::{
+    AutoTuningConfig as DbAutoTuningConfig, ConnectionPoolingConfig as DbConnectionPoolingConfig,
+    DatabasePhase, FailoverConfig as DbFailoverConfig,
+    QueryOptimizationConfig as DbQueryOptimizationConfig, ReadReplicaConfig as DbReadReplicaConfig,
+    StellarDatabase, StellarDatabaseSpec, StellarDatabaseStatus,
 };
 pub use stellar_disaster_recovery::{
     BackupDestination, DrillStatus, EncryptionConfig, RestorePhase, RetentionPolicy, StellarBackup,

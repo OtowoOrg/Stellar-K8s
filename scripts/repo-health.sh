@@ -20,6 +20,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
+# shellcheck source=lib/errors.sh
+source "${SCRIPT_DIR}/lib/errors.sh"
+
 K8S_OPENAPI_ENABLED_VERSION="${K8S_OPENAPI_ENABLED_VERSION:-1.30}"
 export K8S_OPENAPI_ENABLED_VERSION
 
@@ -38,14 +41,11 @@ print_header() {
 
 begin_step() {
   STEP=$((STEP + 1))
-  local title="$1"
-  echo ""
-  echo "[${STEP}/${TOTAL_STEPS}] ${title}"
-  echo "────────────────────────────────────────────────────────────"
+  sk8s_step "Step ${STEP}/${TOTAL_STEPS}" "$1"
 }
 
 pass_step() {
-  echo "  ✓ ${1} passed"
+  sk8s_pass "${1} passed"
 }
 
 fail_step() {
@@ -53,15 +53,7 @@ fail_step() {
   local hint="$2"
   FAILED_STEP="$name"
   FAILED_HINT="$hint"
-  echo ""
-  echo "  ✗ FAILED: ${name}"
-  echo "    Hint: ${hint}"
-  echo ""
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "  Health check stopped at step ${STEP}/${TOTAL_STEPS}: ${name}"
-  echo "  Fix the issue above, then re-run: make health"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  exit 1
+  sk8s_fail "${name}" "${hint}"
 }
 
 run_or_fail() {

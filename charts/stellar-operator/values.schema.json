@@ -172,8 +172,8 @@
               "type": "string"
             },
             "pullPolicy": {
-              "type": "string",
-              "enum": ["Always", "IfNotPresent", "Never"]
+              "type": ["string", "null"],
+              "enum": ["Always", "IfNotPresent", "Never", "", null]
             },
             "digest": {
               "type": "string"

@@ -658,6 +658,17 @@ spec:
                 required:
                 - hosts
                 type: object
+              initContainers:
+                description: |-
+                  Optional init containers to run before the main Stellar container starts.
+                  These run to completion in order before the main container starts.
+                  Useful for tasks like fetching custom configuration, restoring state,
+                  or pre-populating volumes.
+                items:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                nullable: true
+                type: array
               loadBalancer:
                 description: Load balancer configuration for external access (e.g. MetalLB)
                 nullable: true

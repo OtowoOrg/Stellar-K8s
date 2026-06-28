@@ -223,7 +223,8 @@ make ci-local
 
 Run through this before marking a PR ready for review:
 
-- [ ] `make ci-local` passes (format + lint + audit + test + build)
+- [ ] `make health` passes (format + lint + test + docs) — or `make ci-local` for the full audit + link-check gate
+- [ ] `make validate` passes for a quick pre-push compile check
 - [ ] No new `#[allow(dead_code)]` without an explanatory comment
 - [ ] No unused imports in modified files
 - [ ] Generated manifests are up to date with their source

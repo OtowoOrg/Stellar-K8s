@@ -9,16 +9,15 @@ use serde_json::json;
 use std::env;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{debug, error, info, warn};
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing::{debug, error, info, warn, Level};
+use stellar_k8s::logging::{init_binary_subscriber, LogOutputFormat};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Init logging
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(EnvFilter::from_default_env())
-        .init();
+    init_binary_subscriber(
+        Level::INFO,
+        LogOutputFormat::Json,
+    );
 
     info!("Starting Stellar-K8s Crash Loop Analysis sidecar");
 

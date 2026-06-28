@@ -224,6 +224,17 @@ pub struct RunArgs {
     /// Run preflight checks and exit without starting the operator
     #[arg(long, env = "PREFLIGHT_ONLY")]
     pub preflight_only: bool,
+
+    /// Minimum log level emitted by the operator.
+    ///
+    /// Accepted values: trace, debug, info, warn, error.
+    /// Env: LOG_LEVEL
+    #[arg(long, env = "LOG_LEVEL", default_value = "info")]
+    pub log_level: String,
+
+    /// Log output format (json or pretty).
+    #[arg(long, env = "LOG_FORMAT", value_enum, default_value = "json")]
+    pub log_format: LogFormat,
 }
 
 impl RunArgs {

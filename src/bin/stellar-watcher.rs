@@ -22,8 +22,9 @@ use anyhow::Result;
 use clap::Parser;
 use stellar_k8s::byzantine::types::WatcherConfig;
 use stellar_k8s::byzantine::watcher::run_watcher;
+use stellar_k8s::logging::{init_binary_subscriber, LogOutputFormat};
 use tracing::info;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing::Level;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -95,11 +96,8 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Initialise structured logging.
-    tracing_subscriber::registry()
-        .with(fmt::layer().json())
-        .with(EnvFilter::new(&args.log_level))
-        .init();
+    let log_level = args.log_level.parse().unwrap_or(Level::INFO);
+    init_binary_subscriber(log_level, LogOutputFormat::Json);
 
     info!(
         watcher_id = %args.watcher_id,

@@ -1,0 +1,30 @@
+# _base-stellarnode.yaml
+# Shared StellarNode baseline for local development templates.
+# Overlays in this directory extend this base with workflow-specific settings.
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: dev-node
+  namespace: stellar
+spec:
+  nodeType: Validator
+  network: testnet
+  version: "v21.0.0"
+  maxUnavailable: 0
+  minAvailable: 1
+  topologySpreadConstraints: []
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  storage:
+    storageClass: "standard"
+    size: "100Gi"
+    retentionPolicy: Delete
+  validatorConfig:
+    seedSecretRef: "validator-seed-testnet"
+    enableHistoryArchive: true

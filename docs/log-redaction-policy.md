@@ -40,20 +40,22 @@ tracing event
  EnvFilter (level gate)
       │
       ▼
- ScrubLayer          ← detects sensitive patterns, emits [LOG_SCRUB] warning
+ AnalyticsLayer (optional, operator only)
       │
       ▼
- fmt::Layer (JSON)   ← formats and writes to stdout
+ fmt::Layer + RedactingFields   ← field values run through redact() before output
       │
       ▼
- OTLP Layer (opt.)   ← exports to collector
+ OTLP Layer (optional)          ← exports to collector
 ```
 
-`ScrubLayer` operates on the *formatted string representation* of each field
-value, so it catches secrets regardless of which field name they appear under.
+All operator binaries should initialize logging via `stellar_k8s::logging::init_subscriber`
+(or `init_binary_subscriber` for sidecars). This ensures JSON/pretty output uses
+[`RedactingFields`](../../src/log_scrub.rs) so secrets are replaced with
+`[REDACTED:<rule_name>]` markers before they reach stdout.
 
-For environments requiring a hard guarantee (no raw values ever written),
-replace the `fmt::Layer` with `ScrubFormattingLayer` from `stellar_k8s::log_scrub`.
+[`ScrubLayer`](../../src/log_scrub.rs) remains available as a detection-only layer that
+emits `[LOG_SCRUB]` warnings; prefer the shared subscriber for production formatting.
 
 ## Reconciler audit
 

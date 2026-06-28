@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=lib/repo.sh
-source "$(dirname "$0")/lib/repo.sh"
+# shellcheck source=lib/common.sh
+source "$(dirname "$0")/lib/common.sh"
 
 # Create all necessary labels for Stellar Wave issues
 # Uses || true to ignore errors if label already exists

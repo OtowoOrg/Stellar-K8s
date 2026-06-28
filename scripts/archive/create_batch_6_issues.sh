@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=lib/repo.sh
-source "$(dirname "$0")/lib/repo.sh"
+# shellcheck source=lib/common.sh
+source "$(dirname "$0")/lib/common.sh"
 
 # Stellar-K8s Wave Issue Creation Script - BATCH 6
 # 10 Elite Engineering Issues (200 pts each)
 
 # Source shared retry/backoff and dry-run helper.
-# shellcheck source=scripts/retry_helper.sh
-source "$(dirname "$0")/retry_helper.sh"
+# shellcheck source=lib/common.sh
 
 # Helper to create label if not exists
 create_label() {

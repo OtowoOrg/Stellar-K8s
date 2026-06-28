@@ -475,7 +475,7 @@ All critical edge cases identified in the reconciler design are covered by forma
 
 - **TLA+ Hyperbook**: https://lamport.azurewebsites.net/tla/book.html
 - **TLC Model Checker**: https://lamport.azurewebsites.net/tla/tlc.html
-- **Kubernetes Operator Patterns**: https://kubernetes.io/docs/concepts/extend-kubernetes/operator/operator-pattern/
+- **Kubernetes Operator Patterns**: https://kubernetes.io/docs/concepts/extend-kubernetes/operator/
 - **Finalizer Semantics**: https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#finalizers
 
 ---

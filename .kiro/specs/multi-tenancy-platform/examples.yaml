@@ -309,7 +309,7 @@ metadata:
     owner: stellar-admins
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   
   resources:

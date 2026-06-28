@@ -3,14 +3,14 @@
 	build test ci-local quick watch \
 	docker-build docker-build-ci docker-multiarch \
 	dev-setup pre-commit pre-commit-install run-local run-dev \
-	install-crd apply-samples crd-gen completions \
-	helm-lint \
+	install-crd apply-samples crd-gen regenerate completions \
+	helm-lint link-check changelog \
 	generate-api-docs check-api-docs \
 	benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health \
 	benchmark-webhook-compare benchmark-webhook-save benchmark-all \
 	compose-up compose-dev compose-down compose-logs \
 	bundle bundle-build \
-	quickstart validate preflight all \
+	quickstart validate preflight test-preflight all \
 	clean
 
 # Default target
@@ -107,7 +107,16 @@ docker-build-ci: ## Reproducible CI Docker build (builds binaries in container)
 docker-multiarch: ## Build multi-arch Docker image
 	$(DOCKER) buildx build --platform linux/amd64 -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
-ci-local: fmt-check lint audit test build ## Run full CI locally
+link-check: ## Check markdown links
+	@echo "→ Running markdown link checker..."
+	@python3 scripts/check-links.py
+
+changelog: ## Generate/update CHANGELOG.md using git-cliff
+	@echo "→ Generating changelog..."
+	@command -v git-cliff >/dev/null 2>&1 || cargo install git-cliff
+	git-cliff --output CHANGELOG.md
+
+ci-local: fmt-check lint audit test build link-check ## Run full CI locally
 	@echo ""
 	@echo "✓ All CI checks passed!"
 
@@ -155,6 +164,18 @@ crd-gen: ## Generate CRDs
 	@echo "→ Generating CRDs..."
 	@$(CARGO) run --bin crdgen > config/crd/stellarnode-crd.yaml
 
+regenerate: crd-gen generate-api-docs bundle ## Regenerate all derived artifacts (CRDs, API docs, OLM bundle)
+	@echo "✓ All generated artifacts are up to date"
+	@echo "  See docs/development/regeneration-guide.md for details"
+
+preflight: ## Check that required tools are installed (pass --labels to also verify repo labels)
+	@bash scripts/preflight.sh $(ARGS)
+
+test-preflight: ## Run bats unit tests for scripts/preflight.sh
+	@echo "→ Running preflight bats tests..."
+	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
+	@bats scripts/tests/preflight.bats
+
 completions: ## Generate shell completion scripts
 	@echo "→ Generating shell completions..."
 	@mkdir -p completions
@@ -181,6 +202,7 @@ dev-setup: ## Setup dev environment
 	@command -v pre-commit >/dev/null 2>&1 || pip install pre-commit
 	pre-commit install
 	pre-commit install --hook-type pre-push
+	@$(MAKE) preflight
 
 watch: ## Watch and rebuild
 	cargo watch -x check -x test -x build

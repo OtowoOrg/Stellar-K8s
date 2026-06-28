@@ -30,7 +30,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Validator
-  network: Public
+  network: mainnet
   version: "v21.0.0"
   storage:
     storageClass: fast-ssd

@@ -21,7 +21,7 @@ The following versions of Stellar-K8s currently receive security updates:-
 
 Use GitHub's built-in private disclosure mechanism:
 
-1. Go to the [Security Advisories](../../security/advisories/new) tab of this repository
+1. Go to the [Security Advisories](https://github.com/OtowoOrg/Stellar-K8s/security/advisories/new) tab of this repository
 2. Click **"Report a vulnerability"**
 3. Fill in the details and submit
 
@@ -217,10 +217,10 @@ Run locally: `make security-all`
 
 | Channel              | Address / Link                                          |
 | -------------------- | ------------------------------------------------------- |
-| Security advisories  | [GitHub Security Tab](../../security/advisories)        |
+| Security advisories  | [GitHub Security Tab](https://github.com/OtowoOrg/Stellar-K8s/security/advisories)        |
 | Security email       | security@stellar-k8s.io                                 |
 | Maintainer contact   | samuelotowo@gmail.com                                   |
-| General issues       | [GitHub Issues](../../issues)                           |
+| General issues       | [GitHub Issues](https://github.com/OtowoOrg/Stellar-K8s/issues)                           |
 
 ---
 

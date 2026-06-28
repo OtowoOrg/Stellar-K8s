@@ -135,7 +135,7 @@ This is normal - initial catchup can take 30+ minutes.
 
 ## Next Steps
 
-- [Configure high availability](configure-ha-setup.md)
+- Configure high availability
 - [Set up monitoring dashboards](../deployment-guides/validator.md#monitoring)
 - [Deploy Horizon API](../deployment-guides/horizon.md)
 

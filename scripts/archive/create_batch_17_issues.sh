@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=lib/repo.sh
 # shellcheck source=lib/common.sh
-source "$(dirname "$0")/lib/repo.sh"
+# shellcheck source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
 
 show_help() {
@@ -41,8 +40,7 @@ if [ "$ACTUAL_ISSUE_COUNT" -ne "$EXPECTED_ISSUE_COUNT" ]; then
 fi
 
 # Source shared retry/backoff and dry-run helper.
-# shellcheck source=scripts/retry_helper.sh
-source "$(dirname "$0")/retry_helper.sh"
+# shellcheck source=lib/common.sh
 
 echo "Creating Batch 17 (30 x 200 pts) issues with auto-retry..."
 

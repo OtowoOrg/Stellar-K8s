@@ -1,3 +1,4 @@
+ARG SOURCE_DATE_EPOCH=0
 FROM scratch
 
 # Core bundle labels.

@@ -443,6 +443,6 @@ fi
 ## Related Documentation
 
 - [Benchmarking Guide](./benchmarking.md)
-- [Prometheus Metrics](./metrics.md)
+- Prometheus Metrics
 - [Performance Tuning](./performance-tuning.md)
-- [Monitoring Setup](./monitoring-setup.md)
+- Monitoring Setup

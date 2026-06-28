@@ -11,7 +11,17 @@ Please delete options that are not relevant.
 - [ ] Bug fix (non-breaking change which fixes an issue)
 - [ ] New feature (non-breaking change which adds functionality)
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
+- [ ] Maintenance / hygiene (CI, docs, config cleanup, dependency update)
 - [ ] This change requires a documentation update
+
+## Maintenance task checklist (complete when type = Maintenance / hygiene)
+
+> Skip this section for bug fixes and feature PRs.
+
+- [ ] Category: <!-- CI/Workflow | Documentation | Dependency update | Code cleanup/refactor | Configuration drift | Other -->
+- [ ] Behavior is unchanged (or change is intentional and documented above)
+- [ ] Duplication or dead weight removed / docs added where applicable
+- [ ] Reviewer can follow the verification steps in the linked issue
 
 ## Checklist:
 

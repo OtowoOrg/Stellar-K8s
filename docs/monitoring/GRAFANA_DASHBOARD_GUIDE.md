@@ -371,11 +371,11 @@ receivers:
 ## Related Documentation
 
 - [Stellar Metrics Guide](../metrics/STELLAR_METRICS_GUIDE.md)
-- [Prometheus Alert Rules](../../monitoring/stellar-alerts.yaml)
-- [Operator Configuration](../../charts/stellar-operator/README.md)
+- Prometheus Alert Rules
+- Operator Configuration
 
 ## Support
 
 For issues or questions:
-- GitHub Issues: https://github.com/stellar/stellar-k8s/issues
-- Documentation: https://github.com/stellar/stellar-k8s/tree/main/docs
+- GitHub Issues: https://github.com/OtowoOrg/Stellar-K8s/issues
+- Documentation: https://github.com/OtowoOrg/Stellar-K8s/tree/main/docs

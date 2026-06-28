@@ -2,6 +2,16 @@
 
 Thank you for contributing to Stellar-K8s! This guide explains how to work with the project, keep your pull requests ready for review, and follow our commit and merge conventions.
 
+## Troubleshooting Quick Links
+
+If you run into issues, jump to the relevant section below:
+- [Setup Issues](#setup-issues)
+- [Build Failures](#build-failures)
+- [Cargo Issues](#cargo-issues)
+- [Docker Issues](#docker-issues)
+- [Kubernetes Issues](#kubernetes-issues)
+- [CI Failures](#ci-failures)
+
 ## 1. Fork and Pull Request Workflow
 
 We use a fork-and-pull-request model. The basic flow is:
@@ -226,3 +236,39 @@ Run through this before marking a PR ready for review:
 If you're stuck, open a Draft PR or create an issue to ask for guidance.
 
 Refer to [README.md](README.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for additional project setup and workflow information.
+
+## Troubleshooting
+
+### Setup Issues
+- **Problem**: `make` or `cargo` commands not found.
+  - **Solution**: Ensure you have installed the necessary dependencies from `DEVELOPMENT.md`.
+- **Problem**: Minikube / Kind cluster fails to start.
+  - **Solution**: Check your Docker daemon is running and has enough resources allocated (minimum 4GB RAM, 2 CPUs).
+
+### Build Failures
+- **Problem**: Code fails to compile due to missing dependencies.
+  - **Solution**: Run `cargo fetch` or `cargo update` to ensure you have the latest crates. Also, ensure your system has `cmake`, `libssl-dev`, and `pkg-config` installed.
+- **Problem**: Tests fail locally but pass on CI.
+  - **Solution**: Run `make clean` and then rebuild. Sometimes local artifacts can get stale.
+
+### Cargo Issues
+- **Problem**: Cargo build is extremely slow.
+  - **Solution**: We highly recommend using `sccache` to cache intermediate build results. Follow the instructions in `DEVELOPMENT.md` to set it up.
+
+### Docker Issues
+- **Problem**: Docker build fails with out of space errors.
+  - **Solution**: Run `docker system prune` to free up space. The build requires at least 10GB of free space due to the multi-stage cargo caching.
+- **Problem**: `make quick` fails during docker validation.
+  - **Solution**: Make sure you have the latest base images pulled locally.
+
+### Kubernetes Issues
+- **Problem**: Operator pod is crashlooping.
+  - **Solution**: Check the operator logs using `kubectl logs -n stellar-system -l app.kubernetes.io/name=stellar-operator`. Often, this is due to invalid RBAC permissions or missing secrets.
+- **Problem**: Custom Resource Definitions (CRDs) not applying.
+  - **Solution**: Ensure your KUBECONFIG points to the correct cluster. Run `make install` to manually install the CRDs into your cluster.
+
+### CI Failures
+- **Problem**: GitHub Actions workflow fails on linting.
+  - **Solution**: Run `cargo fmt` and `cargo clippy` locally before pushing. Also, check `.pre-commit-config.yaml` to ensure your pre-commit hooks are installed.
+- **Problem**: Link validation CI fails.
+  - **Solution**: Make sure all Markdown links are valid and relative paths point to existing files.

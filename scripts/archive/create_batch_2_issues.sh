@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=lib/repo.sh
-source "$(dirname "$0")/lib/repo.sh"
+# shellcheck source=lib/common.sh
+source "$(dirname "$0")/lib/common.sh"
 
 # Stellar-K8s Wave Issue Creation Script - BATCH 2
 # Issues #12 - #21
 
 # Source shared retry/backoff and dry-run helper.
-# shellcheck source=scripts/retry_helper.sh
-source "$(dirname "$0")/retry_helper.sh"
+# shellcheck source=lib/common.sh
 
 echo "Creating Batch 2 of Stellar Wave issues..."
 

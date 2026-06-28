@@ -179,7 +179,7 @@ metadata:
   namespace: stellar-mainnet
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   networkPolicy:
     enabled: true
     allowNamespaces:
@@ -266,7 +266,7 @@ metadata:
   namespace: stellar-mainnet-horizon
 spec:
   nodeType: Horizon
-  network: Mainnet
+  network: mainnet
   database:
     host: postgres.stellar-mainnet-horizon.svc.cluster.local
     port: 5432

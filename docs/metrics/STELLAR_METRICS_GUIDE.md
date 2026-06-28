@@ -533,5 +533,5 @@ Import these dashboards into Grafana and configure your Prometheus datasource to
 ## Related Documentation
 
 - [Grafana Dashboard Guide](../monitoring/GRAFANA_DASHBOARD_GUIDE.md)
-- [Prometheus Alert Rules](../../monitoring/stellar-alerts.yaml)
-- [Metrics Architecture](./METRICS_ARCHITECTURE.md)
+- Prometheus Alert Rules
+- Metrics Architecture

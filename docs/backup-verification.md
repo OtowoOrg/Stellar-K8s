@@ -84,7 +84,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Horizon
-  network: Testnet
+  network: testnet
   version: "v21.0.0"
 
   managedDatabase:
@@ -526,4 +526,4 @@ See `examples/backup-verification-example.yaml` for complete configuration examp
 - [Secret Rotation](secret-rotation.md)
 - [Disaster Recovery](dr-failover.md)
 - [Volume Snapshots](volume-snapshots.md)
-- [Database Management](database-management.md)
+- Database Management

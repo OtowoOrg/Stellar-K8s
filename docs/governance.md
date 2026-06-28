@@ -192,7 +192,7 @@ spec:
 **Example - Valid**:
 ```yaml
 spec:
-  network: Testnet
+  network: testnet
 ```
 
 ### 7. Require Node Type (`require-node-type`)

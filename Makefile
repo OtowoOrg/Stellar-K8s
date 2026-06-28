@@ -6,6 +6,7 @@
 	install-crd apply-samples crd-gen regenerate completions \
 	helm-lint link-check changelog \
 	generate-api-docs check-api-docs \
+	third-party-licenses check-third-party-licenses \
 	benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health \
 	benchmark-webhook-compare benchmark-webhook-save benchmark-all \
 	compose-up compose-dev compose-down compose-logs \
@@ -108,6 +109,12 @@ changelog: ## Generate/update CHANGELOG.md using git-cliff
 ci-local: fmt-check lint audit test build link-check ## Run full CI locally
 	@echo ""
 	@echo "✓ All CI checks passed!"
+
+third-party-licenses: ## Regenerate THIRD_PARTY_LICENSES.md from Cargo dependency tree
+	@bash scripts/generate-third-party-licenses.sh
+
+check-third-party-licenses: ## Verify THIRD_PARTY_LICENSES.md is up to date (used in CI)
+	@bash scripts/generate-third-party-licenses.sh --check
 
 health: ## Run common repository health checks (format, lint, test, docs)
 	@bash scripts/repo-health.sh

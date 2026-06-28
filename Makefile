@@ -11,7 +11,7 @@
 	benchmark-webhook-compare benchmark-webhook-save benchmark-all \
 	compose-up compose-dev compose-down compose-logs \
 	bundle bundle-build \
-	quickstart validate preflight test-preflight all \
+	quickstart validate preflight test-preflight test-shell all \
 	clean
 
 # Default target
@@ -171,6 +171,11 @@ test-preflight: ## Run bats unit tests for scripts/preflight.sh
 	@echo "→ Running preflight bats tests..."
 	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
 	@bats scripts/tests/preflight.bats
+
+test-shell: ## Run bats unit tests for shared shell helpers
+	@echo "→ Running shell helper bats tests..."
+	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
+	@bats scripts/tests/common.bats
 
 completions: ## Generate shell completion scripts
 	@echo "→ Generating shell completions..."

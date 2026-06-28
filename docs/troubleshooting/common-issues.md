@@ -339,14 +339,14 @@ ERROR: disk full
 **Root Cause:** Storage exhausted.
 
 **Solution:**
-See [Disk Scaling Guide](disk-scaling.md) for PVC expansion procedures.
+See Disk Scaling Guide for PVC expansion procedures.
 
 ---
 
 ## Additional Resources
 
-- [Disk Scaling Troubleshooting](disk-scaling.md)
-- [Sync Problems Guide](sync-problems.md)
+- Disk Scaling Troubleshooting
+- Sync Problems Guide
 - [Stellar Core Documentation](https://developers.stellar.org/docs/run-core-node)
 - [Kubernetes Troubleshooting](https://kubernetes.io/docs/tasks/debug/)
 

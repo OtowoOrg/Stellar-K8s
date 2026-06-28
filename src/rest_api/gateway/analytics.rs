@@ -11,9 +11,7 @@
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use tokio::time::{interval, Duration};
+use tokio::time::Duration;
 
 /// Individual API call record
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -217,7 +215,7 @@ impl Analytics {
         let window_start =
             now - ChronoDuration::from_std(window).unwrap_or(ChronoDuration::days(1));
 
-        let mut calls_in_window: Vec<&ApiCall> = self
+        let calls_in_window: Vec<&ApiCall> = self
             .calls
             .iter()
             .filter(|c| c.timestamp >= window_start)
@@ -276,7 +274,7 @@ impl Analytics {
                 },
             })
             .collect();
-        top_paths.sort_by(|a, b| b.requests.cmp(&a.requests));
+        top_paths.sort_by_key(|b| std::cmp::Reverse(b.requests));
         top_paths.truncate(10);
 
         // Top clients
@@ -308,7 +306,7 @@ impl Analytics {
                 },
             })
             .collect();
-        top_clients.sort_by(|a, b| b.requests.cmp(&a.requests));
+        top_clients.sort_by_key(|b| std::cmp::Reverse(b.requests));
         top_clients.truncate(10);
 
         let window_secs = window.as_secs() as f64;

@@ -99,7 +99,7 @@ metadata:
     stellar.org/cluster-name: "us-east"
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   storage:
     storageClass: "gp3"
@@ -445,7 +445,7 @@ metadata:
     stellar.org/cluster-role: "primary"
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   storage:
     storageClass: "gp3"
@@ -469,7 +469,7 @@ metadata:
     stellar.org/cluster-role: "standby"
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   storage:
     storageClass: "gp3"

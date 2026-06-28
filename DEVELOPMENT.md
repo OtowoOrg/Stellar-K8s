@@ -14,6 +14,24 @@ This guide walks you through setting up a local development environment for Stel
 - [Development Workflow](#development-workflow)
 - [Troubleshooting](#troubleshooting)
 
+> **Regenerating CRDs, Helm charts, or the OLM bundle?** See [docs/development/regeneration-guide.md](docs/development/regeneration-guide.md).
+
+### Removed maintenance scripts
+
+The following one-off scripts were removed as part of repository hygiene (#1002). Use the supported replacements instead:
+
+| Removed | Replacement |
+|---------|-------------|
+| `scripts/cleanup_root.sh` | Manual cleanup; no automated replacement |
+| `scripts/organize_scripts.sh` | Batch scripts live under `scripts/archive/` |
+| `scripts/harden-cluster.sh` | See `docs/production-security-hardening.md` |
+| `scripts/dev-utils/*` | `make dev-setup`, `make preflight`, `make validate` |
+| `benchmarks/test-webhook-local.sh` | `make benchmark-webhook` |
+| `benchmarks/run-proximity-benchmark.sh` | `make benchmark` |
+| `config/samples/benchmark-compare-example.sh` | `benchmarks/run-regression-test.sh` |
+| `src/update_check.rs` | `src/version_check.rs` (used by the operator binary) |
+| `src/kubectl_plugin/interactive.rs` | Standard kubectl-stellar subcommands |
+
 ---
 
 ## Prerequisites
@@ -768,6 +786,15 @@ Run `make health` first — it executes format, lint, tests, and docs checks in 
 ## Regenerating Manifests
 
 Several files in this repo are generated from a source of truth. Always regenerate them after changing the source. See the [Regeneration Guide](docs/development/regeneration-guide.md) for detailed instructions.
+
+### Policy on Compiled Binaries & WebAssembly Artifacts
+
+To maintain a clean and lightweight repository, compiled binaries, WebAssembly modules (`*.wasm`), and auto-generated shell completion scripts must **never** be committed to the repository. These paths are explicitly ignored in `.gitignore`. 
+
+If you modify source code that affects these outputs (such as CRDs, CLI definitions, or WebAssembly plugins):
+1. **Source Code**: Commit only the source code changes (e.g., Rust files, build scripts, templates).
+2. **Local Regeneration**: Build or regenerate the binaries locally during development and testing using the commands below.
+3. **CI/CD Validation**: The CI/CD pipelines will automatically rebuild and validate these artifacts from source.
 
 | Generated file | Source of truth | Regeneration command |
 |---|---|---|

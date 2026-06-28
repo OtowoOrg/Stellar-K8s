@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::manager::{Incident, IncidentSeverity, IncidentStatus};
+use super::manager::{Incident, IncidentStatus};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IncidentMetrics {

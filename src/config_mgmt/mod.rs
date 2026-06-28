@@ -10,7 +10,6 @@ pub mod validation;
 pub mod versioning;
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Result of a configuration change operation
 #[derive(Debug, Clone, Serialize, Deserialize)]

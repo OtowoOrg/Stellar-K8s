@@ -109,14 +109,19 @@ nav:
     - Backup and Restore: tutorials/backup-restore.md
   - Troubleshooting:
     - troubleshooting/index.md
+    - Operator Troubleshooting: troubleshooting/operator-troubleshooting.md
     - Common Issues: troubleshooting/common-issues.md
+    - Networking: troubleshooting/networking.md
     - Disk Scaling: troubleshooting/disk-scaling.md
     - Sync Problems: troubleshooting/sync-problems.md
   - API Reference:
     - api-reference/index.md
   - Security:
+    - Security Compliance Guide: security/compliance-guide.md
     - Credentials & Secrets: security/credentials-and-secrets.md
     - Pod Security Standards: security/pss.md
+  - Networking:
+    - Comprehensive Network Guide: networking/index.md
   - Development:
     - Regeneration Guide: development/regeneration-guide.md
   - Contributing:

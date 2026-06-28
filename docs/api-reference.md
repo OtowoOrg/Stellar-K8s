@@ -1100,6 +1100,18 @@ Fields marked *(required)* must be present in every `StellarNode` manifest.
 | **Type** | `string` |
 | **Nullable** | `true` |
 
+### `spec.initContainers`
+
+| | |
+|---|---|
+| **Path** | `spec.initContainers` |
+| **Type** | `array` of `object` |
+| **Description** | Optional init containers to run before the main Stellar container starts.
+These run to completion in order before the main container starts.
+Useful for tasks like fetching custom configuration, restoring state,
+or pre-populating volumes. |
+| **Nullable** | `true` |
+
 ### `spec.loadBalancer`
 
 | | |

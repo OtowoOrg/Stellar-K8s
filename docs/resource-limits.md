@@ -160,7 +160,7 @@ metadata:
   name: my-validator
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   resources:
     requests:
       cpu: "3"

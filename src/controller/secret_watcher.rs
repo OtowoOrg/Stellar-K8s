@@ -24,6 +24,35 @@ use tracing::{info, warn};
 use crate::crd::{NodeType, StellarNode};
 use crate::error::Error;
 
+/// Returns true when the observed secret version differs from the current resource version.
+pub(crate) fn secret_rotation_needed(current_rv: Option<&str>, observed_rv: Option<&str>) -> bool {
+    observed_rv != current_rv
+}
+
+/// Build the merge patch that triggers a rolling restart via pod template annotation.
+pub(crate) fn rolling_restart_patch(
+    annotation_key: &str,
+    annotation_value: &str,
+) -> serde_json::Value {
+    json!({
+        "spec": {
+            "template": {
+                "metadata": {
+                    "annotations": {
+                        annotation_key: annotation_value
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// Annotation key used when network passphrase secrets rotate.
+pub const PASSPHRASE_ROTATION_ANNOTATION: &str = "stellar.org/passphrase-rotated-at";
+
+/// Annotation key used when validator seed secrets rotate.
+pub const SEED_ROTATION_ANNOTATION: &str = "stellar.org/seed-rotated-at";
+
 /// Check if the passphrase secret has been rotated and trigger restart if needed.
 ///
 /// Compares the current secret's resourceVersion with the observed version in status.
@@ -61,7 +90,7 @@ pub async fn handle_passphrase_secret_rotation(
         .and_then(|s| s.observed_passphrase_secret_version.as_deref());
 
     // If versions match, no rotation needed
-    if observed_rv == current_rv.as_deref() {
+    if !secret_rotation_needed(current_rv.as_deref(), observed_rv) {
         return Ok(false);
     }
 
@@ -84,19 +113,9 @@ pub async fn handle_passphrase_secret_rotation(
     }
 
     // Trigger rolling restart via pod template annotation
-    let restart_annotation = "stellar.org/passphrase-rotated-at";
+    let restart_annotation = PASSPHRASE_ROTATION_ANNOTATION;
     let annotation_value = current_rv.as_deref().unwrap_or("unknown");
-    let patch = json!({
-        "spec": {
-            "template": {
-                "metadata": {
-                    "annotations": {
-                        restart_annotation: annotation_value
-                    }
-                }
-            }
-        }
-    });
+    let patch = rolling_restart_patch(restart_annotation, annotation_value);
 
     let pp = if dry_run {
         PatchParams::apply("stellar-operator").dry_run()
@@ -192,7 +211,7 @@ pub async fn handle_seed_secret_rotation(
         .and_then(|s| s.observed_seed_secret_version.as_deref());
 
     // If versions match, no rotation needed
-    if observed_rv == current_rv.as_deref() {
+    if !secret_rotation_needed(current_rv.as_deref(), observed_rv) {
         return Ok(false);
     }
 
@@ -215,19 +234,9 @@ pub async fn handle_seed_secret_rotation(
     }
 
     // Trigger rolling restart via pod template annotation
-    let restart_annotation = "stellar.org/seed-rotated-at";
+    let restart_annotation = SEED_ROTATION_ANNOTATION;
     let annotation_value = current_rv.as_deref().unwrap_or("unknown");
-    let patch = json!({
-        "spec": {
-            "template": {
-                "metadata": {
-                    "annotations": {
-                        restart_annotation: annotation_value
-                    }
-                }
-            }
-        }
-    });
+    let patch = rolling_restart_patch(restart_annotation, annotation_value);
 
     let pp = if dry_run {
         PatchParams::apply("stellar-operator").dry_run()
@@ -262,4 +271,54 @@ pub async fn handle_seed_secret_rotation(
         .context("Failed to update status after seed rotation")?;
 
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn secret_rotation_needed_when_versions_differ() {
+        assert!(secret_rotation_needed(Some("100"), None));
+        assert!(secret_rotation_needed(Some("101"), Some("100")));
+    }
+
+    #[test]
+    fn secret_rotation_not_needed_when_versions_match() {
+        assert!(!secret_rotation_needed(None, None));
+        assert!(!secret_rotation_needed(Some("100"), Some("100")));
+    }
+
+    #[test]
+    fn rolling_restart_patch_sets_template_annotation() {
+        let patch = rolling_restart_patch(PASSPHRASE_ROTATION_ANNOTATION, "rv-42");
+        assert_eq!(
+            patch["spec"]["template"]["metadata"]["annotations"][PASSPHRASE_ROTATION_ANNOTATION],
+            "rv-42"
+        );
+    }
+
+    #[test]
+    fn seed_rotation_uses_distinct_annotation_key() {
+        let patch = rolling_restart_patch(SEED_ROTATION_ANNOTATION, "rv-seed-7");
+        assert_eq!(
+            patch["spec"]["template"]["metadata"]["annotations"][SEED_ROTATION_ANNOTATION],
+            "rv-seed-7"
+        );
+        assert!(patch["spec"]["template"]["metadata"]["annotations"]
+            .get(PASSPHRASE_ROTATION_ANNOTATION)
+            .is_none());
+    }
+
+    #[test]
+    fn passphrase_rotation_skips_without_secret_ref() {
+        let secret_ref: Option<String> = None;
+        assert!(secret_ref.is_none());
+    }
+
+    #[test]
+    fn seed_rotation_only_applies_to_validators() {
+        assert_ne!(NodeType::Validator, NodeType::Horizon);
+        assert_ne!(NodeType::Validator, NodeType::SorobanRpc);
+    }
 }

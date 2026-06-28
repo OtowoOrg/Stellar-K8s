@@ -49,7 +49,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
 
   # --- Sync-state dynamic scaling ---

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Strategy used to correlate events
 #[derive(Clone, Debug, Serialize, Deserialize)]

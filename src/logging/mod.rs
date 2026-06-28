@@ -14,7 +14,7 @@ use sampling::{Sampler, SamplingConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{Event, Level, Subscriber};
+use tracing::{Event, Subscriber};
 use tracing_subscriber::{layer::Context, registry::LookupSpan, Layer};
 
 /// Consistent schema for all logs in Stellar-K8s.

@@ -71,6 +71,6 @@ curl http://localhost:8000/ledgers?order=desc&limit=5
 
 ## Next Steps
 
-- Configure [Ingress](../configuration/operators.md) for external access
+- Configure Ingress for external access
 - Set up [monitoring](validator.md#monitoring)
-- Optimize [database performance](../configuration/storage.md)
+- Optimize database performance

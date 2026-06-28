@@ -7,8 +7,6 @@ use axum::{body::Body, extract::Request, http::StatusCode, response::Response};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 /// Transformation rule types
 #[derive(Debug, Clone)]
@@ -153,7 +151,7 @@ impl TransformRule {
             TransformRule::StatusOverride(code) => {
                 *res.status_mut() = StatusCode::from_u16(*code).unwrap_or(StatusCode::OK);
             }
-            TransformRule::TransformBody(transform) => {
+            TransformRule::TransformBody(_transform) => {
                 // Body transformation requires consuming the body
                 // In production, this would need proper body streaming handling
                 // For now, skip body transformation to avoid API issues

@@ -98,7 +98,7 @@ impl AlertDetector {
                 let raw: Vec<serde_json::Value> = r.json().await.unwrap_or_default();
                 let alerts: Vec<PrometheusAlert> = raw
                     .into_iter()
-                    .filter_map(|v| parse_alertmanager_alert(v))
+                    .filter_map(parse_alertmanager_alert)
                     .collect();
                 Ok(self.process_alerts(alerts).await)
             }

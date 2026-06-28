@@ -41,7 +41,7 @@ spec:
             - message: validatorConfig is required when nodeType is Validator
               rule: self.nodeType != 'Validator' || has(self.validatorConfig)
             - message: customNetworkPassphrase can only be set when network is Custom
-              rule: '!has(self.customNetworkPassphrase) || self.network == ''Custom'''
+              rule: '!has(self.customNetworkPassphrase) || self.network == ''custom'''
             properties:
               alerting:
                 default: false
@@ -658,6 +658,17 @@ spec:
                 required:
                 - hosts
                 type: object
+              initContainers:
+                description: |-
+                  Optional init containers to run before the main Stellar container starts.
+                  These run to completion in order before the main container starts.
+                  Useful for tasks like fetching custom configuration, restoring state,
+                  or pre-populating volumes.
+                items:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                nullable: true
+                type: array
               loadBalancer:
                 description: Load balancer configuration for external access (e.g. MetalLB)
                 nullable: true

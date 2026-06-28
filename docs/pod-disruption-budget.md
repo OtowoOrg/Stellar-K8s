@@ -374,6 +374,6 @@ kube_poddisruptionbudget_status_disruptions_allowed{namespace="stellar-system"} 
 ## Support
 
 For issues or questions about PDB configuration:
-- Open an issue on [GitHub](https://github.com/stellar/stellar-k8s/issues)
+- Open an issue on [GitHub](https://github.com/OtowoOrg/Stellar-K8s/issues)
 - Check existing documentation in the `docs/` directory
 - Review the [FMEA](fmea-stellarnode.md) for failure mode analysis

@@ -98,6 +98,6 @@ This combination provides a solid foundation for a production-ready Kubernetes o
 
 ## References
 
-- [Rust for Kubernetes Operators](https://kubernetes.io/blog/2021/rust-for-kubernetes-operators/)
+- [Rust for Kubernetes Operators](https://kubernetes.io/blog/)
 - [kube-rs documentation](https://docs.rs/kube/)
 - [Rust memory safety guarantees](https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html)

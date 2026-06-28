@@ -73,10 +73,10 @@ helm install stellar-k8s ./charts/stellar-k8s
 !!! tip "Popular Documentation Sections"
 
     - [Deploy a testnet validator node](tutorials/deploy-testnet-validator.md)
-    - [Configure high-availability setup](tutorials/configure-ha-setup.md)
+    - Configure high-availability setup
     - [Set up monitoring with Prometheus](deployment-guides/validator.md#monitoring)
-    - [Troubleshoot sync problems](troubleshooting/sync-problems.md)
-    - [Scale storage volumes](troubleshooting/disk-scaling.md)
+    - Troubleshoot sync problems
+    - Scale storage volumes
 
 ## :material-help-circle: Need Help?
 

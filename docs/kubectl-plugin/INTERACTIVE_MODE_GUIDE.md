@@ -429,11 +429,11 @@ source ~/.bashrc
 ## Related Documentation
 
 - [kubectl-stellar Plugin Guide](../kubectl-plugin.md)
-- [Deployment Guide](../deployment.md)
-- [Troubleshooting Guide](../troubleshooting.md)
+- Deployment Guide
+- Troubleshooting Guide
 
 ## Feedback
 
 Interactive mode is continuously improving. Submit feedback:
-- GitHub Issues: https://github.com/stellar/stellar-k8s/issues
+- GitHub Issues: https://github.com/OtowoOrg/Stellar-K8s/issues
 - Feature Requests: Use the "enhancement" label

@@ -248,8 +248,8 @@ pip install --force-reinstall mkdocs-material
 
 ## Next Steps
 
-- [Documentation Testing](testing.md)
-- [Documentation Standards](code-standards.md)
+- Documentation Testing
+- Documentation Standards
 - [Contribute to Stellar-K8s](https://github.com/OtowoOrg/Stellar-K8s/blob/main/CONTRIBUTING.md)
 
 !!! success "Ready to Contribute!"

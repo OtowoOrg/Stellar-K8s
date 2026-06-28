@@ -186,8 +186,8 @@ impl ForecastEngine {
             .collect()
     }
 
-    fn compute_mape(&self, actual: &[f64], predicted: &[f64]) -> f64 {
-        let holdout = actual.len().min(5).max(1);
+    fn compute_mape(&self, actual: &[f64], _predicted: &[f64]) -> f64 {
+        let holdout = actual.len().clamp(1, 5);
         if actual.len() <= holdout {
             return 10.0;
         }

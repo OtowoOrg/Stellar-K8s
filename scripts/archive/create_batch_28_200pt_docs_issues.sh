@@ -1,42 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=lib/repo.sh
-source "$(dirname "$0")/lib/repo.sh"
+# shellcheck source=../lib/batch.sh
+source "$(dirname "$0")/../lib/batch.sh"
 
-show_help() {
-  cat <<EOF
-Usage: $(basename "$0") [-h|--help]
-
-Creates GitHub issues for Stellar-K8s Hard difficulty documentation batch (200 Points each).
-
-Prerequisites:
-  - gh CLI installed and authenticated
-  - Network access to api.github.com
-
-Optional environment variables:
-  REPO                Target repository (default: OtowoOrg/Stellar-K8s)
-  DRY_RUN             Set to 1 to print commands without executing
-
-Example:
-  REPO=myorg/my-fork DRY_RUN=1 $(basename "$0")
-EOF
-}
-
-for arg in "$@"; do
-  case "$arg" in
-    -h|--help) show_help; exit 0 ;;
-  esac
-done
+BATCH_HELP_DESC="Creates GitHub issues for Stellar-K8s Hard difficulty documentation batch (200 Points each)."
+batch_parse_help "$@"
 
 EXPECTED_ISSUE_COUNT=4
-ACTUAL_ISSUE_COUNT=$(grep -c '^gh issue create' "$0")
-if [ "$ACTUAL_ISSUE_COUNT" -ne "$EXPECTED_ISSUE_COUNT" ]; then
-  echo "ERROR: Expected $EXPECTED_ISSUE_COUNT issue create calls, found $ACTUAL_ISSUE_COUNT." >&2
-  exit 1
-fi
+batch_validate_issue_count "$EXPECTED_ISSUE_COUNT"
 
-echo "Creating Batch 28 of 4 Hard (200-point) documentation issues..."
+echo "Creating Batch 28 of 4 Hard (200-point) documentation issues.."
 
 # Issue 1: Comprehensive Architecture Documentation
 gh issue create --repo "$REPO" \

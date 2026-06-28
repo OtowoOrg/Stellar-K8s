@@ -46,7 +46,7 @@ impl PartitionStrategy {
             Self::ByDateHour => {
                 // Extract date and hour from pipeline_ts
                 let parts: Vec<&str> = record.pipeline_ts.split('T').collect();
-                let date = parts.get(0).unwrap_or(&"unknown").replace('-', "/");
+                let date = parts.first().unwrap_or(&"unknown").replace('-', "/");
                 let hour = parts
                     .get(1)
                     .and_then(|t| t.split(':').next())

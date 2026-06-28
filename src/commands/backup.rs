@@ -1,13 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use stellar_k8s::backup::providers::{StorageProviderTrait, UploadMetadata};
-use stellar_k8s::backup::*;
+use stellar_k8s::backup::providers::StorageProviderTrait;
 use stellar_k8s::error::diagnostic;
 
 #[derive(Parser, Debug)]
@@ -283,7 +281,7 @@ async fn backup_to_file(
     // Create tar.gz
     use flate2::write::GzEncoder;
     use flate2::Compression;
-    use std::io::Write;
+
     use tar::Builder;
 
     let file = fs::File::create(&backup_path)?;
@@ -339,7 +337,7 @@ async fn list_from_file(args: &ListArgs) -> Result<()> {
         ));
     }
 
-    let mut backups: Vec<_> = fs::read_dir(location)?
+    let backups: Vec<_> = fs::read_dir(location)?
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("tar.gz"))
         .collect();

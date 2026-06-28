@@ -528,6 +528,6 @@ kubectl get stellarnode my-node -n stellar -w
 ## Support
 
 For issues or questions about the diff utility:
-- Open an issue on [GitHub](https://github.com/stellar/stellar-k8s/issues)
+- Open an issue on [GitHub](https://github.com/OtowoOrg/Stellar-K8s/issues)
 - Check existing documentation in the `docs/` directory
 - Review operator logs: `kubectl logs -l app=stellar-operator -n stellar-system`

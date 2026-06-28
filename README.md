@@ -125,7 +125,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Validator
-  network: Testnet
+  network: testnet
   version: "v21.0.0"
   storage:
     storageClass: "standard"
@@ -608,22 +608,6 @@ make generate-api-docs
 ## 💻 Development
 
 For detailed instructions on setting up a local development environment, building the project, running tests, and managing Kubernetes resources locally, please refer to the **[Development Guide](DEVELOPMENT.md)**.
-
-### Quick Start Reference
-
-```bash
-# Setup development environment (includes pre-commit hooks)
-make dev-setup
-
-# Run quick checks (format & cargo check)
-make quick
-
-# Run all tests
-make test
-
-# Build release binaries
-make build
-```
 
 ### Reconciler fuzzing
 

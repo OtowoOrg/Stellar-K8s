@@ -86,7 +86,7 @@ metadata:
   name: test-validator
 spec:
   nodeType: Validator
-  network: Testnet
+  network: testnet
   version: "docker.io/stellar/stellar-core:v21.3.0"  # Approved
   # ... rest of spec
 ```
@@ -100,7 +100,7 @@ metadata:
   name: test-validator
 spec:
   nodeType: Validator
-  network: Testnet
+  network: testnet
   version: "quay.io/myorg/stellar-core:v21.3.0"  # Not approved - will be rejected
   # ... rest of spec
 ```

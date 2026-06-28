@@ -27,7 +27,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Horizon
-  network: Testnet
+  network: testnet
   version: "v21.0.0"
   replicas: 2
 
@@ -75,7 +75,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Horizon
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   replicas: 3
 
@@ -125,7 +125,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   replicas: 1
 
@@ -169,7 +169,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: SorobanRpc
-  network: Testnet
+  network: testnet
   version: "v21.0.0"
   replicas: 1
 

@@ -47,8 +47,6 @@ IGNORED_MISSING_FILES = {
     "storage.md",
     "backup-restore.md",
     "configure-ha-setup.md",
-    "sync-problems.md",
-    "disk-scaling.md",
     "deployment.md",
     "stellar-alerts.yaml",
     "METRICS_ARCHITECTURE.md",

@@ -13,7 +13,7 @@ spec:
 
   network: testnet
 
-  version: "21.1.0"
+  version: "v21.1.0"
 
   # Required rollout availability and spreading constraints.
   maxUnavailable: 1

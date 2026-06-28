@@ -7,7 +7,7 @@ metadata:
   namespace: stellar-nodes
 spec:
   nodeType: Horizon
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   replicas: 2
 
@@ -82,7 +82,7 @@ metadata:
   namespace: stellar-nodes
 spec:
   nodeType: SorobanRpc
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   replicas: 3
 

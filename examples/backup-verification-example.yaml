@@ -19,7 +19,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Horizon
-  network: Testnet
+  network: testnet
   version: "v21.0.0"
 
   # Database configuration
@@ -104,7 +104,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
 
   # Managed database
@@ -176,7 +176,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Horizon
-  network: Testnet
+  network: testnet
   version: "v21.0.0"
 
   database:

@@ -14,6 +14,8 @@ This guide walks you through setting up a local development environment for Stel
 - [Development Workflow](#development-workflow)
 - [Troubleshooting](#troubleshooting)
 
+> **Regenerating CRDs, Helm charts, or the OLM bundle?** See [docs/development/regeneration-guide.md](docs/development/regeneration-guide.md).
+
 ---
 
 ## Prerequisites

@@ -1,7 +1,7 @@
 .PHONY: help \
 	fmt fmt-check lint audit \
 	build test ci-local quick watch \
-	docker-build docker-build-ci docker-multiarch \
+	docker-build docker-build-ci \
 	dev-setup pre-commit pre-commit-install run-local run-dev \
 	install-crd apply-samples crd-gen completions \
 	helm-lint link-check changelog \
@@ -10,7 +10,7 @@
 	benchmark-webhook-compare benchmark-webhook-save benchmark-all \
 	compose-up compose-dev compose-down compose-logs \
 	bundle bundle-build \
-	quickstart validate preflight all \
+	quickstart health health-fast validate preflight all \
 	clean
 
 # Default target
@@ -93,8 +93,14 @@ docker-build-ci: ## Reproducible CI Docker build (builds binaries in container)
 	@echo "→ Building Docker image (CI mode)..."
 	DOCKER_BUILDKIT=1 $(DOCKER) build --target runtime -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
-docker-multiarch: ## Build multi-arch Docker image
-	$(DOCKER) buildx build --platform linux/amd64 -t $(IMAGE_NAME):$(IMAGE_TAG) .
+health: ## Run common repository health checks (format, lint, test, docs)
+	@bash scripts/repo-health.sh
+
+health-fast: ## Fast health gate (format, lint, compile only)
+	@bash scripts/repo-health.sh --fast
+
+validate: ## Fast validation (alias for health-fast)
+	@bash scripts/repo-health.sh --fast
 
 link-check: ## Check markdown links
 	@echo "→ Running markdown link checker..."
@@ -108,9 +114,6 @@ changelog: ## Generate/update CHANGELOG.md using git-cliff
 ci-local: fmt-check lint audit test build link-check ## Run full CI locally
 	@echo ""
 	@echo "✓ All CI checks passed!"
-
-health: ## Run common repository health checks (format, lint, test, docs)
-	@bash scripts/repo-health.sh
 
 quick: fmt-check ## Quick pre-commit check
 	@$(CARGO) check --workspace
@@ -257,12 +260,6 @@ quickstart: ## End-to-end local quickstart: kind cluster + CRD + operator + samp
 	@echo "  Watch nodes:    kubectl get stellarnode -n stellar-system -w"
 	@echo "  View resources: kubectl get deploy,sts,svc,pvc -n stellar-system"
 	@echo "  Cleanup:        kind delete cluster --name stellar-dev"
-
-validate: ## Run local validation script (format + lint + compile)
-	@bash scripts/validate.sh
-
-# For the full contributor health gate (format + lint + tests + docs), use:
-#   make health
 
 preflight: ## Validate required local tools are installed (docker, kind, kubectl, helm, cargo)
 	@echo "→ Running local development preflight checks..."

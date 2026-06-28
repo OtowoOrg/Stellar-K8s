@@ -7,6 +7,12 @@ pub mod alerting;
 pub mod analytics;
 pub mod sampling;
 pub mod storage;
+pub mod subscriber;
+
+pub use subscriber::{
+    init_binary_subscriber, init_subscriber, LogOutputFormat, SubscriberConfig, SubscriberGuard,
+    SubscriberInit,
+};
 
 use analytics::AnalyticsEngine;
 use chrono::Utc;

@@ -91,29 +91,9 @@ spec:
             - name: metrics
               containerPort: {{ .Values.operator.metricsPort }}
               protocol: TCP
-          livenessProbe:
-            httpGet:
-              path: /livez
-              port: http
-            initialDelaySeconds: 15
-            periodSeconds: 20
-            failureThreshold: 3
-            timeoutSeconds: 5
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: http
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            failureThreshold: 3
-            timeoutSeconds: 5
-          startupProbe:
-            httpGet:
-              path: /healthz
-              port: http
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            failureThreshold: 24
+          {{- include "stellar-operator.restApiStartupProbe" . | nindent 10 }}
+          {{- include "stellar-operator.restApiLivenessProbe" . | nindent 10 }}
+          {{- include "stellar-operator.restApiReadinessProbe" . | nindent 10 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
         {{- if .Values.sidecar.enabled }}

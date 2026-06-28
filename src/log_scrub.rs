@@ -151,6 +151,93 @@ impl tracing::field::Visit for FieldCollector {
     }
 }
 
+// ── Redacting field formatter (used by fmt::layer) ────────────────────────────
+
+use tracing_subscriber::field::RecordFields;
+use tracing_subscriber::fmt::format::{FormatFields, Writer};
+
+/// Formats tracing event fields with [`redact`] applied to string values.
+///
+/// Used by the shared logging subscriber so JSON and pretty output never emit
+/// raw secrets. Prefer this over [`ScrubLayer`] for production formatting.
+pub struct RedactingFields;
+
+impl RedactingFields {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for RedactingFields {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+struct RedactingFieldVisitor<'writer> {
+    writer: Writer<'writer>,
+    has_fields: bool,
+}
+
+impl<'writer> tracing::field::Visit for RedactingFieldVisitor<'writer> {
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        self.write_field(field, &redact(value));
+    }
+
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn fmt::Debug) {
+        self.write_field(field, &redact(&format!("{value:?}")));
+    }
+
+    fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
+        self.write_field(field, &value.to_string());
+    }
+
+    fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+        self.write_field(field, &value.to_string());
+    }
+
+    fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+        self.write_field(field, &value.to_string());
+    }
+
+    fn record_error(
+        &mut self,
+        field: &tracing::field::Field,
+        value: &(dyn std::error::Error + 'static),
+    ) {
+        self.write_field(field, &redact(&value.to_string()));
+    }
+}
+
+impl<'writer> RedactingFieldVisitor<'writer> {
+    fn write_field(&mut self, field: &tracing::field::Field, value: &str) {
+        if self.has_fields {
+            let _ = write!(self.writer, " ");
+        } else {
+            self.has_fields = true;
+        }
+        let _ = write!(self.writer, "{}={}", field.name(), value);
+    }
+}
+
+impl<'writer> FormatFields<'writer> for RedactingFields {
+    fn format_fields<R>(
+        &self,
+        writer: Writer<'writer>,
+        fields: R,
+    ) -> fmt::Result
+    where
+        R: RecordFields,
+    {
+        let mut visitor = RedactingFieldVisitor {
+            writer,
+            has_fields: false,
+        };
+        fields.record(&mut visitor);
+        Ok(())
+    }
+}
+
 // ── The tracing Layer ─────────────────────────────────────────────────────────
 
 /// A [`tracing::Layer`] that redacts sensitive patterns from every log event.

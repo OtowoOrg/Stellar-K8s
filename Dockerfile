@@ -105,7 +105,7 @@ EXPOSE 8080 9090
 
 # Health check endpoint
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD ["/stellar-operator", "--health-check"] || exit 1
+  CMD ["/stellar-operator", "version"]
 
 # ==============================================================================
 # Stage 6: Runtime Local - Minimal image for local dev (no container recompile)

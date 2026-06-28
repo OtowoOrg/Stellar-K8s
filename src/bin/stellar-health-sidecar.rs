@@ -5,16 +5,12 @@ use stellar_k8s::controller::health_check_sidecar::{
     create_router, sync_monitor_loop, HealthCheckState,
 };
 use tokio::sync::RwLock;
-use tracing::{error, info};
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use stellar_k8s::logging::{init_binary_subscriber, LogOutputFormat};
+use tracing::{error, info, Level};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(EnvFilter::from_default_env())
-        .init();
+    init_binary_subscriber(Level::INFO, LogOutputFormat::Json);
 
     info!("Starting Stellar Health Check Sidecar");
 

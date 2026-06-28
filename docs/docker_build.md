@@ -1,43 +1,52 @@
 # Reproducible Docker Build Guide
 
-This guide explains how to build deterministic Docker images for **Stellar‑K8s**. The steps are incorporated directly into the repository so CI and local developers can reproduce identical image hashes.
+This guide explains how to build deterministic Docker images for **Stellar-K8s**. The steps are incorporated directly into the repository so CI and local developers can reproduce identical image hashes.
 
 ## Why reproducibility matters
-- Guarantees that the same source code produces the same image digests, aiding supply‑chain security.
+- Guarantees that the same source code produces the same image digests, aiding supply-chain security.
 - Enables reliable caching in CI pipelines and easier verification of builds.
 - Facilitates deterministic scanning for vulnerabilities.
 
 ## What we changed
 1. **Pinned base images**
-   - `lukemathwalker/cargo-chef:1.95-bookworm` (previously `latest‑rust‑1.95‑bookworm`).
+   - `lukemathwalker/cargo-chef:1.95-bookworm` (previously `latest-rust-1.95-bookworm`).
    - `debian:bookworm-slim` is now referenced by its SHA256 digest.
-2. **Source‑date‑epoch**
+2. **Source-date-epoch**
    - Added `ARG SOURCE_DATE_EPOCH=0` and `ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}` early in the Dockerfile. This forces the same timestamps for file metadata inside the image.
-3. **Removed non‑deterministic steps**
-   - Consolidated `apt‑get` clean‑up and avoided installing optional packages that change `apt` timestamps.
+3. **Removed non-deterministic steps**
+   - Consolidated `apt-get` clean-up and avoided installing optional packages that change `apt` timestamps.
    - All `COPY` commands are deterministic because files are sorted by Git.
 
 ## Building the image locally
-```bash
-# Clean any previous images
-docker rmi stellar-k8s:dev
 
-# Build with reproducibility flag (SOURCE_DATE_EPOCH defaults to 0)
+```bash
+# Fast local build (uses host release binaries)
+make docker-build
+
+# Reproducible CI build (compiles inside the container)
+make docker-build-ci
+```
+
+Both targets use BuildKit and respect `SOURCE_DATE_EPOCH` when set:
+
+```bash
 DOCKER_BUILDKIT=1 docker build \
   --build-arg SOURCE_DATE_EPOCH=$(date +%s) \
-  -t stellar-k8s:dev -f Dockerfile .
+  --target runtime-local \
+  -t stellar-operator:latest .
 ```
-The command uses BuildKit which respects the `SOURCE_DATE_EPOCH` argument.
 
 ## Verifying reproducibility
 Run the build **twice** with the same arguments and compare digests:
 ```bash
-docker image inspect --format='{{.RepoDigests}}' stellar-k8s:dev
+docker image inspect --format='{{.RepoDigests}}' stellar-operator:latest
 ```
-Both runs should output the **same** digest (e.g. `stellar-k8s@sha256:abcd1234…`).
+Both runs should output the **same** digest (e.g. `stellar-operator@sha256:abcd1234…`).
 
 ## CI integration
-The GitHub workflow `docker-build.yml` now injects `SOURCE_DATE_EPOCH=$(date +%s)` automatically. The workflow also runs the verification step and fails if the digests differ.
+Multi-arch images are built and published by the GitHub workflow [`.github/workflows/multiarch-build.yml`](../.github/workflows/multiarch-build.yml). Release re-tagging is handled by [`.github/workflows/release.yml`](../.github/workflows/release.yml).
+
+Local kind/e2e tests should prefer `make docker-build` or the shared [setup-kind-cluster](../.github/actions/setup-kind-cluster/action.yml) composite action instead of ad-hoc `docker build` scripts.
 
 ---
 For any questions or to suggest additional deterministic steps, please open an issue.

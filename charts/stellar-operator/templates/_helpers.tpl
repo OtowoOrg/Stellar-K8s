@@ -107,6 +107,61 @@ prometheus.io/path: {{ .path | default "/metrics" | quote }}
 {{- end }}
 
 {{/*
+HTTP probe snippet for operator-managed workloads.
+Usage: include "stellar-operator.httpProbe" (dict "path" "/healthz" "port" "http" "scheme" "HTTP")
+Optional timing keys: initialDelaySeconds, periodSeconds, timeoutSeconds, failureThreshold
+*/}}
+{{- define "stellar-operator.httpProbe" -}}
+httpGet:
+  path: {{ .path | quote }}
+  port: {{ .port }}
+  {{- if .scheme }}
+  scheme: {{ .scheme }}
+  {{- end }}
+{{- if .initialDelaySeconds }}
+initialDelaySeconds: {{ .initialDelaySeconds }}
+{{- end }}
+{{- if .periodSeconds }}
+periodSeconds: {{ .periodSeconds }}
+{{- end }}
+{{- if .timeoutSeconds }}
+timeoutSeconds: {{ .timeoutSeconds }}
+{{- end }}
+{{- if .failureThreshold }}
+failureThreshold: {{ .failureThreshold }}
+{{- end }}
+{{- end }}
+
+{{/*
+Standard operator REST API probes (startup / liveness / readiness).
+*/}}
+{{- define "stellar-operator.restApiStartupProbe" -}}
+startupProbe:
+  {{- include "stellar-operator.httpProbe" (dict "path" "/healthz" "port" "http") | nindent 2 }}
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  failureThreshold: 24
+{{- end }}
+
+{{- define "stellar-operator.restApiLivenessProbe" -}}
+livenessProbe:
+  {{- include "stellar-operator.httpProbe" (dict "path" "/livez" "port" "http") | nindent 2 }}
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  failureThreshold: 3
+  timeoutSeconds: 5
+{{- end }}
+
+{{- define "stellar-operator.restApiReadinessProbe" -}}
+readinessProbe:
+  {{- include "stellar-operator.httpProbe" (dict "path" "/readyz" "port" "http") | nindent 2 }}
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  failureThreshold: 3
+  timeoutSeconds: 5
+{{- end }}
+
+{{/*
 Compatibility aliases for legacy Soroban RPC-oriented templates.
 Prefer stellar-operator.* helpers in new templates.
 */}}

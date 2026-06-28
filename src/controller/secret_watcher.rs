@@ -25,15 +25,15 @@ use crate::crd::{NodeType, StellarNode};
 use crate::error::Error;
 
 /// Returns true when the observed secret version differs from the current resource version.
-pub(crate) fn secret_rotation_needed(
-    current_rv: Option<&str>,
-    observed_rv: Option<&str>,
-) -> bool {
+pub(crate) fn secret_rotation_needed(current_rv: Option<&str>, observed_rv: Option<&str>) -> bool {
     observed_rv != current_rv
 }
 
 /// Build the merge patch that triggers a rolling restart via pod template annotation.
-pub(crate) fn rolling_restart_patch(annotation_key: &str, annotation_value: &str) -> serde_json::Value {
+pub(crate) fn rolling_restart_patch(
+    annotation_key: &str,
+    annotation_value: &str,
+) -> serde_json::Value {
     json!({
         "spec": {
             "template": {
@@ -305,10 +305,9 @@ mod tests {
             patch["spec"]["template"]["metadata"]["annotations"][SEED_ROTATION_ANNOTATION],
             "rv-seed-7"
         );
-        assert!(
-            patch["spec"]["template"]["metadata"]["annotations"].get(PASSPHRASE_ROTATION_ANNOTATION)
-                .is_none()
-        );
+        assert!(patch["spec"]["template"]["metadata"]["annotations"]
+            .get(PASSPHRASE_ROTATION_ANNOTATION)
+            .is_none());
     }
 
     #[test]

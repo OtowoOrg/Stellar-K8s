@@ -98,12 +98,12 @@ docker-multiarch: ## Build multi-arch Docker image
 
 link-check: ## Check markdown links
 	@echo "→ Running markdown link checker..."
-	@python3 scripts/check-links.py
+	@python3 scripts/check-links.py --include docs examples
 
 changelog: ## Generate/update CHANGELOG.md using git-cliff
 	@echo "→ Generating changelog..."
 	@command -v git-cliff >/dev/null 2>&1 || cargo install git-cliff
-	git-cliff --output CHANGELOG.md
+	@bash scripts/generate-changelog.sh --output CHANGELOG.md
 
 ci-local: fmt-check lint audit test build link-check ## Run full CI locally
 	@echo ""

@@ -20,13 +20,24 @@ This guide walks you through setting up a local development environment for Stel
 
 You need: **Rust**, **Docker**, **kind**, **kubectl**, **Helm**, **gh**, **pre-commit**, **shellcheck**, and **k6**.
 
-The setup scripts install and pin all of these in one step — run the one that matches your OS:
+Use one of the setup paths below, then run the same project bootstrap commands on every platform.
+
+| Platform | Tool bootstrap |
+|---|---|
+| macOS | `bash scripts/setup-mac.sh` |
+| Linux (Ubuntu/Debian/Fedora) | `bash scripts/setup-linux.sh` |
+| Windows | Set up WSL2 first ([docs/installation-wsl2.md](docs/installation-wsl2.md)), then run `bash scripts/setup-linux.sh` **inside WSL2** |
+
+The setup scripts install and pin all required tools in one step:
 
 ```bash
 # macOS
 bash scripts/setup-mac.sh
 
 # Linux (Ubuntu/Debian/Fedora)
+bash scripts/setup-linux.sh
+
+# Windows (inside WSL2)
 bash scripts/setup-linux.sh
 ```
 
@@ -45,7 +56,7 @@ cd Stellar-K8s
 
 ### 2. Run Development Setup
 
-Run the setup script for your OS (see [Prerequisites](#prerequisites) above), then install the Rust components and pre-commit hooks:
+After running the platform bootstrap script, install repository-local Rust components and pre-commit hooks:
 
 ```bash
 make dev-setup

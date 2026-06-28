@@ -293,14 +293,9 @@ jobs:
           cd release-assets && sha256sum * > SHA256SUMS
 
       - name: Generate changelog
-        uses: orhun/git-cliff-action@v4
-        id: git-cliff
-        with:
-          config: cliff.toml
-          args: --latest --strip header
-        env:
-          OUTPUT: changelog.md
-          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          cargo install git-cliff --locked
+          bash scripts/generate-changelog.sh --latest --strip header --output changelog.md
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

@@ -167,7 +167,13 @@ The template ensures your change includes:
 
 ### Setup
 
-Use the OS setup script to install and pin all required tools, then run `make dev-setup` to install Rust components and pre-commit hooks:
+Use the platform bootstrap below, then run the same `make dev-setup` and validation commands regardless of OS:
+
+| Platform | Tool bootstrap |
+|---|---|
+| macOS | `bash scripts/setup-mac.sh` |
+| Linux (Ubuntu/Debian/Fedora) | `bash scripts/setup-linux.sh` |
+| Windows | Set up WSL2 first ([docs/installation-wsl2.md](docs/installation-wsl2.md)), then run `bash scripts/setup-linux.sh` inside WSL2 |
 
 ```bash
 # macOS
@@ -176,7 +182,10 @@ bash scripts/setup-mac.sh
 # Linux (Ubuntu/Debian/Fedora)
 bash scripts/setup-linux.sh
 
-# Both platforms: install Rust components and pre-commit hooks
+# Windows (inside WSL2)
+bash scripts/setup-linux.sh
+
+# All platforms: install Rust components and pre-commit hooks
 make dev-setup
 ```
 

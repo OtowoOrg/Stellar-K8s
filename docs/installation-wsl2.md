@@ -1,6 +1,6 @@
 # Windows (WSL2) Setup Guide
 
-This guide covers installing and running Stellar-K8s on Windows using WSL2. Linux and macOS users should follow the standard [Getting Started](getting-started/quick-start.md) guide instead.
+This guide covers installing and running Stellar-K8s on Windows using WSL2. After completing this guide, follow the shared contributor setup flow in [DEVELOPMENT.md](../DEVELOPMENT.md#prerequisites). Linux and macOS users can start directly from that same section.
 
 ---
 

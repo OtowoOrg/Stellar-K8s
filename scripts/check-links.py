@@ -180,10 +180,17 @@ def main():
     parser.add_argument("--dir", default=".", help="Root directory to search for markdown files")
     parser.add_argument("--check-external", action="store_true", help="Check external links")
     parser.add_argument("--exclude", nargs="*", default=[], help="Patterns of directories/files to exclude")
+    parser.add_argument(
+        "--include",
+        nargs="*",
+        default=[],
+        help="Relative paths to include (files or directories). If omitted, scan the whole repository.",
+    )
     args = parser.parse_args()
 
     root_dir = os.path.abspath(args.dir)
     exclude_patterns = args.exclude
+    include_paths = [(Path(root_dir) / p).resolve() for p in args.include]
     
     md_files = []
     for root, dirs, files in os.walk(root_dir):
@@ -193,6 +200,13 @@ def main():
             if file.endswith('.md'):
                 full_path = os.path.join(root, file)
                 if not any(p in full_path for p in exclude_patterns):
+                    if include_paths:
+                        full_path_obj = Path(full_path).resolve()
+                        if not any(
+                            full_path_obj == include_path or include_path in full_path_obj.parents
+                            for include_path in include_paths
+                        ):
+                            continue
                     md_files.append(full_path)
 
     print(f"Found {len(md_files)} markdown files to check.")
@@ -281,10 +295,10 @@ def main():
     print(f"Failed links: {failed_links}")
     
     if failed_links > 0:
-        print("✗ Link check failed.")
+        print("Link check failed.")
         sys.exit(1)
     else:
-        print("✓ All links are valid.")
+        print("All links are valid.")
         sys.exit(0)
 
 

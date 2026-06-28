@@ -47,6 +47,7 @@ jobs:
       rust_core: ${{ steps.detect.outputs.rust_core }}
       deps: ${{ steps.detect.outputs.deps }}
       examples: ${{ steps.detect.outputs.examples }}
+      docs_examples: ${{ steps.detect.outputs.docs_examples }}
     steps:
       - uses: actions/checkout@v4
 
@@ -95,6 +96,9 @@ jobs:
           echo "deps=$(_match '^(Cargo\.toml|Cargo\.lock)')" >> "$GITHUB_OUTPUT"
           echo "examples=$(_match \
             '^(examples/|config/crd/|config/samples/)')" \
+            >> "$GITHUB_OUTPUT"
+          echo "docs_examples=$(_match \
+            '^(docs/|examples/|README\.md|.*/README\.md)')" \
             >> "$GITHUB_OUTPUT"
 
   # ── 2. Version consistency (main push only) ──────────────────────────────────
@@ -171,19 +175,6 @@ jobs:
       - name: Run clippy
         if: needs.changes.outputs.rust_core == 'true'
         run: make lint
-
-  # ── 3.5. Link Check ──────────────────────────────────────────────────────────
-  link-check:
-    name: Markdown Link Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install markdown-link-check
-        run: npm install -g markdown-link-check
-        
-      - name: Run link check
-        run: find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/target/*" -not -path "*/.kiro/*" -exec markdown-link-check -c mlc_config.json -q {} +
 
   # ── 4. Security audit (only when deps change) ────────────────────────────────
   security-audit:
@@ -314,10 +305,12 @@ jobs:
           fi
           echo "OK: docs/api-reference.md is up to date."
 
-  # ── 7b. Docs link check ───────────────────────────────────────────────────────
+  # ── 7b. Repository docs/examples link check ───────────────────────────────────
   docs-link-check:
-    name: Docs Link Checker
+    name: Docs & Examples Link Checker
+    if: needs.changes.outputs.docs_examples == 'true'
     runs-on: ubuntu-latest
+    needs: [changes]
     steps:
       - uses: actions/checkout@v4
 
@@ -327,7 +320,7 @@ jobs:
           python-version: "3.12"
 
       - name: Run link checker
-        run: python3 scripts/check-links.py
+        run: make link-check
 
   # ── 8. Examples smoke test ────────────────────────────────────────────────────
   examples-smoke-test:

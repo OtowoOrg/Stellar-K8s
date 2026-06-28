@@ -8,18 +8,17 @@ Stellar-K8s is a Kubernetes operator for managing Stellar Core infrastructure us
 
 ## 2. Setup Your Environment
 
-### Linux
-- Install `kubectl`, `kind` or `minikube`, `docker`, `rust`, and `cargo`.
-- Run `cargo test` and `make lint` after cloning the repository.
+Use the same setup flow across platforms:
 
-### macOS
-- Use Homebrew to install dependencies: `brew install kubectl kind docker rustup`.
-- Follow the same validation steps as Linux.
-
-### Windows / WSL2
-- Use WSL2 for development.
-- Install `kubectl`, `docker`, and `rustup` inside WSL.
-- Run `docs/installation-wsl2.md` for additional guidance.
+1. Follow the platform bootstrap section in [DEVELOPMENT.md](../../DEVELOPMENT.md#prerequisites):
+   - macOS: `bash scripts/setup-mac.sh`
+   - Linux: `bash scripts/setup-linux.sh`
+   - Windows: complete [WSL2 setup](../installation-wsl2.md), then run `bash scripts/setup-linux.sh` inside WSL2
+2. Run repository bootstrap:
+   - `make dev-setup`
+3. Validate your environment:
+   - `make preflight`
+   - `make quick`
 
 ## 3. Repository Tour
 

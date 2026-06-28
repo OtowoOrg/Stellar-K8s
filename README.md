@@ -609,6 +609,11 @@ make generate-api-docs
 
 For detailed instructions on setting up a local development environment, building the project, running tests, and managing Kubernetes resources locally, please refer to the **[Development Guide](DEVELOPMENT.md)**.
 
+Platform setup is unified in one place:
+- macOS: `bash scripts/setup-mac.sh`
+- Linux: `bash scripts/setup-linux.sh`
+- Windows: use WSL2 first (see `docs/installation-wsl2.md`), then run `bash scripts/setup-linux.sh` inside WSL2
+
 ### Quick Start Reference
 
 ```bash

@@ -2,14 +2,18 @@
 # scripts/lib/common.sh
 # Shared utilities: repository resolution, dry-run parsing, and retry logic.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=scripts/lib/errors.sh
+source "${SCRIPT_DIR}/errors.sh"
+
 # ── Repository Resolution ───────────────────────────────────────────────────
 _DEFAULT_REPO="OtowoOrg/Stellar-K8s"
 export REPO="${REPO:-$_DEFAULT_REPO}"
 
 if [[ ! "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
-  echo "ERROR [validate repo]: REPO='$REPO' is not a valid 'owner/name' format." >&2
-  echo "  Hint: Set REPO=owner/name or unset it to use the default ($_DEFAULT_REPO)." >&2
-  exit 1
+  sk8s_step "validate repo" "Validating REPO format"
+  sk8s_fail "REPO='$REPO' is not a valid 'owner/name' format." \
+    "Set REPO=owner/name or unset it to use the default ($_DEFAULT_REPO)."
 fi
 echo "Active repository: $REPO"
 
@@ -48,6 +52,6 @@ create_issue() {
     sleep "${RETRY_DELAY_SECONDS}"
   done
 
-  echo "ERROR: Failed to create issue after ${RETRY_MAX_ATTEMPTS} attempts: ${title}"
+  echo "ERROR: Failed to create issue after ${RETRY_MAX_ATTEMPTS} attempts: ${title}" >&2
   return 1
 }

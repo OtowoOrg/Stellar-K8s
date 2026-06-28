@@ -217,9 +217,9 @@ stellar-operator run --<TAB>  # Shows available flags
 
 Major architectural decisions are documented in our [ADR directory](docs/adr/README.md), including:
 
-- **Choice of Rust** - Rationale for selecting Rust as the programming language
-- **kube-rs Finalizers** - Strategy for resource cleanup and lifecycle management
-- **CRD Versioning** - Approach to API evolution and backward compatibility
+- **Choice of Rust Programming Language** - Rationale for selecting Rust as the programming language
+- **Use of kube-rs Finalizers** - Strategy for resource cleanup and lifecycle management
+- **CRD Versioning Strategy** - Approach to API evolution and backward compatibility
 
 ### 4. Custom Validation Policies with WebAssembly
 

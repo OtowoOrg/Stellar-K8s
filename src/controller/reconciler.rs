@@ -86,10 +86,6 @@ use super::vpa as vpa_controller;
 use super::vsl;
 use chrono::Utc;
 
-// Constants
-#[allow(dead_code)]
-const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-health-retries";
-
 trait ToStellarNodeArc {
     fn to_arc(&self) -> Arc<StellarNode>;
 }
@@ -3867,48 +3863,6 @@ async fn update_status_with_health(
                 .and_then(|s| s.last_migrated_version.clone())
         },
         conditions,
-        ..Default::default()
-    };
-
-    let patch = serde_json::json!({ "status": status });
-    api.patch_status(
-        &node.name_any(),
-        &PatchParams::apply("stellar-operator"),
-        &Patch::Merge(&patch),
-    )
-    .await
-    .map_err(Error::KubeError)?;
-
-    Ok(())
-}
-
-/// Update the status subresource with canary information
-#[allow(dead_code)]
-async fn update_status_with_canary(
-    client: &Client,
-    node: &StellarNode,
-    phase: &str,
-    message: Option<&str>,
-    ready_replicas: i32,
-    canary_ready_replicas: i32,
-    canary_version: Option<String>,
-) -> Result<()> {
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
-
-    #[allow(deprecated)]
-    let status = StellarNodeStatus {
-        phase: phase.to_string(),
-        message: message.map(String::from),
-        observed_generation: node.metadata.generation,
-        replicas: if node.spec.suspended {
-            0
-        } else {
-            node.spec.replicas
-        },
-        ready_replicas,
-        canary_ready_replicas,
-        canary_version,
         ..Default::default()
     };
 

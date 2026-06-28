@@ -91,7 +91,6 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                     external_dns: None,
                     known_peers: None,
                     quorum_optimization: None,
-                    ..Default::default()
                 }),
                 horizon_config: None,
                 soroban_config: None,

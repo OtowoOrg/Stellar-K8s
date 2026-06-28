@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::warn;
 
 /// Prometheus-style metrics for the data pipeline
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -36,7 +36,7 @@ pub struct PipelineMetrics {
 impl PipelineMetrics {
     /// Render as Prometheus text format
     pub fn to_prometheus(&self) -> String {
-        let ts = self.last_updated.map(|t| t.timestamp_millis()).unwrap_or(0);
+        let _ts = self.last_updated.map(|t| t.timestamp_millis()).unwrap_or(0);
         format!(
             "# HELP stellar_pipeline_records_ingested_total Total records ingested\n\
              # TYPE stellar_pipeline_records_ingested_total counter\n\

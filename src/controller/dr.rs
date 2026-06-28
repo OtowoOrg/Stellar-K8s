@@ -249,7 +249,7 @@ fn calculate_health_score(node: &StellarNode) -> u32 {
     } else {
         score = 0;
     }
-    score.max(0) as u32
+    score
 }
 
 async fn update_policy_compliance(

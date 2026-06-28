@@ -1,5 +1,5 @@
 .PHONY: help \
-	fmt fmt-check lint audit \
+	fmt fmt-check lint lint-strict audit \
 	build test ci-local quick watch \
 	docker-build docker-build-ci docker-multiarch \
 	dev-setup pre-commit pre-commit-install run-local run-dev \
@@ -66,6 +66,30 @@ lint: ## Run clippy
 		-A clippy::items_after_test_module \
 		-A clippy::approx_constant \
 		-A clippy::should_implement_trait
+
+lint-strict: ## Run clippy (adds complexity checks on top of lint; same base exceptions)
+	@echo "→ Running clippy (strict mode)..."
+	@K8S_OPENAPI_ENABLED_VERSION=1.30 $(CARGO) clippy --workspace --all-targets \
+		--features "rest-api,metrics,admission-webhook,k8s-v1-30,reconciler-fuzz" -- \
+		-D clippy::correctness \
+		-D clippy::suspicious \
+		-D clippy::perf \
+		-D clippy::style \
+		-D clippy::complexity \
+		-A clippy::new_without_default \
+		-A clippy::match_like_matches_macro \
+		-A clippy::match_result_ok \
+		-A clippy::needless_borrow \
+		-A clippy::get_first \
+		-A clippy::format_in_format_args \
+		-A clippy::single_match \
+		-A clippy::redundant_closure \
+		-A clippy::items_after_test_module \
+		-A clippy::approx_constant \
+		-A clippy::should_implement_trait \
+		-A clippy::cognitive_complexity \
+		-A clippy::too_many_lines \
+		-A clippy::type_complexity
 
 audit: ## Security audit
 	@echo "→ Running security audit..."
@@ -190,7 +214,10 @@ completions: ## Generate shell completion scripts
 
 helm-lint: ## Helm lint check
 	@echo "→ Linting Helm charts..."
-	helm lint charts/stellar-operator
+	helm lint charts/stellar-operator --strict
+	@echo "→ Validating Helm template rendering..."
+	helm template stellar-operator charts/stellar-operator > /dev/null
+	@echo "✓ Helm charts passed linting and validation"
 
 dev-setup: ## Setup dev environment
 	rustup update stable

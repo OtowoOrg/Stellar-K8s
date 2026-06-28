@@ -103,10 +103,8 @@ impl MultiObjectiveOptimizer {
                 }
                 SchedulingConstraint::CostBudget {
                     max_hourly_cost_usd,
-                } => {
-                    if node.hourly_cost_usd > *max_hourly_cost_usd {
-                        return false;
-                    }
+                } if node.hourly_cost_usd > *max_hourly_cost_usd => {
+                    return false;
                 }
                 _ => {}
             }

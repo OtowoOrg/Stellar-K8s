@@ -3,7 +3,7 @@
 //! Generates actionable recommendations based on forecasted resource needs.
 
 use crate::capacity_planning::{CapacityRecommendation, GrowthForecast, ResourceUsage};
-use chrono::{Duration, Utc};
+use chrono::Duration;
 
 pub struct RecommendationEngine {
     pub safety_margin: f64,

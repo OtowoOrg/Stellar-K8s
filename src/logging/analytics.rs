@@ -77,7 +77,7 @@ impl AnalyticsEngine {
     pub fn get_top_patterns(&self, limit: usize) -> Vec<LogPattern> {
         let patterns = self.patterns.lock().unwrap();
         let mut p: Vec<LogPattern> = patterns.values().cloned().collect();
-        p.sort_by(|a, b| b.count.cmp(&a.count));
+        p.sort_by_key(|b| std::cmp::Reverse(b.count));
         p.into_iter().take(limit).collect()
     }
 }

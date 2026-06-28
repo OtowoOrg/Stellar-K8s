@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=lib/common.sh
-source "$(dirname "$0")/lib/common.sh"
+# shellcheck source=../lib/batch.sh
+source "$(dirname "$0")/../lib/batch.sh"
 
 # Stellar-K8s Wave Issue Creation Script - BATCH 3 (High Complexity)
 # Issues #22 - #24
 
-# Source shared retry/backoff and dry-run helper.
-# shellcheck source=lib/common.sh
 
-echo "Creating Batch 3 (200 points) issues..."
+echo "Creating Batch 3 (200 points) issues.."
 
 # 22. Automated PVC Snapshots/Backups (High - 200 Points)
 create_issue \

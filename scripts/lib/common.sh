@@ -2,6 +2,12 @@
 # scripts/lib/common.sh
 # Shared utilities: repository resolution, dry-run parsing, and retry logic.
 
+# ── Dry-Run Normalization ───────────────────────────────────────────────────
+# Accept common truthy values used across batch scripts (1, true, yes).
+case "${DRY_RUN:-}" in
+  1 | true | TRUE | yes | YES) export DRY_RUN=true ;;
+esac
+
 # ── Repository Resolution ───────────────────────────────────────────────────
 _DEFAULT_REPO="OtowoOrg/Stellar-K8s"
 export REPO="${REPO:-$_DEFAULT_REPO}"

@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=lib/common.sh
-source "$(dirname "$0")/lib/common.sh"
+# shellcheck source=../lib/batch.sh
+source "$(dirname "$0")/../lib/batch.sh"
 
 # Stellar-K8s Wave Issue Creation Script - BATCH 5
 # 3 High (200 pts), 4 Medium (150 pts), 3 Trivial (100 pts)
 
-# Source shared retry/backoff and dry-run helper.
-# shellcheck source=lib/common.sh
 
 # Helper to create label if not exists
 create_label() {
   gh label create --repo "$REPO" "$1" --color "$2" --description "$3" || true
 }
 
-echo "Ensuring labels exist..."
+echo "Ensuring labels exist.."
 create_label "stellar-wave" "1d76db" "Stellar Wave Program"
 create_label "good-first-issue" "7057ff" "Good for newcomers"
 create_label "rust" "DEA584" "Rust related"
@@ -29,7 +27,7 @@ create_label "reliability" "d93f0b" "Reliability and stability"
 create_label "architecture" "0e8a16" "Architecture design"
 create_label "documentation" "0075ca" "Improvements or additions to documentation"
 
-echo "Creating Batch 5 (Advanced) issues..."
+echo "Creating Batch 5 (Advanced) issues.."
 
 # --- HIGH (200 pts) ---
 

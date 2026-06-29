@@ -36,10 +36,18 @@ struct Check {
 
 impl Check {
     fn pass(name: &'static str, msg: impl Into<String>) -> Self {
-        Self { name, passed: true, message: msg.into() }
+        Self {
+            name,
+            passed: true,
+            message: msg.into(),
+        }
     }
     fn fail(name: &'static str, msg: impl Into<String>) -> Self {
-        Self { name, passed: false, message: msg.into() }
+        Self {
+            name,
+            passed: false,
+            message: msg.into(),
+        }
     }
 }
 
@@ -55,7 +63,12 @@ fn check_cargo_version_matches_tag() -> Check {
     // Read version from Cargo.toml
     let cargo_toml = match fs::read_to_string("Cargo.toml") {
         Ok(c) => c,
-        Err(e) => return Check::fail("Cargo version / tag", format!("cannot read Cargo.toml: {e}")),
+        Err(e) => {
+            return Check::fail(
+                "Cargo version / tag",
+                format!("cannot read Cargo.toml: {e}"),
+            )
+        }
     };
 
     let version = cargo_toml
@@ -65,7 +78,10 @@ fn check_cargo_version_matches_tag() -> Check {
         .map(|v| v.to_string());
 
     let Some(version) = version else {
-        return Check::fail("Cargo version / tag", "version field not found in Cargo.toml");
+        return Check::fail(
+            "Cargo version / tag",
+            "version field not found in Cargo.toml",
+        );
     };
 
     // Get the tag pointing at HEAD (if any)
@@ -83,9 +99,15 @@ fn check_cargo_version_matches_tag() -> Check {
 
             if tags.lines().all(|l| l.is_empty()) {
                 // HEAD is not tagged — nothing to validate against
-                Check::pass("Cargo version / tag", format!("Cargo.toml version = {version} (HEAD is not tagged)"))
+                Check::pass(
+                    "Cargo version / tag",
+                    format!("Cargo.toml version = {version} (HEAD is not tagged)"),
+                )
             } else if matching_tag.is_some() {
-                Check::pass("Cargo version / tag", format!("v{version} matches HEAD tag"))
+                Check::pass(
+                    "Cargo version / tag",
+                    format!("v{version} matches HEAD tag"),
+                )
             } else {
                 let existing: Vec<_> = tags.lines().filter(|l| !l.is_empty()).collect();
                 Check::fail(
@@ -96,15 +118,16 @@ fn check_cargo_version_matches_tag() -> Check {
         }
         Ok(_) | Err(_) => {
             // git not available or error — skip
-            Check::pass("Cargo version / tag", format!("Cargo.toml version = {version} (git unavailable, skipped tag check)"))
+            Check::pass(
+                "Cargo version / tag",
+                format!("Cargo.toml version = {version} (git unavailable, skipped tag check)"),
+            )
         }
     }
 }
 
 fn check_git_clean() -> Check {
-    let output = Command::new("git")
-        .args(["status", "--porcelain"])
-        .output();
+    let output = Command::new("git").args(["status", "--porcelain"]).output();
 
     match output {
         Ok(out) if out.status.success() => {
@@ -118,7 +141,11 @@ fn check_git_clean() -> Check {
             } else {
                 Check::fail(
                     "Working tree",
-                    format!("{} uncommitted change(s): {}", dirty.len(), dirty.join(", ")),
+                    format!(
+                        "{} uncommitted change(s): {}",
+                        dirty.len(),
+                        dirty.join(", ")
+                    ),
                 )
             }
         }
@@ -136,7 +163,11 @@ fn print_check(check: &Check, json: bool) {
         );
     } else {
         let icon = if check.passed { "✓" } else { "✗" };
-        println!("  [{icon}] {name}: {msg}", name = check.name, msg = check.message);
+        println!(
+            "  [{icon}] {name}: {msg}",
+            name = check.name,
+            msg = check.message
+        );
     }
 }
 

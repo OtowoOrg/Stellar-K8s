@@ -38,7 +38,7 @@ spec:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ include "stellar-operator.operatorImage" . }}"
+          image: {{ include "stellar-operator.operatorImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: STELLAR_OPERATOR_CONFIG
@@ -137,7 +137,7 @@ spec:
         {{- end }}
         {{- if .Values.forkDetector.enabled }}
         - name: fork-detector
-          image: "{{ include \"stellar-operator.componentImage\" (dict \"root\" . \"repository\" .Values.forkDetector.image.repository \"tag\" .Values.forkDetector.image.tag) }}"
+          image: {{ include "stellar-operator.componentImage" (dict "root" . "repository" .Values.forkDetector.image.repository "tag" .Values.forkDetector.image.tag) }}
           imagePullPolicy: {{ .Values.forkDetector.image.pullPolicy | default .Values.image.pullPolicy }}
           command: ["/stellar-fork-detector"]
           env:

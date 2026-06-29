@@ -248,6 +248,45 @@ service:
   restApiPort: 9090
   metricsPort: 9090
 
+# Prometheus Operator monitoring integration — ServiceMonitor, PodMonitor,
+# PrometheusRule (Stellar node-health alerts), and Grafana dashboard ConfigMaps.
+# Requires the Prometheus Operator CRDs (monitoring.coreos.com/v1) on the cluster.
+monitoring:
+  # Master switch. Set to true to deploy any monitoring resources below.
+  enabled: false
+
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+
+  # PodMonitor for direct (Service-less) pod scraping, e.g. operator-managed
+  # StellarNode pods that don't have a dedicated Service.
+  podMonitor:
+    enabled: false
+    interval: 30s
+    portName: metrics
+    labels: {}
+    selector:
+      matchExpressions:
+        - key: stellar.org/node-type
+          operator: Exists
+
+  prometheusRule:
+    enabled: true
+    labels: {}
+    ingestionLagThresholdSeconds: 30
+    ledgerCloseTimeThresholdSeconds: 10
+    # Extra PrometheusRule rule groups, appended as-is under spec.groups[0].rules.
+    additionalRules: []
+
+  grafanaDashboards:
+    enabled: true
+    # Standard label used by the Grafana sidecar dashboard-loader to auto-discover ConfigMaps.
+    labels:
+      grafana_dashboard: "1"
+
 # Default resource requests/limits for managed StellarNode pods.
 # Precedence: StellarNode spec.resources > Helm defaults > operator hardcoded fallback.
 # These are written into a ConfigMap that the operator reads at startup.

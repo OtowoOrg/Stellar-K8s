@@ -30,8 +30,12 @@ exclude = [
   # Shell variable expansions in code blocks
   "\\$\\(",
   "\\$\\{",
-  # GitHub compare/release/blob/tree links can rate-limit hard in CI
-  "^https://github\\.com/OtowoOrg/Stellar-K8s/(compare|releases|blob|tree|discussions|security|issues)/",
+  # GitHub compare/release/blob/tree links can rate-limit hard in CI; also
+  # covers /discussions when the feature isn't enabled on the upstream repo.
+  # The trailing (/|$) matches bare segment URLs (e.g. .../discussions) and
+  # paths underneath (.../discussions/123) — the previous trailing "/" alone
+  # silently leaked bare URLs through.
+  "^https://github\\.com/OtowoOrg/Stellar-K8s/(compare|releases|blob|tree|discussions|security|issues)(/|$)",
   # Project-controlled hosts that may not be reachable from CI
   "^https://stellar\\.github\\.io/stellar-k8s",
   "^https://otowo\\.org/",

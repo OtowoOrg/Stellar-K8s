@@ -13,6 +13,7 @@ Stellar-K8s supports multiple strategies for managing sensitive credentials, fro
 | Basic secret management | [Secret Management Guide](../secret-management-guide.md) | Getting started with `StellarSecret` CRD |
 | KMS integration | [Advanced Secret Management with KMS](../secret-management-kms.md) | AWS KMS, Azure Key Vault, GCP Cloud KMS |
 | Automated rotation | [Secret Rotation](../secret-rotation.md) | Zero-downtime database credential rotation |
+| All rotation workflows | [Rotation Workflows](../rotation-workflows.md) | Unified guide for secrets, certs, and passphrases |
 | HashiCorp Vault | [Vault + Stellar Tutorial](../vault-stellar-tutorial.md) | Production Vault Agent Injector pattern |
 | Production hardening | [Security Hardening Guide](../production-security-hardening.md) | Full security posture for production |
 | External Secrets Operator | [ExternalSecret chart template](../../charts/stellar-operator/templates/externalsecret.yaml) | ESO integration via Helm |
@@ -23,7 +24,9 @@ Stellar-K8s supports multiple strategies for managing sensitive credentials, fro
 |---|---|---|---|
 | Validator seed (`STELLAR_SEED`) | Kubernetes Secret / Vault | Manual or `vaultRef` | Wallet / Stellar Core |
 | Database credentials (Horizon / Core) | Kubernetes Secret | Automatic (cron-based) | Generated / Provided |
+| Network passphrase | Kubernetes Secret (`passphrase_secret_ref`) | Update Secret, operator reconciles | Operator / deployer |
 | mTLS certificates | Kubernetes Secret (operator-managed) | Automatic renewal | Operator CA |
+| Webhook TLS certificate | Kubernetes Secret (cert-manager) | cert-manager auto-renewal | cert-manager |
 | Webhook HMAC key | Kubernetes Secret | Manual | Deployer |
 | API tokens / OIDC secrets | Kubernetes Secret / ExternalSecret | Manual or ESO | Identity provider |
 | S3 / cloud credentials | Kubernetes Secret / IRSA | Cloud IAM rotation | Cloud provider |

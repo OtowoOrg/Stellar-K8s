@@ -61,9 +61,6 @@ clap_complete = "4.6"
 
 # Date/time handling
 chrono = { version = "0.4", features = ["serde"] }
-# Pinned to fix RUSTSEC-2026-0009 (stack exhaustion DoS); also used transitively
-# by rcgen/yasna/x509-parser.
-time = { version = "0.3.47", optional = true }
 # Pinned to fix RUSTSEC-2026-0007; used transitively by many HTTP/async crates.
 bytes = "1.11.1"
 

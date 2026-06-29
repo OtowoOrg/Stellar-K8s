@@ -23,7 +23,7 @@
 	docker-build docker-build-ci docker-multiarch \
 	dev-setup pre-commit pre-commit-install run run-local run-dev \
 	install-crd apply-samples crd-gen regenerate completions \
-	helm-lint link-check changelog \
+	helm-lint link-check link-check-all changelog \
 	generate-api-docs check-api-docs \
 	third-party-licenses check-third-party-licenses \
 	benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health \
@@ -175,9 +175,19 @@ docker-multiarch: ## Build multi-arch Docker image
 
 # ── Quality & Health ───────────────────────────────────────────────────────────
 
-link-check: ## Check markdown links
+link-check: ## Check markdown links (internal anchors + relative paths)
 	@echo "→ Running markdown link checker..."
 	@python3 scripts/check-links.py
+
+link-check-all: ## Repo-wide link check (markdown + source + configs) via lychee
+	@echo "→ Running repo-wide link checker (lychee)..."
+	@command -v lychee >/dev/null 2>&1 || { \
+		echo "lychee not found. Install with: cargo install lychee --locked"; \
+		exit 1; \
+	}
+	@lychee --config lychee.toml --no-progress --cache \
+		'./**/*.md' './**/*.rs' './**/*.toml' \
+		'./**/*.yaml' './**/*.yml' './**/*.sh' './**/*.html'
 
 changelog: ## Generate/update CHANGELOG.md using git-cliff
 	@echo "→ Generating changelog..."

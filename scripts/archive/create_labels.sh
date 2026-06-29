@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=lib/common.sh
-source "$(dirname "$0")/lib/common.sh"
+# shellcheck source=../lib/batch.sh
+source "$(dirname "$0")/../lib/batch.sh"
 
 # Create all necessary labels for Stellar Wave issues
 # Uses || true to ignore errors if label already exists
 
-echo "Creating labels..."
+echo "Creating labels.."
 
 gh label create --repo "$REPO" rust --color DEA584 --description "Rust related" || true
 gh label create --repo "$REPO" soroban --color 7F129E --description "Soroban smart contracts" || true
@@ -66,7 +66,7 @@ if [[ "${1:-}" == "--source-only" ]]; then
   return 0 2>/dev/null || exit 0
 fi
 
-echo "Creating labels..."
+echo "Creating labels.."
 
 gh label create "$LABEL_RUST"          --color DEA584 --description "Rust related"              || true
 gh label create "$LABEL_SOROBAN"       --color 7F129E --description "Soroban smart contracts"    || true

@@ -269,7 +269,7 @@ impl LoadModelingController {
             mean_memory,
             std_memory,
             mean_request_rate,
-            trend: trend.max(-1.0).min(1.0),
+            trend: trend.clamp(-1.0, 1.0),
         })
     }
 
@@ -290,7 +290,7 @@ impl LoadModelingController {
 
         let mut predictions = Vec::new();
         for i in 1..=horizon_minutes {
-            let predicted_value = (last_value + momentum * (i as f32)).max(0.0).min(100.0);
+            let predicted_value = (last_value + momentum * (i as f32)).clamp(0.0, 100.0);
             let lower = (predicted_value - 5.0).max(0.0);
             let upper = (predicted_value + 5.0).min(100.0);
 
@@ -329,7 +329,7 @@ impl LoadModelingController {
         for i in 1..=horizon_minutes {
             let seasonal_factor =
                 ((i as f32 / 60.0) * 2.0 * std::f64::consts::PI as f32).sin() * 10.0;
-            let predicted_value = (window_avg + seasonal_factor).max(0.0).min(100.0);
+            let predicted_value = (window_avg + seasonal_factor).clamp(0.0, 100.0);
             let lower = (predicted_value - 8.0).max(0.0);
             let upper = (predicted_value + 8.0).min(100.0);
 

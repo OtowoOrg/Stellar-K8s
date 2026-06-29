@@ -23,6 +23,8 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write   # required for SLSA provenance attestation
+  attestations: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -130,6 +132,18 @@ jobs:
           tar czf ${{ matrix.name }}.tar.gz stellar-operator
           sha256sum ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.tar.gz.sha256
 
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          artifact-name: ${{ matrix.name }}.sbom.json
+          format: cyclonedx-json
+          path: target/${{ matrix.target }}/release/stellar-operator
+
+      - name: Attest binary provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: target/${{ matrix.target }}/release/${{ matrix.name }}.tar.gz
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -200,6 +214,7 @@ jobs:
 
       - name: Build and push (fallback — only when sha image unavailable)
         if: steps.retag.outputs.retagged != 'true'
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -209,6 +224,20 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Generate container SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}
+          artifact-name: container-${{ needs.validate.outputs.version }}.sbom.json
+          format: cyclonedx-json
+
+      - name: Attest container image provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest || steps.retag.outputs.digest }}
+          push-to-registry: true
 
   # ── Security scan ──────────────────────────────────────────────────────────
   security:
@@ -290,7 +319,29 @@ jobs:
           find artifacts/ -name "*.tar.gz" -exec cp {} release-assets/ \;
           find artifacts/ -name "*.sha256" -exec cp {} release-assets/ \;
           find artifacts/ -name "*.tgz" -exec cp {} release-assets/ \;
+          find artifacts/ -name "*.sbom.json" -exec cp {} release-assets/ \;
           cd release-assets && sha256sum * > SHA256SUMS
+
+      - name: Verify checksums
+        run: |
+          cd release-assets
+          echo "Verifying checksums..."
+          while IFS= read -r line; do
+            expected_hash=$(echo "$line" | awk '{print $1}')
+            filename=$(echo "$line" | awk '{print $2}')
+            # Skip the SHA256SUMS file itself and individual .sha256 sidecars
+            [[ "$filename" == "SHA256SUMS" ]] && continue
+            [[ "$filename" == *.sha256 ]] && continue
+            if [[ -f "$filename" ]]; then
+              actual_hash=$(sha256sum "$filename" | awk '{print $1}')
+              if [[ "$expected_hash" != "$actual_hash" ]]; then
+                echo "::error::Checksum mismatch for $filename"
+                exit 1
+              fi
+              echo "  ✓ $filename"
+            fi
+          done < SHA256SUMS
+          echo "All checksums verified."
 
       - name: Generate changelog
         run: |

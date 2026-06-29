@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${REPO:-OtowoOrg/Stellar-K8s}"
+# shellcheck source=../lib/batch.sh
+source "$(dirname "$0")/../lib/batch.sh"
 
-echo "Updating epic issues to remove 'Estimated Effort' sections..."
+echo "Updating epic issues to remove 'Estimated Effort' sections.."
 
 # Get all epic issues
 ISSUE_NUMBERS=(871 870 869 868 867 866 865 864 863 862 861 860)
 
 for issue_num in "${ISSUE_NUMBERS[@]}"; do
-  echo "Processing issue #$issue_num..."
+  echo "Processing issue #$issue_num.."
   
   # Get current issue body
   body=$(gh issue view "$issue_num" --repo "$REPO" --json body -q .body)

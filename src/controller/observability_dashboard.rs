@@ -3,18 +3,16 @@
 //! Provides a comprehensive dashboard for visualizing observability data,
 //! anomalies, alerts, and incident timelines with drill-down capabilities.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{Html, IntoResponse, Json},
+    response::{Html, Json},
     routing::{get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 
 use super::observability_pipeline::ObservabilityPipeline;
 

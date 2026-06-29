@@ -1,16 +1,17 @@
 .PHONY: help \
-	fmt fmt-check lint audit \
+	fmt fmt-check lint lint-strict audit \
 	build test ci-local quick watch \
 	docker-build docker-build-ci docker-multiarch \
 	dev-setup pre-commit pre-commit-install run-local run-dev \
-	install-crd apply-samples crd-gen completions \
+	install-crd apply-samples crd-gen regenerate completions \
 	helm-lint link-check changelog \
 	generate-api-docs check-api-docs \
+	third-party-licenses check-third-party-licenses \
 	benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health \
 	benchmark-webhook-compare benchmark-webhook-save benchmark-all \
 	compose-up compose-dev compose-down compose-logs \
 	bundle bundle-build \
-	quickstart validate preflight all \
+	quickstart validate preflight test-preflight test-shell all \
 	clean
 
 # Default target
@@ -66,6 +67,30 @@ lint: ## Run clippy
 		-A clippy::approx_constant \
 		-A clippy::should_implement_trait
 
+lint-strict: ## Run clippy (adds complexity checks on top of lint; same base exceptions)
+	@echo "→ Running clippy (strict mode)..."
+	@K8S_OPENAPI_ENABLED_VERSION=1.30 $(CARGO) clippy --workspace --all-targets \
+		--features "rest-api,metrics,admission-webhook,k8s-v1-30,reconciler-fuzz" -- \
+		-D clippy::correctness \
+		-D clippy::suspicious \
+		-D clippy::perf \
+		-D clippy::style \
+		-D clippy::complexity \
+		-A clippy::new_without_default \
+		-A clippy::match_like_matches_macro \
+		-A clippy::match_result_ok \
+		-A clippy::needless_borrow \
+		-A clippy::get_first \
+		-A clippy::format_in_format_args \
+		-A clippy::single_match \
+		-A clippy::redundant_closure \
+		-A clippy::items_after_test_module \
+		-A clippy::approx_constant \
+		-A clippy::should_implement_trait \
+		-A clippy::cognitive_complexity \
+		-A clippy::too_many_lines \
+		-A clippy::type_complexity
+
 audit: ## Security audit
 	@echo "→ Running security audit..."
 	@command -v cargo-audit >/dev/null 2>&1 || cargo install --locked cargo-audit
@@ -108,6 +133,12 @@ changelog: ## Generate/update CHANGELOG.md using git-cliff
 ci-local: fmt-check lint audit test build link-check ## Run full CI locally
 	@echo ""
 	@echo "✓ All CI checks passed!"
+
+third-party-licenses: ## Regenerate THIRD_PARTY_LICENSES.md from Cargo dependency tree
+	@bash scripts/generate-third-party-licenses.sh
+
+check-third-party-licenses: ## Verify THIRD_PARTY_LICENSES.md is up to date (used in CI)
+	@bash scripts/generate-third-party-licenses.sh --check
 
 health: ## Run common repository health checks (format, lint, test, docs)
 	@bash scripts/repo-health.sh
@@ -153,6 +184,23 @@ crd-gen: ## Generate CRDs
 	@echo "→ Generating CRDs..."
 	@$(CARGO) run --bin crdgen > config/crd/stellarnode-crd.yaml
 
+regenerate: crd-gen generate-api-docs bundle ## Regenerate all derived artifacts (CRDs, API docs, OLM bundle)
+	@echo "✓ All generated artifacts are up to date"
+	@echo "  See docs/development/regeneration-guide.md for details"
+
+preflight: ## Check that required tools are installed (pass --labels to also verify repo labels)
+	@bash scripts/preflight.sh $(ARGS)
+
+test-preflight: ## Run bats unit tests for scripts/preflight.sh
+	@echo "→ Running preflight bats tests..."
+	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
+	@bats scripts/tests/preflight.bats
+
+test-shell: ## Run bats unit tests for shared shell helpers
+	@echo "→ Running shell helper bats tests..."
+	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
+	@bats scripts/tests/common.bats
+
 completions: ## Generate shell completion scripts
 	@echo "→ Generating shell completions..."
 	@mkdir -p completions
@@ -166,7 +214,10 @@ completions: ## Generate shell completion scripts
 
 helm-lint: ## Helm lint check
 	@echo "→ Linting Helm charts..."
-	helm lint charts/stellar-operator
+	helm lint charts/stellar-operator --strict
+	@echo "→ Validating Helm template rendering..."
+	helm template stellar-operator charts/stellar-operator > /dev/null
+	@echo "✓ Helm charts passed linting and validation"
 
 dev-setup: ## Setup dev environment
 	rustup update stable
@@ -176,6 +227,7 @@ dev-setup: ## Setup dev environment
 	@command -v pre-commit >/dev/null 2>&1 || pip install pre-commit
 	pre-commit install
 	pre-commit install --hook-type pre-push
+	@$(MAKE) preflight
 
 watch: ## Watch and rebuild
 	cargo watch -x check -x test -x build
@@ -263,15 +315,6 @@ validate: ## Run local validation script (format + lint + compile)
 
 # For the full contributor health gate (format + lint + tests + docs), use:
 #   make health
-
-preflight: ## Validate required local tools are installed (docker, kind, kubectl, helm, cargo)
-	@echo "→ Running local development preflight checks..."
-	@command -v docker  >/dev/null 2>&1 && echo "  ✓ docker"  || echo "  ✗ docker  — Install: https://docs.docker.com/engine/install/"
-	@command -v kind    >/dev/null 2>&1 && echo "  ✓ kind"    || echo "  ✗ kind    — Install: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
-	@command -v kubectl >/dev/null 2>&1 && echo "  ✓ kubectl" || echo "  ✗ kubectl — Install: https://kubernetes.io/docs/tasks/tools/"
-	@command -v helm    >/dev/null 2>&1 && echo "  ✓ helm"    || echo "  ✗ helm    — Install: https://helm.sh/docs/intro/install/"
-	@command -v cargo   >/dev/null 2>&1 && echo "  ✓ cargo"   || echo "  ✗ cargo   — Install: https://rustup.rs/"
-	@echo "→ Preflight complete. Fix any ✗ items above before continuing."
 
 all: ci-local docker-build ## Full build pipeline
 

@@ -3,7 +3,6 @@
 //! The StellarGitOpsConfig CRD enables GitOps integration with ArgoCD and Flux CD
 //! for declarative infrastructure management and progressive delivery.
 
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

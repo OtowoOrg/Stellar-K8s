@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=lib/common.sh
-source "$(dirname "$0")/lib/common.sh"
+# shellcheck source=../lib/batch.sh
+source "$(dirname "$0")/../lib/batch.sh"
 
 # Update Stellar Wave Issues with Points, Criteria, and Resources
 # Updates issues #2 through #11
 
-echo "Updating Stellar Wave issues..."
+echo "Updating Stellar Wave issues.."
 
 # Issue 2: Unit Tests (Trivial - 100 Points)
 gh issue edit 2 --repo "$REPO" \

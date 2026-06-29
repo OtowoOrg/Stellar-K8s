@@ -21,7 +21,7 @@ spec:
   nodeType: Horizon
 
   # Target network
-  network: Testnet
+  network: testnet
 
   # Container version
   version: "v21.0.0"

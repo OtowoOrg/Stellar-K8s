@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=lib/common.sh
-source "$(dirname "$0")/lib/common.sh"
+# shellcheck source=../lib/batch.sh
+source "$(dirname "$0")/../lib/batch.sh"
 
 # Stellar-K8s Wave Issue Creation Script - BATCH 6
 # 10 Elite Engineering Issues (200 pts each)
 
-# Source shared retry/backoff and dry-run helper.
-# shellcheck source=lib/common.sh
 
 # Helper to create label if not exists
 create_label() {
   gh label create --repo "$REPO" "$1" --color "$2" --description "$3" || true
 }
 
-echo "Ensuring labels exist..."
+echo "Ensuring labels exist.."
 create_label "stellar-wave" "1d76db" "Stellar Wave Program"
 create_label "architecture" "0e8a16" "Architecture design"
 create_label "reliability" "d93f0b" "Reliability and stability"
@@ -24,7 +22,7 @@ create_label "kubernetes" "326ce5" "Kubernetes related"
 create_label "performance" "bfd4f2" "Performance optimizations"
 create_label "automation" "ffb3b3" "Automated workflows"
 
-echo "Creating Batch 6 (Elite) issues..."
+echo "Creating Batch 6 (Elite) issues.."
 
 # 1. Cross-Region Multi-Cluster Disaster Recovery (High - 200 pts)
 create_issue \

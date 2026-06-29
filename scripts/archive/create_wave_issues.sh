@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=lib/common.sh
-source "$(dirname "$0")/lib/common.sh"
+# shellcheck source=../lib/batch.sh
+source "$(dirname "$0")/../lib/batch.sh"
 
 # Stellar-K8s Wave Issue Creation Script
 # Uses gh CLI to create issues defined in WAVE_ISSUES.md
 
-# Source shared retry/backoff and dry-run helper.
-# shellcheck source=lib/common.sh
 
 # Helper to create label if not exists
 create_label() {
   gh label create --repo "$REPO" "$1" --color "$2" --description "$3" || true
 }
 
-echo "Ensuring labels exist..."
+echo "Ensuring labels exist.."
 create_label "stellar-wave" "1d76db" "Stellar Wave Program"
 create_label "good-first-issue" "7057ff" "Good for newcomers"
 create_label "testing" "C2E0C6" "Tests"
@@ -32,7 +30,7 @@ create_label "soroban" "7F129E" "Soroban smart contracts"
 create_label "reliability" "d93f0b" "Reliability and stability"
 create_label "architecture" "0e8a16" "Architecture design"
 
-echo "Creating Stellar Wave issues..."
+echo "Creating Stellar Wave issues.."
 
 # 1. Add unit tests for StellarNodeSpec validation
 create_issue \

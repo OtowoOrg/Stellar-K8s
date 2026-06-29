@@ -25,7 +25,7 @@ metadata:
     # stellar.org/request-snapshot: "true"
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   replicas: 1
 

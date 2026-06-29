@@ -5,7 +5,7 @@
 /// connection pooling, and dynamic backend discovery.
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
+use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -14,20 +14,15 @@ use tracing::{debug, info, warn};
 // ── Algorithm ────────────────────────────────────────────────────────────────
 
 /// Supported load-balancing algorithms.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LbAlgorithm {
     RoundRobin,
+    #[default]
     LeastConnections,
     WeightedRoundRobin,
     ConsistentHash,
     Random,
-}
-
-impl Default for LbAlgorithm {
-    fn default() -> Self {
-        Self::LeastConnections
-    }
 }
 
 // ── Backend ───────────────────────────────────────────────────────────────────

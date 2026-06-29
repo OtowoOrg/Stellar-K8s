@@ -35,23 +35,23 @@ cargo run
 kubectl proxy --port=8001
 
 # Run benchmarks
-./benchmarks/scripts/run-benchmarks.sh
+./benchmarks/run-regression-test.sh
 ```
 
 ### Running with Custom Options
 
 ```bash
 # Compare against specific baseline version
-./benchmarks/scripts/run-benchmarks.sh --baseline v1.0.0
+./benchmarks/run-regression-test.sh --baseline v1.0.0
 
 # Use custom regression threshold (15% instead of 10%)
-./benchmarks/scripts/run-benchmarks.sh --threshold 15
+./benchmarks/run-regression-test.sh --threshold 15
 
 # Update baseline after successful run
-./benchmarks/scripts/run-benchmarks.sh --update-baseline
+./benchmarks/run-regression-test.sh --update-baseline
 
 # Verbose output
-./benchmarks/scripts/run-benchmarks.sh --verbose
+./benchmarks/run-regression-test.sh --verbose
 ```
 
 ## Benchmark Scenarios
@@ -303,7 +303,7 @@ export const options = {
 
 ```bash
 # Create initial baseline
-./benchmarks/scripts/run-benchmarks.sh --update-baseline
+./benchmarks/run-regression-test.sh --update-baseline
 ```
 
 ### "Connection refused to operator"

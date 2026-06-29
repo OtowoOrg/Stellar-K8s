@@ -11,7 +11,7 @@ use chrono::Utc;
 use kube::Client;
 
 use crate::cli::ExportComplianceArgs;
-use stellar_k8s::controller::audit_log::{AuditEntry, AuditLog};
+use stellar_k8s::controller::audit_log::AuditEntry;
 use stellar_k8s::controller::compliance_export::{self, DRComplianceSummary};
 use stellar_k8s::crd::DisasterRecoveryPolicy;
 use stellar_k8s::error::{Error, Result};

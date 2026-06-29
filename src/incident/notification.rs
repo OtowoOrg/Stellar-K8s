@@ -81,10 +81,10 @@ impl NotificationManager {
             return;
         }
         let msg = format!(
-            "🚨 *[{}] Incident Created*: {} ({})\nAffected: {}",
+            "🚨 *[{}] Incident Created*: {} ({:?})\nAffected: {}",
             incident.id,
             incident.title,
-            format!("{:?}", incident.severity),
+            incident.severity,
             incident.affected_nodes.join(", ")
         );
         self.send_all(&msg, incident).await;

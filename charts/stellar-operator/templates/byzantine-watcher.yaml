@@ -63,7 +63,7 @@ spec:
         {{- toYaml $root.Values.podSecurityContext | nindent 8 }}
       containers:
         - name: watcher
-          image: "{{ include \"stellar-operator.componentImage\" (dict \"root\" $root \"repository\" $root.Values.byzantineWatcher.image.repository \"tag\" $root.Values.byzantineWatcher.image.tag) }}"
+          image: {{ include "stellar-operator.componentImage" (dict "root" $root "repository" $root.Values.byzantineWatcher.image.repository "tag" $root.Values.byzantineWatcher.image.tag) }}
           imagePullPolicy: {{ $root.Values.byzantineWatcher.image.pullPolicy | default $root.Values.image.pullPolicy }}
           command: ["/stellar-watcher"]
           env:

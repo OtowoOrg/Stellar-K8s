@@ -60,14 +60,11 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "stellar-operator.serviceAccountName" $root }}
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        fsGroup: 65532
+        {{- toYaml $root.Values.podSecurityContext | nindent 8 }}
       containers:
         - name: watcher
-          image: "{{ $root.Values.byzantineWatcher.image.repository | default $root.Values.image.repository }}:{{ $root.Values.byzantineWatcher.image.tag | default $root.Values.image.tag | default $root.Chart.AppVersion }}"
-          imagePullPolicy: {{ $root.Values.byzantineWatcher.image.pullPolicy | default "IfNotPresent" }}
+          image: "{{ include \"stellar-operator.componentImage\" (dict \"root\" $root \"repository\" $root.Values.byzantineWatcher.image.repository \"tag\" $root.Values.byzantineWatcher.image.tag) }}"
+          imagePullPolicy: {{ $root.Values.byzantineWatcher.image.pullPolicy | default $root.Values.image.pullPolicy }}
           command: ["/stellar-watcher"]
           env:
             - name: WATCHER_ID
@@ -111,11 +108,7 @@ spec:
           resources:
             {{- toYaml ($root.Values.byzantineWatcher.resources | default (dict "limits" (dict "cpu" "100m" "memory" "64Mi") "requests" (dict "cpu" "25m" "memory" "32Mi"))) | nindent 12 }}
           securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
+            {{- toYaml $root.Values.securityContext | nindent 12 }}
       {{- with $root.Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

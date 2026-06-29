@@ -176,18 +176,48 @@ jobs:
         if: needs.changes.outputs.rust_core == 'true'
         run: make lint-strict
 
-  # ── 3.5. Link Check ──────────────────────────────────────────────────────────
+  # ── 3.5. Link Check (repository-wide: docs + examples) ──────────────────────
   link-check:
-    name: Markdown Link Check
+    name: Repository-Wide Link Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: Install markdown-link-check
         run: npm install -g markdown-link-check
 
-      - name: Run link check
+      - name: Check local links in docs and examples
+        run: python3 scripts/check-links.py --dirs docs examples
+
+      - name: Check all markdown files repository-wide
         run: find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/target/*" -not -path "*/.kiro/*" -exec markdown-link-check -c mlc_config.json -q {} +
+
+  # ── 3.6. Shell script tests ───────────────────────────────────────────────────
+  shell-tests:
+    name: Shell Script Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install bats
+        run: sudo apt-get install -y bats
+
+      - name: Run shell helper tests
+        run: bats scripts/tests/common.bats
+
+      - name: Run preflight tests
+        run: bats scripts/tests/preflight.bats
+
+      - name: Run validate tests
+        run: bats scripts/tests/validate.bats
+
+      - name: Run repo-health tests
+        run: bats scripts/tests/repo_health.bats
 
   # ── 4. Security audit (only when deps change) ────────────────────────────────
   security-audit:
@@ -340,21 +370,6 @@ jobs:
             exit 1
           fi
           echo "OK: docs/api-reference.md is up to date."
-
-  # ── 7b. Docs link check ───────────────────────────────────────────────────────
-  docs-link-check:
-    name: Docs Link Checker
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Run link checker
-        run: python3 scripts/check-links.py
 
   # ── 8. Examples smoke test ────────────────────────────────────────────────────
   examples-smoke-test:

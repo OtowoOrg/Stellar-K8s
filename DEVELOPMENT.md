@@ -38,57 +38,103 @@ The following one-off scripts were removed as part of repository hygiene (#1002)
 
 Before you begin, ensure you have the following tools installed:
 
+> **macOS users:** run `scripts/setup-mac.sh` for a one-command automated setup of all required tools and the local kind cluster.
+
 ### Required Tools
 
-1. **Rust** (1.88+ required, 1.93+ recommended)
+1. **Rust 1.92+** (CI pins 1.92; any 1.92+ version works locally)
+
    ```bash
-   # Install via rustup (recommended)
+   # All platforms — install via rustup
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-   # Verify installation
-   rustc --version
+   # Verify
+   rustc --version   # should print 1.92.x or higher
    cargo --version
    ```
 
-2. **Docker** (for building container images)
-   ```bash
-   # Install Docker Engine
-   # See: https://docs.docker.com/engine/install/
+2. **Docker** (for building container images and running kind)
 
-   # Verify installation
+   | Platform | Install |
+   |----------|---------|
+   | macOS | `brew install --cask docker` or [Docker Desktop](https://docs.docker.com/desktop/install/mac-install/) |
+   | Linux | [docs.docker.com/engine/install](https://docs.docker.com/engine/install/) |
+   | Windows | [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/) (WSL 2 backend recommended) |
+
+   ```bash
+   # Verify
    docker --version
-   docker ps  # Should not error
+   docker ps   # should not error (daemon must be running)
    ```
 
-3. **kind** (Kubernetes in Docker - for local testing)
-   ```bash
-   # Linux/macOS
-   curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-   chmod +x ./kind
-   sudo mv ./kind /usr/local/bin/kind
+3. **kind** (Kubernetes in Docker — for local cluster testing)
 
-   # Verify installation
+   ```bash
+   # macOS
+   brew install kind
+
+   # Linux
+   curl -Lo ./kind "https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64"
+   chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+
+   # Windows (PowerShell — run as Administrator)
+   choco install kind
+   # or: winget install Kubernetes.kind
+
+   # Verify
    kind version
    ```
 
 4. **kubectl** (Kubernetes CLI)
+
    ```bash
+   # macOS
+   brew install kubectl
+
    # Linux
    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-   chmod +x kubectl
-   sudo mv kubectl /usr/local/bin/
+   chmod +x kubectl && sudo mv kubectl /usr/local/bin/
 
-   # Verify installation
+   # Windows (PowerShell — run as Administrator)
+   choco install kubernetes-cli
+   # or: winget install Kubernetes.kubectl
+
+   # Verify
    kubectl version --client
    ```
 
 5. **Helm** (Kubernetes package manager)
+
    ```bash
-   # Install Helm 3
+   # macOS
+   brew install helm
+
+   # Linux
    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-   # Verify installation
+   # Windows (PowerShell — run as Administrator)
+   choco install kubernetes-helm
+   # or: winget install Helm.Helm
+
+   # Verify
    helm version
+   ```
+
+6. **Python 3.9+** (required for `make link-check` and API doc generation)
+
+   ```bash
+   # macOS
+   brew install python
+
+   # Linux (Debian/Ubuntu)
+   sudo apt-get install -y python3
+
+   # Windows
+   winget install Python.Python.3
+   # or download from https://python.org/downloads/
+
+   # Verify
+   python3 --version
    ```
 
 ### Optional Tools
@@ -98,9 +144,16 @@ Before you begin, ensure you have the following tools installed:
   cargo install cargo-watch
   ```
 
-- **k6**: For running performance benchmarks
+- **k6**: Load testing (required only for `make benchmark`)
   ```bash
-  # See: https://k6.io/docs/get-started/installation/
+  # macOS
+  brew install k6
+  # Linux/Windows — see https://k6.io/docs/get-started/installation/
+  ```
+
+- **git-cliff**: Changelog generation (required only for `make changelog` / `make release-notes`)
+  ```bash
+  cargo install git-cliff
   ```
 
 ---

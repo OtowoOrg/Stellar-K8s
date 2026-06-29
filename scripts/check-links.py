@@ -173,26 +173,48 @@ def check_external_link(url, timeout=5):
         return False, f"Error: {e}"
 
 
+EXCLUDED_DIRS = {'.git', 'target', '.gemini', '.kiro', 'node_modules', '.github'}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Check markdown links in the repository")
-    parser.add_argument("--dir", default=".", help="Root directory to search for markdown files")
+    parser.add_argument("--dir", default=".", help="Repository root (used for resolving relative links)")
+    parser.add_argument("--dirs", nargs="+", metavar="DIR", default=None,
+                        help="Subdirectories to scan for markdown files (default: scan entire --dir root). "
+                             "Example: --dirs docs examples")
     parser.add_argument("--check-external", action="store_true", help="Check external links")
     parser.add_argument("--exclude", nargs="*", default=[], help="Patterns of directories/files to exclude")
     args = parser.parse_args()
 
     root_dir = os.path.abspath(args.dir)
     exclude_patterns = args.exclude
-    
-    md_files = []
-    for root, dirs, files in os.walk(root_dir):
-        # Skip hidden, output and config/CI directories
-        dirs[:] = [d for d in dirs if d not in ['.git', 'target', '.gemini', '.kiro', 'node_modules', '.github'] and not any(p in os.path.join(root, d) for p in exclude_patterns)]
-        for file in files:
-            if file.endswith('.md'):
-                full_path = os.path.join(root, file)
-                if not any(p in full_path for p in exclude_patterns):
-                    md_files.append(full_path)
 
+    if args.dirs:
+        scan_roots = [
+            d if os.path.isabs(d) else os.path.join(root_dir, d)
+            for d in args.dirs
+        ]
+        scanned_label = ", ".join(args.dirs)
+    else:
+        scan_roots = [root_dir]
+        scanned_label = args.dir
+
+    md_files = []
+    for scan_root in scan_roots:
+        for root, dirs, files in os.walk(scan_root):
+            # Skip hidden, output and config/CI directories
+            dirs[:] = [
+                d for d in dirs
+                if d not in EXCLUDED_DIRS
+                and not any(p in os.path.join(root, d) for p in exclude_patterns)
+            ]
+            for file in files:
+                if file.endswith('.md'):
+                    full_path = os.path.join(root, file)
+                    if not any(p in full_path for p in exclude_patterns):
+                        md_files.append(full_path)
+
+    print(f"Scanning: {scanned_label}")
     print(f"Found {len(md_files)} markdown files to check.")
     
     total_links = 0

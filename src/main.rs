@@ -7,6 +7,7 @@ use crate::commands::benchmark::run_benchmark_controller_cmd;
 use crate::commands::check_crd::run_check_crd;
 use crate::commands::doctor::run_doctor;
 use crate::commands::export_compliance::run_export_compliance;
+use crate::commands::health_check::run_health_check;
 use crate::commands::info::run_info;
 use crate::commands::operator::run_operator;
 use crate::commands::runbook::run_generate_runbook;
@@ -118,6 +119,7 @@ async fn main() -> Result<(), Error> {
         }
         Commands::Webhook(webhook_args) => return run_webhook(webhook_args).await,
         Commands::Doctor(doctor_args) => return run_doctor(doctor_args).await,
+        Commands::HealthCheck(hc_args) => return run_health_check(hc_args),
         Commands::Benchmark(benchmark_args) => {
             return run_benchmark_controller_cmd(benchmark_args).await
         }

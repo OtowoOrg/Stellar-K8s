@@ -367,10 +367,19 @@ cargo test --test e2e_kind -- --ignored
 
 ## Useful Make Targets
 
-The Makefile provides convenient shortcuts for common tasks:
+The Makefile provides convenient shortcuts for common tasks. See below for the **canonical command flow** — the recommended order for common development tasks.
 
 ```bash
-make help          # Show all available targets
+make help          # Show all available targets and canonical flow
+```
+
+### Canonical Command Flow
+
+```bash
+make dev-setup     # One-time environment setup (Rust toolchain, tools, pre-commit hooks)
+make quick         # Fast pre-commit check (fmt-check + cargo check)
+make ci-local      # Full CI pipeline locally (fmt-check + lint + audit + test + build + link-check)
+make health        # Full contributor health gate
 ```
 
 ### Development Commands
@@ -380,7 +389,8 @@ make dev-setup     # One-time setup: install Rust components and tools
 make fmt           # Auto-format all code
 make fmt-check     # Check if code is formatted (CI uses this)
 make lint          # Run clippy linter
-make audit         # Run security audit on dependencies
+make lint-strict   # Run clippy with complexity checks (stricter)
+make audit         # Security audit on dependencies
 make test          # Run all tests
 make build         # Build release binaries
 make clean         # Remove build artifacts
@@ -393,7 +403,17 @@ make preflight     # Validate all required tools are installed (run this first)
 make health        # Recommended: format + lint + tests + docs (+ shellcheck)
 make quick         # Fast pre-commit check (format + compile)
 make validate      # Fast compile path: format + lint + compile check (no tests)
-make ci-local      # Full CI pipeline locally (format + lint + audit + test + build)
+make ci-local      # Full CI pipeline locally (fmt-check + lint + audit + test + build + link-check)
+```
+
+### Security
+
+```bash
+make audit          # Run cargo-audit on dependencies
+make security-audit # Alias for audit
+make security-scan  # Run audit + shellcheck
+make shellcheck     # Run shellcheck on all shell scripts
+make security-all   # Run all security checks
 ```
 
 ### Kubernetes Operations
@@ -401,12 +421,15 @@ make ci-local      # Full CI pipeline locally (format + lint + audit + test + bu
 ```bash
 make install-crd   # Install CRDs to current cluster
 make apply-samples # Apply sample StellarNode resources
+make crd-gen       # Generate CRDs from Rust types
+make regenerate    # Regenerate all derived artifacts (CRDs, API docs, OLM bundle)
 ```
 
 ### Running the Operator
 
 ```bash
-make run           # Build and run operator (release mode)
+make run-local     # Build and run operator from release binary
+make run           # Alias for run-local
 make run-dev       # Run with hot reload (debug mode)
 make watch         # Watch mode: rebuild on changes
 ```
@@ -414,20 +437,24 @@ make watch         # Watch mode: rebuild on changes
 ### Docker
 
 ```bash
-make docker-build      # Build Docker image (local arch)
+make docker-build      # Build Docker image (local arch, fast mode using host binaries)
+make docker-build-ci   # Build Docker image (CI mode, builds binaries in container)
 make docker-multiarch  # Build multi-arch image (amd64 + arm64)
 ```
 
 ### Performance
 
 ```bash
-make benchmark     # Run k6 performance benchmarks
+make benchmark          # Run k6 performance benchmarks
+make benchmark-all      # Run all benchmarks
+make benchmark-webhook  # Run webhook benchmarks
 ```
 
 ### Complete Pipeline
 
 ```bash
-make all           # Run full CI + Docker build
+make all           # Run CI checks + build + Docker image
+make quickstart    # End-to-end local quickstart (kind cluster)
 ```
 
 ---

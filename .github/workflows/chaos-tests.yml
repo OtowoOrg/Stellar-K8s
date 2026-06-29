@@ -54,7 +54,7 @@ jobs:
     name: Build Operator Image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
@@ -73,7 +73,7 @@ jobs:
             | gzip > stellar-operator-chaos.tar.gz
 
       - name: Upload image artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: chaos-operator-image
           path: stellar-operator-chaos.tar.gz
@@ -88,10 +88,10 @@ jobs:
     env:
       GROUP: "A"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download operator image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: chaos-operator-image
 
@@ -225,7 +225,7 @@ jobs:
 
       - name: Upload Group A results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: chaos-results-group-a-${{ github.run_id }}
           path: /tmp/chaos-results/
@@ -248,10 +248,10 @@ jobs:
     env:
       GROUP: "B"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download operator image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: chaos-operator-image
 
@@ -397,7 +397,7 @@ jobs:
 
       - name: Upload Group B results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: chaos-results-group-b-${{ github.run_id }}
           path: /tmp/chaos-results/
@@ -420,10 +420,10 @@ jobs:
     env:
       GROUP: "C"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download operator image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: chaos-operator-image
 
@@ -604,7 +604,7 @@ jobs:
 
       - name: Upload Group C results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: chaos-results-group-c-${{ github.run_id }}
           path: /tmp/chaos-results/
@@ -625,29 +625,29 @@ jobs:
     needs: [chaos-group-a, chaos-group-b, chaos-group-c]
     if: always()
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Download Group A results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: chaos-results-group-a-${{ github.run_id }}
           path: /tmp/chaos-results/
         continue-on-error: true
 
       - name: Download Group B results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: chaos-results-group-b-${{ github.run_id }}
           path: /tmp/chaos-results/
         continue-on-error: true
 
       - name: Download Group C results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: chaos-results-group-c-${{ github.run_id }}
           path: /tmp/chaos-results/
@@ -674,7 +674,7 @@ jobs:
           echo "score=$SCORE" >> "$GITHUB_OUTPUT"
 
       - name: Upload resilience report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: chaos-resilience-report-${{ github.run_id }}
           path: |

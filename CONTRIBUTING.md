@@ -192,13 +192,22 @@ make dev-setup
 Both setup scripts are idempotent and print a summary of installed versions.
 
 ### Local checks
+### Local checks — Canonical Workflow
+
+```bash
+make dev-setup     # One-time: install Rust toolchain, tools, and pre-commit hooks
+make quick         # Fast pre-commit check (fmt-check + cargo check)
+make ci-local      # Full CI pipeline (fmt-check + lint + audit + test + build + link-check)
+make health        # Full contributor health gate
+```
+
+Or run individual steps:
 
 ```bash
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-make quick
-make ci-local
+make security-all  # Run audit + shellcheck
 ```
 
 ## 8. Coding Standards

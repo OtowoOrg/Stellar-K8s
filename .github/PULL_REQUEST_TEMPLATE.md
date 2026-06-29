@@ -29,8 +29,9 @@ Please delete options that are not relevant.
 - [ ] I have performed a self-review of my code
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings (`cargo clippy --all-targets --all-features -- -D warnings` passes)
+- [ ] My changes generate no new warnings (`make lint` passes)
 - [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing tests pass locally with my changes (`cargo test`)
+- [ ] New and existing tests pass locally with my changes (`make test`)
+- [ ] Full CI gate passes locally (`make ci-local`)
 - [ ] Any dependent changes have been merged and published in downstream modules
 - [ ] I have signed-off my commits with the Developer Certificate of Origin (DCO) using `git commit -s`

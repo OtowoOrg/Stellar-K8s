@@ -189,6 +189,41 @@ jobs:
       - name: Run link check
         run: find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/target/*" -not -path "*/.kiro/*" -exec markdown-link-check -c mlc_config.json -q {} +
 
+  # ── 3.6. Repo-wide link check (lychee) ───────────────────────────────────────
+  # Repo-wide companion to the markdown-link-check job above. Lychee scans
+  # markdown AND non-markdown files (Rust source comments, YAML, TOML, shell
+  # scripts, HTML) for broken links. Excludes and accept-codes live in
+  # `lychee.toml`. Runs on every push/PR and on a weekly schedule (see the
+  # standalone .github/workflows/link-check.yml) to catch link rot.
+  repo-wide-link-check:
+    name: Repo-Wide Link Check (lychee)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Restore lychee cache
+        uses: actions/cache@v4
+        with:
+          path: .lycheecache
+          key: cache-lychee-${{ github.sha }}
+          restore-keys: cache-lychee-
+
+      - name: Run lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --config lychee.toml
+            --no-progress
+            --cache
+            './**/*.md'
+            './**/*.rs'
+            './**/*.toml'
+            './**/*.yaml'
+            './**/*.yml'
+            './**/*.sh'
+            './**/*.html'
+          fail: true
+
   # ── 4. Security audit (only when deps change) ────────────────────────────────
   security-audit:
     name: Security Audit

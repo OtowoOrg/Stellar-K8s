@@ -204,10 +204,13 @@ Run all unit tests across the workspace:
 
 ```bash
 make test
-
-# Or use cargo directly
-cargo test --workspace --all-features --verbose
 ```
+
+This is the canonical command. It wraps `cargo test` with the project's
+feature set (`rest-api`, `metrics`, `admission-webhook`, `k8s-v1-30`,
+`reconciler-fuzz`) and `K8S_OPENAPI_ENABLED_VERSION=1.30`, matching CI
+exactly. Plain `cargo test --all-features` will **not** produce the same
+result.
 
 This runs **62+ tests** including:
 - 52 `StellarNodeSpec` validation tests (CRD schema validation)
@@ -546,17 +549,23 @@ make quickstart    # End-to-end local quickstart (kind cluster)
 
 ### CI Pipeline Overview
 
-GitHub Actions runs these checks on every PR:
+GitHub Actions runs these checks on every PR. Each one maps to a `make`
+target so you can reproduce CI locally with the same feature flags and
+environment variables:
 
-1. **Security Audit**: `cargo audit --deny unsound`
-2. **Format Check**: `cargo fmt --all --check`
-3. **Lint**: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-4. **Tests**: `cargo test --workspace --all-features --verbose`
-5. **Build**: `cargo build --release --locked`
-6. **Docker Build**: Multi-arch image build
-7. **Security Scan**: Trivy container scan
+1. **Security Audit**: `make audit`
+2. **Format Check**: `make fmt-check`
+3. **Lint**: `make lint`
+4. **Tests**: `make test`
+5. **Build**: `make build`
+6. **Link Check**: `make link-check` (markdown), `make link-check-all` (repo-wide via lychee)
+7. **Docker Build**: Multi-arch image build (`make docker-multiarch`)
+8. **Security Scan**: Trivy container scan
 
-See [.github/CI_COMMANDS.md](.github/CI_COMMANDS.md) for exact commands.
+Run the whole gate locally with `make ci-local`.
+
+See [.github/CI_COMMANDS.md](.github/CI_COMMANDS.md) for the exact `cargo`
+invocations each target wraps.
 
 ---
 
@@ -598,11 +607,8 @@ lsof -i :8080
 **Problem**: `make ci-local` fails on format check
 
 ```bash
-# Auto-fix formatting
+# Auto-fix formatting (canonical)
 make fmt
-
-# Or manually
-cargo fmt --all
 ```
 
 ### Clippy Warnings
@@ -610,11 +616,11 @@ cargo fmt --all
 **Problem**: Clippy reports warnings
 
 ```bash
-# See detailed warnings
-cargo clippy --workspace --all-targets --all-features
+# See detailed warnings (canonical — uses project features)
+make lint
 
-# Auto-fix some issues
-cargo clippy --fix --workspace --all-targets --all-features
+# Strict mode (adds complexity checks)
+make lint-strict
 
 # Allow specific warnings (use sparingly)
 #[allow(clippy::warning_name)]
@@ -737,12 +743,11 @@ make quick                        # Fast pre-commit check
 make validate                     # Format + lint + compile check (no tests)
 make ci-local                     # Full CI validation
 
-# Development
-cargo build                       # Build debug
-cargo build --release             # Build release
-cargo test                        # Run tests
-cargo fmt                         # Format code
-cargo clippy                      # Lint code
+# Development (canonical — prefer make targets to match CI feature flags)
+make build                        # Build release (wraps `cargo build --release --locked`)
+make test                         # Run tests (wraps `cargo test` with project features)
+make fmt                          # Format code (wraps `cargo fmt --all`)
+make lint                         # Lint code (wraps `cargo clippy` with project features)
 
 # Kubernetes
 kind create cluster --name stellar-dev

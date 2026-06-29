@@ -23,7 +23,7 @@
 	docker-build docker-build-ci docker-multiarch \
 	dev-setup pre-commit pre-commit-install run run-local run-dev \
 	install-crd apply-samples crd-gen regenerate completions \
-	helm-lint link-check changelog release-notes \
+	helm-lint link-check link-check-all changelog release-notes \
 	generate-api-docs check-api-docs \
 	third-party-licenses check-third-party-licenses \
 	benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health \
@@ -190,6 +190,16 @@ link-check: ## Check markdown links repository-wide (docs + examples); install m
 	else \
 		echo "  (skipping markdown-link-check; install with: npm install -g markdown-link-check)"; \
 	fi
+
+link-check-all: ## Repo-wide link check (markdown + HTML) via lychee
+	@echo "→ Running repo-wide link checker (lychee)..."
+	@command -v lychee >/dev/null 2>&1 || { \
+		echo "lychee not found. Install with: cargo install lychee --locked"; \
+		exit 1; \
+	}
+	@lychee --config lychee.toml --no-progress --cache \
+		'./**/*.md' './**/*.rs' './**/*.toml' \
+		'./**/*.yaml' './**/*.yml' './**/*.sh' './**/*.html'
 
 changelog: ## Regenerate CHANGELOG.md from full git history (requires git-cliff: cargo install git-cliff)
 	@echo "→ Generating changelog..."

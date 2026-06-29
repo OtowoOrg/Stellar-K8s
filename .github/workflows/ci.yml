@@ -219,6 +219,33 @@ jobs:
       - name: Run repo-health tests
         run: bats scripts/tests/repo_health.bats
 
+  # ── 3.7. Repo-wide link check (lychee) ───────────────────────────────────────
+  # Scans docs (Markdown + HTML) for broken links, anchors, and redirects.
+  # Excludes and accept-codes live in lychee.toml.
+  repo-wide-link-check:
+    name: Repo-Wide Link Check (lychee)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Restore lychee cache
+        uses: actions/cache@v4
+        with:
+          path: .lycheecache
+          key: cache-lychee-${{ github.sha }}
+          restore-keys: cache-lychee-
+
+      - name: Run lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --config lychee.toml
+            --no-progress
+            --cache
+            './**/*.md'
+            './**/*.html'
+          fail: true
+
   # ── 4. Security audit (only when deps change) ────────────────────────────────
   security-audit:
     name: Security Audit

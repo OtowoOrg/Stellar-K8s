@@ -58,7 +58,9 @@ fn fake_kubectl_name() -> &'static str {
 }
 
 fn with_fake_kubectl<T>(f: impl FnOnce(&Path) -> T) -> T {
-    let _guard = env_lock().lock().expect("failed to acquire environment lock");
+    let _guard = env_lock()
+        .lock()
+        .expect("failed to acquire environment lock");
     let test_dir = unique_test_dir();
     fs::create_dir_all(&test_dir).expect("failed to create temp test directory");
 
@@ -116,8 +118,14 @@ fn e2e_test_guard_drop_preserves_cleanup_order() {
             "delete stellarnode node-a -n stellar-a --ignore-not-found=true --timeout=60s --wait=true"
         );
         assert_eq!(lines[1], "delete -f - --ignore-not-found=true");
-        assert_eq!(lines[2], "delete namespace stellar-a --ignore-not-found=true");
-        assert_eq!(lines[3], "delete namespace stellar-b --ignore-not-found=true");
+        assert_eq!(
+            lines[2],
+            "delete namespace stellar-a --ignore-not-found=true"
+        );
+        assert_eq!(
+            lines[3],
+            "delete namespace stellar-b --ignore-not-found=true"
+        );
     });
 }
 

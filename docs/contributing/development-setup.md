@@ -1,6 +1,9 @@
-# Development Setup
+# Documentation Site Development Setup
 
-Learn how to set up a local development environment for building and testing Stellar-K8s documentation.
+> **This page covers setting up the MkDocs documentation site for local preview and editing.**
+> If you want to build and run the Stellar-K8s operator itself, see [DEVELOPMENT.md](../../DEVELOPMENT.md) instead.
+
+Learn how to set up a local environment for building and previewing the Stellar-K8s documentation site.
 
 ## Prerequisites
 

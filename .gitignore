@@ -95,6 +95,9 @@ test_*.rs
 starfield.html
 skills-lock.json
 
+# Generated release notes — regenerate with: make release-notes
+release-notes.md
+
 # Benchmark results — regenerate with: make benchmark-webhook-save
 results/
 

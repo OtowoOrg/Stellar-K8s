@@ -20,7 +20,6 @@ accept = [200, 201, 202, 203, 204, 206, 302, 303, 304, 307, 308, 403, 429]
 
 # Don't fail on a single bad link in flaky paths
 exclude_loopback = true
-exclude_mail = true
 
 # Skip URLs that are templated, internal, or known-flaky
 exclude = [

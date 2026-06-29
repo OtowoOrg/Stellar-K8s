@@ -191,8 +191,11 @@ jobs:
 
   # ── 3.6. Repo-wide link check (lychee) ───────────────────────────────────────
   # Repo-wide companion to the markdown-link-check job above. Lychee scans
-  # markdown AND non-markdown files (Rust source comments, YAML, TOML, shell
-  # scripts, HTML) for broken links. Excludes and accept-codes live in
+  # documentation files (Markdown + HTML) for broken links — anchors, redirects,
+  # and rot. Source files (*.rs, *.toml, *.yaml, *.sh) are intentionally NOT
+  # scanned: their URL string literals are K8s service DNS, cloud metadata
+  # endpoints, and format-string fragments that lychee cannot reach from CI and
+  # that aren't meaningful "links" anyway. Excludes and accept-codes live in
   # `lychee.toml`. Runs on every push/PR and on a weekly schedule (see the
   # standalone .github/workflows/link-check.yml) to catch link rot.
   repo-wide-link-check:
@@ -216,11 +219,6 @@ jobs:
             --no-progress
             --cache
             './**/*.md'
-            './**/*.rs'
-            './**/*.toml'
-            './**/*.yaml'
-            './**/*.yml'
-            './**/*.sh'
             './**/*.html'
           fail: true
 

@@ -40,11 +40,6 @@ jobs:
             --no-progress
             --cache
             './**/*.md'
-            './**/*.rs'
-            './**/*.toml'
-            './**/*.yaml'
-            './**/*.yml'
-            './**/*.sh'
             './**/*.html'
           fail: false
           output: lychee-report.md

@@ -61,6 +61,7 @@ pub mod horizon_scaler;
 pub mod jurisdiction;
 pub mod label_propagation;
 pub mod maintenance;
+pub mod migration;
 pub mod network_isolation;
 pub mod predictive_scaling;
 pub mod pss;
@@ -188,6 +189,10 @@ pub use health::{check_node_health, HealthCheckResult};
 pub use jurisdiction::{
     build_jurisdiction_node_affinity, compliance_report, merge_jurisdiction_tolerations,
     ComplianceReportEntry,
+};
+pub use migration::{
+    HorizonToSorobanMigrationController, MigrationConfig, MigrationPhase, MigrationState,
+    MIGRATE_TO_ANNOTATION,
 };
 pub use network_isolation::{
     check_network_safety, network_label_value, same_network_namespace_selector,

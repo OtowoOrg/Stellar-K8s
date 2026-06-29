@@ -14,6 +14,24 @@ This guide walks you through setting up a local development environment for Stel
 - [Development Workflow](#development-workflow)
 - [Troubleshooting](#troubleshooting)
 
+> **Regenerating CRDs, Helm charts, or the OLM bundle?** See [docs/development/regeneration-guide.md](docs/development/regeneration-guide.md).
+
+### Removed maintenance scripts
+
+The following one-off scripts were removed as part of repository hygiene (#1002). Use the supported replacements instead:
+
+| Removed | Replacement |
+|---------|-------------|
+| `scripts/cleanup_root.sh` | Manual cleanup; no automated replacement |
+| `scripts/organize_scripts.sh` | Batch scripts live under `scripts/archive/` |
+| `scripts/harden-cluster.sh` | See `docs/production-security-hardening.md` |
+| `scripts/dev-utils/*` | `make dev-setup`, `make preflight`, `make validate` |
+| `benchmarks/test-webhook-local.sh` | `make benchmark-webhook` |
+| `benchmarks/run-proximity-benchmark.sh` | `make benchmark` |
+| `config/samples/benchmark-compare-example.sh` | `benchmarks/run-regression-test.sh` |
+| `src/update_check.rs` | `src/version_check.rs` (used by the operator binary) |
+| `src/kubectl_plugin/interactive.rs` | Standard kubectl-stellar subcommands |
+
 ---
 
 ## Prerequisites
@@ -118,11 +136,16 @@ Run a quick check to ensure everything is configured correctly:
 # Check all required tools are installed
 make preflight
 
-# Then run a fast compile/format check
+# Then run the repository health check (recommended before opening a PR)
+make health
+
+# Or run a fast compile/format check only
 make quick
 ```
 
 `make preflight` validates that `docker`, `kind`, `kubectl`, `helm`, and `cargo` are all in your `PATH` and prints an install hint for any that are missing. Fix any gaps before proceeding.
+
+`make health` runs format, lint, tests, API docs drift, and shellcheck (when available) in one command and stops at the first failure with a clear summary.
 
 ---
 
@@ -386,10 +409,19 @@ cargo test --test e2e_kind -- --ignored
 
 ## Useful Make Targets
 
-The Makefile provides convenient shortcuts for common tasks:
+The Makefile provides convenient shortcuts for common tasks. See below for the **canonical command flow** — the recommended order for common development tasks.
 
 ```bash
-make help          # Show all available targets
+make help          # Show all available targets and canonical flow
+```
+
+### Canonical Command Flow
+
+```bash
+make dev-setup     # One-time environment setup (Rust toolchain, tools, pre-commit hooks)
+make quick         # Fast pre-commit check (fmt-check + cargo check)
+make ci-local      # Full CI pipeline locally (fmt-check + lint + audit + test + build + link-check)
+make health        # Full contributor health gate
 ```
 
 ### Development Commands
@@ -399,7 +431,8 @@ make dev-setup     # One-time setup: install Rust components and tools
 make fmt           # Auto-format all code
 make fmt-check     # Check if code is formatted (CI uses this)
 make lint          # Run clippy linter
-make audit         # Run security audit on dependencies
+make lint-strict   # Run clippy with complexity checks (stricter)
+make audit         # Security audit on dependencies
 make test          # Run all tests
 make build         # Build release binaries
 make clean         # Remove build artifacts
@@ -409,9 +442,20 @@ make clean         # Remove build artifacts
 
 ```bash
 make preflight     # Validate all required tools are installed (run this first)
+make health        # Recommended: format + lint + tests + docs (+ shellcheck)
 make quick         # Fast pre-commit check (format + compile)
-make validate      # Full local validation: format + lint + compile check
-make ci-local      # Full CI pipeline locally (format + lint + audit + test + build)
+make validate      # Fast compile path: format + lint + compile check (no tests)
+make ci-local      # Full CI pipeline locally (fmt-check + lint + audit + test + build + link-check)
+```
+
+### Security
+
+```bash
+make audit          # Run cargo-audit on dependencies
+make security-audit # Alias for audit
+make security-scan  # Run audit + shellcheck
+make shellcheck     # Run shellcheck on all shell scripts
+make security-all   # Run all security checks
 ```
 
 ### Kubernetes Operations
@@ -419,12 +463,15 @@ make ci-local      # Full CI pipeline locally (format + lint + audit + test + bu
 ```bash
 make install-crd   # Install CRDs to current cluster
 make apply-samples # Apply sample StellarNode resources
+make crd-gen       # Generate CRDs from Rust types
+make regenerate    # Regenerate all derived artifacts (CRDs, API docs, OLM bundle)
 ```
 
 ### Running the Operator
 
 ```bash
-make run           # Build and run operator (release mode)
+make run-local     # Build and run operator from release binary
+make run           # Alias for run-local
 make run-dev       # Run with hot reload (debug mode)
 make watch         # Watch mode: rebuild on changes
 ```
@@ -432,20 +479,24 @@ make watch         # Watch mode: rebuild on changes
 ### Docker
 
 ```bash
-make docker-build      # Build Docker image (local arch)
+make docker-build      # Build Docker image (local arch, fast mode using host binaries)
+make docker-build-ci   # Build Docker image (CI mode, builds binaries in container)
 make docker-multiarch  # Build multi-arch image (amd64 + arm64)
 ```
 
 ### Performance
 
 ```bash
-make benchmark     # Run k6 performance benchmarks
+make benchmark          # Run k6 performance benchmarks
+make benchmark-all      # Run all benchmarks
+make benchmark-webhook  # Run webhook benchmarks
 ```
 
 ### Complete Pipeline
 
 ```bash
-make all           # Run full CI + Docker build
+make all           # Run CI checks + build + Docker image
+make quickstart    # End-to-end local quickstart (kind cluster)
 ```
 
 ---
@@ -681,8 +732,9 @@ kubectl stellar --help
 # Setup
 make dev-setup                    # One-time setup
 make preflight                    # Validate required tools are installed
+make health                       # Common health gate (format, lint, test, docs)
 make quick                        # Fast pre-commit check
-make validate                     # Format + lint + compile check
+make validate                     # Format + lint + compile check (no tests)
 make ci-local                     # Full CI validation
 
 # Development
@@ -716,6 +768,8 @@ E2E_OPERATOR_IMAGE=stellar-operator:dev  # Custom operator image for E2E
 ## Repo Health Checklist
 
 Use this checklist before merging any PR that touches code, scripts, or documentation. It captures the minimum bar to keep the repository clean and navigable.
+
+Run `make health` first — it executes format, lint, tests, and docs checks in one command and stops at the first failure.
 
 ### Code Quality
 
@@ -758,14 +812,26 @@ Use this checklist before merging any PR that touches code, scripts, or document
 
 ## Regenerating Manifests
 
-Several files in this repo are generated from a source of truth. Always regenerate them after changing the source.
+Several files in this repo are generated from a source of truth. Always regenerate them after changing the source. See the [Regeneration Guide](docs/development/regeneration-guide.md) for detailed instructions.
+
+### Policy on Compiled Binaries & WebAssembly Artifacts
+
+To maintain a clean and lightweight repository, compiled binaries, WebAssembly modules (`*.wasm`), and auto-generated shell completion scripts must **never** be committed to the repository. These paths are explicitly ignored in `.gitignore`. 
+
+If you modify source code that affects these outputs (such as CRDs, CLI definitions, or WebAssembly plugins):
+1. **Source Code**: Commit only the source code changes (e.g., Rust files, build scripts, templates).
+2. **Local Regeneration**: Build or regenerate the binaries locally during development and testing using the commands below.
+3. **CI/CD Validation**: The CI/CD pipelines will automatically rebuild and validate these artifacts from source.
 
 | Generated file | Source of truth | Regeneration command |
 |---|---|---|
 | `docs/api-reference.md` | CRD types in `src/crd/` | `make generate-api-docs` |
 | `config/crd/*.yaml` | CRD structs in `src/crd/` | `make crd-gen` |
 | `bundle/manifests/*.yaml` | `config/manifests/bases/` + operator metadata | `make bundle` (requires operator-sdk) |
+| `charts/stellar-operator/templates/*.yaml` | Hand-written (see [guide](docs/development/regeneration-guide.md)) | `helm template` for validation |
 | Shell completions | CLI definitions in `src/cli.rs` | `make completions` |
+
+For detailed instructions on each regeneration step, see the [Regeneration Guide](docs/development/regeneration-guide.md).
 
 After running any of the above, commit the updated generated file alongside the source change in the same PR.
 

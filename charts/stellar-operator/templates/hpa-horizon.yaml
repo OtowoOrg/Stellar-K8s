@@ -18,10 +18,10 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "stellar-rpc.fullname" . }}-horizon-hpa
+  name: {{ include "stellar-operator.fullname" . }}-horizon-hpa
   namespace: {{ .Values.horizonHpa.namespace | default .Release.Namespace }}
   labels:
-    {{- include "stellar-rpc.labels" . | nindent 4 }}
+    {{- include "stellar-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: horizon-autoscaler
   annotations:
     stellar.org/metrics-server: "custom.metrics.k8s.io/v1beta2"
@@ -30,7 +30,7 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ .Values.horizonHpa.targetDeployment | default (printf "%s-horizon" (include "stellar-rpc.fullname" .)) }}
+    name: {{ .Values.horizonHpa.targetDeployment | default (printf "%s-horizon" (include "stellar-operator.fullname" .)) }}
   minReplicas: {{ .Values.horizonHpa.minReplicas | default 2 }}
   maxReplicas: {{ .Values.horizonHpa.maxReplicas | default 10 }}
   metrics:

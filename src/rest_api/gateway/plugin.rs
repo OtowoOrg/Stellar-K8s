@@ -5,7 +5,7 @@
 //! and analytics plugins.
 
 use async_trait::async_trait;
-use axum::{body::Body, extract::Request, response::Response};
+use axum::{body::Body, extract::Request};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -131,7 +131,7 @@ impl PluginManager {
         let mut plugins = self.plugins.write().await;
 
         // Initialize with default settings
-        let settings = PluginSettings {
+        let _settings = PluginSettings {
             name: name.clone(),
             version: plugin.version().to_string(),
             enabled: true,
@@ -291,6 +291,12 @@ pub struct CustomAuthPlugin {
 
 impl CustomAuthPlugin {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for CustomAuthPlugin {
+    fn default() -> Self {
         Self {
             name: "custom-auth".to_string(),
             version: "1.0.0".to_string(),
@@ -350,6 +356,12 @@ pub struct LoggingPlugin {
 
 impl LoggingPlugin {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for LoggingPlugin {
+    fn default() -> Self {
         Self {
             name: "request-logger".to_string(),
             version: "1.0.0".to_string(),

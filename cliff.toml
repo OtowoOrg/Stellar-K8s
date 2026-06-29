@@ -34,7 +34,9 @@ footer = """
             https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/releases/tag/{{ release.version }}
     {% endif -%}
 {% endfor %}
+{% if last.version %}\
 [unreleased]: https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/compare/{{ last.version }}...HEAD
+{% endif %}\
 """
 # remove the leading and trailing whitespace from the templates
 trim = true

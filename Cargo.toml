@@ -51,9 +51,6 @@ http = "1"
 # Schema generation for CRDs
 schemars = { version = "0.8", features = ["chrono"] }
 
-# Hyper for body operations
-hyper = "1"
-
 # Error handling
 thiserror = "1"
 anyhow = "1"
@@ -106,8 +103,8 @@ rdkafka = { version = "0.36", optional = true, features = [
     "sasl",
 ] }
 async-nats = { version = "0.35", optional = true }
-# Vendored libsasl2 so CI/dev builds succeed without system libsasl2-dev.
-sasl2-sys = { version = "0.1.22", features = ["vendored"] }
+# Vendored libsasl2; required only when the kafka feature is enabled.
+sasl2-sys = { version = "0.1.22", features = ["vendored"], optional = true }
 
 # REST API (optional)
 axum = { version = "0.7.5", optional = true, features = ["ws"] }
@@ -142,7 +139,6 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
-rand_distr = "0.5.1"
 
 # Backup scheduler dependencies
 cron = "0.15"
@@ -154,16 +150,12 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "postgres",
     "chrono",
 ] }
-pqcrypto-dilithium = "0.5.0"
-pqcrypto-kyber = "0.8.1"
-pqcrypto-traits = "0.3.5"
 comfy-table = "7.2.2"
 csv = "1.4.0"
 url = "2.5"
 urlencoding = "2.1"
 aws-sdk-s3 = "1.132.0"
 aws-config = "1.8.17"
-serde_json_diff = "0.2.0"
 json-patch = "4.2.0"
 md5 = "0.8.0"
 
@@ -175,19 +167,18 @@ serde = { version = "1", features = ["derive"] }
 
 [features]
 default = ["rest-api", "metrics", "admission-webhook", "k8s-v1-30"]
-rest-api = ["axum", "tower", "tower-http"]
+rest-api = ["dep:axum", "dep:tower", "dep:tower-http"]
 metrics = ["prometheus-client", "once_cell"]
-kafka = ["dep:rdkafka"]
+kafka = ["dep:rdkafka", "dep:sasl2-sys"]
 nats = ["dep:async-nats"]
 admission-webhook = [
     "wasmtime",
     "wasmtime-wasi",
     "tokio-rustls",
-    "axum",
-    "tower",
-    "tower-http",
+    "dep:axum",
+    "dep:tower",
+    "dep:tower-http",
 ]
-axum = ["dep:axum"]
 # Expose reconciler for state-machine fuzzing (reconcile_no_panic, event sequences)
 reconciler-fuzz = []
 

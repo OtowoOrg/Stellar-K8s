@@ -1,7 +1,19 @@
-# Default values for stellar-operator
-# This is a YAML-formatted file.
+# =============================================================================
+# Stellar Operator — default Helm values
+# =============================================================================
+#
+# Override precedence (highest wins):
+#   1. Per-release `helm install -f` / `--set` overrides
+#   2. Nested keys in this file (e.g. operator.logLevel)
+#   3. Chart defaults (image.tag falls back to Chart.appVersion when empty)
+#
+# Component images inherit from `image.*` when their repository/tag are empty:
+#   sidecar, forkDetector, byzantineWatcher, scpAnalytics, otel.collector
+#
+# Preset profiles: examples/values-production.yaml, values-ha.yaml
+# =============================================================================
 
-# Number of replicas for the operator deployment.
+# --- Core operator deployment ------------------------------------------------
 # For high availability, set to 3 or more.
 # Requires enabling leader election (configured automatically if replicaCount > 1).
 # With leader election enabled, only one replica processes reconciliation at a time,
@@ -9,6 +21,7 @@
 replicaCount: 1
 
 image:
+  # Primary operator image; sub-components inherit these when repository/tag are empty.
   repository: ghcr.io/stellar/stellar-k8s
   pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion
@@ -571,17 +584,19 @@ scpAnalytics:
         cpu: 200m
         memory: 256Mi
 
-# Helm hooks configuration
+# --- Helm lifecycle hooks ----------------------------------------------------
 hooks:
-  # Pre-install hook - runs validation checks before first installation
+  # Pre-install hook — validation checks before first installation.
   preInstall:
     enabled: true
-  
-  # Pre-upgrade hook - runs safety checks and creates backup before upgrade
+
+  # Pre-upgrade hook — safety checks and upgrade checkpoint before chart upgrade.
   preUpgrade:
     enabled: true
-    # Enable rollback capability verification
+    # Verify a previous Helm revision exists so rollback remains possible.
     enableRollbackCheck: true
+
+# --- High availability reference ---------------------------------------------
 # ============================================================================
 # HIGH AVAILABILITY CONFIGURATION EXAMPLE
 # ============================================================================

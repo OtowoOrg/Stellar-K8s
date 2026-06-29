@@ -1,13 +1,12 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use stellar_k8s::backup::providers::{StorageProviderTrait, UploadMetadata};
-use stellar_k8s::backup::*;
+use stellar_k8s::backup::providers::StorageProviderTrait;
+use stellar_k8s::error::diagnostic;
 
 #[derive(Parser, Debug)]
 pub struct BackupArgs {
@@ -94,7 +93,13 @@ pub async fn run_backup(args: BackupArgs) -> Result<()> {
 
     // Validate source exists
     if !args.source.exists() {
-        return Err(anyhow::anyhow!("Source path does not exist"));
+        return Err(anyhow::anyhow!(
+            "{}",
+            diagnostic(
+                "validate source",
+                format!("path does not exist: {}", args.source.display())
+            )
+        ));
     }
 
     // Collect files to backup
@@ -121,7 +126,18 @@ pub async fn run_backup(args: BackupArgs) -> Result<()> {
         "arweave" => backup_to_arweave(&args, &metadata, &files).await?,
         "ipfs" => backup_to_ipfs(&args, &metadata, &files).await?,
         "filecoin" => backup_to_filecoin(&args, &metadata, &files).await?,
-        _ => return Err(anyhow::anyhow!("Unsupported backend: {}", args.backend)),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "{}",
+                diagnostic(
+                    "select backend",
+                    format!(
+                        "unsupported backend {:?}; expected file, s3, arweave, ipfs, or filecoin",
+                        args.backend
+                    )
+                )
+            ))
+        }
     }
 
     println!("Backup completed in {:?}", start.elapsed());
@@ -149,7 +165,18 @@ pub async fn run_restore(args: RestoreArgs) -> Result<()> {
         "arweave" => restore_from_arweave(&args).await?,
         "ipfs" => restore_from_ipfs(&args).await?,
         "filecoin" => restore_from_filecoin(&args).await?,
-        _ => return Err(anyhow::anyhow!("Unsupported backend: {}", args.backend)),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "{}",
+                diagnostic(
+                    "select backend",
+                    format!(
+                        "unsupported backend {:?}; expected file, s3, arweave, ipfs, or filecoin",
+                        args.backend
+                    )
+                )
+            ))
+        }
     }
 
     println!("Restore completed in {:?}", start.elapsed());
@@ -167,7 +194,18 @@ pub async fn run_list(args: ListArgs) -> Result<()> {
         "arweave" => list_from_arweave(&args).await?,
         "ipfs" => list_from_ipfs(&args).await?,
         "filecoin" => list_from_filecoin(&args).await?,
-        _ => return Err(anyhow::anyhow!("Unsupported backend: {}", args.backend)),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "{}",
+                diagnostic(
+                    "select backend",
+                    format!(
+                        "unsupported backend {:?}; expected file, s3, arweave, ipfs, or filecoin",
+                        args.backend
+                    )
+                )
+            ))
+        }
     }
 
     Ok(())
@@ -186,7 +224,18 @@ pub async fn run_cleanup(args: CleanupArgs) -> Result<()> {
         "arweave" => cleanup_from_arweave(&args).await?,
         "ipfs" => cleanup_from_ipfs(&args).await?,
         "filecoin" => cleanup_from_filecoin(&args).await?,
-        _ => return Err(anyhow::anyhow!("Unsupported backend: {}", args.backend)),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "{}",
+                diagnostic(
+                    "select backend",
+                    format!(
+                        "unsupported backend {:?}; expected file, s3, arweave, ipfs, or filecoin",
+                        args.backend
+                    )
+                )
+            ))
+        }
     }
 
     Ok(())
@@ -232,7 +281,7 @@ async fn backup_to_file(
     // Create tar.gz
     use flate2::write::GzEncoder;
     use flate2::Compression;
-    use std::io::Write;
+
     use tar::Builder;
 
     let file = fs::File::create(&backup_path)?;
@@ -254,7 +303,13 @@ async fn restore_from_file(args: &RestoreArgs) -> Result<()> {
     let backup_path = PathBuf::from(&args.backup);
 
     if !backup_path.exists() {
-        return Err(anyhow::anyhow!("Backup file not found"));
+        return Err(anyhow::anyhow!(
+            "{}",
+            diagnostic(
+                "open backup archive",
+                format!("backup file not found: {}", backup_path.display())
+            )
+        ));
     }
 
     // Extract tar.gz
@@ -273,10 +328,16 @@ async fn restore_from_file(args: &RestoreArgs) -> Result<()> {
 async fn list_from_file(args: &ListArgs) -> Result<()> {
     let location = PathBuf::from(&args.location);
     if !location.exists() || !location.is_dir() {
-        return Err(anyhow::anyhow!("Location is not a directory"));
+        return Err(anyhow::anyhow!(
+            "{}",
+            diagnostic(
+                "list backups",
+                format!("location is not a directory: {}", location.display())
+            )
+        ));
     }
 
-    let mut backups: Vec<_> = fs::read_dir(location)?
+    let backups: Vec<_> = fs::read_dir(location)?
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("tar.gz"))
         .collect();
@@ -292,7 +353,13 @@ async fn list_from_file(args: &ListArgs) -> Result<()> {
 async fn cleanup_from_file(args: &CleanupArgs) -> Result<()> {
     let location = PathBuf::from(&args.location);
     if !location.exists() || !location.is_dir() {
-        return Err(anyhow::anyhow!("Location is not a directory"));
+        return Err(anyhow::anyhow!(
+            "{}",
+            diagnostic(
+                "cleanup backups",
+                format!("location is not a directory: {}", location.display())
+            )
+        ));
     }
 
     let mut backups: Vec<_> = fs::read_dir(location)?
@@ -415,4 +482,38 @@ async fn list_from_filecoin(_args: &ListArgs) -> Result<()> {
 async fn cleanup_from_filecoin(_args: &CleanupArgs) -> Result<()> {
     println!("Filecoin cleanup not fully implemented yet");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use stellar_k8s::error::diagnostic;
+
+    #[test]
+    fn backup_source_missing_error_names_step() {
+        let args = BackupArgs {
+            source: PathBuf::from("/definitely/missing/stellar-backup-source"),
+            backend: "file".to_string(),
+            destination: "/tmp/out".to_string(),
+            incremental: false,
+            verify: false,
+        };
+
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(run_backup(args))
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("[validate source]"));
+        assert!(msg.contains("path does not exist"));
+    }
+
+    #[test]
+    fn diagnostic_format_matches_shell_style() {
+        assert_eq!(
+            diagnostic("format check", "code is not formatted"),
+            "[format check] code is not formatted"
+        );
+    }
 }

@@ -52,7 +52,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   priorityClassName: stellar-validator-critical
   storage:
@@ -70,7 +70,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: SorobanRpc
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   priorityClassName: stellar-rpc-high
   storage:
@@ -89,7 +89,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Horizon
-  network: Testnet
+  network: testnet
   version: "v21.0.0"
   priorityClassName: stellar-default
   storage:

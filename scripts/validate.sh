@@ -10,6 +10,9 @@
 #   2. Lint             — cargo clippy (same flags as Makefile `lint` target)
 #   3. Compile check    — cargo test --no-run (catches compile errors only)
 #
+# For the full contributor health gate (includes tests and docs), use:
+#   make health
+#
 # Environment variables:
 #   K8S_OPENAPI_ENABLED_VERSION  Kubernetes API version for k8s-openapi codegen
 #                                (default: 1.30, must match Makefile)
@@ -18,6 +21,8 @@ set -euo pipefail
 
 # Resolve the repo root regardless of where the script is called from.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/errors.sh
+source "${SCRIPT_DIR}/lib/errors.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${REPO_ROOT}"
@@ -28,21 +33,15 @@ export K8S_OPENAPI_ENABLED_VERSION
 echo "==> Starting local validation (repo: ${REPO_ROOT})"
 
 # ── Step 1: Format check ─────────────────────────────────────────────────────
-echo ""
-echo "--> [1/3] Format check (cargo fmt --all --check)"
-cargo fmt --all --check || {
-  echo ""
-  echo "ERROR: Code is not formatted. Run 'make fmt' or 'cargo fmt --all' and retry."
-  exit 1
-}
+sk8s_step "format check" "Running cargo fmt --all --check"
+if ! cargo fmt --all --check; then
+  sk8s_fail "Code is not formatted" "Run 'make fmt' or 'cargo fmt --all' and retry."
+fi
 echo "    Format OK"
 
 # ── Step 2: Lint ─────────────────────────────────────────────────────────────
-# Use exactly the same flags as the Makefile `lint` target so local and CI
-# behaviour are identical.
-echo ""
-echo "--> [2/3] Lint (cargo clippy)"
-cargo clippy --workspace --all-targets --all-features -- \
+sk8s_step "lint" "Running cargo clippy with CI flags"
+if ! cargo clippy --workspace --all-targets --all-features -- \
   -D clippy::correctness \
   -D clippy::suspicious \
   -D clippy::perf \
@@ -57,13 +56,16 @@ cargo clippy --workspace --all-targets --all-features -- \
   -A clippy::redundant_closure \
   -A clippy::items_after_test_module \
   -A clippy::approx_constant \
-  -A clippy::should_implement_trait
+  -A clippy::should_implement_trait; then
+  sk8s_fail "Clippy reported errors" "Run 'make lint' for the full output."
+fi
 echo "    Lint OK"
 
 # ── Step 3: Compile check ────────────────────────────────────────────────────
-echo ""
-echo "--> [3/3] Compile check (cargo test --no-run)"
-cargo test --workspace --no-run
+sk8s_step "compile check" "Running cargo test --no-run"
+if ! cargo test --workspace --no-run; then
+  sk8s_fail "Compilation failed during test build" "Fix compiler errors and rerun 'make validate'."
+fi
 echo "    Compile check OK"
 
 echo ""

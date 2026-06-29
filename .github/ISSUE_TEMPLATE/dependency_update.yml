@@ -1,0 +1,64 @@
+name: 📦 Dependency Update / Chore
+description: Track a dependency update, cargo audit fix, or routine chore
+title: "[Chore]: "
+labels: ["chore", "dependencies"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for routine maintenance chores such as dependency bumps,
+        `cargo audit` advisory fixes, lockfile refreshes, or toolchain upgrades.
+
+  - type: dropdown
+    id: chore_type
+    attributes:
+      label: Chore Type
+      options:
+        - Dependency update (Cargo.toml / Cargo.lock)
+        - Security advisory fix (cargo audit)
+        - Toolchain / MSRV bump
+        - Lockfile refresh
+        - Dev-tooling update (pre-commit, clippy, rustfmt)
+        - Other routine chore
+    validations:
+      required: true
+
+  - type: textarea
+    id: packages
+    attributes:
+      label: Package(s) Affected
+      description: List the crate(s) or tool(s) being updated, with current → target versions.
+      placeholder: |
+        - `kube` 0.89 → 0.91
+        - `tokio` 1.36 → 1.38
+    validations:
+      required: true
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: Reason / Motivation
+      description: Why is this update needed? (security advisory, new feature needed, routine bump…)
+      placeholder: Fixes RUSTSEC-20XX-XXXX / routine quarterly bump
+    validations:
+      required: true
+
+  - type: textarea
+    id: breaking_changes
+    attributes:
+      label: Breaking Changes or Migration Notes
+      description: Any API changes, compile-time changes, or migration steps required.
+      placeholder: None expected / see upstream CHANGELOG
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification Steps
+      description: How to confirm the update is safe.
+      placeholder: |
+        1. `cargo update -p <crate>`
+        2. `cargo test --workspace`
+        3. `cargo audit`
+        4. `cargo check`
+    validations:
+      required: true

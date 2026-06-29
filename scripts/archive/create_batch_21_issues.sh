@@ -1,32 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="OtowoOrg/Stellar-K8s"
+# shellcheck source=../lib/batch.sh
+source "$(dirname "$0")/../lib/batch.sh"
 
-echo "Creating Batch 21 (20 x 200 pts) issues with auto-retry..."
-
-function create_issue_with_retry() {
-  local title="$1"
-  local label="$2"
-  local body="$3"
-  
-  local max_retries=5
-  local count=0
-  
-  while [ $count -lt $max_retries ]; do
-    if gh issue create --repo "$REPO" --title "$title" --label "$label" --body "$body"; then
-      echo "✓ Issue created: $title"
-      return 0
-    else
-      count=$((count + 1))
-      echo "API failed, retrying ($count/$max_retries) in 10 seconds..."
-      sleep 10
-    fi
-  done
-  
-  echo "Failed to create issue after $max_retries attempts: $title"
-  exit 1
-}
+echo "Creating Batch 21 (20 x 200 pts) issues with auto-retry.."
 
 # --- 200 POINT ISSUES (1-20) ---
 

@@ -38,7 +38,7 @@ spec:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: "{{ include "stellar-operator.operatorImage" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: STELLAR_OPERATOR_CONFIG

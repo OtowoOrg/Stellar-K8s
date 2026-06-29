@@ -61,11 +61,13 @@ Production-grade Stellar infrastructure on Kubernetes. This directory contains a
 
 ## Security
 
-- [mTLS Guide](mtls-guide.md)
+- [Credentials and Secrets (Central Reference)](security/credentials-and-secrets.md)
+- [Secret Management Guide](secret-management-guide.md)
 - [Secret Rotation](secret-rotation.md)
 - [Secret Management (KMS)](secret-management-kms.md)
 - [Vault Tutorial](vault-stellar-tutorial.md)
 - [Production Security Hardening](production-security-hardening.md)
+- [mTLS Guide](mtls-guide.md)
 - [Gatekeeper Policies](gatekeeper-policies.md)
 - [Pod Security Standards](security/pss.md)
 - [Image Pinning](image-pinning.md)
@@ -104,6 +106,7 @@ Production-grade Stellar infrastructure on Kubernetes. This directory contains a
 - [Development Setup](contributing/development-setup.md)
 - [Developer Onboarding](developer-onboarding/index.md)
 - [Development Reference](development.md)
+- [Regenerating Charts & Bundle Manifests](development/regeneration-guide.md)
 - [Fuzzing](fuzzing.md)
 - [Docker Compose → Kubernetes Migration](docker-compose-to-kubernetes-migration.md)
 
@@ -112,3 +115,38 @@ Production-grade Stellar infrastructure on Kubernetes. This directory contains a
 - [Glossary](glossary.md)
 - [FAQ](faq.md)
 - [CHANGELOG](../CHANGELOG.md)
+- [Third-Party Licenses](../THIRD_PARTY_LICENSES.md)
+
+---
+
+## Documentation Maintenance
+
+**Owner:** Any contributor — this index is maintained alongside the docs it links to.
+
+### Adding a new doc
+
+1. Create your `.md` file under the appropriate `docs/` subdirectory.
+2. Add a link in the relevant section above.
+3. Add a corresponding entry to `mkdocs.yml` if the doc should appear in the rendered site.
+
+### Updating an existing doc
+
+- Keep links relative (e.g. `../README.md`, `./api-reference.md`).
+- Run `make link-check` to catch broken links before opening a PR.
+
+### Removing a doc
+
+1. Delete the file.
+2. Remove its link from this index **and** from `mkdocs.yml`.
+3. Search for cross-references: `grep -r "filename.md" docs/` and fix or remove them.
+
+### Generating auto-derived docs
+
+Some files are generated — do not edit them by hand:
+
+| File | How to regenerate |
+|------|------------------|
+| `docs/api-reference.md` | `make generate-api-docs` |
+| `completions/` | `make completions` |
+
+Run `make health` to verify formatting, linting, tests, and docs drift in one command.

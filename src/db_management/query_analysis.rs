@@ -1,6 +1,6 @@
 //! Query performance analysis and profiling via pg_stat_statements.
 
-use crate::db_management::types::{DbAlert, HealthStatus};
+use crate::db_management::types::DbAlert;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;

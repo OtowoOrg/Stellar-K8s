@@ -180,7 +180,10 @@ def main():
     output_path = Path(args.output)
 
     if not crd_path.exists():
-        print(f"Error: CRD file not found: {crd_path}", file=sys.stderr)
+        print(
+            f"ERROR [load crd]: CRD file not found: {crd_path}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     crd = load_crd(crd_path)
@@ -188,11 +191,19 @@ def main():
 
     if args.check:
         if not output_path.exists():
-            print(f"Error: {output_path} does not exist. Run 'make generate-api-docs' first.")
+            print(
+                f"ERROR [check api docs]: {output_path} does not exist. "
+                "Run 'make generate-api-docs' first.",
+                file=sys.stderr,
+            )
             sys.exit(1)
         existing = output_path.read_text()
         if existing != content:
-            print(f"Error: {output_path} is out of date. Run 'make generate-api-docs' and commit.")
+            print(
+                f"ERROR [check api docs]: {output_path} is out of date. "
+                "Run 'make generate-api-docs' and commit the changes.",
+                file=sys.stderr,
+            )
             sys.exit(1)
         print(f"OK: {output_path} is up to date.")
     else:

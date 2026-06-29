@@ -40,12 +40,12 @@ impl CostAwareScheduler {
     }
 
     /// Find the cheapest node that satisfies minimum resource requirements.
-    pub fn find_cheapest_viable<'a>(
-        nodes: &'a [NodeResources],
+    pub fn find_cheapest_viable(
+        nodes: &[NodeResources],
         req_cpu_milli: u64,
         req_memory_mb: u64,
         max_hourly_cost: Option<f64>,
-    ) -> Option<&'a NodeResources> {
+    ) -> Option<&NodeResources> {
         let mut viable: Vec<&NodeResources> = nodes
             .iter()
             .filter(|n| {

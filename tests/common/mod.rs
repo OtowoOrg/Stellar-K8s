@@ -10,7 +10,6 @@
 /// - Cleanup runs in `Drop`, so it fires even on test failure.
 /// - No cross-test coupling: each test gets its own namespace or unique
 ///   resource name and tears it down independently.
-
 use std::process::{Command, Stdio};
 
 // ---------------------------------------------------------------------------
@@ -35,15 +34,16 @@ impl NamespaceGuard {
     /// it on drop.  Uses `--dry-run=client | kubectl apply` so the call is
     /// safe to repeat across parallel test runs on the same cluster.
     pub fn create(name: &str) -> Self {
-        let _ = run_kubectl_quiet(&[
+        if let Ok(yaml) = run_kubectl_output(&[
             "create",
             "namespace",
             name,
             "--dry-run=client",
             "-o",
             "yaml",
-        ])
-        .and_then(|yaml| apply_manifest(&yaml));
+        ]) {
+            let _ = apply_manifest(&yaml);
+        }
 
         Self {
             name: name.to_string(),
@@ -121,7 +121,10 @@ impl ManifestGuard {
 
 impl Drop for ManifestGuard {
     fn drop(&mut self) {
-        let _ = run_kubectl_with_stdin_quiet(&["delete", "-f", "-", "--ignore-not-found=true"], &self.manifest);
+        let _ = run_kubectl_with_stdin_quiet(
+            &["delete", "-f", "-", "--ignore-not-found=true"],
+            &self.manifest,
+        );
     }
 }
 
@@ -203,12 +206,7 @@ impl Drop for E2eTestGuard {
 
         // 3. Delete namespaces last.
         for ns in &self.namespaces {
-            let _ = run_kubectl_quiet(&[
-                "delete",
-                "namespace",
-                ns,
-                "--ignore-not-found=true",
-            ]);
+            let _ = run_kubectl_quiet(&["delete", "namespace", ns, "--ignore-not-found=true"]);
         }
     }
 }
@@ -226,15 +224,32 @@ pub fn run_kubectl_quiet(args: &[&str]) -> Result<(), String> {
     if let Ok(kubeconfig) = std::env::var("KUBECONFIG") {
         cmd.env("KUBECONFIG", kubeconfig);
     }
-    match cmd
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-    {
+    match cmd.stdout(Stdio::null()).stderr(Stdio::null()).status() {
         Ok(s) if s.success() => Ok(()),
         Ok(s) => Err(format!("kubectl exited with status {s}")),
         Err(e) => Err(format!("failed to spawn kubectl: {e}")),
     }
+}
+
+/// Run `kubectl <args>` and return stdout as a trimmed `String`.
+/// Stderr is discarded.  Returns `Err` if the command fails or stdout is
+/// not valid UTF-8.
+pub fn run_kubectl_output(args: &[&str]) -> Result<String, String> {
+    let mut cmd = Command::new("kubectl");
+    cmd.args(args);
+    if let Ok(kubeconfig) = std::env::var("KUBECONFIG") {
+        cmd.env("KUBECONFIG", kubeconfig);
+    }
+    let output = cmd
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|e| format!("failed to spawn kubectl: {e}"))?;
+    if !output.status.success() {
+        return Err(format!("kubectl exited with status {}", output.status));
+    }
+    String::from_utf8(output.stdout)
+        .map(|s| s.trim().to_string())
+        .map_err(|e| format!("kubectl stdout is not UTF-8: {e}"))
 }
 
 /// Pipe `input` into `kubectl <args>` via stdin.  Returns `Ok(())` on

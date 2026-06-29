@@ -40,7 +40,7 @@ metadata:
   name: horizon-l2
 spec:
   nodeType: Horizon
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
 
   loadBalancer:
@@ -62,7 +62,7 @@ metadata:
   name: horizon-anycast
 spec:
   nodeType: Horizon
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
 
   loadBalancer:

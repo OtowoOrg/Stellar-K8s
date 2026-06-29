@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=lib/repo.sh
-source "$(dirname "$0")/lib/repo.sh"
+# shellcheck source=../lib/batch.sh
+source "$(dirname "$0")/../lib/batch.sh"
 
 # Stellar-K8s Wave Issue Creation Script - BATCH 2
 # Issues #12 - #21
 
-# Source shared retry/backoff and dry-run helper.
-# shellcheck source=scripts/retry_helper.sh
-source "$(dirname "$0")/retry_helper.sh"
 
-echo "Creating Batch 2 of Stellar Wave issues..."
+echo "Creating Batch 2 of Stellar Wave issues.."
 
 # 12. Add Resource Limit validation (Trivial - 100 Points)
 create_issue \

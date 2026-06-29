@@ -113,7 +113,7 @@ impl FlowStore {
             *talker_map.entry(f.src_ip.clone()).or_default() += f.bytes;
         }
         let mut top_talkers: Vec<_> = talker_map.into_iter().collect();
-        top_talkers.sort_by(|a, b| b.1.cmp(&a.1));
+        top_talkers.sort_by_key(|b| std::cmp::Reverse(b.1));
         top_talkers.truncate(10);
 
         FlowStats {

@@ -312,7 +312,7 @@ fn find_best_secondary_cloud<'a>(
         })
         .collect();
 
-    candidates.sort_by(|a, b| b.priority.cmp(&a.priority));
+    candidates.sort_by_key(|b| std::cmp::Reverse(b.priority));
 
     candidates.first().copied().ok_or_else(|| {
         Error::ConfigError("No healthy secondary cloud available for failover".to_string())

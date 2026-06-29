@@ -437,6 +437,6 @@ stellar-operator diff \
 ## Related Documentation
 
 - [Benchmark Compare Guide](./benchmark-compare.md)
-- [Troubleshooting](./troubleshooting.md)
-- [Monitoring Setup](./monitoring-setup.md)
+- Troubleshooting
+- Monitoring Setup
 - [Development Guide](./development.md)

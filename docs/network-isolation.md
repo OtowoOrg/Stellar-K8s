@@ -77,7 +77,7 @@ kubectl label namespace stellar-mainnet stellar.org/network=mainnet
 kubectl label namespace stellar-testnet stellar.org/network=testnet
 ```
 
-Or via Helm (see [Helm Configuration](#helm-configuration) below).
+Or via Helm (see [Helm Configuration](#helm-configuration-reference) below).
 
 ---
 
@@ -235,7 +235,7 @@ metadata:
   namespace: stellar-mainnet
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   networkPolicy:
     enabled: true                        # required to activate per-node policy
     allowNamespaces:                     # additional namespaces allowed in

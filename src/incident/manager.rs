@@ -251,7 +251,7 @@ impl IncidentManager {
             .count();
 
         let mut recent: Vec<_> = store.values().collect();
-        recent.sort_by(|a, b| b.detected_at.cmp(&a.detected_at));
+        recent.sort_by_key(|b| std::cmp::Reverse(b.detected_at));
         let recent_ids = recent.iter().take(5).map(|i| i.id.clone()).collect();
 
         if sla_breaches > 0 {

@@ -180,7 +180,7 @@ metadata:
   name: horizon-mesh
 spec:
   nodeType: Horizon
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   
   # Service mesh configuration

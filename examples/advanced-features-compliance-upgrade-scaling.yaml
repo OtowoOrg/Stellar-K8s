@@ -16,7 +16,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   storage:
     storageClass: "standard"
@@ -61,7 +61,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Horizon
-  network: Mainnet
+  network: mainnet
   version: "v2.28.0"
   replicas: 3
 

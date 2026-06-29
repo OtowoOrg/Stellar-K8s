@@ -112,7 +112,30 @@ pub enum Error {
 /// Result type alias for operator operations
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// Format a user-facing diagnostic message with an explicit pipeline step.
+///
+/// Example: `diagnostic("load kubeconfig", "file not found at /etc/kube/config")`
+/// → `"[load kubeconfig] file not found at /etc/kube/config"`
+pub fn diagnostic(step: &str, detail: impl std::fmt::Display) -> String {
+    format!("[{step}] {detail}")
+}
+
 impl Error {
+    /// Build a configuration error that names the failing step.
+    pub fn config_step(step: &str, detail: impl std::fmt::Display) -> Self {
+        Error::ConfigError(diagnostic(step, detail))
+    }
+
+    /// Build an internal error that names the failing step.
+    pub fn internal_step(step: &str, detail: impl std::fmt::Display) -> Self {
+        Error::InternalError(diagnostic(step, detail))
+    }
+
+    /// Build a validation error that names the failing step.
+    pub fn validation_step(step: &str, detail: impl std::fmt::Display) -> Self {
+        Error::ValidationError(diagnostic(step, detail))
+    }
+
     /// Check if this error type should trigger a retry
     pub fn is_retriable(&self) -> bool {
         matches!(
@@ -168,6 +191,21 @@ impl From<kube::runtime::finalizer::Error<Error>> for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_diagnostic_includes_step_and_detail() {
+        let msg = diagnostic("validate source", "path does not exist: /tmp/data");
+        assert_eq!(msg, "[validate source] path does not exist: /tmp/data");
+    }
+
+    #[test]
+    fn test_config_step_wraps_diagnostic() {
+        let err = Error::config_step("parse db uri", "missing database name");
+        assert_eq!(
+            err.to_string(),
+            "[SK8S-004] Configuration error: [parse db uri] missing database name"
+        );
+    }
 
     #[test]
     fn test_kube_error_conversion() {

@@ -8,23 +8,18 @@ kind: Deployment
 metadata:
   name: {{ include "stellar-operator.fullname" . }}-fork-detector
   labels:
-    {{- include "stellar-operator.labels" . | nindent 4 }}
-    app.kubernetes.io/component: fork-detector
+    {{- include "stellar-operator.labelsWithComponent" (dict "root" . "component" "fork-detector") | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      {{- include "stellar-operator.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: fork-detector
+      {{- include "stellar-operator.selectorLabelsWithComponent" (dict "root" . "component" "fork-detector") | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "stellar-operator.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: fork-detector
+        {{- include "stellar-operator.selectorLabelsWithComponent" (dict "root" . "component" "fork-detector") | nindent 8 }}
       annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: {{ .Values.forkDetector.metricsPort | quote }}
-        prometheus.io/path: "/metrics"
+        {{- include "stellar-operator.prometheusAnnotations" (dict "metricsPort" .Values.forkDetector.metricsPort) | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -35,7 +30,7 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: fork-detector
-          image: "{{ .Values.forkDetector.image.repository | default .Values.image.repository }}:{{ .Values.forkDetector.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+          image: "{{ include "stellar-operator.componentImage" (dict "root" . "repository" .Values.forkDetector.image.repository "tag" .Values.forkDetector.image.tag) }}"
           imagePullPolicy: {{ .Values.forkDetector.image.pullPolicy | default .Values.image.pullPolicy }}
           command: ["/stellar-fork-detector"]
           env:
@@ -96,8 +91,7 @@ kind: Service
 metadata:
   name: {{ include "stellar-operator.fullname" . }}-fork-detector
   labels:
-    {{- include "stellar-operator.labels" . | nindent 4 }}
-    app.kubernetes.io/component: fork-detector
+    {{- include "stellar-operator.labelsWithComponent" (dict "root" . "component" "fork-detector") | nindent 4 }}
 spec:
   type: ClusterIP
   ports:
@@ -106,6 +100,5 @@ spec:
       targetPort: metrics
       protocol: TCP
   selector:
-    {{- include "stellar-operator.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: fork-detector
+    {{- include "stellar-operator.selectorLabelsWithComponent" (dict "root" . "component" "fork-detector") | nindent 4 }}
 {{- end }}

@@ -4,21 +4,46 @@
 
 # Stellar-K8s: Cloud-Native Stellar Infrastructure
 
+<!-- CI / Quality -->
 <p align="center">
   <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/ci.yml?branch=main&style=for-the-badge&label=CI" alt="GitHub Actions Status" />
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/ci.yml?branch=main&style=for-the-badge&label=CI&logo=github" alt="CI" />
   </a>
   <a href="https://codecov.io/gh/OtowoOrg/Stellar-K8s">
-    <img src="https://img.shields.io/codecov/c/github/OtowoOrg/Stellar-K8s/main?style=for-the-badge" alt="Codecov Coverage" />
+    <img src="https://img.shields.io/codecov/c/github/OtowoOrg/Stellar-K8s/main?style=for-the-badge&logo=codecov" alt="Coverage" />
   </a>
-  <a href="https://crates.io/crates/stellar-k8s">
-    <img src="https://img.shields.io/crates/v/stellar-k8s?style=for-the-badge" alt="crates.io version" />
-  </a>
-  <a href="https://crates.io/crates/stellar-k8s">
-    <img src="https://img.shields.io/crates/l/stellar-k8s?style=for-the-badge" alt="License" />
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/security-scan.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/security-scan.yml?branch=main&style=for-the-badge&label=Security&logo=trivy" alt="Security Scan" />
   </a>
 </p>
 
+<!-- Release / Docs -->
+<p align="center">
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/release.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/release.yml?style=for-the-badge&label=Release&logo=github" alt="Release Pipeline" />
+  </a>
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/releases">
+    <img src="https://img.shields.io/github/v/release/OtowoOrg/Stellar-K8s?style=for-the-badge&logo=github" alt="Latest Release" />
+  </a>
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/docs-deploy.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/docs-deploy.yml?branch=main&style=for-the-badge&label=Docs&logo=readthedocs" alt="Docs Deploy" />
+  </a>
+</p>
+
+<!-- Performance / Chaos -->
+<p align="center">
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/performance.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/performance.yml?branch=main&style=for-the-badge&label=Performance&logo=speedtest" alt="Performance" />
+  </a>
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/chaos-tests.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/chaos-tests.yml?branch=main&style=for-the-badge&label=Chaos&logo=kubernetes" alt="Chaos Tests" />
+  </a>
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/OtowoOrg/Stellar-K8s?style=for-the-badge" alt="License" />
+  </a>
+</p>
+
+<!-- Stack -->
 <p align="center">
   <img src="https://img.shields.io/badge/Built%20with-Rust-orange?style=for-the-badge&logo=rust" alt="Built with Rust" />
   <img src="https://img.shields.io/badge/Kubernetes-Operator-blue?style=for-the-badge&logo=kubernetes" alt="Kubernetes Operator" />
@@ -125,7 +150,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Validator
-  network: Testnet
+  network: testnet
   version: "v21.0.0"
   storage:
     storageClass: "standard"
@@ -319,31 +344,9 @@ featureFlags:
 
 ## 🤝 Contributing
 
-We welcome contributions! This project uses pre-commit hooks to ensure code quality. Please see our [Contributing Guide](CONTRIBUTING.md) for details on our development process, coding standards, and how to submit pull requests.
+We welcome contributions! This project uses pre-commit hooks to ensure code quality.
 
-### Repo Health Checklist
-
-Before opening a PR, run through this quick checklist to keep the repo clean:
-
-- `make ci-local` — runs format check, lint, security audit, tests, and build in one step
-- `make fmt` — auto-formats all Rust code
-- `make lint` — runs clippy at the deny level
-- `make audit` — scans dependencies for known vulnerabilities
-- `shellcheck -S error scripts/*.sh` — validates shell scripts
-- `make generate-api-docs` — regenerates `docs/api-reference.md` after CRD changes
-- `make crd-gen` — regenerates `config/crd/` manifests after CRD type changes
-
-For the full checklist and expected conventions for docs, scripts, and code, see [DEVELOPMENT.md](DEVELOPMENT.md#repo-health-checklist), [CONTRIBUTING.md](CONTRIBUTING.md#9-repo-health-checklist), and [CONVENTIONS.md](CONVENTIONS.md).
-
-### Quick Start for Contributors
-
-```bash
-# Setup development environment (includes pre-commit hooks)
-make dev-setup
-
-# Run pre-commit hooks manually
-make pre-commit
-```
+Please see our **[Contributing Guide](CONTRIBUTING.md)** for details on our workflow, commit conventions, and pull request guidelines. For development setup instructions, see the **[Development Guide](DEVELOPMENT.md)**.
 
 ---
 
@@ -627,36 +630,9 @@ make generate-api-docs
 
 ---
 
-## Development
+## 💻 Development
 
-### Prerequisites
-
-- Rust (latest stable)
-- Docker & Kubernetes cluster
-- Make
-
-### Quick Start
-
-```bash
-# Setup development environment
-make dev-setup
-
-# Standard Development Targets
-make build         # Build release binary
-make test          # Run all tests
-make lint          # Run clippy
-make fmt           # Format code
-make docker-build  # Build Docker image
-make helm-lint     # Run Helm chart linting
-make crd-gen       # Generate CRDs
-make run-local     # Run operator locally in dev mode
-make clean         # Clean build artifacts
-
-# Full CI validation
-make ci-local
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines.
+For detailed instructions on setting up a local development environment, building the project, running tests, and managing Kubernetes resources locally, please refer to the **[Development Guide](DEVELOPMENT.md)**.
 
 ### Reconciler fuzzing
 

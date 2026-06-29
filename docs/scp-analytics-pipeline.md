@@ -609,7 +609,7 @@ print(f"Detected {len(anomalies)} anomalies")
 
 ## Related Documentation
 
-- [Quorum Analysis](./quorum-analysis.md)
-- [Monitoring and Metrics](./monitoring.md)
-- [Kafka Integration](./kafka-integration.md)
-- [Schema Registry](./schema-registry.md)
+- Quorum Analysis
+- Monitoring and Metrics
+- Kafka Integration
+- Schema Registry

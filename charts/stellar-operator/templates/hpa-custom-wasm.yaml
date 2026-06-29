@@ -2,14 +2,14 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "stellar-rpc.fullname" . }}
+  name: {{ include "stellar-operator.fullname" . }}
   labels:
-    {{- include "stellar-rpc.labels" . | nindent 4 }}
+    {{- include "stellar-operator.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "stellar-rpc.fullname" . }}
+    name: {{ include "stellar-operator.fullname" . }}
   minReplicas: {{ .Values.autoscaling.customWasm.minReplicas }}
   maxReplicas: {{ .Values.autoscaling.customWasm.maxReplicas }}
   metrics:

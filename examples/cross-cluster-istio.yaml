@@ -17,7 +17,7 @@ metadata:
     cluster: "primary"
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
 
 

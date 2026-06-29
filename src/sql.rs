@@ -192,12 +192,15 @@ impl SqlExecutor {
         // postgresql://user:pass@host:5432/db
         let parts: Vec<&str> = uri.split('@').collect();
         if parts.len() != 2 {
-            return Err(Error::ConfigError("Invalid DB URI format".to_string()));
+            return Err(Error::config_step(
+                "parse db uri",
+                "expected host/database path after '@'",
+            ));
         }
 
         let host_part = parts[1];
         let slash_index = host_part.find('/').ok_or_else(|| {
-            Error::ConfigError("Invalid DB URI format (missing / after host)".to_string())
+            Error::config_step("parse db uri", "missing database path after host")
         })?;
 
         let _host_and_port = &host_part[..slash_index];

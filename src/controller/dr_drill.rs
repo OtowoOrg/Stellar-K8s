@@ -284,7 +284,7 @@ async fn simulate_failover(
     }
 }
 
-use k8s_openapi::api::core::v1::{Endpoints, Pod, Service};
+use k8s_openapi::api::core::v1::{Endpoints, Pod};
 use kube::Api;
 
 /// Verify that standby successfully took over

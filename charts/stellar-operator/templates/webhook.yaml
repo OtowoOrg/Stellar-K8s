@@ -76,10 +76,7 @@ spec:
       serviceAccountName: stellar-webhook
       automountServiceAccountToken: false
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        fsGroup: 65532
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -98,11 +95,7 @@ spec:
               containerPort: 9090
               protocol: TCP
           securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
+            {{- toYaml .Values.securityContext | nindent 12 }}
           resources:
             requests:
               cpu: 100m

@@ -86,3 +86,27 @@ tests:
       - equal:
           path: spec.minAvailable
           value: 1
+
+  - it: webhook pod security context follows global podSecurityContext overrides
+    documentIndex: 4
+    set:
+      podSecurityContext.runAsUser: 70000
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 70000
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+
+  - it: webhook container security context follows global securityContext overrides
+    documentIndex: 4
+    set:
+      securityContext.readOnlyRootFilesystem: false
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false

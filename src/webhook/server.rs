@@ -1437,4 +1437,229 @@ mod tests {
         assert!(!sanitized.contains("super-secret"));
         assert!(!sanitized.contains("secret-value"));
     }
+
+    // ── Stress tests: throughput and timeout behaviour ────────────────────────
+
+    fn valid_stellarnode_object() -> serde_json::Value {
+        serde_json::json!({
+            "metadata": {
+                "name": "stress-validator",
+                "namespace": "default",
+                "labels": {"project-id": "stress", "owner": "stress-test"}
+            },
+            "spec": {
+                "nodeType": "Validator",
+                "network": "testnet",
+                "version": "v21.0.0",
+                "replicas": 1,
+                "validatorConfig": {
+                    "seedSecretRef": "seed",
+                    "enableHistoryArchive": false,
+                    "historyArchiveUrls": []
+                }
+            }
+        })
+    }
+
+    fn invalid_stellarnode_object() -> serde_json::Value {
+        serde_json::json!({
+            "metadata": {"name": "bad", "namespace": "default"},
+            "spec": {"nodeType": "InvalidKind", "network": "testnet", "version": "v21.0.0"}
+        })
+    }
+
+    /// Concurrent valid requests all complete successfully and return `allowed`.
+    #[tokio::test]
+    async fn stress_concurrent_valid_requests_all_allowed() {
+        let server = std::sync::Arc::new(WebhookServer::new(WasmRuntime::new().unwrap()));
+        let obj = valid_stellarnode_object();
+        const CONCURRENCY: usize = 50;
+
+        let futures: Vec<_> = (0..CONCURRENCY)
+            .map(|_| {
+                let s = server.clone();
+                let o = obj.clone();
+                async move { s.validate(validation_input(Operation::Create, Some(o))).await }
+            })
+            .collect();
+
+        let results = futures::future::join_all(futures).await;
+
+        let denied: Vec<_> = results.iter().filter(|r| !r.allowed).collect();
+        assert!(
+            denied.is_empty(),
+            "{} of {} concurrent requests were unexpectedly denied",
+            denied.len(),
+            CONCURRENCY
+        );
+    }
+
+    /// Concurrent invalid requests are all denied; none cause a panic or hang.
+    #[tokio::test]
+    async fn stress_concurrent_invalid_requests_all_denied() {
+        let server = std::sync::Arc::new(WebhookServer::new(WasmRuntime::new().unwrap()));
+        let obj = invalid_stellarnode_object();
+        const CONCURRENCY: usize = 30;
+
+        let futures: Vec<_> = (0..CONCURRENCY)
+            .map(|_| {
+                let s = server.clone();
+                let o = obj.clone();
+                async move { s.validate(validation_input(Operation::Create, Some(o))).await }
+            })
+            .collect();
+
+        let results = futures::future::join_all(futures).await;
+
+        let allowed: Vec<_> = results.iter().filter(|r| r.allowed).collect();
+        assert!(
+            allowed.is_empty(),
+            "{} of {} invalid requests were unexpectedly allowed",
+            allowed.len(),
+            CONCURRENCY
+        );
+        // Every denied result must carry an error message.
+        for r in &results {
+            assert!(
+                r.message.is_some(),
+                "denied result is missing an error message"
+            );
+        }
+    }
+
+    /// Mixed concurrent load: valid and invalid requests are segregated correctly.
+    #[tokio::test]
+    async fn stress_mixed_concurrent_requests_segregated_correctly() {
+        let server = std::sync::Arc::new(WebhookServer::new(WasmRuntime::new().unwrap()));
+        let valid = valid_stellarnode_object();
+        let invalid = invalid_stellarnode_object();
+        const HALF: usize = 20;
+
+        let valid_futures: Vec<_> = (0..HALF)
+            .map(|_| {
+                let s = server.clone();
+                let o = valid.clone();
+                async move {
+                    let r = s.validate(validation_input(Operation::Create, Some(o))).await;
+                    ("valid", r.allowed)
+                }
+            })
+            .collect();
+
+        let invalid_futures: Vec<_> = (0..HALF)
+            .map(|_| {
+                let s = server.clone();
+                let o = invalid.clone();
+                async move {
+                    let r = s.validate(validation_input(Operation::Create, Some(o))).await;
+                    ("invalid", r.allowed)
+                }
+            })
+            .collect();
+
+        let all_futures: Vec<_> = valid_futures
+            .into_iter()
+            .chain(invalid_futures)
+            .collect();
+
+        let results = futures::future::join_all(all_futures).await;
+
+        let (valid_results, invalid_results): (Vec<_>, Vec<_>) =
+            results.iter().partition(|(tag, _)| *tag == "valid");
+
+        let valid_denied = valid_results.iter().filter(|(_, ok)| !ok).count();
+        let invalid_allowed = invalid_results.iter().filter(|(_, ok)| *ok).count();
+
+        assert_eq!(
+            valid_denied, 0,
+            "{valid_denied} valid requests were incorrectly denied"
+        );
+        assert_eq!(
+            invalid_allowed, 0,
+            "{invalid_allowed} invalid requests were incorrectly allowed"
+        );
+    }
+
+    /// High sequential throughput: server handles 200 sequential validates
+    /// without degradation (each must return a result, never hang).
+    #[tokio::test]
+    async fn stress_high_sequential_throughput_no_hang() {
+        let server = WebhookServer::new(WasmRuntime::new().unwrap());
+        let obj = valid_stellarnode_object();
+        const TOTAL: usize = 200;
+
+        for _ in 0..TOTAL {
+            let input = validation_input(Operation::Create, Some(obj.clone()));
+            let result = server.validate(input).await;
+            assert!(
+                result.allowed,
+                "sequential request was unexpectedly denied: {:?}",
+                result.message
+            );
+        }
+    }
+
+    /// Timeout resilience: a fail-open plugin that traps must not block other
+    /// concurrent requests — all complete within a reasonable wall-clock window.
+    #[tokio::test]
+    async fn stress_trap_plugin_does_not_block_concurrent_requests() {
+        let runtime = WasmRuntime::new().unwrap();
+        let server = std::sync::Arc::new(WebhookServer::new(runtime));
+
+        // Load a fail-open plugin that traps immediately.
+        let wasm = wat::parse_str(
+            r#"(module
+                  (func (export "validate") unreachable)
+                  (memory (export "memory") 1)
+               )"#,
+        )
+        .unwrap();
+        let config = PluginConfig {
+            metadata: PluginMetadata {
+                name: "stress-trap".to_string(),
+                version: "0.0.1".to_string(),
+                description: None,
+                author: None,
+                sha256: None,
+                limits: PluginLimits::default(),
+            },
+            wasm_binary: Some(base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                &wasm,
+            )),
+            config_map_ref: None,
+            secret_ref: None,
+            url: None,
+            operations: vec![Operation::Create],
+            enabled: true,
+            fail_open: true,
+            plugin_config: BTreeMap::new(),
+        };
+        server.add_plugin(config).await.unwrap();
+
+        let obj = valid_stellarnode_object();
+        const CONCURRENCY: usize = 20;
+
+        let futures: Vec<_> = (0..CONCURRENCY)
+            .map(|_| {
+                let s = server.clone();
+                let o = obj.clone();
+                async move { s.validate(validation_input(Operation::Create, Some(o))).await }
+            })
+            .collect();
+
+        // All requests complete (fail-open means allowed despite the trap).
+        let results = futures::future::join_all(futures).await;
+        for r in &results {
+            assert!(
+                r.allowed,
+                "fail-open trap plugin should allow: {:?}",
+                r.message
+            );
+            assert!(
+                !r.warnings.is_empty(),
+                "fail-open trap plugin should emit a warning"
+            );
+        }
+    }
 }

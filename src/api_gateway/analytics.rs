@@ -30,11 +30,9 @@ pub struct RouteStats {
 
 impl RouteStats {
     pub fn mean_latency_ms(&self) -> u64 {
-        if self.total_requests == 0 {
-            0
-        } else {
-            self.total_latency_ms / self.total_requests
-        }
+        self.total_latency_ms
+            .checked_div(self.total_requests)
+            .unwrap_or(0)
     }
 }
 
@@ -55,6 +53,7 @@ impl AnalyticsStore {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn record(
         &self,
         route_id: impl Into<String>,

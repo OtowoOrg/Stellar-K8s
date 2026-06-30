@@ -38,7 +38,7 @@ pub use transform::{BodyTransform, TransformPipeline, TransformRule};
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::{header, Method, StatusCode},
+    http::{header, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
     Json,

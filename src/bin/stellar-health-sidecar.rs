@@ -5,7 +5,7 @@ use stellar_k8s::controller::health_check_sidecar::{
     create_router, sync_monitor_loop, HealthCheckState,
 };
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[tokio::main]

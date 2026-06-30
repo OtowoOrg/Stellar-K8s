@@ -97,10 +97,10 @@ impl AnalyticsEngine {
         let total = *self.total.read().await;
 
         let mut by_type_vec: Vec<_> = by_type.values().cloned().collect();
-        by_type_vec.sort_by(|a, b| b.total_count.cmp(&a.total_count));
+        by_type_vec.sort_by_key(|b| std::cmp::Reverse(b.total_count));
 
         let mut top_sources: Vec<_> = by_source.iter().map(|(k, v)| (k.clone(), *v)).collect();
-        top_sources.sort_by(|a, b| b.1.cmp(&a.1));
+        top_sources.sort_by_key(|b| std::cmp::Reverse(b.1));
         top_sources.truncate(10);
 
         AnalyticsSnapshot {

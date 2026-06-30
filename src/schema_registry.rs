@@ -31,10 +31,11 @@ pub enum SchemaFormat {
     OpenApi,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompatibilityMode {
     /// New schema must be readable by old consumers.
+    #[default]
     Backward,
     /// Old schema must be readable by new consumers.
     Forward,
@@ -42,12 +43,6 @@ pub enum CompatibilityMode {
     Full,
     /// No compatibility checks enforced.
     None,
-}
-
-impl Default for CompatibilityMode {
-    fn default() -> Self {
-        Self::Backward
-    }
 }
 
 // ── Schema version ────────────────────────────────────────────────────────────
@@ -473,7 +468,7 @@ impl SchemaRegistry {
             .values()
             .map(|s| (s.name.as_str(), s.usage_count))
             .collect();
-        stats.sort_by(|a, b| b.1.cmp(&a.1));
+        stats.sort_by_key(|b| std::cmp::Reverse(b.1));
         stats
     }
 

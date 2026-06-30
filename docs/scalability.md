@@ -366,7 +366,7 @@ metadata:
   namespace: benchmark
 spec:
   nodeType: Validator
-  network: Testnet
+  network: testnet
   version: "v21.0.0"
 EOF
 done

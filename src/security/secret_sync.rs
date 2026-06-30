@@ -28,7 +28,7 @@ impl SecretSynchronizer {
         config: &SecretPolicySyncConfig,
         secret_name: &str,
         namespace: &str,
-        encrypted_data: &[u8],
+        _encrypted_data: &[u8],
         version: u32,
         encrypt_in_transit: bool,
     ) -> Result<Vec<ClusterSyncStatus>> {

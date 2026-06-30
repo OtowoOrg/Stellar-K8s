@@ -51,7 +51,7 @@ impl Forecaster {
 
         let start_time = history[0].timestamp.timestamp() as f64;
 
-        for (i, entry) in history.iter().enumerate() {
+        for entry in history.iter() {
             let x = (entry.timestamp.timestamp() as f64 - start_time) / 86400.0; // days
             let y = entry.cpu_cores; // Example: forecasting CPU
             sum_x += x;

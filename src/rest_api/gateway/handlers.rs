@@ -3,27 +3,20 @@
 //! HTTP handlers for the API Gateway endpoints
 
 use axum::{
-    body::Body,
     extract::{Path, Query, State},
-    http::{header, Method, StatusCode},
-    response::{Html, IntoResponse, Json, Response},
+    http::StatusCode,
+    response::{Html, IntoResponse, Json},
     routing::{delete, get, post},
     Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
-
-use crate::controller::ControllerState;
-use crate::rest_api::dto::ErrorResponse;
 
 use super::{
-    analytics::{ApiHealth, TimeWindowMetrics},
     auth::AuthConfig,
     openapi::OpenApiGenerator,
-    plugin::PluginSettings,
-    ratelimit::{QuotaConfig, RateLimitConfig, RateLimitInfo},
+    ratelimit::{QuotaConfig, RateLimitConfig},
     router::RouterConfig,
     GatewayConfig, GatewayState,
 };
@@ -92,7 +85,7 @@ struct ConfigQuery {
 }
 
 async fn get_gateway_config(
-    State(state): State<Arc<GatewayState>>,
+    State(_state): State<Arc<GatewayState>>,
     Query(query): Query<ConfigQuery>,
 ) -> impl IntoResponse {
     // Create AuthConfig from AuthMiddleware fields
@@ -187,7 +180,7 @@ async fn get_health(State(state): State<Arc<GatewayState>>) -> impl IntoResponse
 // Rate limiting handlers
 async fn get_rate_limit_info(
     State(state): State<Arc<GatewayState>>,
-    Query(query): Query<MetricsQuery>,
+    Query(_query): Query<MetricsQuery>,
 ) -> impl IntoResponse {
     let info = state.rate_limiter.get_limit_info("default").await;
     Json(info)

@@ -11,7 +11,17 @@ Please delete options that are not relevant.
 - [ ] Bug fix (non-breaking change which fixes an issue)
 - [ ] New feature (non-breaking change which adds functionality)
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
+- [ ] Maintenance / hygiene (CI, docs, config cleanup, dependency update)
 - [ ] This change requires a documentation update
+
+## Maintenance task checklist (complete when type = Maintenance / hygiene)
+
+> Skip this section for bug fixes and feature PRs.
+
+- [ ] Category: <!-- CI/Workflow | Documentation | Dependency update | Code cleanup/refactor | Configuration drift | Other -->
+- [ ] Behavior is unchanged (or change is intentional and documented above)
+- [ ] Duplication or dead weight removed / docs added where applicable
+- [ ] Reviewer can follow the verification steps in the linked issue
 
 ## Checklist:
 
@@ -19,8 +29,9 @@ Please delete options that are not relevant.
 - [ ] I have performed a self-review of my code
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings (`cargo clippy --all-targets --all-features -- -D warnings` passes)
+- [ ] My changes generate no new warnings (`make lint` passes)
 - [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing tests pass locally with my changes (`cargo test`)
+- [ ] New and existing tests pass locally with my changes (`make test`)
+- [ ] Full CI gate passes locally (`make ci-local`)
 - [ ] Any dependent changes have been merged and published in downstream modules
 - [ ] I have signed-off my commits with the Developer Certificate of Origin (DCO) using `git commit -s`

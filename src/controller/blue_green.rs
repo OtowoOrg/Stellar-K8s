@@ -36,9 +36,7 @@ use crate::crd::StellarNode;
 use crate::error::{Error, Result};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::batch::v1::{Job, JobSpec};
-use k8s_openapi::api::core::v1::{
-    Container, PodSpec, PodTemplateSpec, SecretVolumeSource, Service, Volume,
-};
+use k8s_openapi::api::core::v1::{PodSpec, PodTemplateSpec, SecretVolumeSource, Service, Volume};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use kube::api::{Api, Patch, PatchParams, PostParams};
 use kube::Client;
@@ -506,14 +504,14 @@ pub async fn orchestrate_horizon_migration(
         crate::controller::metrics::observe_horizon_migration_duration(
             &namespace,
             &node_name,
-            &node.spec.network_passphrase(),
+            node.spec.network_passphrase(),
             "failed",
             duration,
         );
         crate::controller::metrics::inc_horizon_migration_total(
             &namespace,
             &node_name,
-            &node.spec.network_passphrase(),
+            node.spec.network_passphrase(),
             "failed",
         );
         return Ok(false);
@@ -537,14 +535,14 @@ pub async fn orchestrate_horizon_migration(
         crate::controller::metrics::observe_horizon_migration_duration(
             &namespace,
             &node_name,
-            &node.spec.network_passphrase(),
+            node.spec.network_passphrase(),
             "failed",
             duration,
         );
         crate::controller::metrics::inc_horizon_migration_total(
             &namespace,
             &node_name,
-            &node.spec.network_passphrase(),
+            node.spec.network_passphrase(),
             "failed",
         );
         return Ok(false);
@@ -563,14 +561,14 @@ pub async fn orchestrate_horizon_migration(
                 crate::controller::metrics::observe_horizon_migration_duration(
                     &namespace,
                     &node_name,
-                    &node.spec.network_passphrase(),
+                    node.spec.network_passphrase(),
                     "failed",
                     duration,
                 );
                 crate::controller::metrics::inc_horizon_migration_total(
                     &namespace,
                     &node_name,
-                    &node.spec.network_passphrase(),
+                    node.spec.network_passphrase(),
                     "failed",
                 );
                 return Ok(false);
@@ -589,14 +587,14 @@ pub async fn orchestrate_horizon_migration(
         crate::controller::metrics::observe_horizon_migration_duration(
             &namespace,
             &node_name,
-            &node.spec.network_passphrase(),
+            node.spec.network_passphrase(),
             "failed",
             duration,
         );
         crate::controller::metrics::inc_horizon_migration_total(
             &namespace,
             &node_name,
-            &node.spec.network_passphrase(),
+            node.spec.network_passphrase(),
             "failed",
         );
         return Ok(false);

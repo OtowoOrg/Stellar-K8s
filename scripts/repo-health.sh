@@ -18,18 +18,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cd "${REPO_ROOT}"
-
-# shellcheck source=lib/errors.sh
+# shellcheck source=scripts/lib/errors.sh
 source "${SCRIPT_DIR}/lib/errors.sh"
+cd "${REPO_ROOT}"
 
 K8S_OPENAPI_ENABLED_VERSION="${K8S_OPENAPI_ENABLED_VERSION:-1.30}"
 export K8S_OPENAPI_ENABLED_VERSION
 
 readonly TOTAL_STEPS=5
 STEP=0
-FAILED_STEP=""
-FAILED_HINT=""
 
 print_header() {
   echo ""
@@ -51,9 +48,7 @@ pass_step() {
 fail_step() {
   local name="$1"
   local hint="$2"
-  FAILED_STEP="$name"
-  FAILED_HINT="$hint"
-  sk8s_fail "${name}" "${hint}"
+  sk8s_fail "failed at step ${STEP}/${TOTAL_STEPS}: ${name}" "${hint} — re-run: make health"
 }
 
 run_or_fail() {

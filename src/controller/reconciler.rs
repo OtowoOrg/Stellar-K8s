@@ -562,7 +562,7 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
                 Api::all(client.clone())
             },
             Config::default(),
-            |secret| {
+            |_secret| {
                 // Trigger reconciliation for all StellarNodes that reference this secret
                 // The reconciler will check if the secret version changed and trigger restarts
                 vec![]

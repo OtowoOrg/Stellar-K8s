@@ -3,7 +3,7 @@
 //! Provides sophisticated API routing with version management,
 //! path-based routing, and header-based routing.
 
-use axum::{body::Body, extract::Request, response::Response};
+use axum::{body::Body, extract::Request};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -364,7 +364,7 @@ impl VersionSelector {
         headers
             .get("Accept")
             .and_then(|v| v.to_str().ok())
-            .and_then(|s| Self::parse_media_type(s))
+            .and_then(Self::parse_media_type)
     }
 
     /// Extract version from custom header
@@ -372,7 +372,7 @@ impl VersionSelector {
         headers
             .get("X-API-Version")
             .and_then(|v| v.to_str().ok())
-            .and_then(|s| Self::parse_version_str(s))
+            .and_then(Self::parse_version_str)
     }
 
     /// Extract version from query param

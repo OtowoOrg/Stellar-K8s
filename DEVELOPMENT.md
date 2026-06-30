@@ -14,6 +14,23 @@ This guide walks you through setting up a local development environment for Stel
 - [Development Workflow](#development-workflow)
 - [Troubleshooting](#troubleshooting)
 
+> **Regenerating CRDs, Helm charts, or the OLM bundle?** See [docs/development/regeneration-guide.md](docs/development/regeneration-guide.md).
+
+### Removed maintenance scripts
+
+The following one-off scripts were removed as part of repository hygiene (#1002). Use the supported replacements instead:
+
+| Removed | Replacement |
+|---------|-------------|
+| `scripts/cleanup_root.sh` | Manual cleanup; no automated replacement |
+| `scripts/organize_scripts.sh` | Batch scripts live under `scripts/archive/` |
+| `scripts/dev-utils/*` | `make dev-setup`, `make preflight`, `make validate` |
+| `benchmarks/test-webhook-local.sh` | `make benchmark-webhook` |
+| `benchmarks/run-proximity-benchmark.sh` | `make benchmark` |
+| `config/samples/benchmark-compare-example.sh` | `benchmarks/run-regression-test.sh` |
+| `src/update_check.rs` | `src/version_check.rs` (used by the operator binary) |
+| `src/kubectl_plugin/interactive.rs` | Standard kubectl-stellar subcommands |
+
 ---
 
 ## Prerequisites
@@ -186,10 +203,13 @@ Run all unit tests across the workspace:
 
 ```bash
 make test
-
-# Or use cargo directly
-cargo test --workspace --all-features --verbose
 ```
+
+This is the canonical command. It wraps `cargo test` with the project's
+feature set (`rest-api`, `metrics`, `admission-webhook`, `k8s-v1-30`,
+`reconciler-fuzz`) and `K8S_OPENAPI_ENABLED_VERSION=1.30`, matching CI
+exactly. Plain `cargo test --all-features` will **not** produce the same
+result.
 
 This runs **62+ tests** including:
 - 52 `StellarNodeSpec` validation tests (CRD schema validation)
@@ -320,7 +340,7 @@ Run the operator binary directly on your machine, connecting to a Kubernetes clu
 export KUBECONFIG=~/.kube/config
 
 # Build and run
-make run
+make run-local
 
 # Or with debug logging
 RUST_LOG=debug cargo run --bin stellar-operator
@@ -391,10 +411,19 @@ cargo test --test e2e_kind -- --ignored
 
 ## Useful Make Targets
 
-The Makefile provides convenient shortcuts for common tasks:
+The Makefile provides convenient shortcuts for common tasks. See below for the **canonical command flow** — the recommended order for common development tasks.
 
 ```bash
-make help          # Show all available targets
+make help          # Show all available targets and canonical flow
+```
+
+### Canonical Command Flow
+
+```bash
+make dev-setup     # One-time environment setup (Rust toolchain, tools, pre-commit hooks)
+make quick         # Fast pre-commit check (fmt-check + cargo check)
+make ci-local      # Full CI pipeline locally (fmt-check + lint + audit + test + build + link-check)
+make health        # Full contributor health gate
 ```
 
 ### Development Commands
@@ -404,7 +433,8 @@ make dev-setup     # One-time setup: install Rust components and tools
 make fmt           # Auto-format all code
 make fmt-check     # Check if code is formatted (CI uses this)
 make lint          # Run clippy linter
-make audit         # Run security audit on dependencies
+make lint-strict   # Run clippy with complexity checks (stricter)
+make audit         # Security audit on dependencies
 make test          # Run all tests
 make build         # Build release binaries
 make clean         # Remove build artifacts
@@ -417,7 +447,16 @@ make preflight     # Validate all required tools are installed (run this first)
 make health        # Recommended: format + lint + tests + docs (+ shellcheck)
 make quick         # Fast pre-commit check (format + compile)
 make validate      # Fast compile path: format + lint + compile check (no tests)
-make ci-local      # Full CI pipeline locally (format + lint + audit + test + build)
+make ci-local      # Full CI pipeline locally (fmt-check + lint + audit + test + build + link-check)
+```
+
+### Security
+
+```bash
+make audit         # Run cargo-audit on dependencies
+make security-scan # Run audit + shellcheck
+make shellcheck    # Run shellcheck on all shell scripts
+make security-all  # Run all security checks
 ```
 
 ### Kubernetes Operations
@@ -425,12 +464,14 @@ make ci-local      # Full CI pipeline locally (format + lint + audit + test + bu
 ```bash
 make install-crd   # Install CRDs to current cluster
 make apply-samples # Apply sample StellarNode resources
+make crd-gen       # Generate CRDs from Rust types
+make regenerate    # Regenerate all derived artifacts (CRDs, API docs, OLM bundle)
 ```
 
 ### Running the Operator
 
 ```bash
-make run           # Build and run operator (release mode)
+make run-local     # Build and run operator from release binary
 make run-dev       # Run with hot reload (debug mode)
 make watch         # Watch mode: rebuild on changes
 ```
@@ -438,20 +479,24 @@ make watch         # Watch mode: rebuild on changes
 ### Docker
 
 ```bash
-make docker-build      # Build Docker image (local arch)
+make docker-build      # Build Docker image (local arch, fast mode using host binaries)
+make docker-build-ci   # Build Docker image (CI mode, builds binaries in container)
 make docker-multiarch  # Build multi-arch image (amd64 + arm64)
 ```
 
 ### Performance
 
 ```bash
-make benchmark     # Run k6 performance benchmarks
+make benchmark          # Run k6 performance benchmarks
+make benchmark-all      # Run all benchmarks
+make benchmark-webhook  # Run webhook benchmarks
 ```
 
 ### Complete Pipeline
 
 ```bash
-make all           # Run full CI + Docker build
+make all           # Run CI checks + build + Docker image
+make quickstart    # End-to-end local quickstart (kind cluster)
 ```
 
 ---
@@ -501,17 +546,23 @@ make all           # Run full CI + Docker build
 
 ### CI Pipeline Overview
 
-GitHub Actions runs these checks on every PR:
+GitHub Actions runs these checks on every PR. Each one maps to a `make`
+target so you can reproduce CI locally with the same feature flags and
+environment variables:
 
-1. **Security Audit**: `cargo audit --deny unsound`
-2. **Format Check**: `cargo fmt --all --check`
-3. **Lint**: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-4. **Tests**: `cargo test --workspace --all-features --verbose`
-5. **Build**: `cargo build --release --locked`
-6. **Docker Build**: Multi-arch image build
-7. **Security Scan**: Trivy container scan
+1. **Security Audit**: `make audit`
+2. **Format Check**: `make fmt-check`
+3. **Lint**: `make lint`
+4. **Tests**: `make test`
+5. **Build**: `make build`
+6. **Link Check**: `make link-check` (markdown), `make link-check-all` (repo-wide via lychee)
+7. **Docker Build**: Multi-arch image build (`make docker-multiarch`)
+8. **Security Scan**: Trivy container scan
 
-See [.github/CI_COMMANDS.md](.github/CI_COMMANDS.md) for exact commands.
+Run the whole gate locally with `make ci-local`.
+
+See [.github/CI_COMMANDS.md](.github/CI_COMMANDS.md) for the exact `cargo`
+invocations each target wraps.
 
 ---
 
@@ -553,11 +604,8 @@ lsof -i :8080
 **Problem**: `make ci-local` fails on format check
 
 ```bash
-# Auto-fix formatting
+# Auto-fix formatting (canonical)
 make fmt
-
-# Or manually
-cargo fmt --all
 ```
 
 ### Clippy Warnings
@@ -565,11 +613,11 @@ cargo fmt --all
 **Problem**: Clippy reports warnings
 
 ```bash
-# See detailed warnings
-cargo clippy --workspace --all-targets --all-features
+# See detailed warnings (canonical — uses project features)
+make lint
 
-# Auto-fix some issues
-cargo clippy --fix --workspace --all-targets --all-features
+# Strict mode (adds complexity checks)
+make lint-strict
 
 # Allow specific warnings (use sparingly)
 #[allow(clippy::warning_name)]
@@ -692,12 +740,11 @@ make quick                        # Fast pre-commit check
 make validate                     # Format + lint + compile check (no tests)
 make ci-local                     # Full CI validation
 
-# Development
-cargo build                       # Build debug
-cargo build --release             # Build release
-cargo test                        # Run tests
-cargo fmt                         # Format code
-cargo clippy                      # Lint code
+# Development (canonical — prefer make targets to match CI feature flags)
+make build                        # Build release (wraps `cargo build --release --locked`)
+make test                         # Run tests (wraps `cargo test` with project features)
+make fmt                          # Format code (wraps `cargo fmt --all`)
+make lint                         # Lint code (wraps `cargo clippy` with project features)
 
 # Kubernetes
 kind create cluster --name stellar-dev
@@ -747,13 +794,13 @@ If you modify source code that affects these outputs (such as CRDs, CLI definiti
 |---|---|---|
 | `docs/api-reference.md` | CRD types in `src/crd/` | `make generate-api-docs` |
 | `config/crd/*.yaml` | CRD structs in `src/crd/` | `make crd-gen` |
-| `bundle/manifests/*.yaml` | `config/manifests/bases/` + operator metadata | `make bundle` (requires operator-sdk) |
+| `bundle/manifests/*.yaml` (gitignored — do not commit) | `config/manifests/bases/` + operator metadata | `make bundle` (requires operator-sdk) |
 | `charts/stellar-operator/templates/*.yaml` | Hand-written (see [guide](docs/development/regeneration-guide.md)) | `helm template` for validation |
 | Shell completions | CLI definitions in `src/cli.rs` | `make completions` |
 
 For detailed instructions on each regeneration step, see the [Regeneration Guide](docs/development/regeneration-guide.md).
 
-After running any of the above, commit the updated generated file alongside the source change in the same PR.
+After running any of the above, commit the updated generated file alongside the source change in the same PR — except `bundle/manifests/*.yaml`, which is gitignored and must be regenerated locally on demand instead.
 
 ---
 

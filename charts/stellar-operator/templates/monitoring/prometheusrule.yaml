@@ -1,0 +1,50 @@
+{{- if (and .Values.monitoring .Values.monitoring.enabled .Values.monitoring.prometheusRule.enabled) }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-node-health
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: stellar-node-health
+      rules:
+        - alert: StellarNodeDown
+          expr: stellar_node_up == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: 'Stellar node {{ `{{ $labels.node_name }}` }} is down'
+            description: 'stellar_node_up has been 0 for more than 2 minutes.'
+        - alert: StellarNodeNotSyncing
+          expr: stellar_node_sync_status == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: 'Stellar node {{ `{{ $labels.node_name }}` }} is not synced'
+            description: 'stellar_node_sync_status has reported out-of-sync for more than 5 minutes.'
+        - alert: StellarNodeHighIngestionLag
+          expr: stellar_node_ingestion_lag > {{ .Values.monitoring.prometheusRule.ingestionLagThresholdSeconds }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Stellar node {{ `{{ $labels.node_name }}` }} ingestion lag is high'
+            description: 'Ingestion lag is {{ `{{ $value }}` }}s, above the {{ .Values.monitoring.prometheusRule.ingestionLagThresholdSeconds }}s threshold.'
+        - alert: StellarNodeSlowLedgerClose
+          expr: stellar_node_ledger_close_time_seconds > {{ .Values.monitoring.prometheusRule.ledgerCloseTimeThresholdSeconds }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Stellar node {{ `{{ $labels.node_name }}` }} ledger close time is high'
+            description: 'Ledger close time is {{ `{{ $value }}` }}s, above the {{ .Values.monitoring.prometheusRule.ledgerCloseTimeThresholdSeconds }}s threshold.'
+        {{- with .Values.monitoring.prometheusRule.additionalRules }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}

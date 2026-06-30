@@ -23,13 +23,11 @@ use crate::crd::StellarNode;
 use crate::error::{Error, Result};
 use k8s_openapi::api::core::v1::PersistentVolumeClaim;
 use k8s_openapi::api::storage::v1::StorageClass;
-use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use kube::{
     api::{Api, Patch, PatchParams},
     Client, ResourceExt,
 };
 use serde_json::json;
-use std::collections::BTreeMap;
 use tracing::{debug, info, instrument, warn};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -265,7 +263,7 @@ impl VolumeResizerController {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .build()
-            .map_err(|e| Error::HttpError(e))?;
+            .map_err(Error::HttpError)?;
 
         // Query used bytes.
         let used_query = format!(
@@ -416,7 +414,7 @@ impl VolumeResizerController {
 fn bytes_to_gi(bytes: u64) -> u64 {
     let gi = bytes / (1024 * 1024 * 1024);
     // Round up if there's a remainder.
-    if bytes % (1024 * 1024 * 1024) > 0 {
+    if !bytes.is_multiple_of(1024 * 1024 * 1024) {
         gi + 1
     } else {
         gi

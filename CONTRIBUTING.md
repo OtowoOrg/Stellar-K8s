@@ -81,19 +81,23 @@ Before opening a PR, confirm the following:
 
 ### Required checks
 
-Run these locally before submitting:
+Run these locally before submitting. Always use the `make` targets — they
+wrap the underlying `cargo` commands with the workspace's feature flags
+(`rest-api`, `metrics`, `admission-webhook`, `k8s-v1-30`, `reconciler-fuzz`)
+and `K8S_OPENAPI_ENABLED_VERSION`, so plain `cargo fmt`/`cargo clippy`/`cargo
+test` invocations will not match CI exactly.
 
 ```bash
-cargo fmt --all
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test
-make ci-local
+make fmt          # Auto-format (wraps `cargo fmt --all`)
+make lint         # Clippy with project feature flags (wraps `cargo clippy ...`)
+make test         # Workspace tests + doc tests (wraps `cargo test ...`)
+make ci-local     # Full local CI gate: fmt-check + lint + audit + test + build + link-check
 ```
 
 If your change adds shell scripts or repository tooling, also run:
 
 ```bash
-find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error
+make shellcheck
 ```
 
 ## 4. Commit Message Examples
@@ -174,21 +178,34 @@ make dev-setup
 bash scripts/setup-mac.sh  # macOS only
 ```
 
-### Local checks
+### Local checks — Canonical Workflow
+
+Always drive the local pipeline through `make` targets. They wrap `cargo`
+with the workspace's feature flags so the results match CI exactly:
 
 ```bash
-cargo fmt --all
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test
-make quick
-make ci-local
+make dev-setup     # One-time: install Rust toolchain, tools, and pre-commit hooks
+make quick         # Fast pre-commit check (fmt-check + cargo check)
+make ci-local      # Full CI pipeline (fmt-check + lint + audit + test + build + link-check)
+make health        # Full contributor health gate
+```
+
+Or run individual steps:
+
+```bash
+make fmt           # Format (wraps `cargo fmt --all`)
+make lint          # Clippy with project feature flags
+make test          # Workspace tests + doc tests
+make security-all  # Audit + shellcheck
+make link-check    # Markdown link/anchor check (PR-time)
+make link-check-all # Repo-wide link check via lychee (markdown + source + configs)
 ```
 
 ## 8. Coding Standards
 
-- Format Rust code with `cargo fmt`.
-- Use `cargo clippy --all-targets --all-features -- -D warnings` for linting.
-- Add or update tests for code changes.
+- Format Rust code with `make fmt`.
+- Lint with `make lint` (clippy with the project's feature flags).
+- Run tests with `make test`.
 - Document behavior changes in code comments and docs.
 - Keep PRs small and easy to review.
 
@@ -261,6 +278,6 @@ Refer to [README.md](README.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for additio
 
 ### CI Failures
 - **Problem**: GitHub Actions workflow fails on linting.
-  - **Solution**: Run `cargo fmt` and `cargo clippy` locally before pushing. Also, check `.pre-commit-config.yaml` to ensure your pre-commit hooks are installed.
+  - **Solution**: Run `make fmt` and `make lint` locally before pushing. Also, check `.pre-commit-config.yaml` to ensure your pre-commit hooks are installed.
 - **Problem**: Link validation CI fails.
-  - **Solution**: Make sure all Markdown links are valid and relative paths point to existing files.
+  - **Solution**: Run `make link-check` for markdown link/anchor issues, or `make link-check-all` for the full repo-wide check (markdown + source + configs).

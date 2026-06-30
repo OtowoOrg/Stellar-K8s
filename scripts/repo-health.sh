@@ -38,14 +38,11 @@ print_header() {
 
 begin_step() {
   STEP=$((STEP + 1))
-  SK8S_STEP="$1"
-  echo ""
-  echo "[${STEP}/${TOTAL_STEPS}] ${SK8S_STEP}"
-  echo "────────────────────────────────────────────────────────────"
+  sk8s_step "Step ${STEP}/${TOTAL_STEPS}" "$1"
 }
 
 pass_step() {
-  echo "  ✓ ${1} passed"
+  sk8s_pass "${1} passed"
 }
 
 fail_step() {

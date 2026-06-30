@@ -393,6 +393,7 @@ mod tests {
     // to see timing output.
 
     #[test]
+    #[ignore = "timing-based benchmark; flaky under CI runner load, run manually with --ignored"]
     fn bench_wasm_cache_speedup() {
         use std::time::{Duration, Instant};
 

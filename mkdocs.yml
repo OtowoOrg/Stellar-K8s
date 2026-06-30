@@ -102,6 +102,7 @@ nav:
     - CRD Reference: configuration/crd-reference.md
     - Operators: configuration/operators.md
     - Storage: configuration/storage.md
+    - Database Optimization: database/optimization-guide.md
   - Tutorials:
     - tutorials/index.md
     - Deploy Testnet Validator: tutorials/deploy-testnet-validator.md
@@ -124,6 +125,7 @@ nav:
     - Comprehensive Network Guide: networking/index.md
   - Development:
     - Regeneration Guide: development/regeneration-guide.md
+    - Repo Health Checklist: development/repo-health-checklist.md
   - Contributing:
     - contributing/index.md
     - Development Setup: contributing/development-setup.md

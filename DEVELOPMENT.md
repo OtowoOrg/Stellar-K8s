@@ -24,7 +24,6 @@ The following one-off scripts were removed as part of repository hygiene (#1002)
 |---------|-------------|
 | `scripts/cleanup_root.sh` | Manual cleanup; no automated replacement |
 | `scripts/organize_scripts.sh` | Batch scripts live under `scripts/archive/` |
-| `scripts/harden-cluster.sh` | See `docs/production-security-hardening.md` |
 | `scripts/dev-utils/*` | `make dev-setup`, `make preflight`, `make validate` |
 | `benchmarks/test-webhook-local.sh` | `make benchmark-webhook` |
 | `benchmarks/run-proximity-benchmark.sh` | `make benchmark` |
@@ -770,46 +769,11 @@ E2E_OPERATOR_IMAGE=stellar-operator:dev  # Custom operator image for E2E
 
 ## Repo Health Checklist
 
-Use this checklist before merging any PR that touches code, scripts, or documentation. It captures the minimum bar to keep the repository clean and navigable.
+To maintain the quality, security, and cleanliness of the repository, all pull requests must satisfy the project's hygiene standards.
 
-Run `make health` first — it executes format, lint, tests, and docs checks in one command and stops at the first failure.
+Before submitting or merging any changes, please review and verify all items in the [Canonical Repository Health Checklist](docs/development/repo-health-checklist.md).
 
-### Code Quality
-
-- [ ] `make fmt-check` passes (no unformatted Rust code)
-- [ ] `make lint` passes (no clippy warnings at the deny level)
-- [ ] `make audit` passes or all advisories are reviewed and acknowledged
-- [ ] `make test` passes locally
-- [ ] No new `#[allow(dead_code)]` attributes added without a comment explaining why
-- [ ] No unused `use` imports left in modified files
-- [ ] New public functions and types have doc comments
-
-### Documentation
-
-- [ ] Any user-facing behavior change is reflected in `docs/` or the relevant doc file
-- [ ] New `make` targets are listed under **Useful Make Targets** in this file
-- [ ] New environment variables are listed under **Environment Variables** in the Quick Reference
-- [ ] CRD field changes trigger `make generate-api-docs` to regenerate `docs/api-reference.md`
-
-### Scripts and Manifests
-
-- [ ] Shell scripts pass `shellcheck -S error`
-- [ ] New config files go under `config/` with a clear subdirectory (see `config/README.md`)
-- [ ] Helm values changes are reflected in `charts/stellar-operator/values.yaml` comments
-- [ ] Generated manifests are regenerated from their source (see [Regenerating Manifests](#regenerating-manifests))
-
-### Naming
-
-- [ ] Rust modules use `snake_case`
-- [ ] Documentation files use `kebab-case.md`
-- [ ] CRD YAML files follow the `stellar{feature}-crd.yaml` pattern
-- [ ] Example manifests use descriptive names, not issue-number-based names
-
-### Final
-
-- [ ] `make ci-local` passes end-to-end (format + lint + audit + test + build)
-- [ ] Branch is up to date with `main`
-- [ ] Commit messages follow Conventional Commits
+You can run `make health` locally to execute format, lint, tests, and link checks in one command.
 
 ---
 

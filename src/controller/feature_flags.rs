@@ -46,6 +46,69 @@ use tracing::{info, warn};
 /// Name of the feature-flags ConfigMap the operator watches.
 pub const FEATURE_FLAGS_CONFIGMAP: &str = "stellar-operator-config";
 
+/// All recognised feature-flag keys.
+///
+/// Any key present in the ConfigMap that is *not* listed here is treated as
+/// unknown and surfaced as a [`FlagValidationWarning::UnknownKey`].
+pub const KNOWN_FLAGS: &[&str] = &[
+    "enable_cve_scanning",
+    "enable_read_pool",
+    "enable_dr",
+    "enable_peer_discovery",
+    "enable_archive_health",
+    "enable_soroban_metrics",
+];
+
+/// A warning produced by [`validate_config_map_data`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FlagValidationWarning {
+    /// The ConfigMap contains a key that is not in [`KNOWN_FLAGS`].
+    UnknownKey(String),
+    /// A recognised key has a value that is not a recognised boolean string.
+    InvalidValue { key: String, value: String },
+}
+
+impl std::fmt::Display for FlagValidationWarning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownKey(key) => {
+                write!(f, "unknown feature flag '{key}' — will be ignored")
+            }
+            Self::InvalidValue { key, value } => {
+                write!(
+                    f,
+                    "invalid value '{value}' for flag '{key}' — expected true/false/1/0/yes/no; reverting to default"
+                )
+            }
+        }
+    }
+}
+
+/// Validate `data` from a feature-flags ConfigMap against the registry.
+///
+/// Returns a (possibly empty) list of warnings for unknown keys and
+/// unrecognised boolean values. The warnings are purely advisory: callers
+/// can choose to log them and proceed, or surface them as status conditions.
+/// This function never mutates or rejects entries — that is left to
+/// [`FeatureFlags::from_config_map_data`].
+pub fn validate_config_map_data(data: &BTreeMap<String, String>) -> Vec<FlagValidationWarning> {
+    let valid_bool_values = ["true", "false", "1", "0", "yes", "no"];
+    let mut warnings = Vec::new();
+
+    for (key, value) in data {
+        if !KNOWN_FLAGS.contains(&key.as_str()) {
+            warnings.push(FlagValidationWarning::UnknownKey(key.clone()));
+        } else if !valid_bool_values.contains(&value.to_lowercase().as_str()) {
+            warnings.push(FlagValidationWarning::InvalidValue {
+                key: key.clone(),
+                value: value.clone(),
+            });
+        }
+    }
+
+    warnings
+}
+
 /// Runtime feature flags. All fields default to safe production values.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureFlags {
@@ -134,6 +197,15 @@ pub async fn watch_feature_flags(
         match event {
             Ok(Event::Apply(cm)) | Ok(Event::InitApply(cm)) => {
                 let data = cm.data.clone().unwrap_or_default();
+
+                for warning in validate_config_map_data(&data) {
+                    warn!(
+                        configmap = FEATURE_FLAGS_CONFIGMAP,
+                        warning = %warning,
+                        "Feature-flag ConfigMap validation warning"
+                    );
+                }
+
                 let new_flags = FeatureFlags::from_config_map_data(&data);
 
                 let mut current = flags.write().await;
@@ -346,5 +418,94 @@ mod tests {
         }
         let flags = shared.read().await;
         assert!(flags.enable_dr);
+    }
+
+    // ── Registry and validation tests ─────────────────────────────────────────
+
+    #[test]
+    fn known_flags_covers_all_struct_fields() {
+        // Every field on FeatureFlags must appear in KNOWN_FLAGS.
+        let all_keys: Vec<&str> = vec![
+            "enable_cve_scanning",
+            "enable_read_pool",
+            "enable_dr",
+            "enable_peer_discovery",
+            "enable_archive_health",
+            "enable_soroban_metrics",
+        ];
+        for key in &all_keys {
+            assert!(
+                KNOWN_FLAGS.contains(key),
+                "'{key}' is missing from KNOWN_FLAGS"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_returns_no_warnings_for_known_keys() {
+        let d = data(&[
+            ("enable_cve_scanning", "true"),
+            ("enable_read_pool", "false"),
+            ("enable_dr", "yes"),
+            ("enable_peer_discovery", "1"),
+            ("enable_archive_health", "0"),
+            ("enable_soroban_metrics", "no"),
+        ]);
+        let warnings = validate_config_map_data(&d);
+        assert!(warnings.is_empty(), "expected no warnings, got: {warnings:?}");
+    }
+
+    #[test]
+    fn validate_warns_on_unknown_key() {
+        let d = data(&[("enable_dr", "true"), ("unknown_feature", "true")]);
+        let warnings = validate_config_map_data(&d);
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            warnings[0],
+            FlagValidationWarning::UnknownKey("unknown_feature".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_warns_on_multiple_unknown_keys() {
+        let d = data(&[
+            ("enable_dr", "true"),
+            ("foo_flag", "true"),
+            ("bar_flag", "false"),
+        ]);
+        let mut warnings = validate_config_map_data(&d);
+        warnings.sort_by_key(|w| format!("{w:?}"));
+        assert_eq!(warnings.len(), 2);
+    }
+
+    #[test]
+    fn validate_warns_on_invalid_bool_value() {
+        let d = data(&[("enable_dr", "enabled")]);
+        let warnings = validate_config_map_data(&d);
+        assert_eq!(warnings.len(), 1);
+        assert!(matches!(
+            &warnings[0],
+            FlagValidationWarning::InvalidValue { key, .. } if key == "enable_dr"
+        ));
+    }
+
+    #[test]
+    fn validate_empty_data_returns_no_warnings() {
+        let warnings = validate_config_map_data(&BTreeMap::new());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn flag_validation_warning_display_includes_key_name() {
+        let w = FlagValidationWarning::UnknownKey("mystery_flag".to_string());
+        assert!(w.to_string().contains("mystery_flag"));
+
+        let w2 = FlagValidationWarning::InvalidValue {
+            key: "enable_dr".to_string(),
+            value: "enabled".to_string(),
+        };
+        let s = w2.to_string();
+        assert!(s.contains("enable_dr"));
+        assert!(s.contains("enabled"));
     }
 }

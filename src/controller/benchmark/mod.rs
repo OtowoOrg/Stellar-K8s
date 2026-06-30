@@ -7,6 +7,7 @@
 //! 4. Writing results to a `BenchmarkReport` CR or a `ConfigMap`.
 
 pub mod collector;
+pub mod harness;
 pub mod pod_builder;
 pub mod reconciler;
 

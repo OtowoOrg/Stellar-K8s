@@ -86,10 +86,14 @@ The `make bundle` target performs these steps internally:
 ```
 bundle/
 ├── manifests/
-│   └── stellar-operator.clusterserviceversion.yaml   # ClusterServiceVersion
+│   └── stellar-operator.clusterserviceversion.yaml   # ClusterServiceVersion (gitignored, run `make bundle` to produce it)
 └── metadata/
-    └── annotations.yaml                               # Bundle annotations
+    └── annotations.yaml                               # Bundle annotations (committed, hand-written)
 ```
+
+`bundle/manifests/` is gitignored since its only contents are fully generated from
+`config/manifests/bases/`. Run `make bundle` locally any time you need it (e.g. before
+`operator-sdk bundle validate` or `make bundle-build`) — do not commit the output.
 
 ### Customizing bundle metadata
 

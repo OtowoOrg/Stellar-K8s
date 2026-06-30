@@ -248,6 +248,45 @@ service:
   restApiPort: 9090
   metricsPort: 9090
 
+# Prometheus Operator monitoring integration — ServiceMonitor, PodMonitor,
+# PrometheusRule (Stellar node-health alerts), and Grafana dashboard ConfigMaps.
+# Requires the Prometheus Operator CRDs (monitoring.coreos.com/v1) on the cluster.
+monitoring:
+  # Master switch. Set to true to deploy any monitoring resources below.
+  enabled: false
+
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+
+  # PodMonitor for direct (Service-less) pod scraping, e.g. operator-managed
+  # StellarNode pods that don't have a dedicated Service.
+  podMonitor:
+    enabled: false
+    interval: 30s
+    portName: metrics
+    labels: {}
+    selector:
+      matchExpressions:
+        - key: stellar.org/node-type
+          operator: Exists
+
+  prometheusRule:
+    enabled: true
+    labels: {}
+    ingestionLagThresholdSeconds: 30
+    ledgerCloseTimeThresholdSeconds: 10
+    # Extra PrometheusRule rule groups, appended as-is under spec.groups[0].rules.
+    additionalRules: []
+
+  grafanaDashboards:
+    enabled: true
+    # Standard label used by the Grafana sidecar dashboard-loader to auto-discover ConfigMaps.
+    labels:
+      grafana_dashboard: "1"
+
 # Default resource requests/limits for managed StellarNode pods.
 # Precedence: StellarNode spec.resources > Helm defaults > operator hardcoded fallback.
 # These are written into a ConfigMap that the operator reads at startup.
@@ -583,6 +622,36 @@ scpAnalytics:
       requests:
         cpu: 200m
         memory: 256Mi
+
+# --- Admission webhook deployment settings -----------------------------------
+# Controls the webhook Deployment, Service, and ValidatingWebhookConfiguration
+# rendered by charts/stellar-operator/templates/webhook.yaml.
+webhook:
+  # Number of webhook server replicas. Set to >= 2 for production HA.
+  replicaCount: 2
+
+  # Port the webhook HTTPS server listens on inside the container.
+  port: 8443
+
+  # Port for the Prometheus /metrics endpoint on the webhook pod.
+  metricsPort: 9090
+
+  # Admission review timeout in seconds. Kubernetes maximum is 30.
+  timeoutSeconds: 10
+
+  # Action when the webhook is unreachable: Fail (safe default) or Ignore.
+  # Fail: admission is blocked if the webhook cannot be reached.
+  # Ignore: admission proceeds without the webhook response.
+  failurePolicy: Fail
+
+  # Resource requests and limits for the webhook server container.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 # --- Helm lifecycle hooks ----------------------------------------------------
 hooks:

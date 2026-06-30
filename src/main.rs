@@ -25,13 +25,6 @@ use stellar_k8s::{incident, Error};
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
 
-    // Handle --version/-v flag
-    if args.version {
-        println!("stellar-cli v{}", env!("CARGO_PKG_VERSION"));
-        println!("Build Date: {}", env!("BUILD_DATE"));
-        return Ok(());
-    }
-
     let offline = args.offline;
 
     let result = match args.command {
@@ -127,7 +120,7 @@ async fn main() -> Result<(), Error> {
         Commands::BenchmarkCompare(compare_args) => {
             return stellar_k8s::benchmark_compare::run_benchmark_compare(compare_args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string()));
+                .map_err(|e| Error::config_step("benchmark compare", e));
         }
         Commands::ExportCompliance(export_args) => {
             return run_export_compliance(export_args).await;
@@ -135,16 +128,16 @@ async fn main() -> Result<(), Error> {
         Commands::Backup { command } => match command {
             BackupCommands::Create(args) => run_backup(args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string())),
+                .map_err(|e| Error::config_step("backup create", e)),
             BackupCommands::Restore(args) => run_restore(args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string())),
+                .map_err(|e| Error::config_step("backup restore", e)),
             BackupCommands::List(args) => run_list(args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string())),
+                .map_err(|e| Error::config_step("backup list", e)),
             BackupCommands::Cleanup(args) => run_cleanup(args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string())),
+                .map_err(|e| Error::config_step("backup cleanup", e)),
         },
     };
 

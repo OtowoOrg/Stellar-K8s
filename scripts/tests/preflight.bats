@@ -17,7 +17,8 @@ PREFLIGHT="${BATS_TEST_DIRNAME}/../preflight.sh"
   kubectl() { echo "Client Version: v1.30.0"; }
   helm()    { echo "version.BuildInfo{Version:\"v3.14.0\"}"; }
   cargo()   { echo "cargo 1.88.0"; }
-  export -f docker kind kubectl helm cargo
+  gh()      { echo "gh version 2.50.0"; }
+  export -f docker kind kubectl helm cargo gh
 
   run bash "${PREFLIGHT}"
   [ "$status" -eq 0 ]
@@ -29,7 +30,7 @@ PREFLIGHT="${BATS_TEST_DIRNAME}/../preflight.sh"
   local empty_dir
   empty_dir=$(mktemp -d)
   # Copy stubs for every tool EXCEPT kind.
-  for tool in docker kubectl helm cargo; do
+  for tool in docker kubectl helm cargo gh; do
     printf '#!/usr/bin/env bash\necho "%s stub"\n' "$tool" > "${empty_dir}/${tool}"
     chmod +x "${empty_dir}/${tool}"
   done
@@ -88,4 +89,20 @@ PREFLIGHT="${BATS_TEST_DIRNAME}/../preflight.sh"
   [ "$status" -eq 0 ]
 
   rm -rf "${stub_dir}"
+}
+
+@test "preflight exits non-zero when gh is missing" {
+  local empty_dir
+  empty_dir=$(mktemp -d)
+  # Stub every tool EXCEPT gh.
+  for tool in docker kind kubectl helm cargo; do
+    printf '#!/usr/bin/env bash\necho "%s stub"\n' "$tool" > "${empty_dir}/${tool}"
+    chmod +x "${empty_dir}/${tool}"
+  done
+
+  run env PATH="${empty_dir}:/usr/bin:/bin" bash "${PREFLIGHT}"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"[FAIL]"* ]]
+
+  rm -rf "${empty_dir}"
 }

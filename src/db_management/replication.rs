@@ -32,6 +32,18 @@ pub struct ReplicationReport {
 const LAG_WARN_MS: f64 = 5_000.0;
 const LAG_CRITICAL_MS: f64 = 30_000.0;
 
+/// Raw row shape from `pg_stat_replication`: (application_name, client_addr,
+/// state, write_lag_ms, flush_lag_ms, replay_lag_ms, sync_state)
+type ReplicationRow = (
+    String,
+    String,
+    String,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    String,
+);
+
 pub struct ReplicationMonitor;
 
 impl ReplicationMonitor {
@@ -45,15 +57,7 @@ impl ReplicationMonitor {
         let mut alerts = vec![];
 
         let replicas = if is_primary {
-            let rows: Vec<(
-                String,
-                String,
-                String,
-                Option<f64>,
-                Option<f64>,
-                Option<f64>,
-                String,
-            )> = sqlx::query_as(
+            let rows: Vec<ReplicationRow> = sqlx::query_as(
                 r#"SELECT application_name,
                               coalesce(client_addr::text, 'local'),
                               state,

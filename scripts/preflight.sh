@@ -19,6 +19,7 @@ declare -A TOOLS=(
   [kubectl]="Install kubectl: https://kubernetes.io/docs/tasks/tools/"
   [helm]="Install Helm 3: https://helm.sh/docs/intro/install/"
   [cargo]="Install Rust via rustup: https://rustup.rs/"
+  [gh]="Install GitHub CLI: https://cli.github.com/"
 )
 
 # Labels that must exist in the GitHub repo before issue automation runs.

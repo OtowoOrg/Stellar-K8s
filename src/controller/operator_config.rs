@@ -41,6 +41,7 @@ impl Default for NodeResourceDefaults {
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OperatorConfig {
+    #[serde(default)]
     pub default_resources: DefaultResources,
     #[serde(default)]
     pub reconciler: ReconcilerConfig,

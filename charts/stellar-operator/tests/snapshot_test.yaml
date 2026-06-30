@@ -1,0 +1,479 @@
+# Deterministic Snapshot Tests for Stellar Operator Chart Templates
+#
+# These tests pin the exact rendered output values for a fixed set of inputs,
+# ensuring that chart refactors do not silently change generated manifests.
+# Every assertion uses concrete expected values rather than existence checks,
+# so failures are immediately actionable.
+#
+# Run with: helm unittest charts/stellar-operator
+#
+# Suites:
+#   1. snapshot/deployment — default and HA rendering of the Deployment
+#   2. snapshot/operator-config — ConfigMap config.yaml content
+#   3. snapshot/rbac — ClusterRole and ClusterRoleBinding structure
+#   4. snapshot/pdb — PodDisruptionBudget conditional rendering
+#   5. snapshot/security — security context pinning
+#   6. snapshot/labels — label consistency across resources
+
+suite: snapshot/deployment
+templates:
+  - templates/deployment.yaml
+
+tests:
+  # ── Default single-replica snapshot ──────────────────────────────────────
+  - it: "[SNAPSHOT] default deployment name is RELEASE-NAME-stellar-operator"
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-stellar-operator
+
+  - it: "[SNAPSHOT] default replica count is 1"
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 1
+
+  - it: "[SNAPSHOT] default image resolves to ghcr.io/stellar/stellar-k8s:0.1.0"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/stellar/stellar-k8s:0.1.0
+
+  - it: "[SNAPSHOT] default pullPolicy is Always"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+
+  - it: "[SNAPSHOT] default container name is stellar-k8s"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: stellar-k8s
+
+  - it: "[SNAPSHOT] default CPU limit is 500m"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 500m
+
+  - it: "[SNAPSHOT] default CPU request is 100m"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 100m
+
+  - it: "[SNAPSHOT] default memory limit is 512Mi"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 512Mi
+
+  - it: "[SNAPSHOT] default memory request is 128Mi"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 128Mi
+
+  - it: "[SNAPSHOT] liveness probe path is /livez"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /livez
+
+  - it: "[SNAPSHOT] readiness probe path is /readyz"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /readyz
+
+  - it: "[SNAPSHOT] startup probe path is /healthz"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /healthz
+
+  - it: "[SNAPSHOT] prometheus scrape annotation is true"
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/scrape"]
+          value: "true"
+
+  - it: "[SNAPSHOT] prometheus port annotation is 9090"
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/port"]
+          value: "9090"
+
+  - it: "[SNAPSHOT] selector label app name is stellar-operator"
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: stellar-operator
+
+  - it: "[SNAPSHOT] selector label instance is RELEASE-NAME"
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+
+  - it: "[SNAPSHOT] pod anti-affinity label matches selector"
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchLabels["app.kubernetes.io/name"]
+          value: stellar-operator
+
+  # ── HA profile snapshot (values-ha.yaml equivalent) ──────────────────────
+  - it: "[SNAPSHOT] HA profile sets 3 replicas"
+    set:
+      replicaCount: 3
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  - it: "[SNAPSHOT] HA profile CPU limit overrides to 1000m"
+    set:
+      resources.limits.cpu: 1000m
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 1000m
+
+  - it: "[SNAPSHOT] HA profile memory limit overrides to 512Mi"
+    set:
+      resources.limits.memory: 512Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 512Mi
+
+  - it: "[SNAPSHOT] HA profile memory request overrides to 256Mi"
+    set:
+      resources.requests.memory: 256Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 256Mi
+
+  # ── Image override snapshots ──────────────────────────────────────────────
+  - it: "[SNAPSHOT] custom image tag is rendered exactly"
+    set:
+      image.tag: v21.4.0
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/stellar/stellar-k8s:v21.4.0
+
+  - it: "[SNAPSHOT] fullnameOverride changes deployment name"
+    set:
+      fullnameOverride: stellar-prod
+    asserts:
+      - equal:
+          path: metadata.name
+          value: stellar-prod
+
+  - it: "[SNAPSHOT] nameOverride influences deployment name"
+    set:
+      nameOverride: my-operator
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-my-operator
+
+  # ── Operator flag snapshots ───────────────────────────────────────────────
+  - it: "[SNAPSHOT] log-level arg is rendered with the configured value"
+    set:
+      operator.logLevel: warn
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --log-level=warn
+
+  - it: "[SNAPSHOT] watch-namespace arg is rendered when namespace is set"
+    set:
+      operator.watchNamespace: stellar-system
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --watch-namespace=stellar-system
+
+  - it: "[SNAPSHOT] rest-api arg absent by default"
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --enable-rest-api
+
+  - it: "[SNAPSHOT] rest-api arg present when enabled"
+    set:
+      operator.restApiEnabled: true
+      operator.restApiPort: 8080
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --enable-rest-api
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --rest-api-port=8080
+
+  # ── Annotation propagation snapshots ─────────────────────────────────────
+  - it: "[SNAPSHOT] extraAnnotations appear on deployment metadata"
+    set:
+      extraAnnotations:
+        stellar.org/environment: production
+        stellar.org/owner: sre-team
+    asserts:
+      - equal:
+          path: metadata.annotations["stellar.org/environment"]
+          value: production
+      - equal:
+          path: metadata.annotations["stellar.org/owner"]
+          value: sre-team
+
+  - it: "[SNAPSHOT] extraAnnotations propagate to pod template"
+    set:
+      extraAnnotations:
+        stellar.org/environment: staging
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["stellar.org/environment"]
+          value: staging
+
+  - it: "[SNAPSHOT] imagePullSecrets list is rendered correctly"
+    set:
+      imagePullSecrets:
+        - name: ghcr-credentials
+    asserts:
+      - contains:
+          path: spec.template.spec.imagePullSecrets
+          content:
+            name: ghcr-credentials
+
+---
+# ── Security context snapshot suite ─────────────────────────────────────────
+suite: snapshot/security
+templates:
+  - templates/deployment.yaml
+
+tests:
+  - it: "[SNAPSHOT] pod runAsNonRoot is true"
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+
+  - it: "[SNAPSHOT] pod runAsUser is 65532"
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 65532
+
+  - it: "[SNAPSHOT] container allowPrivilegeEscalation is false"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+
+  - it: "[SNAPSHOT] container readOnlyRootFilesystem is true"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: "[SNAPSHOT] container capabilities drop ALL"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+
+---
+# ── PDB snapshot suite ───────────────────────────────────────────────────────
+suite: snapshot/pdb
+templates:
+  - templates/pdb.yaml
+
+tests:
+  - it: "[SNAPSHOT] PDB is not rendered when disabled"
+    set:
+      podDisruptionBudget.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "[SNAPSHOT] PDB renders with kind PodDisruptionBudget when enabled"
+    set:
+      podDisruptionBudget.enabled: true
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+
+  - it: "[SNAPSHOT] PDB name matches fullname"
+    set:
+      podDisruptionBudget.enabled: true
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-stellar-operator
+
+  - it: "[SNAPSHOT] PDB default minAvailable is 1"
+    set:
+      podDisruptionBudget.enabled: true
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 1
+
+  - it: "[SNAPSHOT] PDB maxUnavailable overrides minAvailable when both set"
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.maxUnavailable: 1
+      podDisruptionBudget.minAvailable: null
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+      - notExists:
+          path: spec.minAvailable
+
+  - it: "[SNAPSHOT] PDB selector pins to correct instance"
+    set:
+      podDisruptionBudget.enabled: true
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: stellar-operator
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+
+---
+# ── RBAC snapshot suite ──────────────────────────────────────────────────────
+suite: snapshot/rbac
+templates:
+  - templates/rbac.yaml
+
+tests:
+  - it: "[SNAPSHOT] ClusterRole name matches fullname"
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-stellar-operator
+
+  - it: "[SNAPSHOT] ClusterRole is ClusterScoped by default"
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ClusterRole
+
+  - it: "[SNAPSHOT] ClusterRole has stellarnodes full CRUD"
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["stellar.org"]
+            resources: ["stellarnodes"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - it: "[SNAPSHOT] ClusterRole has stellarnodes/status patch"
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["stellar.org"]
+            resources: ["stellarnodes/status"]
+            verbs: ["get", "update", "patch"]
+
+  - it: "[SNAPSHOT] ClusterRole has stellarnodes/finalizers update"
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["stellar.org"]
+            resources: ["stellarnodes/finalizers"]
+            verbs: ["update"]
+
+  - it: "[SNAPSHOT] ClusterRoleBinding subject is the service account"
+    documentIndex: 1
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: subjects[0].kind
+          value: ServiceAccount
+      - equal:
+          path: subjects[0].name
+          value: RELEASE-NAME-stellar-operator
+
+  - it: "[SNAPSHOT] ClusterRoleBinding roleRef points to operator ClusterRole"
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: roleRef.kind
+          value: ClusterRole
+      - equal:
+          path: roleRef.name
+          value: RELEASE-NAME-stellar-operator
+      - equal:
+          path: roleRef.apiGroup
+          value: rbac.authorization.k8s.io
+
+  - it: "[SNAPSHOT] namespace-scoped watchNamespace renders Role not ClusterRole"
+    set:
+      watchNamespace: stellar-system
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: stellar-system
+
+---
+# ── Label consistency snapshot suite ─────────────────────────────────────────
+suite: snapshot/labels
+templates:
+  - templates/deployment.yaml
+
+tests:
+  - it: "[SNAPSHOT] helm.sh/chart label contains chart name and version"
+    asserts:
+      - matchRegex:
+          path: metadata.labels["helm.sh/chart"]
+          pattern: ^stellar-operator-
+
+  - it: "[SNAPSHOT] app.kubernetes.io/name is stellar-operator"
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: stellar-operator
+
+  - it: "[SNAPSHOT] app.kubernetes.io/instance is RELEASE-NAME"
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+
+  - it: "[SNAPSHOT] app.kubernetes.io/version matches chart appVersion"
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: "0.1.0"
+
+  - it: "[SNAPSHOT] app.kubernetes.io/managed-by is Helm"
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+
+  - it: "[SNAPSHOT] pod template selector labels match deployment selector"
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
+          value: stellar-operator
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME

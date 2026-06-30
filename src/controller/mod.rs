@@ -225,5 +225,8 @@ pub mod health_check_sidecar;
 pub mod ml_pipeline;
 pub mod observability_dashboard;
 pub mod observability_pipeline;
+pub mod orphan_audit;
 pub mod pvc_autoscaler;
 pub mod resource_optimization;
+
+pub use orphan_audit::{OrphanAuditReport, OrphanAuditor, OrphanedResource};

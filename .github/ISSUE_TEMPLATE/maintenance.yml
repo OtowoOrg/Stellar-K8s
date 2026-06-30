@@ -1,0 +1,76 @@
+name: Maintenance / Chore
+description: Repo hygiene, CI, docs, dependency updates, or refactoring tasks
+title: "[Chore]: "
+labels: ["chore", "maintenance"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for maintenance tasks: dependency bumps, CI fixes, doc updates,
+        code cleanup, refactors, and other work that does not add features or fix bugs.
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      description: What kind of maintenance is this?
+      options:
+        - Dependencies (bump / audit / remove)
+        - CI / CD pipeline
+        - Documentation
+        - Code cleanup / refactor
+        - Build system / tooling
+        - Repository hygiene
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is broken, outdated, or missing? Be specific and factual.
+      placeholder: "e.g. kube-rs 0.94 requires k8s-openapi 0.22 but Cargo.toml pins 0.26, causing 594 compilation errors."
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope Target
+      description: What should change and where? Name files, modules, workflows, or systems.
+      placeholder: |
+        - Cargo.toml — update k8s-openapi version
+        - .github/workflows/ci.yml — fix matrix
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Bullet list of verifiable outcomes. Each item must be testable.
+      placeholder: |
+        - [ ] `cargo check --workspace` passes with no errors
+        - [ ] CI workflow completes green on the updated dependency
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: How will a reviewer confirm this is done correctly?
+      placeholder: |
+        - [ ] Run `cargo check` and paste the output
+        - [ ] CI passes on the PR
+    validations:
+      required: true
+
+  - type: textarea
+    id: resources
+    attributes:
+      label: Resources
+      description: Links to relevant docs, changelogs, RFCs, or related issues.
+      placeholder: |
+        - https://github.com/kube-rs/kube/blob/main/CHANGELOG.md

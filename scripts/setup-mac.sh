@@ -10,14 +10,17 @@ KUBECTL_VERSION="1.30.0"
 HELM_VERSION="3.16.0"
 K6_VERSION="0.54.0"
 
-# ── Colours ───────────────────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-ok()   { echo -e "${GREEN}✓ $*${NC}"; }
-warn() { echo -e "${YELLOW}⚠ $*${NC}"; }
-fail() { echo -e "${RED}✗ $*${NC}"; exit 1; }
-step() { echo -e "\n${YELLOW}→ $*${NC}"; }
+# Resolve scripts library dir
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/errors.sh
+source "${SCRIPT_DIR}/lib/errors.sh"
 
-echo -e "${GREEN}=== Stellar-K8s macOS Dev Setup ===${NC}"
+ok()   { sk8s_pass "$*"; }
+warn() { sk8s_warn "$*"; }
+fail() { sk8s_fail "$*"; }
+step() { sk8s_step "bootstrap" "$*"; }
+
+echo "=== Stellar-K8s macOS Dev Setup ==="
 echo    "    Rust ${RUST_TOOLCHAIN} | kind ${KIND_VERSION} | kubectl ${KUBECTL_VERSION} | helm ${HELM_VERSION}"
 
 [[ "$OSTYPE" == "darwin"* ]] || fail "This script is for macOS only."

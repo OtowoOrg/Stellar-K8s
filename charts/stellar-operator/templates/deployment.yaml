@@ -38,7 +38,7 @@ spec:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ include "stellar-operator.operatorImage" . }}"
+          image: {{ include "stellar-operator.operatorImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: STELLAR_OPERATOR_CONFIG
@@ -56,10 +56,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            - name: POD_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
             {{- if .Values.otel.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.otel.endpoint | quote }}
@@ -118,7 +114,7 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
         {{- if .Values.sidecar.enabled }}
         - name: crash-analyzer
-          image: "{{ .Values.sidecar.image.repository | default .Values.image.repository }}:{{ .Values.sidecar.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "stellar-operator.componentImage" (dict "root" . "repository" .Values.sidecar.image.repository "tag" .Values.sidecar.image.tag) }}
           imagePullPolicy: {{ .Values.sidecar.image.pullPolicy | default .Values.image.pullPolicy }}
           command: ["/stellar-sidecar"]
           env:
@@ -141,7 +137,7 @@ spec:
         {{- end }}
         {{- if .Values.forkDetector.enabled }}
         - name: fork-detector
-          image: "{{ .Values.forkDetector.image.repository | default .Values.image.repository }}:{{ .Values.forkDetector.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "stellar-operator.componentImage" (dict "root" . "repository" .Values.forkDetector.image.repository "tag" .Values.forkDetector.image.tag) }}
           imagePullPolicy: {{ .Values.forkDetector.image.pullPolicy | default .Values.image.pullPolicy }}
           command: ["/stellar-fork-detector"]
           env:

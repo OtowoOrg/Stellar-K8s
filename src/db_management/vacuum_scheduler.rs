@@ -29,6 +29,17 @@ pub struct VacuumReport {
     pub alerts: Vec<DbAlert>,
 }
 
+/// Raw row shape from `pg_stat_user_tables`: (schema, table, live_tuples,
+/// dead_tuples, last_vacuum, last_analyze)
+type TableBloatRow = (
+    String,
+    String,
+    i64,
+    i64,
+    Option<DateTime<Utc>>,
+    Option<DateTime<Utc>>,
+);
+
 pub struct VacuumScheduler {
     bloat_threshold: f64,
 }
@@ -40,14 +51,7 @@ impl VacuumScheduler {
 
     /// Inspect table bloat and run VACUUM ANALYZE on tables above threshold.
     pub async fn run(&self, pool: &PgPool) -> crate::error::Result<VacuumReport> {
-        let rows: Vec<(
-            String,
-            String,
-            i64,
-            i64,
-            Option<DateTime<Utc>>,
-            Option<DateTime<Utc>>,
-        )> = sqlx::query_as(
+        let rows: Vec<TableBloatRow> = sqlx::query_as(
             r#"SELECT schemaname, relname,
                           n_live_tup, n_dead_tup,
                           last_vacuum, last_analyze

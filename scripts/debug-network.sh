@@ -36,19 +36,16 @@ EXTERNAL_PEER=""
 TIMEOUT=5
 DEBUG_IMAGE="nicolaka/netshoot"
 
-# ── Colours ───────────────────────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-RESET='\033[0m'
+# Resolve scripts library dir
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/errors.sh
+source "${SCRIPT_DIR}/lib/errors.sh"
 
-pass()  { echo -e "  ${GREEN}✔${RESET}  $*"; }
-fail()  { echo -e "  ${RED}✘${RESET}  $*"; }
-warn()  { echo -e "  ${YELLOW}⚠${RESET}  $*"; }
-info()  { echo -e "  ${CYAN}ℹ${RESET}  $*"; }
-header(){ echo -e "\n${BOLD}${CYAN}══ $* ══${RESET}"; }
+pass()   { sk8s_pass "$*"; }
+fail()   { sk8s_error "$*"; }
+warn()   { sk8s_warn "$*"; }
+info()   { sk8s_info "$*"; }
+header() { sk8s_step "debug" "$*"; }
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do

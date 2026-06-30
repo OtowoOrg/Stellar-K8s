@@ -174,6 +174,35 @@ Some type mismatches remain - these need case-by-case review based on actual usa
 - `src/controller/state_sync.rs` - Fixed brace mismatch
 - `src/controller/maintenance/query_profiler.rs` - Fixed PgRow import
 
+### 8. Makefile Refactoring - Split Oversized Targets
+- **Extracted shared variables**: Created `CLIPPY_BASE_FLAGS`, `CLIPPY_STRICT_FLAGS`, and `CLIPPY_FEATURES` to eliminate 40+ lines of duplication between `lint` and `lint-strict` targets
+- **Split `quickstart` into composable phases**:
+  - `quickstart-setup`: Prerequisite checks and kind cluster creation
+  - `quickstart-build`: Build and load Docker image
+  - `quickstart-deploy`: Deploy operator and sample resources
+  - `quickstart`: Orchestrates all phases (backward compatible)
+- **Split `bundle` into smaller targets**:
+  - `bundle-render`: Render Helm chart to manifests
+  - `bundle-generate`: Generate OLM bundle
+  - `bundle-validate`: Validate bundle
+  - `bundle`: Orchestrates all phases (backward compatible)
+- **Split `completions` into per-shell targets**:
+  - `completions-bash`: Generate bash completions
+  - `completions-zsh`: Generate zsh completions
+  - `completions-fish`: Generate fish completions
+  - `completions`: Orchestrates all shells (backward compatible)
+- **Split `dev-setup` into logical steps**:
+  - `dev-setup-rust`: Install Rust toolchain and components
+  - `dev-setup-tools`: Install development tools
+  - `dev-setup-hooks`: Install git hooks
+  - `dev-setup`: Orchestrates all steps (backward compatible)
+- **Benefits**:
+  - Improved maintainability and readability
+  - Enables running individual phases (e.g., `make quickstart-setup` to just create cluster)
+  - Easier debugging (can run each step independently)
+  - Better composability for CI/CD pipelines
+  - All original targets remain functional (backward compatible)
+
 ## Next Steps
 
 To get to a green build:

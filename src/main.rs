@@ -7,6 +7,7 @@ use crate::commands::benchmark::run_benchmark_controller_cmd;
 use crate::commands::check_crd::run_check_crd;
 use crate::commands::doctor::run_doctor;
 use crate::commands::export_compliance::run_export_compliance;
+use crate::commands::health_check::run_health_check;
 use crate::commands::info::run_info;
 use crate::commands::operator::run_operator;
 use crate::commands::runbook::run_generate_runbook;
@@ -23,13 +24,6 @@ use stellar_k8s::{incident, Error};
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
-
-    // Handle --version/-v flag
-    if args.version {
-        println!("stellar-cli v{}", env!("CARGO_PKG_VERSION"));
-        println!("Build Date: {}", env!("BUILD_DATE"));
-        return Ok(());
-    }
 
     let offline = args.offline;
 
@@ -118,6 +112,7 @@ async fn main() -> Result<(), Error> {
         }
         Commands::Webhook(webhook_args) => return run_webhook(webhook_args).await,
         Commands::Doctor(doctor_args) => return run_doctor(doctor_args).await,
+        Commands::HealthCheck(hc_args) => return run_health_check(hc_args),
         Commands::Benchmark(benchmark_args) => {
             return run_benchmark_controller_cmd(benchmark_args).await
         }
@@ -125,7 +120,7 @@ async fn main() -> Result<(), Error> {
         Commands::BenchmarkCompare(compare_args) => {
             return stellar_k8s::benchmark_compare::run_benchmark_compare(compare_args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string()));
+                .map_err(|e| Error::config_step("benchmark compare", e));
         }
         Commands::ExportCompliance(export_args) => {
             return run_export_compliance(export_args).await;
@@ -133,16 +128,16 @@ async fn main() -> Result<(), Error> {
         Commands::Backup { command } => match command {
             BackupCommands::Create(args) => run_backup(args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string())),
+                .map_err(|e| Error::config_step("backup create", e)),
             BackupCommands::Restore(args) => run_restore(args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string())),
+                .map_err(|e| Error::config_step("backup restore", e)),
             BackupCommands::List(args) => run_list(args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string())),
+                .map_err(|e| Error::config_step("backup list", e)),
             BackupCommands::Cleanup(args) => run_cleanup(args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string())),
+                .map_err(|e| Error::config_step("backup cleanup", e)),
         },
     };
 

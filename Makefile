@@ -1,20 +1,41 @@
+# =============================================================================
+# Stellar-K8s Makefile
+#
+# Canonical Command Flow:
+#   Setup:    make dev-setup                  # One-time environment setup
+#   Check:    make quick                      # Fast pre-commit (fmt check + compile)
+#   CI:       make ci-local                   # Full CI pipeline (fmt + lint + audit + test + build + links)
+#   Format:   make fmt                        # Auto-format code
+#   Build:    make build                      # Release binary build
+#   Test:     make test                       # Run all tests
+#   Security: make security-all               # Audit + scan
+#   Docker:   make docker-build               # Local Docker image
+#   Clean:    make clean                      # Remove build artifacts
+#   Health:   make health                     # Full health check
+#   Help:     make help                       # Show all targets
+#
+# See DEVELOPMENT.md for full workflow details.
+# =============================================================================
+
 .PHONY: help \
-	fmt fmt-check lint lint-strict audit \
+	fmt fmt-check lint lint-strict shellcheck audit security-scan security-all \
 	build test ci-local quick watch \
 	docker-build docker-build-ci docker-multiarch \
+	dev-setup pre-commit pre-commit-install run run-local run-dev \
+	install-crd apply-samples crd-gen regenerate completions completions-bash completions-zsh completions-fish \
 	dev-setup pre-commit pre-commit-install run-local run-dev \
 	install-crd apply-samples crd-gen regenerate completions \
-	helm-lint link-check changelog \
+	helm-lint link-check link-check-all changelog \
 	generate-api-docs check-api-docs \
 	third-party-licenses check-third-party-licenses \
 	benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health \
 	benchmark-webhook-compare benchmark-webhook-save benchmark-all \
 	compose-up compose-dev compose-down compose-logs \
-	bundle bundle-build \
-	quickstart validate preflight test-preflight test-shell all \
+	bundle bundle-render bundle-generate bundle-validate bundle-build \
+	quickstart quickstart-setup quickstart-build quickstart-deploy quickstart-cleanup \
+	validate preflight health test-preflight test-shell all \
 	clean
 
-# Default target
 .DEFAULT_GOAL := help
 
 # Variables
@@ -30,15 +51,55 @@ BUNDLE_IMG ?= $(IMAGE_NAME)-bundle:v$(VERSION)
 CHANNELS ?= "alpha"
 DEFAULT_CHANNEL ?= "alpha"
 
-help: ## Show this help
-	@echo 'Usage: make [target]'
+# Clippy configuration (shared between lint and lint-strict)
+CLIPPY_BASE_FLAGS := \
+	-D clippy::correctness \
+	-D clippy::suspicious \
+	-D clippy::perf \
+	-D clippy::style \
+	-A clippy::new_without_default \
+	-A clippy::match_like_matches_macro \
+	-A clippy::match_result_ok \
+	-A clippy::needless_borrow \
+	-A clippy::get_first \
+	-A clippy::format_in_format_args \
+	-A clippy::single_match \
+	-A clippy::redundant_closure \
+	-A clippy::items_after_test_module \
+	-A clippy::approx_constant \
+	-A clippy::should_implement_trait
+
+CLIPPY_STRICT_FLAGS := \
+	-D clippy::complexity \
+	-A clippy::cognitive_complexity \
+	-A clippy::too_many_lines \
+	-A clippy::type_complexity
+
+CLIPPY_FEATURES := "rest-api,metrics,admission-webhook,k8s-v1-30,reconciler-fuzz"
+
+help: ## Show this help and the canonical command flow
+	@echo 'Stellar-K8s Makefile'
 	@echo ''
-	@echo 'Clone-to-validation workflow:'
-	@echo '  1. make dev-setup      — install toolchain + hooks'
-	@echo '  2. make ci-local       — fmt-check + lint + audit + test + build'
-	@echo '  3. make quickstart     — spin up a local kind cluster end-to-end'
+	@echo 'Canonical Command Flow:'
+	@echo '  Setup:    make dev-setup         One-time environment setup'
+	@echo '  Check:    make quick             Fast pre-commit (fmt + cargo check)'
+	@echo '  CI:       make ci-local          Full CI pipeline locally'
+	@echo '  Format:   make fmt               Auto-format code'
+	@echo '  Build:    make build              Release binary build'
+	@echo '  Test:     make test               Run all tests'
+	@echo '  Security: make security-all       Audit + scan'
+	@echo '  Docker:   make docker-build       Local Docker image'
+	@echo '  Clean:    make clean              Remove build artifacts'
 	@echo ''
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-26s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@echo 'Workflows:'
+	@echo '  make quickstart                  End-to-end local quickstart (kind cluster)'
+	@echo '  make health                      Full contributor health gate'
+	@echo '  make all                         CI checks + build + Docker image'
+	@echo ''
+	@echo 'All available targets:'
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_][a-zA-Z0-9_-]+:.*?## / {printf "  %-28s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+# ── Formatting & Linting ──────────────────────────────────────────────────────
 
 fmt: ## Format code
 	$(CARGO) fmt --all
@@ -50,61 +111,48 @@ fmt-check: ## Check formatting
 lint: ## Run clippy
 	@echo "→ Running clippy..."
 	@K8S_OPENAPI_ENABLED_VERSION=1.30 $(CARGO) clippy --workspace --all-targets \
-		--features "rest-api,metrics,admission-webhook,k8s-v1-30,reconciler-fuzz" -- \
-		-D clippy::correctness \
-		-D clippy::suspicious \
-		-D clippy::perf \
-		-D clippy::style \
-		-A clippy::new_without_default \
-		-A clippy::match_like_matches_macro \
-		-A clippy::match_result_ok \
-		-A clippy::needless_borrow \
-		-A clippy::get_first \
-		-A clippy::format_in_format_args \
-		-A clippy::single_match \
-		-A clippy::redundant_closure \
-		-A clippy::items_after_test_module \
-		-A clippy::approx_constant \
-		-A clippy::should_implement_trait
+		--features $(CLIPPY_FEATURES) -- \
+		$(CLIPPY_BASE_FLAGS)
 
 lint-strict: ## Run clippy (adds complexity checks on top of lint; same base exceptions)
 	@echo "→ Running clippy (strict mode)..."
 	@K8S_OPENAPI_ENABLED_VERSION=1.30 $(CARGO) clippy --workspace --all-targets \
-		--features "rest-api,metrics,admission-webhook,k8s-v1-30,reconciler-fuzz" -- \
-		-D clippy::correctness \
-		-D clippy::suspicious \
-		-D clippy::perf \
-		-D clippy::style \
-		-D clippy::complexity \
-		-A clippy::new_without_default \
-		-A clippy::match_like_matches_macro \
-		-A clippy::match_result_ok \
-		-A clippy::needless_borrow \
-		-A clippy::get_first \
-		-A clippy::format_in_format_args \
-		-A clippy::single_match \
-		-A clippy::redundant_closure \
-		-A clippy::items_after_test_module \
-		-A clippy::approx_constant \
-		-A clippy::should_implement_trait \
-		-A clippy::cognitive_complexity \
-		-A clippy::too_many_lines \
-		-A clippy::type_complexity
+		--features $(CLIPPY_FEATURES) -- \
+		$(CLIPPY_BASE_FLAGS) \
+		$(CLIPPY_STRICT_FLAGS)
 
-audit: ## Security audit
+# ── Security ──────────────────────────────────────────────────────────────────
+
+audit: ## Security audit (cargo audit)
 	@echo "→ Running security audit..."
 	@command -v cargo-audit >/dev/null 2>&1 || cargo install --locked cargo-audit
 	@$(CARGO) audit --deny unsound || echo "⚠️  Security issues found - review before production"
 
+security-scan: ## Run security scan (audit + shellcheck)
+	$(MAKE) audit
+	$(MAKE) shellcheck
+
+security-all: ## Run all security checks (audit + shellcheck)
+	$(MAKE) audit
+	$(MAKE) shellcheck
+
+shellcheck: ## Run shellcheck on all shell scripts
+	@echo "→ Running shellcheck..."
+	@find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error || true
+
+# ── Test & Build ──────────────────────────────────────────────────────────────
+
 test: ## Run tests
 	@echo "→ Running tests..."
-	@$(CARGO) test --workspace --features "rest-api,metrics,admission-webhook,k8s-v1-30,reconciler-fuzz" --tests --lib --bins --verbose
+	@$(CARGO) test --workspace --features $(CLIPPY_FEATURES) --tests --lib --bins --verbose
 	@echo "→ Running doc tests..."
-	@$(CARGO) test --doc --workspace --features "rest-api,metrics,admission-webhook,k8s-v1-30"
+	@$(CARGO) test --doc --workspace --features $(CLIPPY_FEATURES)
 
 build: ## Build release
 	@echo "→ Building release..."
 	@$(CARGO) build --release --locked
+
+# ── Docker ────────────────────────────────────────────────────────────────────
 
 docker-build: ## Fast local Docker build using host release binaries
 	@echo "→ Building Docker image (fast local mode)..."
@@ -121,9 +169,21 @@ docker-build-ci: ## Reproducible CI Docker build (builds binaries in container)
 docker-multiarch: ## Build multi-arch Docker image
 	$(DOCKER) buildx build --platform linux/amd64 -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
-link-check: ## Check markdown links
+# ── Quality & Health ───────────────────────────────────────────────────────────
+
+link-check: ## Check markdown links (internal anchors + relative paths)
 	@echo "→ Running markdown link checker..."
 	@python3 scripts/check-links.py
+
+link-check-all: ## Repo-wide link check (markdown + source + configs) via lychee
+	@echo "→ Running repo-wide link checker (lychee)..."
+	@command -v lychee >/dev/null 2>&1 || { \
+		echo "lychee not found. Install with: cargo install lychee --locked"; \
+		exit 1; \
+	}
+	@lychee --config lychee.toml --no-progress --cache \
+		'./**/*.md' './**/*.rs' './**/*.toml' \
+		'./**/*.yaml' './**/*.yml' './**/*.sh' './**/*.html'
 
 changelog: ## Generate/update CHANGELOG.md using git-cliff
 	@echo "→ Generating changelog..."
@@ -160,6 +220,8 @@ pre-commit-install: ## Install pre-commit hooks
 clean: ## Clean build artifacts
 	$(CARGO) clean
 
+# ── API Documentation ─────────────────────────────────────────────────────────
+
 generate-api-docs: ## Generate API reference docs from CRD schema
 	@echo "→ Generating API reference docs..."
 	@python3 scripts/generate-api-docs.py \
@@ -173,6 +235,8 @@ check-api-docs: ## Check API docs are up to date (used in CI)
 		--crd config/crd/stellarnode-crd.yaml \
 		--output docs/api-reference.md \
 		--check
+
+# ── Kubernetes ────────────────────────────────────────────────────────────────
 
 install-crd: ## Install CRDs
 	$(KUBECTL) apply -f config/crd/stellarnode-crd.yaml
@@ -201,16 +265,29 @@ test-shell: ## Run bats unit tests for shared shell helpers
 	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
 	@bats scripts/tests/common.bats
 
-completions: ## Generate shell completion scripts
-	@echo "→ Generating shell completions..."
+# ── Completions ────────────────────────────────────────────────────────────────
+
+completions: completions-bash completions-zsh completions-fish ## Generate all shell completion scripts
+
+completions-bash: ## Generate bash completion script
+	@echo "→ Generating bash completions..."
 	@mkdir -p completions
 	@$(CARGO) run --bin stellar-completions completions bash > completions/stellar-operator.bash
+	@echo "✓ Bash completions generated: completions/stellar-operator.bash"
+
+completions-zsh: ## Generate zsh completion script
+	@echo "→ Generating zsh completions..."
+	@mkdir -p completions
 	@$(CARGO) run --bin stellar-completions completions zsh > completions/_stellar-operator
+	@echo "✓ Zsh completions generated: completions/_stellar-operator"
+
+completions-fish: ## Generate fish completion script
+	@echo "→ Generating fish completions..."
+	@mkdir -p completions
 	@$(CARGO) run --bin stellar-completions completions fish > completions/stellar-operator.fish
-	@echo "✓ Completions generated in ./completions/"
-	@echo "  Bash: source completions/stellar-operator.bash"
-	@echo "  Zsh:  Copy completions/_stellar-operator to your fpath"
-	@echo "  Fish: Copy completions/stellar-operator.fish to ~/.config/fish/completions/"
+	@echo "✓ Fish completions generated: completions/stellar-operator.fish"
+
+# ── Helm ──────────────────────────────────────────────────────────────────────
 
 helm-lint: ## Helm lint check
 	@echo "→ Linting Helm charts..."
@@ -219,18 +296,32 @@ helm-lint: ## Helm lint check
 	helm template stellar-operator charts/stellar-operator > /dev/null
 	@echo "✓ Helm charts passed linting and validation"
 
-dev-setup: ## Setup dev environment
+# ── Development Setup ─────────────────────────────────────────────────────────
+
+dev-setup: dev-setup-rust dev-setup-tools dev-setup-hooks ## Setup dev environment
+
+dev-setup-rust: ## Install Rust toolchain and components
+	@echo "→ Setting up Rust toolchain..."
 	rustup update stable
 	rustup default stable
 	rustup component add clippy rustfmt
+
+dev-setup-tools: ## Install development tools
+	@echo "→ Installing development tools..."
 	cargo install cargo-audit cargo-watch
+
+dev-setup-hooks: ## Install git hooks
+	@echo "→ Installing git hooks..."
 	@command -v pre-commit >/dev/null 2>&1 || pip install pre-commit
 	pre-commit install
 	pre-commit install --hook-type pre-push
-	@$(MAKE) preflight
+
+# ── Watch ──────────────────────────────────────────────────────────────────────
 
 watch: ## Watch and rebuild
 	cargo watch -x check -x test -x build
+
+# ── Benchmarks ────────────────────────────────────────────────────────────────
 
 benchmark: ## Run k6 performance benchmarks
 	@echo "→ Running k6 benchmarks..."
@@ -258,21 +349,30 @@ benchmark-upgrade: ## Run upgrade load test with k6
 	@command -v k6 >/dev/null 2>&1 || (echo "✗ k6 not installed. Install: https://k6.io/docs/get-started/installation/" && exit 1)
 	cd benchmarks && k6 run k6/upgrade-load-test.js
 
-run-local: build ## Run locally
+# ── Running the Operator ──────────────────────────────────────────────────────
+
+run-local: build ## Run operator locally from built release binary
 	RUST_LOG=info ./target/release/stellar-operator
 
 run-dev: ## Run operator in dev mode with hot reload
 	RUST_LOG=debug cargo watch -x run
 
 
-# Bundle targets
-bundle: ## Generate bundle manifests and metadata, then validate generated files.
+# ── Bundle ────────────────────────────────────────────────────────────────────
+
+bundle: bundle-render bundle-generate bundle-validate ## Generate bundle manifests and metadata, then validate
+
+bundle-render: ## Render Helm chart to manifests
 	@echo "→ Generating manifests from Helm chart..."
 	@mkdir -p rendered
 	@helm template stellar-operator charts/stellar-operator > rendered/manifests.yaml
+
+bundle-generate: ## Generate OLM bundle from manifests
 	@echo "→ Generating bundle..."
 	@operator-sdk generate kustomize manifests -q
 	@kustomize build config/manifests | operator-sdk generate bundle -q --overwrite --version $(VERSION) --channels $(CHANNELS) --default-channel $(DEFAULT_CHANNEL)
+
+bundle-validate: ## Validate generated bundle
 	@echo "→ Validating bundle..."
 	@operator-sdk bundle validate ./bundle
 	@rm -rf rendered
@@ -280,18 +380,26 @@ bundle: ## Generate bundle manifests and metadata, then validate generated files
 bundle-build: ## Build the bundle image.
 	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
-quickstart: ## End-to-end local quickstart: kind cluster + CRD + operator + sample StellarNode
+# ── Quickstart ────────────────────────────────────────────────────────────────
+
+quickstart: quickstart-setup quickstart-build quickstart-deploy ## End-to-end local quickstart
+
+quickstart-setup: ## Create kind cluster and check prerequisites
 	@echo "→ Checking prerequisites..."
 	@command -v kind >/dev/null 2>&1 || (echo "✗ kind not found. Install: https://kind.sigs.k8s.io/docs/user/quick-start/#installation" && exit 1)
 	@command -v kubectl >/dev/null 2>&1 || (echo "✗ kubectl not found. Install: https://kubernetes.io/docs/tasks/tools/" && exit 1)
 	@command -v helm >/dev/null 2>&1 || (echo "✗ helm not found. Install: https://helm.sh/docs/intro/install/" && exit 1)
 	@echo "→ Creating kind cluster 'stellar-dev'..."
 	@kind create cluster --name stellar-dev --wait 120s || echo "  (cluster may already exist, continuing)"
+
+quickstart-build: ## Build and load operator image into kind
 	@echo "→ Building operator image..."
 	@$(MAKE) build
 	@DOCKER_BUILDKIT=1 $(DOCKER) build --target runtime-local -t stellar-operator:dev .
 	@echo "→ Loading image into kind cluster..."
 	@kind load docker-image stellar-operator:dev --name stellar-dev
+
+quickstart-deploy: ## Deploy operator and sample resources
 	@echo "→ Installing CRD..."
 	@$(KUBECTL) apply -f config/crd/stellarnode-crd.yaml
 	@echo "→ Creating namespace stellar-system..."
@@ -313,12 +421,12 @@ quickstart: ## End-to-end local quickstart: kind cluster + CRD + operator + samp
 validate: ## Run local validation script (format + lint + compile)
 	@bash scripts/validate.sh
 
-# For the full contributor health gate (format + lint + tests + docs), use:
-#   make health
+# ── Full Pipeline ──────────────────────────────────────────────────────────────
 
-all: ci-local docker-build ## Full build pipeline
+all: ci-local docker-build ## Full build pipeline: CI checks + Docker image
 
-# Docker Compose targets
+# ── Docker Compose ────────────────────────────────────────────────────────────
+
 compose-up: ## Start Docker Compose development environment
 	@echo "→ Starting Docker Compose environment..."
 	@docker-compose up -d

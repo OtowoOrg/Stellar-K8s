@@ -60,7 +60,7 @@ metadata:
     app.kubernetes.io/name: stellar-webhook
     app.kubernetes.io/component: admission-webhook
 spec:
-  replicas: 2
+  replicas: {{ .Values.webhook.replicaCount | default 2 }}
   selector:
     matchLabels:
       app.kubernetes.io/name: stellar-webhook
@@ -71,7 +71,7 @@ spec:
         app.kubernetes.io/component: admission-webhook
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "9090"
+        prometheus.io/port: {{ .Values.webhook.metricsPort | default 9090 | quote }}
     spec:
       serviceAccountName: stellar-webhook
       automountServiceAccountToken: false
@@ -87,15 +87,15 @@ spec:
           image: '{{ if .Values.image.digest }}{{ .Values.image.repository }}@{{ .Values.image.digest }}{{ else }}{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}{{ end }}'
           imagePullPolicy: '{{ .Values.image.pullPolicy }}'
           args:
-            - "--webhook-port=8443"
-            - "--metrics-port=9090"
+            - "--webhook-port={{ .Values.webhook.port | default 8443 }}"
+            - "--metrics-port={{ .Values.webhook.metricsPort | default 9090 }}"
             - "--cert-dir=/certs"
           ports:
             - name: https
-              containerPort: 8443
+              containerPort: {{ .Values.webhook.port | default 8443 }}
               protocol: TCP
             - name: metrics
-              containerPort: 9090
+              containerPort: {{ .Values.webhook.metricsPort | default 9090 }}
               protocol: TCP
           securityContext:
             allowPrivilegeEscalation: false
@@ -104,12 +104,7 @@ spec:
               drop:
                 - ALL
           resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
+            {{- toYaml .Values.webhook.resources | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -172,7 +167,7 @@ spec:
       targetPort: https
       protocol: TCP
     - name: metrics
-      port: 9090
+      port: {{ .Values.webhook.metricsPort | default 9090 }}
       targetPort: metrics
       protocol: TCP
   selector:
@@ -206,8 +201,8 @@ webhooks:
         scope: Namespaced
     admissionReviewVersions: ["v1", "v1beta1"]
     sideEffects: None
-    timeoutSeconds: 10
-    failurePolicy: Fail
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds | default 10 }}
+    failurePolicy: {{ .Values.webhook.failurePolicy | default "Fail" }}
     matchPolicy: Equivalent
     namespaceSelector:
       matchExpressions:

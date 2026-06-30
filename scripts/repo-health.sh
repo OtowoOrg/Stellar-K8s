@@ -18,6 +18,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=scripts/lib/errors.sh
+source "${SCRIPT_DIR}/lib/errors.sh"
 cd "${REPO_ROOT}"
 
 K8S_OPENAPI_ENABLED_VERSION="${K8S_OPENAPI_ENABLED_VERSION:-1.30}"
@@ -25,8 +27,6 @@ export K8S_OPENAPI_ENABLED_VERSION
 
 readonly TOTAL_STEPS=5
 STEP=0
-FAILED_STEP=""
-FAILED_HINT=""
 
 print_header() {
   echo ""
@@ -38,30 +38,17 @@ print_header() {
 
 begin_step() {
   STEP=$((STEP + 1))
-  local title="$1"
-  echo ""
-  echo "[${STEP}/${TOTAL_STEPS}] ${title}"
-  echo "────────────────────────────────────────────────────────────"
+  sk8s_step "Step ${STEP}/${TOTAL_STEPS}" "$1"
 }
 
 pass_step() {
-  echo "  ✓ ${1} passed"
+  sk8s_pass "${1} passed"
 }
 
 fail_step() {
   local name="$1"
   local hint="$2"
-  FAILED_STEP="$name"
-  FAILED_HINT="$hint"
-  echo ""
-  echo "  ✗ FAILED: ${name}"
-  echo "    Hint: ${hint}"
-  echo ""
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "  Health check stopped at step ${STEP}/${TOTAL_STEPS}: ${name}"
-  echo "  Fix the issue above, then re-run: make health"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  exit 1
+  sk8s_fail "failed at step ${STEP}/${TOTAL_STEPS}: ${name}" "${hint} — re-run: make health"
 }
 
 run_or_fail() {

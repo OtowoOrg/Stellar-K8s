@@ -55,7 +55,12 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
     let analytics_engine = Arc::new(AnalyticsEngine::new(std::time::Duration::from_secs(3600)));
     let analytics_layer = AnalyticsLayer::new(SamplingConfig::default(), analytics_engine.clone());
 
-    let fmt_layer = fmt::layer().json().with_target(true);
+    let fmt_layer = fmt::layer()
+        .json()
+        .flatten_event(true)
+        .with_current_span(true)
+        .with_span_list(true)
+        .with_target(true);
 
     // Register the subscriber with both stdout logging and OpenTelemetry tracing
     let registry = tracing_subscriber::registry()

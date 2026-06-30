@@ -17,7 +17,12 @@ pub async fn run_webhook(args: WebhookArgs) -> Result<(), Error> {
 
     match args.log_format {
         LogFormat::Json => {
-            let fmt_layer = fmt::layer().json().with_target(true);
+            let fmt_layer = fmt::layer()
+                .json()
+                .flatten_event(true)
+                .with_current_span(true)
+                .with_span_list(true)
+                .with_target(true);
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(scrub_layer)

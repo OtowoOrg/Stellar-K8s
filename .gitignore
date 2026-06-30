@@ -105,6 +105,10 @@ results/
 rendered/
 rendered-manifests.yaml
 
+# OLM bundle CSV — generated from config/manifests/bases by operator-sdk, regenerate with: make bundle
+# (bundle/metadata/annotations.yaml is hand-written and stays committed)
+bundle/manifests/
+
 # Generated shell completions and Helm dependency/package artifacts
 completions/
 charts/**/charts/

@@ -154,6 +154,44 @@
     },
     "scpAnalytics": {
       "type": "object"
+    },
+    "webhook": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of webhook server replicas"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Container port for the webhook HTTPS server"
+        },
+        "metricsPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Container port for the Prometheus metrics endpoint"
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30,
+          "description": "Admission review timeout in seconds (Kubernetes maximum is 30)"
+        },
+        "failurePolicy": {
+          "type": "string",
+          "enum": ["Fail", "Ignore"],
+          "description": "Action when webhook is unreachable: Fail blocks admission, Ignore allows it"
+        },
+        "resources": {
+          "type": "object",
+          "description": "Resource requests and limits for the webhook server container"
+        }
+      }
     }
   },
   "additionalProperties": true

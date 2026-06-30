@@ -18,10 +18,10 @@
 # =============================================================================
 
 .PHONY: help \
-	fmt fmt-check lint lint-strict shellcheck audit security-audit security-scan security-all \
+	fmt fmt-check lint lint-strict shellcheck audit security-scan security-all \
 	build test ci-local quick watch \
 	docker-build docker-build-ci docker-multiarch \
-	dev-setup pre-commit pre-commit-install run run-local run-dev \
+	dev-setup pre-commit pre-commit-install run-local run-dev \
 	install-crd apply-samples crd-gen regenerate completions \
 	helm-lint link-check link-check-all changelog release-notes \
 	generate-api-docs check-api-docs \
@@ -130,8 +130,6 @@ audit: ## Security audit (cargo audit)
 	@echo "→ Running security audit..."
 	@command -v cargo-audit >/dev/null 2>&1 || cargo install --locked cargo-audit
 	@$(CARGO) audit --deny unsound || echo "⚠️  Security issues found - review before production"
-
-security-audit: audit ## Alias for audit
 
 security-scan: ## Run security scan (audit + shellcheck)
 	$(MAKE) audit
@@ -371,8 +369,6 @@ benchmark-upgrade: ## Run upgrade load test with k6
 
 run-local: build ## Run operator locally from built release binary
 	RUST_LOG=info ./target/release/stellar-operator
-
-run: run-local ## Alias for run-local
 
 run-dev: ## Run operator in dev mode with hot reload
 	RUST_LOG=debug cargo watch -x run

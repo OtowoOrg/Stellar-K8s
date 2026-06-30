@@ -1,0 +1,96 @@
+suite: monitoring
+templates:
+  - templates/monitoring/servicemonitor.yaml
+  - templates/monitoring/podmonitor.yaml
+  - templates/monitoring/prometheusrule.yaml
+  - templates/monitoring/grafana-dashboards-configmap.yaml
+
+tests:
+  - it: renders no monitoring resources by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: ServiceMonitor selects the operator's own pods on the metrics port
+    set:
+      monitoring.enabled: true
+    template: templates/monitoring/servicemonitor.yaml
+    asserts:
+      - isKind:
+          of: ServiceMonitor
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-stellar-operator
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: stellar-operator
+      - equal:
+          path: spec.endpoints[0].port
+          value: metrics
+
+  - it: PodMonitor stays disabled even when monitoring is enabled, unless explicitly turned on
+    set:
+      monitoring.enabled: true
+    template: templates/monitoring/podmonitor.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: PodMonitor renders when explicitly enabled
+    set:
+      monitoring.enabled: true
+      monitoring.podMonitor.enabled: true
+    template: templates/monitoring/podmonitor.yaml
+    asserts:
+      - isKind:
+          of: PodMonitor
+      - equal:
+          path: spec.podMetricsEndpoints[0].port
+          value: metrics
+
+  - it: PrometheusRule includes default Stellar node-health alerts
+    set:
+      monitoring.enabled: true
+    template: templates/monitoring/prometheusrule.yaml
+    asserts:
+      - isKind:
+          of: PrometheusRule
+      - equal:
+          path: spec.groups[0].rules[0].alert
+          value: StellarNodeDown
+      - equal:
+          path: spec.groups[0].rules[1].alert
+          value: StellarNodeNotSyncing
+      - equal:
+          path: spec.groups[0].rules[1].expr
+          value: stellar_node_sync_status == 0
+      - equal:
+          path: spec.groups[0].rules[1].annotations.summary
+          value: 'Stellar node {{ $labels.node_name }} is not synced'
+
+  - it: PrometheusRule respects custom ingestion lag threshold
+    set:
+      monitoring.enabled: true
+      monitoring.prometheusRule.ingestionLagThresholdSeconds: 99
+    template: templates/monitoring/prometheusrule.yaml
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[2].expr
+          value: stellar_node_ingestion_lag > 99
+
+  - it: renders a Grafana dashboard ConfigMap per bundled dashboard JSON file
+    set:
+      monitoring.enabled: true
+    template: templates/monitoring/grafana-dashboards-configmap.yaml
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-stellar-operator-dashboard-operator-health
+      - equal:
+          path: metadata.labels["grafana_dashboard"]
+          value: "1"
+      - matchRegex:
+          path: data["operator-health.json"]
+          pattern: "Stellar Operator Health"

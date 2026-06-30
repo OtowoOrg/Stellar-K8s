@@ -16,11 +16,10 @@ use crate::crd::{NodeType, StellarNetwork, StellarNode, StellarNodeSpec};
 use crate::rest_api::auth::RequestIdentity;
 
 use super::dashboard_dto::{
-    CapacityPlanningResponse, ConditionDisplay, ConfigDriftResponse, ConfigImpactResponse,
-    DRStatusResponse, DashboardOverview, LogAnalyticsResponse, LogPatternDto, MetricsSummary,
-    NetworkBreakdown, NodeAction, NodeActionRequest, NodeActionResponse, NodeConditionsResponse,
-    NodeLogsResponse, NodeTypeBreakdown, OperatorLogsResponse, SecurityPostureResponse,
-    WhatIfRequest,
+    CapacityPlanningResponse, ConditionDisplay, ConfigImpactResponse, DRStatusResponse,
+    DashboardOverview, LogAnalyticsResponse, LogPatternDto, MetricsSummary, NetworkBreakdown,
+    NodeAction, NodeActionRequest, NodeActionResponse, NodeConditionsResponse, NodeLogsResponse,
+    NodeTypeBreakdown, OperatorLogsResponse, SecurityPostureResponse, WhatIfRequest,
 };
 use super::dto::ErrorResponse;
 
@@ -89,7 +88,7 @@ pub async fn log_analytics(
 
 /// Analyze configuration impact
 pub async fn analyze_config_impact(
-    State(state): State<Arc<ControllerState>>,
+    State(_state): State<Arc<ControllerState>>,
     Json(new_spec): Json<StellarNodeSpec>,
 ) -> Json<ConfigImpactResponse> {
     // For impact analysis, we'd ideally compare against the current spec.

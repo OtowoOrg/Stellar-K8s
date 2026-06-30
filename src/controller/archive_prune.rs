@@ -502,7 +502,7 @@ pub async fn execute_prune(
         Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
     let _deletable_count = deletable.len();
-    let delete_stream = stream::iter(deletable.into_iter())
+    let delete_stream = stream::iter(deletable)
         .map(|checkpoint| {
             let semaphore = semaphore.clone();
             let errors = errors.clone();

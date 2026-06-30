@@ -4,6 +4,19 @@ This directory holds historical and one-off scripts that were used during initia
 repository setup and issue management. They are **not** part of the normal development
 or operational workflow.
 
+## Shared helpers
+
+Batch scripts source shared logic from:
+
+- `scripts/lib/common.sh` — repository resolution, dry-run handling, and `create_issue` retry logic
+- `scripts/lib/batch.sh` — standard `--help` output, issue-count validation, and the `create_issue_with_retry` alias
+
+All archived scripts use:
+
+```bash
+source "$(dirname "$0")/../lib/batch.sh"
+```
+
 ## Contents
 
 - `create_batch_*.sh` — GitHub issue creation scripts used to seed the issue tracker

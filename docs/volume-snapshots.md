@@ -88,7 +88,7 @@ metadata:
   namespace: stellar-nodes
 spec:
   nodeType: Validator
-  network: Testnet
+  network: testnet
   version: "21.0.0"
   storage:
     storageClass: standard-rwo
@@ -120,7 +120,7 @@ metadata:
   namespace: stellar-nodes
 spec:
   nodeType: Validator
-  network: Testnet
+  network: testnet
   version: "21.0.0"
   storage:
     storageClass: standard-rwo

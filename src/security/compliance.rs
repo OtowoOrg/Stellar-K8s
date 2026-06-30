@@ -2,8 +2,7 @@
 //!
 //! Generates compliance reports for security audits.
 
-use crate::security::{SecurityFinding, SecurityPosture};
-use serde::{Deserialize, Serialize};
+use crate::security::SecurityPosture;
 
 pub struct ComplianceReporter;
 

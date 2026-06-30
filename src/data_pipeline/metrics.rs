@@ -58,11 +58,12 @@ impl PipelineMetrics {
 
     pub fn snapshot(&self) -> MetricsSnapshot {
         let samples = self.inner.latency_samples.load(Ordering::Relaxed);
-        let mean_latency_us = if samples > 0 {
-            self.inner.latency_us_total.load(Ordering::Relaxed) / samples
-        } else {
-            0
-        };
+        let mean_latency_us = self
+            .inner
+            .latency_us_total
+            .load(Ordering::Relaxed)
+            .checked_div(samples)
+            .unwrap_or(0);
         MetricsSnapshot {
             records_received: self.inner.records_received.load(Ordering::Relaxed),
             records_transformed: self.inner.records_transformed.load(Ordering::Relaxed),

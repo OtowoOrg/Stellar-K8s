@@ -4,21 +4,46 @@
 
 # Stellar-K8s: Cloud-Native Stellar Infrastructure
 
+<!-- CI / Quality -->
 <p align="center">
   <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/ci.yml?branch=main&style=for-the-badge&label=CI" alt="GitHub Actions Status" />
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/ci.yml?branch=main&style=for-the-badge&label=CI&logo=github" alt="CI" />
   </a>
   <a href="https://codecov.io/gh/OtowoOrg/Stellar-K8s">
-    <img src="https://img.shields.io/codecov/c/github/OtowoOrg/Stellar-K8s/main?style=for-the-badge" alt="Codecov Coverage" />
+    <img src="https://img.shields.io/codecov/c/github/OtowoOrg/Stellar-K8s/main?style=for-the-badge&logo=codecov" alt="Coverage" />
+  </a>
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/security-scan.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/security-scan.yml?branch=main&style=for-the-badge&label=Security&logo=trivy" alt="Security Scan" />
+  </a>
+</p>
+
+<!-- Release / Docs -->
+<p align="center">
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/release.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/release.yml?style=for-the-badge&label=Release&logo=github" alt="Release Pipeline" />
   </a>
   <a href="https://github.com/OtowoOrg/Stellar-K8s/releases">
-    <img src="https://img.shields.io/github/v/release/OtowoOrg/Stellar-K8s?style=for-the-badge" alt="GitHub release" />
+    <img src="https://img.shields.io/github/v/release/OtowoOrg/Stellar-K8s?style=for-the-badge&logo=github" alt="Latest Release" />
+  </a>
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/docs-deploy.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/docs-deploy.yml?branch=main&style=for-the-badge&label=Docs&logo=readthedocs" alt="Docs Deploy" />
+  </a>
+</p>
+
+<!-- Performance / Chaos -->
+<p align="center">
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/performance.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/performance.yml?branch=main&style=for-the-badge&label=Performance&logo=speedtest" alt="Performance" />
+  </a>
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/chaos-tests.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/chaos-tests.yml?branch=main&style=for-the-badge&label=Chaos&logo=kubernetes" alt="Chaos Tests" />
   </a>
   <a href="https://github.com/OtowoOrg/Stellar-K8s/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/OtowoOrg/Stellar-K8s?style=for-the-badge" alt="License" />
   </a>
 </p>
 
+<!-- Stack -->
 <p align="center">
   <img src="https://img.shields.io/badge/Built%20with-Rust-orange?style=for-the-badge&logo=rust" alt="Built with Rust" />
   <img src="https://img.shields.io/badge/Kubernetes-Operator-blue?style=for-the-badge&logo=kubernetes" alt="Kubernetes Operator" />
@@ -125,7 +150,7 @@ metadata:
   namespace: stellar
 spec:
   nodeType: Validator
-  network: Testnet
+  network: testnet
   version: "v21.0.0"
   storage:
     storageClass: "standard"
@@ -608,22 +633,6 @@ make generate-api-docs
 ## 💻 Development
 
 For detailed instructions on setting up a local development environment, building the project, running tests, and managing Kubernetes resources locally, please refer to the **[Development Guide](DEVELOPMENT.md)**.
-
-### Quick Start Reference
-
-```bash
-# Setup development environment (includes pre-commit hooks)
-make dev-setup
-
-# Run quick checks (format & cargo check)
-make quick
-
-# Run all tests
-make test
-
-# Build release binaries
-make build
-```
 
 ### Reconciler fuzzing
 

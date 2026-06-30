@@ -8,7 +8,7 @@ metadata:
   namespace: stellar-prod
 spec:
   nodeType: Validator
-  network: Public
+  network: mainnet
   version: "v21.0.0"
   initContainers:
     - name: data-seed

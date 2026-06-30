@@ -6,7 +6,7 @@
 use crate::event_processing::schema::ProcessingEvent;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, warn};
 
 #[cfg(feature = "nats")]
 use async_nats;

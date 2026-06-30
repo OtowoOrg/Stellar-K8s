@@ -28,7 +28,7 @@ impl MaintenanceController {
             _ => return false,
         };
 
-        is_time_in_window(&config, Local::now().time())
+        is_time_in_window(config, Local::now().time())
     }
 
     /// Run maintenance tasks for a node if needed

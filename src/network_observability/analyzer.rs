@@ -99,7 +99,7 @@ impl FlowAnalyzer {
                 service_hint: Self::service_hint(port).map(|s| s.to_string()),
             })
             .collect();
-        ports.sort_by(|a, b| b.flow_count.cmp(&a.flow_count));
+        ports.sort_by_key(|b| std::cmp::Reverse(b.flow_count));
         ports.truncate(limit);
         ports
     }
@@ -118,7 +118,7 @@ impl FlowAnalyzer {
             *talker_map.entry(f.src_ip.clone()).or_default() += f.bytes;
         }
         let mut top_talkers: Vec<_> = talker_map.into_iter().collect();
-        top_talkers.sort_by(|a, b| b.1.cmp(&a.1));
+        top_talkers.sort_by_key(|b| std::cmp::Reverse(b.1));
         top_talkers.truncate(10);
 
         FlowStats {

@@ -235,7 +235,7 @@ metadata:
   namespace: stellar-mainnet
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   networkPolicy:
     enabled: true                        # required to activate per-node policy
     allowNamespaces:                     # additional namespaces allowed in

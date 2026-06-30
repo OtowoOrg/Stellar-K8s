@@ -23,6 +23,8 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write   # required for SLSA provenance attestation
+  attestations: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -39,7 +41,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -90,7 +92,7 @@ jobs:
             name: stellar-operator-darwin-arm64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -130,8 +132,20 @@ jobs:
           tar czf ${{ matrix.name }}.tar.gz stellar-operator
           sha256sum ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.tar.gz.sha256
 
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          artifact-name: ${{ matrix.name }}.sbom.json
+          format: cyclonedx-json
+          path: target/${{ matrix.target }}/release/stellar-operator
+
+      - name: Attest binary provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: target/${{ matrix.target }}/release/${{ matrix.name }}.tar.gz
+
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: |
@@ -148,29 +162,22 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Lowercase IMAGE_NAME
-        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Setup Docker & Login
+        id: setup-docker
+        uses: ./.github/actions/setup-docker
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -181,7 +188,7 @@ jobs:
         id: retag
         continue-on-error: true
         run: |
-          SHA_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
+          SHA_TAG="${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}:sha-${{ github.sha }}"
           echo "Attempting to pull $SHA_TAG ..."
           if docker buildx imagetools inspect "$SHA_TAG" > /dev/null 2>&1; then
             echo "✅ sha image found — re-tagging for release"
@@ -200,7 +207,8 @@ jobs:
 
       - name: Build and push (fallback — only when sha image unavailable)
         if: steps.retag.outputs.retagged != 'true'
-        uses: docker/build-push-action@v6
+        id: build
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
@@ -209,6 +217,20 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Generate container SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}:${{ needs.validate.outputs.version }}
+          artifact-name: container-${{ needs.validate.outputs.version }}.sbom.json
+          format: cyclonedx-json
+
+      - name: Attest container image provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}
+          subject-digest: ${{ steps.build.outputs.digest || steps.retag.outputs.digest }}
+          push-to-registry: true
 
   # ── Security scan ──────────────────────────────────────────────────────────
   security:
@@ -219,24 +241,18 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Lowercase IMAGE_NAME
-        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
-
-      - name: Run Trivy
-        uses: aquasecurity/trivy-action@0.35.0
+      - name: Setup Docker & Login
+        id: setup-docker
+        uses: ./.github/actions/setup-docker
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}
-          format: sarif
-          output: trivy-results.sarif
-          severity: CRITICAL,HIGH
+          registry: ${{ env.REGISTRY }}
 
-      - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
+      - name: Security Scan
+        uses: ./.github/actions/security-scan
         with:
-          sarif_file: trivy-results.sarif
+          image-ref: ${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}:${{ needs.validate.outputs.version }}
 
   # ── Helm chart ─────────────────────────────────────────────────────────────
   helm:
@@ -244,10 +260,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: v3.16.0
 
@@ -264,7 +280,7 @@ jobs:
         run: helm package charts/stellar-operator/ -d .
 
       - name: Upload chart
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: helm-chart
           path: stellar-operator-*.tgz
@@ -275,12 +291,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: [validate, build-artifacts, container, security, helm]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts/
 
@@ -290,7 +306,29 @@ jobs:
           find artifacts/ -name "*.tar.gz" -exec cp {} release-assets/ \;
           find artifacts/ -name "*.sha256" -exec cp {} release-assets/ \;
           find artifacts/ -name "*.tgz" -exec cp {} release-assets/ \;
+          find artifacts/ -name "*.sbom.json" -exec cp {} release-assets/ \;
           cd release-assets && sha256sum * > SHA256SUMS
+
+      - name: Verify checksums
+        run: |
+          cd release-assets
+          echo "Verifying checksums..."
+          while IFS= read -r line; do
+            expected_hash=$(echo "$line" | awk '{print $1}')
+            filename=$(echo "$line" | awk '{print $2}')
+            # Skip the SHA256SUMS file itself and individual .sha256 sidecars
+            [[ "$filename" == "SHA256SUMS" ]] && continue
+            [[ "$filename" == *.sha256 ]] && continue
+            if [[ -f "$filename" ]]; then
+              actual_hash=$(sha256sum "$filename" | awk '{print $1}')
+              if [[ "$expected_hash" != "$actual_hash" ]]; then
+                echo "::error::Checksum mismatch for $filename"
+                exit 1
+              fi
+              echo "  ✓ $filename"
+            fi
+          done < SHA256SUMS
+          echo "All checksums verified."
 
       - name: Generate changelog
         uses: orhun/git-cliff-action@v4
@@ -303,7 +341,7 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: v${{ needs.validate.outputs.version }}
           body_path: changelog.md

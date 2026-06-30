@@ -20,7 +20,7 @@ spec:
   network: testnet
   
   # Stellar Core version
-  version: "21.0.0"
+  version: "v21.0.0"
   
   # History mode: Full history requires more storage
   historyMode: Full

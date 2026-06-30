@@ -9,9 +9,8 @@ use crate::api_gateway::{
     versioning::{check_version, deprecation_headers, VersionStatus},
 };
 use axum::{
-    body::Body,
     extract::{Request, State},
-    http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
+    http::{HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::any,
     Router as AxumRouter,
@@ -202,7 +201,7 @@ async fn handle_request(State(state): State<GatewayState>, req: Request) -> Resp
     }
 
     // Read request body
-    let (parts, body) = req.into_parts();
+    let (_parts, body) = req.into_parts();
     let body_bytes = match axum::body::to_bytes(body, 10 * 1024 * 1024).await {
         Ok(b) => b,
         Err(_) => return (StatusCode::BAD_REQUEST, "Failed to read body").into_response(),

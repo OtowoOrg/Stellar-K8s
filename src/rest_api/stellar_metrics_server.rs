@@ -345,7 +345,7 @@ pub async fn get_stellarnode_metric(
 /// metrics (TPS, queue length, etc.) we scrape the Horizon `/metrics`
 /// Prometheus endpoint on port 8002.
 async fn resolve_live_metric(
-    state: &Arc<ControllerState>,
+    _state: &Arc<ControllerState>,
     node: &StellarNode,
     metric: &StellarHpaMetric,
     namespace: &str,

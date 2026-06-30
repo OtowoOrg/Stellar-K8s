@@ -70,6 +70,8 @@ pub enum Commands {
     CheckCrd,
     /// Verify local CLI tooling, Kubernetes context, and operator permissions
     Doctor(DoctorArgs),
+    /// Run offline repository validation checks
+    HealthCheck(crate::commands::health_check::HealthCheckArgs),
     /// Prune old history archive checkpoints
     PruneArchive(PruneArchiveArgs),
     /// Show difference between desired and live cluster state

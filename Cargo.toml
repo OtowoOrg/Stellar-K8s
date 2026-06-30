@@ -13,6 +13,9 @@ toml = "0.8"
 # Glob pattern matching for label propagation filters
 glob = "0.3"
 
+# Directory tree walking (used by build.rs and doc-check)
+walkdir = "2"
+
 # Kubernetes client and operator framework
 kube = { version = "0.94", features = [
     "runtime",
@@ -161,6 +164,10 @@ wat = "1.246"
 [[bin]]
 name = "stellar-operator"
 path = "src/main.rs"
+
+[[bin]]
+name = "doc-check"
+path = "src/bin/doc_check.rs"
 
 [[bin]]
 name = "stellar-sidecar"

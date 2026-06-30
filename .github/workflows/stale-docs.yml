@@ -1,0 +1,170 @@
+name: Stale Documentation Check
+
+# Run whenever source or doc files change, so stale docs are caught immediately
+# on every PR and every push to main.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "docs/**"
+      - "doc-coverage.toml"
+      - ".doc-hashes.toml"
+      - "Makefile"
+      - "Cargo.toml"
+      - "build.rs"
+      - "charts/**"
+      - "examples/**"
+      - "config/**"
+      - "benchmarks/**"
+      - "formal_verification/**"
+      - "tests/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "docs/**"
+      - "doc-coverage.toml"
+      - ".doc-hashes.toml"
+      - "Makefile"
+      - "Cargo.toml"
+      - "build.rs"
+      - "charts/**"
+      - "examples/**"
+      - "config/**"
+      - "benchmarks/**"
+      - "formal_verification/**"
+      - "tests/**"
+
+  # Allow manual runs to check the full repo state at any time.
+  workflow_dispatch:
+    inputs:
+      warn_only:
+        description: "Warn instead of failing when stale docs are found"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+concurrency:
+  group: stale-docs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect-stale-docs:
+    name: Detect Stale Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so git-log can compare commit timestamps.
+          fetch-depth: 0
+
+      # ── Rust toolchain ──────────────────────────────────────────────────────
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # ── Cargo cache ─────────────────────────────────────────────────────────
+      - name: Cache Cargo registry & build artefacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-doc-check-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-doc-check-
+            ${{ runner.os }}-cargo-
+
+      # ── Build the doc-check binary ──────────────────────────────────────────
+      - name: Build doc-check
+        run: cargo build --locked --bin doc-check
+        env:
+          CARGO_TERM_COLOR: always
+
+      # ── Collect changed files (PR mode) ─────────────────────────────────────
+      - name: Collect changed files
+        id: changed
+        if: github.event_name == 'pull_request'
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          # List files that changed in this PR (one per line).
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "Changed files:"
+          echo "$CHANGED"
+
+      # ── Run doc-check (PR: scoped to changed files) ──────────────────────────
+      - name: Check for stale docs (PR — scoped to changed files)
+        if: github.event_name == 'pull_request'
+        run: |
+          WARN_FLAG=""
+          if [[ "${{ github.event.inputs.warn_only }}" == "true" ]]; then
+            WARN_FLAG="--warn-only"
+          fi
+
+          # Pass each changed file as a separate --changed-files argument.
+          # The binary accepts newline-separated values via the positional
+          # value_delimiter configured in clap.
+          CHANGED_FILES="${{ steps.changed.outputs.files }}"
+
+          if [[ -z "$CHANGED_FILES" ]]; then
+            echo "No relevant files changed in this PR."
+            exit 0
+          fi
+
+          # Build the argument list (one --changed-files per file).
+          ARGS=()
+          while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            ARGS+=("--changed-files" "$line")
+          done <<< "$CHANGED_FILES"
+
+          ./target/debug/doc-check $WARN_FLAG "${ARGS[@]}"
+        env:
+          CARGO_TERM_COLOR: always
+
+      # ── Run doc-check (push / manual: full check) ────────────────────────────
+      - name: Check for stale docs (full repo scan)
+        if: github.event_name != 'pull_request'
+        run: |
+          WARN_FLAG=""
+          if [[ "${{ github.event.inputs.warn_only }}" == "true" ]]; then
+            WARN_FLAG="--warn-only"
+          fi
+          ./target/debug/doc-check $WARN_FLAG status
+        env:
+          CARGO_TERM_COLOR: always
+
+      # ── Annotate PR with stale-doc file paths ────────────────────────────────
+      - name: Annotate PR with stale doc warnings
+        if: failure() && github.event_name == 'pull_request'
+        run: |
+          echo "::error title=Stale Documentation Detected::One or more documentation files are out of date with their linked source files. Please update the docs listed above, or run 'make check-stale-docs' locally for details."
+
+      # ── Summary ──────────────────────────────────────────────────────────────
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## 📄 Stale Docs Check" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ job.status }}" == "success" ]]; then
+            echo "✅ All tracked documentation files are up-to-date." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ One or more documentation files are stale." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**To fix:** update the flagged docs and commit, then re-run this workflow." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**To update the baseline** (after deliberate doc updates):" >> "$GITHUB_STEP_SUMMARY"
+            echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+            echo "make update-doc-baseline" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi

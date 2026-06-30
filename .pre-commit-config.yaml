@@ -32,6 +32,31 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+      - id: check-stale-docs
+        name: check stale docs
+        entry: cargo run --quiet --bin doc-check --
+        language: system
+        # Run whenever Rust source, docs, or the coverage config changes.
+        files: >-
+          (?x)^(
+            src/.*\.rs|
+            docs/.*\.md|
+            doc-coverage\.toml|
+            \.doc-hashes\.toml|
+            Makefile|
+            Cargo\.toml|
+            build\.rs|
+            charts/.*|
+            examples/.*|
+            config/.*|
+            benchmarks/.*|
+            formal_verification/.*|
+            tests/.*\.rs
+          )$
+        pass_filenames: false
+        # Only warn locally — CI enforces the hard failure.
+        args: ["--warn-only", "status"]
+
   - repo: https://github.com/adrienverge/yamllint.git
     rev: v1.35.1
     hooks:

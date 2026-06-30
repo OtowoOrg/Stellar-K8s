@@ -1,4 +1,4 @@
-.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart
+.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart check-stale-docs update-doc-baseline list-doc-coverage
 
 # Default target
 .DEFAULT_GOAL := help
@@ -66,7 +66,7 @@ docker-build-ci: ## Reproducible CI Docker build (builds binaries in container)
 docker-multiarch: ## Build multi-arch Docker image
 	$(DOCKER) buildx build --platform linux/amd64,linux/arm64 -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
-ci-local: fmt-check lint audit test build ## Run full CI locally
+ci-local: fmt-check lint audit test build check-stale-docs ## Run full CI locally
 	@echo ""
 	@echo "✓ All CI checks passed!"
 
@@ -86,6 +86,18 @@ pre-commit-install: ## Install pre-commit hooks
 
 clean: ## Clean build artifacts
 	$(CARGO) clean
+
+check-stale-docs: ## Check for documentation that has fallen behind its source code
+	@echo "→ Checking for stale documentation..."
+	@$(CARGO) run --quiet --bin doc-check -- status
+	@echo "✓ Stale-docs check complete"
+
+update-doc-baseline: ## Mark all docs as up-to-date in the baseline file
+	@echo "→ Updating doc baseline..."
+	@$(CARGO) run --quiet --bin doc-check -- update-baseline
+
+list-doc-coverage: ## List all doc → source mappings tracked by doc-check
+	@$(CARGO) run --quiet --bin doc-check -- list
 
 generate-api-docs: ## Generate API reference docs from CRD schema
 	@echo "→ Generating API reference docs..."

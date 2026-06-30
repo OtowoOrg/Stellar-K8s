@@ -51,6 +51,7 @@
 pub mod benchmark;
 pub mod blue_green;
 pub mod canary;
+pub mod event_taxonomy;
 pub mod cross_cloud_failover;
 pub mod feature_flags;
 pub mod gas_autoscaling;
@@ -210,6 +211,7 @@ pub use pss::{
 };
 #[cfg(feature = "reconciler-fuzz")]
 pub use reconciler::reconcile_for_fuzz;
+pub use event_taxonomy::{EventAction, EventCategory, EventDescriptor, EventReason};
 pub use reconciler::{run_controller, BatchSummaryReport, ControllerState};
 pub use registry_controller::{check_admission, reconcile_stellar_registry, summary_to_cve_count};
 pub use remediation::{can_remediate, check_stale_node, RemediationLevel, StaleCheckResult};

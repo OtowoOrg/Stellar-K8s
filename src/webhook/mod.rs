@@ -55,12 +55,14 @@
 //! server.start("0.0.0.0:8443".parse()?).await?;
 //! ```
 
+pub mod config_guardrails;
 pub mod mutation;
 pub mod org_validator;
 pub mod runtime;
 pub mod server;
 pub mod types;
 
+pub use config_guardrails::{blocking_violations, check_config_guardrails, GuardrailViolation, Severity};
 pub use mutation::apply_mutations;
 pub use runtime::{WasmRuntime, WasmRuntimeBuilder};
 pub use server::{LoadPluginRequest, PluginInfo, PluginListResponse, TlsConfig, WebhookServer};

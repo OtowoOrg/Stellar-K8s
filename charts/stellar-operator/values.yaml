@@ -575,6 +575,12 @@ scpAnalytics:
     # Log level
     logLevel: "info"
 
+    # Pod-level security context for the consumer Deployment
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      fsGroup: 1000
+
     # Resource limits
     resources:
       limits:

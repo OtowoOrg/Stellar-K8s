@@ -103,20 +103,15 @@ pub struct QueryOptimizationConfig {
     pub auto_index_recommendations: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 pub enum DatabasePhase {
+    #[default]
     Pending,
     Configuring,
     Scaling,
     Running,
     Failed,
-}
-
-impl Default for DatabasePhase {
-    fn default() -> Self {
-        DatabasePhase::Pending
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Default)]

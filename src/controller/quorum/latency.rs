@@ -67,7 +67,7 @@ impl ConsensusLatencyTracker {
 
         let mean = latencies.iter().sum::<u64>() as f64 / latencies.len() as f64;
 
-        let median = if latencies.len() % 2 == 0 {
+        let median = if latencies.len().is_multiple_of(2) {
             let mid = latencies.len() / 2;
             (latencies[mid - 1] + latencies[mid]) as f64 / 2.0
         } else {

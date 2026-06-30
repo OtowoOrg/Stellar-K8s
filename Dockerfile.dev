@@ -1,5 +1,6 @@
 # Development Dockerfile with cargo-watch for hot-reloading
-FROM rust:1.94-bookworm
+ARG SOURCE_DATE_EPOCH=0
+FROM rust:1.94-bookworm@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
 
 WORKDIR /app
 

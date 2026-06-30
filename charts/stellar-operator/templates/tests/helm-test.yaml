@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-test
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "stellar-operator.serviceAccountName" . }}
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  containers:
+  - name: test
+    image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+    imagePullPolicy: {{ .Values.image.pullPolicy }}
+    securityContext:
+      {{- toYaml .Values.securityContext | nindent 6 }}
+    command:
+    - /bin/sh
+    - -c
+    - |
+      set -e
+      echo "=== Stellar Operator Helm Test ==="
+      
+      # Test 1: Operator deployment is ready
+      echo "Test 1: Checking operator deployment..."
+      kubectl wait --for=condition=available --timeout=60s \
+        deployment/{{ include "stellar-operator.fullname" . }} \
+        -n {{ .Release.Namespace }}
+      echo "✓ Operator deployment is ready"
+      
+      # Test 2: CRDs are installed
+      echo "Test 2: Checking CRD installation..."
+      kubectl get crd stellarnodes.stellar.org
+      echo "✓ StellarNode CRD is installed"
+      
+      # Test 3: Service is accessible
+      echo "Test 3: Checking service accessibility..."
+      kubectl get service {{ include "stellar-operator.fullname" . }} -n {{ .Release.Namespace }}
+      echo "✓ Operator service exists"
+      
+      # Test 4: Metrics endpoint is responding
+      {{- if .Values.podAnnotations }}
+      {{- if index .Values.podAnnotations "prometheus.io/scrape" }}
+      echo "Test 4: Checking metrics endpoint..."
+      POD_NAME=$(kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "stellar-operator.name" . }} -o jsonpath='{.items[0].metadata.name}')
+      kubectl exec -n {{ .Release.Namespace }} $POD_NAME -- wget -q -O- http://localhost:{{ .Values.operator.metricsPort }}/metrics | grep -q "stellar_"
+      echo "✓ Metrics endpoint is responding"
+      {{- end }}
+      {{- end }}
+      
+      # Test 5: RBAC permissions
+      echo "Test 5: Checking RBAC permissions..."
+      kubectl auth can-i get stellarnodes --as=system:serviceaccount:{{ .Release.Namespace }}:{{ include "stellar-operator.serviceAccountName" . }}
+      kubectl auth can-i create pods --as=system:serviceaccount:{{ .Release.Namespace }}:{{ include "stellar-operator.serviceAccountName" . }}
+      echo "✓ RBAC permissions are configured"
+      
+      # Test 6: Webhook configuration (if enabled)
+      {{- if .Values.security.admissionWebhook }}
+      echo "Test 6: Checking admission webhook..."
+      kubectl get validatingwebhookconfigurations | grep stellar
+      echo "✓ Admission webhook is configured"
+      {{- end }}
+      
+      echo ""
+      echo "=== All Tests Passed ==="
+      echo "✓ Stellar Operator is healthy and ready"

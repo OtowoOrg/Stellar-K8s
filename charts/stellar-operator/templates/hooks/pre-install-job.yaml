@@ -1,0 +1,10 @@
+{{- if .Values.hooks.preInstall.enabled }}
+{{- include "stellar-operator.hookJob" (dict
+  "root" .
+  "name" "pre-install"
+  "hook" "pre-install"
+  "component" "pre-install-hook"
+  "containerName" "pre-install-checks"
+  "script" (include "stellar-operator.preInstallScript" .)
+) }}
+{{- end }}

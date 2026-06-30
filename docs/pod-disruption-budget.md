@@ -367,13 +367,13 @@ kube_poddisruptionbudget_status_disruptions_allowed{namespace="stellar-system"} 
 ## Related Documentation
 
 - [Kubernetes PodDisruptionBudget Documentation](https://kubernetes.io/docs/tasks/run-application/configure-pdb/)
-- [Stellar-K8s Quickstart](quickstart.md)
+- [Stellar-K8s Quick Start](getting-started/quick-start.md)
 - [Stellar-K8s Resource Limits](resource-limits.md)
 - [Stellar-K8s Health Checks](health-checks.md)
 
 ## Support
 
 For issues or questions about PDB configuration:
-- Open an issue on [GitHub](https://github.com/stellar/stellar-k8s/issues)
+- Open an issue on [GitHub](https://github.com/OtowoOrg/Stellar-K8s/issues)
 - Check existing documentation in the `docs/` directory
 - Review the [FMEA](fmea-stellarnode.md) for failure mode analysis

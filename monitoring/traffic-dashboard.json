@@ -1,0 +1,53 @@
+{
+  "title": "Traffic Shaping Dashboard",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Effective RPS",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "stellar_traffic_effective_rps",
+          "legendFormat": "{{namespace}}/{{name}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "System Load %",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "stellar_traffic_system_load_percent",
+          "legendFormat": "{{namespace}}/{{name}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests Allowed vs Dropped",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (priority,decision) (rate(stellar_traffic_requests_total[5m]))",
+          "legendFormat": "{{priority}}/{{decision}}"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Open Circuit Breakers",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(stellar_traffic_circuit_breaker_state == 1)",
+          "legendFormat": "open"
+        }
+      ]
+    }
+  ]
+}

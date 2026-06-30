@@ -1,0 +1,273 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stellarbackups.stellar.org
+spec:
+  group: stellar.org
+  names:
+    categories: []
+    kind: StellarBackup
+    plural: stellarbackups
+    shortNames:
+    - sb
+    singular: stellarbackup
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.schedule
+      name: Schedule
+      type: string
+    - jsonPath: .status.lastBackupTime
+      name: LastBackup
+      type: date
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: StellarBackup defines automated backup management
+        type: object
+        properties:
+          spec:
+            type: object
+            required:
+            - schedule
+            - destination
+            properties:
+              schedule:
+                type: string
+                description: Cron schedule for backups
+              destination:
+                type: object
+                description: Backup destination configuration
+                properties:
+                  type:
+                    type: string
+                    enum:
+                    - S3
+                    - GCS
+                    - AzureBlob
+                  bucket:
+                    type: string
+                  region:
+                    type: string
+              retentionPolicy:
+                type: object
+                description: Backup retention configuration
+                properties:
+                  dailyRetentionDays:
+                    type: integer
+                    default: 7
+                  weeklyRetentionWeeks:
+                    type: integer
+                    default: 4
+                  monthlyRetentionMonths:
+                    type: integer
+                    default: 12
+              encryption:
+                type: object
+                description: Backup encryption settings
+                properties:
+                  enabled:
+                    type: boolean
+                    default: true
+                  algorithm:
+                    type: string
+                    default: AES256
+              crossRegionReplication:
+                type: boolean
+                default: false
+                description: Enable cross-region backup replication
+          status:
+            type: object
+            properties:
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+              lastBackupTime:
+                type: string
+                format: date-time
+              backupCount:
+                type: integer
+                default: 0
+              totalSize:
+                type: string
+    served: true
+    storage: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stellarrestores.stellar.org
+spec:
+  group: stellar.org
+  names:
+    categories: []
+    kind: StellarRestore
+    plural: stellarrestores
+    shortNames:
+    - sr
+    singular: stellarestore
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.targetLedger
+      name: TargetLedger
+      type: integer
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: StellarRestore defines point-in-time restore operations
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              backupRef:
+                type: string
+                description: Reference to backup to restore from
+              targetLedger:
+                type: integer
+                description: Target ledger number for restore
+              targetTimestamp:
+                type: string
+                format: date-time
+                description: Target timestamp for restore
+              parallelism:
+                type: integer
+                default: 4
+                minimum: 1
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+                enum:
+                - Pending
+                - Running
+                - Completed
+                - Failed
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+              restoreProgress:
+                type: integer
+                minimum: 0
+                maximum: 100
+              startTime:
+                type: string
+                format: date-time
+              completionTime:
+                type: string
+                format: date-time
+    served: true
+    storage: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stellardrdrills.stellar.org
+spec:
+  group: stellar.org
+  names:
+    categories: []
+    kind: StellarDRDrill
+    plural: stellardrdrills
+    shortNames:
+    - sdd
+    singular: stellardrdrill
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.schedule
+      name: Schedule
+      type: string
+    - jsonPath: .status.lastDrillTime
+      name: LastDrill
+      type: date
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: StellarDRDrill defines disaster recovery drill automation
+        type: object
+        properties:
+          spec:
+            type: object
+            required:
+            - schedule
+            properties:
+              schedule:
+                type: string
+                description: Cron schedule for DR drills
+              drRegion:
+                type: string
+                description: Target DR region for failover
+              autoRevert:
+                type: boolean
+                default: true
+                description: Automatically revert after drill
+              revertTimeout:
+                type: string
+                default: 1h
+              notificationEmail:
+                type: string
+                description: Email for drill results
+          status:
+            type: object
+            properties:
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+              lastDrillTime:
+                type: string
+                format: date-time
+              lastDrillStatus:
+                type: string
+                enum:
+                - Passed
+                - Failed
+                - Running
+              drillCount:
+                type: integer
+                default: 0
+              averageRecoveryTime:
+                type: string
+    served: true
+    storage: true

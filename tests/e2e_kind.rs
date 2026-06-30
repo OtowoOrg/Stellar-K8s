@@ -206,6 +206,158 @@ fn e2e_stellarnode_reconciliation() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Test PDB creation and quorum-aware minAvailable calculation for Validators.
+#[test]
+#[ignore]
+fn e2e_kind_validator_pdb_quorum() -> Result<(), Box<dyn Error>> {
+    if std::env::var("E2E_KIND").is_err() {
+        eprintln!("E2E_KIND is not set; skipping KinD E2E PDB test.");
+        return Ok(());
+    }
+
+    let cluster_name = std::env::var("KIND_CLUSTER_NAME").unwrap_or_else(|_| "stellar-e2e".into());
+    ensure_kind_cluster(&cluster_name)?;
+
+    let image =
+        std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
+    let operator_yaml = operator_manifest(&image, None);
+    let _cleanup = Cleanup::new(operator_yaml.clone());
+
+    run_cmd(
+        "kubectl",
+        &["apply", "-f", "config/crd/stellarnode-crd.yaml"],
+    )?;
+
+    run_cmd(
+        "kubectl",
+        &[
+            "create",
+            "namespace",
+            OPERATOR_NAMESPACE,
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+    )
+    .and_then(|output| kubectl_apply(&output))?;
+
+    kubectl_apply(&operator_yaml)?;
+    run_cmd(
+        "kubectl",
+        &[
+            "rollout",
+            "status",
+            "deployment/stellar-operator",
+            "-n",
+            OPERATOR_NAMESPACE,
+            "--timeout=180s",
+        ],
+    )?;
+
+    run_cmd(
+        "kubectl",
+        &[
+            "create",
+            "namespace",
+            TEST_NAMESPACE,
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+    )
+    .and_then(|output| kubectl_apply(&output))?;
+
+    let validator_name = "e2e-validator-pdb";
+    let validator_manifest = format!(
+        r#"apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: {validator_name}
+  namespace: {TEST_NAMESPACE}
+spec:
+  nodeType: Validator
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 3
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+  storage:
+    storageClass: "standard"
+    size: "1Gi"
+"#,
+    );
+    kubectl_apply(&validator_manifest)?;
+
+    wait_for("PDB created", Duration::from_secs(90), || {
+        Ok(run_cmd(
+            "kubectl",
+            &["get", "pdb", validator_name, "-n", TEST_NAMESPACE],
+        )
+        .is_ok())
+    })?;
+
+    let min_available = run_cmd(
+        "kubectl",
+        &[
+            "get",
+            "pdb",
+            validator_name,
+            "-n",
+            TEST_NAMESPACE,
+            "-o",
+            "jsonpath={.spec.minAvailable}",
+        ],
+    )?;
+
+    if min_available != "2" {
+        return Err(format!(
+            "Expected minAvailable to be 2 for 3 replicas, got {}",
+            min_available
+        )
+        .into());
+    }
+
+    // Scale to 5 replicas and verify PDB update
+    run_cmd(
+        "kubectl",
+        &[
+            "patch",
+            "stellarnode",
+            validator_name,
+            "-n",
+            TEST_NAMESPACE,
+            "--type",
+            "merge",
+            "-p",
+            "{\"spec\":{\"replicas\":5}}",
+        ],
+    )?;
+
+    wait_for(
+        "PDB updated for 5 replicas",
+        Duration::from_secs(90),
+        || {
+            let min_avail = run_cmd(
+                "kubectl",
+                &[
+                    "get",
+                    "pdb",
+                    validator_name,
+                    "-n",
+                    TEST_NAMESPACE,
+                    "-o",
+                    "jsonpath={.spec.minAvailable}",
+                ],
+            )?;
+            Ok(min_avail == "4")
+        },
+    )?;
+
+    Ok(())
+}
+
 /// Manifest for the e2e reconciliation test node.
 fn e2e_soroban_manifest(version: &str) -> String {
     format!(
@@ -681,6 +833,9 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["events"]
@@ -1924,6 +2079,470 @@ fn e2e_operator_upgrade_simulation() -> Result<(), Box<dyn Error>> {
         )
         .into());
     }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Issue #676: E2E tests for node recovery scenarios
+// Run with: E2E_KIND=1 cargo test --test e2e_kind -- --ignored
+// ---------------------------------------------------------------------------
+
+const RECOVERY_NAMESPACE: &str = "stellar-e2e-recovery";
+const RECOVERY_NODE: &str = "recovery-node";
+
+fn recovery_node_manifest() -> String {
+    format!(
+        r#"apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: {RECOVERY_NODE}
+  namespace: {RECOVERY_NAMESPACE}
+spec:
+  nodeType: SorobanRpc
+  network: Testnet
+  version: "v21.0.0"
+  replicas: 1
+  sorobanConfig:
+    stellarCoreUrl: "http://stellar-core.default:11626"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+  storage:
+    storageClass: "standard"
+    size: "1Gi"
+    retentionPolicy: Delete
+"#
+    )
+}
+
+fn setup_recovery_cluster(cluster_name: &str, image: &str) -> Result<String, Box<dyn Error>> {
+    ensure_kind_cluster(cluster_name)?;
+    run_cmd(
+        "kubectl",
+        &["apply", "-f", "config/crd/stellarnode-crd.yaml"],
+    )?;
+    run_cmd(
+        "kubectl",
+        &[
+            "create",
+            "namespace",
+            OPERATOR_NAMESPACE,
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+    )
+    .and_then(|o| kubectl_apply(&o))?;
+    run_cmd(
+        "kubectl",
+        &[
+            "create",
+            "namespace",
+            RECOVERY_NAMESPACE,
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+    )
+    .and_then(|o| kubectl_apply(&o))?;
+
+    let op_yaml = operator_manifest(image, None);
+    kubectl_apply(&op_yaml)?;
+    run_cmd(
+        "kubectl",
+        &[
+            "rollout",
+            "status",
+            "deployment/stellar-operator",
+            "-n",
+            OPERATOR_NAMESPACE,
+            "--timeout=180s",
+        ],
+    )?;
+    kubectl_apply(&recovery_node_manifest())?;
+    wait_for("recovery node Running", Duration::from_secs(120), || {
+        let phase = run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "stellarnode",
+                RECOVERY_NODE,
+                "-n",
+                RECOVERY_NAMESPACE,
+                "-o",
+                "jsonpath={.status.phase}",
+            ],
+        )
+        .unwrap_or_default();
+        Ok(phase == "Running")
+    })?;
+    Ok(op_yaml)
+}
+
+fn teardown_recovery_cluster(op_yaml: &str) {
+    let _ = run_cmd_quiet(
+        "kubectl",
+        &[
+            "delete",
+            "stellarnode",
+            RECOVERY_NODE,
+            "-n",
+            RECOVERY_NAMESPACE,
+            "--ignore-not-found=true",
+            "--timeout=60s",
+        ],
+    );
+    let _ = run_cmd_with_stdin_quiet("kubectl", &["delete", "-f", "-"], op_yaml);
+    let _ = run_cmd_quiet(
+        "kubectl",
+        &[
+            "delete",
+            "namespace",
+            RECOVERY_NAMESPACE,
+            OPERATOR_NAMESPACE,
+            "--ignore-not-found=true",
+        ],
+    );
+}
+
+struct RecoveryCleanup {
+    operator_manifest: String,
+}
+
+impl RecoveryCleanup {
+    fn new(operator_manifest: String) -> Self {
+        Self { operator_manifest }
+    }
+}
+
+impl Drop for RecoveryCleanup {
+    fn drop(&mut self) {
+        teardown_recovery_cluster(&self.operator_manifest);
+    }
+}
+
+fn running_pod_name(namespace: &str, instance: &str) -> Result<String, Box<dyn Error>> {
+    run_cmd(
+        "kubectl",
+        &[
+            "get",
+            "pods",
+            "-n",
+            namespace,
+            "-l",
+            &format!("app.kubernetes.io/instance={instance}"),
+            "--field-selector=status.phase=Running",
+            "-o",
+            "jsonpath={.items[0].metadata.name}",
+        ],
+    )
+}
+
+/// #676 scenario 1 — pod crash: delete the pod, verify operator recreates it.
+#[test]
+#[ignore]
+fn e2e_recovery_node_crash() -> Result<(), Box<dyn Error>> {
+    if std::env::var("E2E_KIND").is_err() {
+        eprintln!("Skipping: E2E_KIND not set");
+        return Ok(());
+    }
+    let cluster = std::env::var("KIND_CLUSTER_NAME").unwrap_or_else(|_| "stellar-e2e".into());
+    let image =
+        std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
+    let op_yaml = setup_recovery_cluster(&cluster, &image)?;
+    let _cleanup = RecoveryCleanup::new(op_yaml.clone());
+
+    let original_pod = running_pod_name(RECOVERY_NAMESPACE, RECOVERY_NODE)?;
+    // Force-delete pod to simulate crash
+    run_cmd(
+        "kubectl",
+        &[
+            "delete",
+            "pod",
+            &original_pod,
+            "-n",
+            RECOVERY_NAMESPACE,
+            "--force",
+            "--grace-period=0",
+        ],
+    )?;
+
+    // New pod should appear
+    wait_for("new pod created", Duration::from_secs(90), || {
+        let pod = running_pod_name(RECOVERY_NAMESPACE, RECOVERY_NODE).unwrap_or_default();
+        Ok(!pod.is_empty() && pod != original_pod)
+    })
+    .map_err(|_| -> Box<dyn Error> { "pod not recreated within 90s after crash".into() })?;
+
+    // StellarNode back to Running
+    wait_for("Running after crash", Duration::from_secs(120), || {
+        let phase = run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "stellarnode",
+                RECOVERY_NODE,
+                "-n",
+                RECOVERY_NAMESPACE,
+                "-o",
+                "jsonpath={.status.phase}",
+            ],
+        )
+        .unwrap_or_default();
+        Ok(phase == "Running")
+    })
+    .map_err(|_| -> Box<dyn Error> { "StellarNode did not recover after crash".into() })?;
+
+    Ok(())
+}
+
+/// #676 scenario 2 — disk full: fill the PVC, free space, restart pod, verify recovery.
+#[test]
+#[ignore]
+fn e2e_recovery_disk_full() -> Result<(), Box<dyn Error>> {
+    if std::env::var("E2E_KIND").is_err() {
+        eprintln!("Skipping: E2E_KIND not set");
+        return Ok(());
+    }
+    let cluster = std::env::var("KIND_CLUSTER_NAME").unwrap_or_else(|_| "stellar-e2e".into());
+    let image =
+        std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
+    let op_yaml = setup_recovery_cluster(&cluster, &image)?;
+    let _cleanup = RecoveryCleanup::new(op_yaml.clone());
+
+    let pvc = format!("{RECOVERY_NODE}-data");
+
+    // Fill ~900 MiB of the 1 GiB PVC via a one-shot pod
+    let fill_pod = format!(
+        r#"apiVersion: v1
+kind: Pod
+metadata:
+  name: disk-filler
+  namespace: {RECOVERY_NAMESPACE}
+spec:
+  restartPolicy: Never
+  containers:
+  - name: filler
+    image: busybox:1.36
+    command: ["dd","if=/dev/zero","of=/data/fill.bin","bs=1M","count=900"]
+    volumeMounts:
+    - {{name: data, mountPath: /data}}
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: {pvc}
+"#
+    );
+    kubectl_apply(&fill_pod)?;
+    wait_for("fill pod done", Duration::from_secs(120), || {
+        let p = run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "pod",
+                "disk-filler",
+                "-n",
+                RECOVERY_NAMESPACE,
+                "-o",
+                "jsonpath={.status.phase}",
+            ],
+        )
+        .unwrap_or_default();
+        Ok(p == "Succeeded" || p == "Failed")
+    })?;
+
+    // Free the space
+    let clean_pod = format!(
+        r#"apiVersion: v1
+kind: Pod
+metadata:
+  name: disk-cleaner
+  namespace: {RECOVERY_NAMESPACE}
+spec:
+  restartPolicy: Never
+  containers:
+  - name: cleaner
+    image: busybox:1.36
+    command: ["rm","-f","/data/fill.bin"]
+    volumeMounts:
+    - {{name: data, mountPath: /data}}
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: {pvc}
+"#
+    );
+    let _ = run_cmd_quiet(
+        "kubectl",
+        &[
+            "delete",
+            "pod",
+            "disk-filler",
+            "-n",
+            RECOVERY_NAMESPACE,
+            "--ignore-not-found=true",
+        ],
+    );
+    kubectl_apply(&clean_pod)?;
+    wait_for("clean pod done", Duration::from_secs(60), || {
+        let p = run_cmd(
+            "kubectl",
+            &[
+                "get",
+                "pod",
+                "disk-cleaner",
+                "-n",
+                RECOVERY_NAMESPACE,
+                "-o",
+                "jsonpath={.status.phase}",
+            ],
+        )
+        .unwrap_or_default();
+        Ok(p == "Succeeded" || p == "Failed")
+    })?;
+    let _ = run_cmd_quiet(
+        "kubectl",
+        &[
+            "delete",
+            "pod",
+            "disk-cleaner",
+            "-n",
+            RECOVERY_NAMESPACE,
+            "--ignore-not-found=true",
+        ],
+    );
+
+    // Bounce the node pod to pick up freed space
+    if let Ok(pod) = running_pod_name(RECOVERY_NAMESPACE, RECOVERY_NODE) {
+        let _ = run_cmd_quiet(
+            "kubectl",
+            &[
+                "delete",
+                "pod",
+                &pod,
+                "-n",
+                RECOVERY_NAMESPACE,
+                "--force",
+                "--grace-period=0",
+            ],
+        );
+    }
+
+    wait_for(
+        "Running after disk-full recovery",
+        Duration::from_secs(120),
+        || {
+            let phase = run_cmd(
+                "kubectl",
+                &[
+                    "get",
+                    "stellarnode",
+                    RECOVERY_NODE,
+                    "-n",
+                    RECOVERY_NAMESPACE,
+                    "-o",
+                    "jsonpath={.status.phase}",
+                ],
+            )
+            .unwrap_or_default();
+            Ok(phase == "Running")
+        },
+    )
+    .map_err(|_| -> Box<dyn Error> { "StellarNode did not recover after disk-full".into() })?;
+
+    Ok(())
+}
+
+/// #676 scenario 3 — network partition: deny-all NetworkPolicy, then remove it, verify recovery.
+#[test]
+#[ignore]
+fn e2e_recovery_network_partition() -> Result<(), Box<dyn Error>> {
+    if std::env::var("E2E_KIND").is_err() {
+        eprintln!("Skipping: E2E_KIND not set");
+        return Ok(());
+    }
+    let cluster = std::env::var("KIND_CLUSTER_NAME").unwrap_or_else(|_| "stellar-e2e".into());
+    let image =
+        std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
+    let op_yaml = setup_recovery_cluster(&cluster, &image)?;
+    let _cleanup = RecoveryCleanup::new(op_yaml.clone());
+
+    // Deny all traffic to the node pod — simulates network partition
+    let deny_policy = format!(
+        r#"apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: simulate-partition
+  namespace: {RECOVERY_NAMESPACE}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {RECOVERY_NODE}
+  policyTypes: [Ingress, Egress]
+"#
+    );
+    kubectl_apply(&deny_policy)?;
+
+    // Let the operator observe the degraded node
+    sleep(Duration::from_secs(20));
+
+    // Heal: remove the deny policy
+    run_cmd(
+        "kubectl",
+        &[
+            "delete",
+            "networkpolicy",
+            "simulate-partition",
+            "-n",
+            RECOVERY_NAMESPACE,
+            "--ignore-not-found=true",
+        ],
+    )?;
+
+    // Bounce pod so it can re-establish connections
+    if let Ok(pod) = running_pod_name(RECOVERY_NAMESPACE, RECOVERY_NODE) {
+        let _ = run_cmd_quiet(
+            "kubectl",
+            &[
+                "delete",
+                "pod",
+                &pod,
+                "-n",
+                RECOVERY_NAMESPACE,
+                "--force",
+                "--grace-period=0",
+            ],
+        );
+    }
+
+    wait_for(
+        "Running after partition heal",
+        Duration::from_secs(120),
+        || {
+            let phase = run_cmd(
+                "kubectl",
+                &[
+                    "get",
+                    "stellarnode",
+                    RECOVERY_NODE,
+                    "-n",
+                    RECOVERY_NAMESPACE,
+                    "-o",
+                    "jsonpath={.status.phase}",
+                ],
+            )
+            .unwrap_or_default();
+            Ok(phase == "Running")
+        },
+    )
+    .map_err(|_| -> Box<dyn Error> {
+        "StellarNode did not recover after network partition".into()
+    })?;
 
     Ok(())
 }

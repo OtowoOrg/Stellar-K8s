@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package stellar.scp;
+
+option go_package = "github.com/stellar/stellar-k8s/proto/scp";
+option java_package = "org.stellar.scp.proto";
+option java_outer_classname = "ScpMessageProto";
+
+// Stellar Consensus Protocol message for real-time analytics
+message ScpMessage {
+  // Unique message identifier for deduplication
+  string message_id = 1;
+
+  // Message capture timestamp in milliseconds since epoch
+  int64 timestamp = 2;
+
+  // Source validator public key
+  string node_id = 3;
+
+  // Kubernetes namespace of the Stellar node
+  string namespace = 4;
+
+  // Kubernetes name of the Stellar node
+  string node_name = 5;
+
+  // Stellar network (mainnet, testnet, etc.)
+  string network = 6;
+
+  // Current SCP phase
+  ScpPhase phase = 7;
+
+  // Ballot counter for this consensus round
+  uint32 ballot_counter = 8;
+
+  // Hash of the value being voted on
+  string value_hash = 9;
+
+  // Quorum set configuration for this validator
+  QuorumSet quorum_set = 10;
+
+  // Values being voted on in nomination phase
+  repeated string nomination_votes = 11;
+
+  // Values that have been accepted in nomination
+  repeated string nomination_accepted = 12;
+
+  // Ledger sequence number if available
+  optional uint64 ledger_sequence = 13;
+
+  // Additional metadata key-value pairs
+  map<string, string> metadata = 14;
+}
+
+// SCP consensus phase
+enum ScpPhase {
+  UNKNOWN = 0;
+  PREPARE = 1;
+  CONFIRM = 2;
+  EXTERNALIZE = 3;
+}
+
+// Quorum set configuration
+message QuorumSet {
+  // Number of validators that must agree
+  uint32 threshold = 1;
+
+  // List of validator public keys
+  repeated string validators = 2;
+
+  // Nested inner quorum sets
+  repeated InnerQuorumSet inner_sets = 3;
+}
+
+// Inner quorum set (nested structure)
+message InnerQuorumSet {
+  // Threshold for this inner set
+  uint32 threshold = 1;
+
+  // Validators in this inner set
+  repeated string validators = 2;
+}
+
+// Topological health metrics derived from SCP messages
+message TopologicalHealth {
+  // Timestamp of analysis
+  int64 timestamp = 1;
+
+  // Network identifier
+  string network = 2;
+
+  // Overall quorum health score (0.0 = unhealthy, 1.0 = healthy)
+  double health_score = 3;
+
+  // Number of active validators
+  uint32 active_validators = 4;
+
+  // Number of stalled validators (no phase change in 30s)
+  uint32 stalled_validators = 5;
+
+  // Number of critical nodes (removal breaks consensus)
+  uint32 critical_nodes = 6;
+
+  // Quorum intersection status
+  bool has_quorum_intersection = 7;
+
+  // Average consensus latency in milliseconds
+  double avg_consensus_latency_ms = 8;
+
+  // Network partition detected
+  bool partition_detected = 9;
+
+  // List of validator IDs by health status
+  repeated ValidatorHealth validator_health = 10;
+}
+
+// Individual validator health status
+message ValidatorHealth {
+  // Validator public key
+  string node_id = 1;
+
+  // Current SCP phase
+  ScpPhase phase = 2;
+
+  // Time since last phase change in seconds
+  uint32 time_since_last_change_secs = 3;
+
+  // Is this validator critical for consensus?
+  bool is_critical = 4;
+
+  // Is this validator stalled?
+  bool is_stalled = 5;
+
+  // Number of peers connected
+  uint32 peer_count = 6;
+}

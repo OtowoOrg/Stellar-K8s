@@ -1,0 +1,376 @@
+---
+# Example Tenant Configurations for Multi-Tenancy Platform
+# After implementation, these examples can be used to quickly provision tenants
+
+# ===========================================================================
+# Example 1: Basic Tenant (Single Team)
+# ===========================================================================
+apiVersion: stellar.org/v1alpha1
+kind: Tenant
+metadata:
+  name: engineering-team
+spec:
+  tenantId: engineering-team
+  displayName: "Engineering Team"
+  
+  # Namespace isolation
+  namespace: engineering-team-stellar
+  
+  # Resource quotas
+  quota:
+    hard:
+      cpu: "8"
+      memory: "32Gi"
+      storage: "500Gi"
+      persistentvolumeclaims: "10"
+      stellar.org/validators: "1"
+      stellar.org/horizon-nodes: "3"
+      stellar.org/soroban-nodes: "2"
+  
+  # Lifecycle
+  suspended: false
+  cleanupOnDelete: true
+  
+  # Billing
+  billing:
+    costCenter: "eng-blockchain"
+    billingEmail: "finance@company.com"
+    usageUnits: ["cpuSeconds", "memorySeconds"]
+  
+  # Contact
+  contacts:
+    adminEmail: "stellar-admins@company.com"
+    slackChannel: "#stellar-ops"
+  
+  # Grafana
+  dashboard:
+    enabled: true
+    grafanaNamespace: monitoring
+
+---
+# ===========================================================================
+# Example 2: Organization with Hierarchical Tenancy
+# ===========================================================================
+apiVersion: stellar.org/v1alpha1
+kind: Tenant
+metadata:
+  name: acme-corp
+spec:
+  tenantId: acme-corp
+  displayName: "ACME Corporation"
+  
+  namespace: acme-corp-stellar
+  
+  # This is a parent organization
+  hierarchy:
+    parentTenantId: null
+    isOrganization: true
+  
+  # Larger quota for organization
+  quota:
+    hard:
+      cpu: "64"
+      memory: "256Gi"
+      storage: "10Ti"
+      persistentvolumeclaims: "50"
+      stellar.org/validators: "10"
+      stellar.org/horizon-nodes: "20"
+      stellar.org/soroban-nodes: "15"
+  
+  # Enhanced security for production org
+  securityPolicy:
+    podSecurityStandard: restricted
+    requiredLabels:
+      - cost-center
+      - environment
+      - owner
+    imageRegistryAllowlist:
+      - "docker.io/stellar/*"
+      - "gcr.io/acme-corp/*"
+      - "ghcr.io/acme-corp/*"
+  
+  billing:
+    costCenter: "org-infrastructure"
+    billingEmail: "cfo@acme.com"
+    webhookUrl: "https://billing.acme.com/api/stellar-usage"
+  
+  contacts:
+    adminEmail: "platform-team@acme.com"
+    slackChannel: "#platform-alerts"
+  
+  dashboard:
+    enabled: true
+    grafanaNamespace: monitoring
+
+---
+# ===========================================================================
+# Example 3: Child Tenant (Development Team under Organization)
+# ===========================================================================
+apiVersion: stellar.org/v1alpha1
+kind: Tenant
+metadata:
+  name: acme-dev-team
+spec:
+  tenantId: acme-dev-team
+  displayName: "ACME Development Team"
+  
+  namespace: acme-dev-team-stellar
+  
+  # Child of parent organization
+  hierarchy:
+    parentTenantId: acme-corp
+    isOrganization: false
+  
+  # Subset of parent quota
+  quota:
+    hard:
+      cpu: "16"
+      memory: "64Gi"
+      storage: "2Ti"
+      persistentvolumeclaims: "10"
+      stellar.org/validators: "2"
+      stellar.org/horizon-nodes: "5"
+      stellar.org/soroban-nodes: "3"
+  
+  # Inherit parent security policies (can be stricter)
+  securityPolicy:
+    podSecurityStandard: restricted
+    requiredLabels:
+      - cost-center
+      - environment
+      - owner
+      - team
+    imageRegistryAllowlist:
+      - "docker.io/stellar/*"
+      - "gcr.io/acme-corp/*"
+  
+  billing:
+    costCenter: "eng-dev-team"
+    billingEmail: "dev-manager@acme.com"
+  
+  contacts:
+    adminEmail: "dev-team-leads@acme.com"
+    slackChannel: "#dev-team-stellar"
+  
+  dashboard:
+    enabled: true
+    grafanaNamespace: monitoring
+
+---
+# ===========================================================================
+# Example 4: Suspended Tenant (Billing Issue)
+# ===========================================================================
+apiVersion: stellar.org/v1alpha1
+kind: Tenant
+metadata:
+  name: demo-tenant
+spec:
+  tenantId: demo-tenant
+  displayName: "Demo Tenant (Suspended)"
+  
+  namespace: demo-tenant-stellar
+  
+  quota:
+    hard:
+      cpu: "4"
+      memory: "16Gi"
+      storage: "100Gi"
+  
+  # Suspended: all nodes scaled to 0, no new resources allowed
+  suspended: true
+  
+  cleanupOnDelete: false  # Retain data for potential reactivation
+  
+  billing:
+    costCenter: "demo"
+    billingEmail: "billing@demo.com"
+  
+  contacts:
+    adminEmail: "admin@demo.com"
+
+---
+# ===========================================================================
+# Example 5: High-Security Tenant (Financial Services)
+# ===========================================================================
+apiVersion: stellar.org/v1alpha1
+kind: Tenant
+metadata:
+  name: finserv-prod
+spec:
+  tenantId: finserv-prod
+  displayName: "Financial Services Production"
+  
+  namespace: finserv-prod-stellar
+  
+  quota:
+    hard:
+      cpu: "32"
+      memory: "128Gi"
+      storage: "5Ti"
+      persistentvolumeclaims: "20"
+      stellar.org/validators: "4"
+      stellar.org/horizon-nodes: "8"
+  
+  # Strict security policies
+  securityPolicy:
+    podSecurityStandard: restricted
+    allowPrivilegedNodes: false
+    requiredLabels:
+      - cost-center
+      - environment
+      - compliance-level
+      - data-classification
+      - owner
+    imageRegistryAllowlist:
+      - "gcr.io/finserv-prod/*"  # Only internal registry
+    networkPolicyMode: strict
+  
+  # Network isolation
+  network:
+    labelKey: "tenant.stellar.org/id"
+    labelValue: "finserv-prod"
+  
+  billing:
+    costCenter: "finserv-infrastructure"
+    billingEmail: "finops@finserv.com"
+    webhookUrl: "https://billing.finserv.com/api/usage"
+  
+  contacts:
+    adminEmail: "platform-sre@finserv.com"
+    slackChannel: "#finserv-platform-critical"
+  
+  dashboard:
+    enabled: true
+    grafanaNamespace: monitoring
+
+---
+# ===========================================================================
+# Example 6: Cost-Optimized Tenant (Non-Production)
+# ===========================================================================
+apiVersion: stellar.org/v1alpha1
+kind: Tenant
+metadata:
+  name: staging-env
+spec:
+  tenantId: staging-env
+  displayName: "Staging Environment"
+  
+  namespace: staging-env-stellar
+  
+  # Smaller quotas for cost optimization
+  quota:
+    hard:
+      cpu: "4"
+      memory: "16Gi"
+      storage: "200Gi"
+      persistentvolumeclaims: "5"
+      stellar.org/validators: "1"
+      stellar.org/horizon-nodes: "2"
+      stellar.org/soroban-nodes: "1"
+  
+  securityPolicy:
+    podSecurityStandard: baseline  # Relaxed for staging
+    requiredLabels:
+      - environment
+    imageRegistryAllowlist:
+      - "docker.io/*"  # Allow public images for testing
+  
+  billing:
+    costCenter: "eng-staging"
+    billingEmail: "eng-leads@company.com"
+    # Override default cost rates (e.g., use spot instances)
+    costRates:
+      cpuPerCoreHour: 0.05  # 50% cheaper than default
+      memoryPerGiBHour: 0.01
+  
+  contacts:
+    adminEmail: "dev-team@company.com"
+    slackChannel: "#staging-alerts"
+  
+  dashboard:
+    enabled: true
+    grafanaNamespace: monitoring
+
+---
+# ===========================================================================
+# Example StellarNode in Tenant Namespace
+# ===========================================================================
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-1
+  namespace: engineering-team-stellar  # Tenant namespace
+  labels:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/instance: validator-1
+    stellar.org/node-type: Validator
+    tenant.stellar.org/id: engineering-team  # Tenant ownership label
+    cost-center: eng-blockchain
+    owner: stellar-admins
+spec:
+  nodeType: Validator
+  network: mainnet
+  version: "v21.0.0"
+  
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  
+  storage:
+    storageClass: "fast-ssd"
+    size: "200Gi"
+    retentionPolicy: Retain
+  
+  validatorConfig:
+    seedSecretRef: "validator-1-seed"
+    enableHistoryArchive: true
+  
+  replicas: 1
+  alerting: true
+
+---
+# ===========================================================================
+# Example TenantUsage (Generated by Cost Collector)
+# ===========================================================================
+apiVersion: stellar.org/v1alpha1
+kind: TenantUsage
+metadata:
+  name: engineering-team-2026-06
+  namespace: stellar-system
+spec:
+  tenantId: engineering-team
+  period:
+    start: "2026-06-01T00:00:00Z"
+    end: "2026-06-30T23:59:59Z"
+
+status:
+  # Raw usage
+  resources:
+    cpuCoreHours: 2880      # 4 cores * 24 hours * 30 days
+    memoryGiBHours: 11520   # 16 GiB * 24 hours * 30 days
+    storageGiBHours: 144000 # 200 GiB * 24 hours * 30 days
+  
+  # Costs (calculated by cost collector)
+  costs:
+    cpu: 288.00             # 2880 * $0.10
+    memory: 230.40          # 11520 * $0.02
+    storage: 14.40          # 144000 * $0.0001
+    total: 532.80
+  
+  # Per-node breakdown
+  breakdown:
+    - nodeName: validator-1
+      nodeType: Validator
+      cpuCoreHours: 2880
+      memoryGiBHours: 11520
+      storageBiBHours: 144000
+      cost: 532.80
+  
+  # Report metadata
+  reportGenerated: true
+  generatedAt: "2026-07-01T02:15:00Z"
+  reportUrl: "https://billing.company.com/reports/engineering-team-2026-06.pdf"

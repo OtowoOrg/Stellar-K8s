@@ -1,125 +1,291 @@
 # Contributing to Stellar-K8s
 
-First off, thank you for considering contributing to Stellar-K8s! This project aims to provide a robust, cloud-native Kubernetes operator for managing Stellar infrastructure.
+Thank you for contributing to Stellar-K8s! This guide explains how to work with the project, keep your pull requests ready for review, and follow our commit and merge conventions.
 
-This document provides a clear guide on how to contribute to the project, covering everything from our developer workflow to commit structures.
+## Troubleshooting Quick Links
 
-## 1. Fork Workflow
+If you run into issues, jump to the relevant section below:
+- [Setup Issues](#setup-issues)
+- [Build Failures](#build-failures)
+- [Cargo Issues](#cargo-issues)
+- [Docker Issues](#docker-issues)
+- [Kubernetes Issues](#kubernetes-issues)
+- [CI Failures](#ci-failures)
 
-We use a standard fork and pull request workflow for contributions:
+## 1. Fork and Pull Request Workflow
 
-1. **Fork the repository** on GitHub.
-2. **Clone your fork** locally:
+We use a fork-and-pull-request model. The basic flow is:
+
+1. **Fork** the repository on GitHub.
+2. **Clone** your fork locally:
    ```bash
    git clone https://github.com/YOUR_USERNAME/stellar-k8s.git
    cd stellar-k8s
    ```
-3. **Add the upstream remote** so you can keep your fork synced:
+3. **Add the upstream remote**:
    ```bash
-   git remote add upstream https://github.com/stellar/stellar-k8s.git
+   git remote add upstream https://github.com/OtowoOrg/Stellar-K8s.git
    ```
-4. **Create a new branch** for your feature or bugfix (see *Branch Naming* below).
-5. **Commit your changes**, keeping them focused and atomic.
-6. **Push to your fork** on GitHub.
-7. **Open a Pull Request** against the `main` branch of the upstream repository.
-
-   This will:
-   - Install Rust toolchain and components
-   - Install cargo-audit and cargo-watch
-   - Install pre-commit hooks for automatic code quality checks
-
-3. Run local checks before committing:
-## 2. Branch Naming
-
-Please use descriptive branch names based on the nature of your contribution. We recommend the following prefixes:
-
-   # Run pre-commit hooks manually
-   make pre-commit
-
-   # Or comprehensive pre-push check
-   make ci-local
+4. **Sync from upstream** before creating a branch:
+   ```bash
+   git fetch upstream
+   git checkout main
+   git merge upstream/main
    ```
-- `feat/` for new features (e.g., `feat/auto-mtls`)
-- `fix/` for bug fixes (e.g., `fix/panic-on-startup`)
-- `docs/` for documentation updates (e.g., `docs/update-architecture`)
-- `chore/` for maintenance tasks, refactoring, or dependency updates (e.g., `chore/bump-kube-rs`)
-- `test/` for adding or improving tests (e.g., `test/e2e-service-mesh`)
+5. **Create a new branch** for your work.
+6. **Make focused commits**.
+7. **Run local checks** before pushing.
+8. **Push your branch** to your fork.
+9. **Open a Pull Request** against the upstream `main` branch.
 
-## 3. Commit Conventions
+## 2. Branch Naming and Strategy
 
-We strictly follow [Conventional Commits](https://www.conventionalcommits.org/). This allows us to automate our changelog generation and semantic versioning.
+Use clear, descriptive branch names. Recommended prefixes:
 
-Your commit messages should be formatted as follows:
-```
-<type>(<optional scope>): <description>
+- `feat/` for new features (e.g. `feat/auto-mtls`)
+- `fix/` for bug fixes (e.g. `fix/panic-on-startup`)
+- `docs/` for documentation updates (e.g. `docs/update-architecture`)
+- `chore/` for maintenance or dependency changes (e.g. `chore/bump-kube-rs`)
+- `test/` for test-related work (e.g. `test/e2e-service-mesh`)
 
-[optional body]
+### Branching Rules
 
-[optional footer(s)]
-```
+- Always branch from the latest `main`.
+- Do not work directly on `main`.
+- Keep each branch scoped to a single feature, bug fix, or documentation item.
+- Rebase or merge `main` into your branch before opening a PR if `main` has advanced.
 
-**Common types include:**
-- `feat:` A new feature
-- `fix:` A bug fix
-- `docs:` Documentation only changes
-- `chore:` Changes to the build process or auxiliary tools and libraries
-- `refactor:` A code change that neither fixes a bug nor adds a feature
-- `test:` Adding missing tests or correcting existing tests
+### Merge Strategy
 
-## 4. Developer Certificate of Origin (DCO) Sign-off
+We prefer a clean history. When your PR is approved, maintainers will typically merge it using:
 
-To comply with open-source legal standards, **all commits must include a `Signed-off-by` line indicating that you agree to the [Developer Certificate of Origin (DCO)](https://developercertificate.org/)**.
+- **Squash and merge** for feature and fix branches
+- **Rebase and merge** only when preserving a linear history is important
 
-You can automatically add this sign-off to your commits by using the `-s` or `--signoff` flag:
+If your PR contains multiple logical changes, split it into separate branches and PRs.
+
+## 3. PR Checklist
+
+Before opening a PR, confirm the following:
+
+- [ ] The code or documentation change is complete and focused.
+- [ ] The PR targets the `main` branch.
+- [ ] Your branch is up to date with `main`.
+- [ ] You have run tests locally.
+- [ ] You have run formatting and lint checks.
+- [ ] You have added or updated documentation, if needed.
+- [ ] Commit messages are clear, accurate, and follow our conventions.
+- [ ] Every commit includes a DCO sign-off.
+- [ ] The PR description is filled out completely using the template.
+- [ ] The PR includes links to any related issues or design discussions.
+
+### Required checks
+
+Run these locally before submitting. Always use the `make` targets — they
+wrap the underlying `cargo` commands with the workspace's feature flags
+(`rest-api`, `metrics`, `admission-webhook`, `k8s-v1-30`, `reconciler-fuzz`)
+and `K8S_OPENAPI_ENABLED_VERSION`, so plain `cargo fmt`/`cargo clippy`/`cargo
+test` invocations will not match CI exactly.
+
 ```bash
-git commit -s -m "feat: your feature description"
+make fmt          # Auto-format (wraps `cargo fmt --all`)
+make lint         # Clippy with project feature flags (wraps `cargo clippy ...`)
+make test         # Workspace tests + doc tests (wraps `cargo test ...`)
+make ci-local     # Full local CI gate: fmt-check + lint + audit + test + build + link-check
 ```
 
-This will append the following line to your commit message:
-`Signed-off-by: Jane Doe <jane.doe@example.com>`
+If your change adds shell scripts or repository tooling, also run:
 
-**Note:** The name and email used in the sign-off must match the author of the commit. PRs with unsigned commits will fail our CI pipeline checks.
+```bash
+make shellcheck
+```
 
-## 5. Pull Request Template Usage
+## 4. Commit Message Examples
 
-When you open a Pull Request, a template will automatically populate the description box. **You must fill out this template completely.**
+We follow [Conventional Commits](https://www.conventionalcommits.org/).
 
-The PR template includes a checklist to ensure your code:
-- Passes all CI tests (`cargo test`)
-- Is properly formatted (`cargo fmt`)
-- Passes linting (`cargo clippy`)
-- Includes a DCO sign-off
+Correct examples:
 
-Please do not delete the template sections. PRs with empty descriptions or unchecked vital requirements will be heavily delayed or closed.
+```text
+feat(cli): add support for --dry-run mode
+fix(webhook): handle nil admission review objects
+docs(contributing): clarify PR checklist and branch strategy
+test(integration): add end-to-end service mesh coverage
+chore(deps): bump kube-rs to 0.1.0
+```
 
-## 6. Development Environment
+When to use each type:
+
+- `feat:` new functionality
+- `fix:` bug fixes
+- `docs:` documentation-only changes
+- `chore:` maintenance tasks and dependency updates
+- `refactor:` code changes that do not add features or fix bugs
+- `test:` adding or updating tests
+
+Example with body and footer:
+
+```text
+fix(metrics): avoid panic when metrics registry is empty
+
+This change adds a guard around metric registration so operator startup
+continues even if no collector is present.
+
+Signed-off-by: Alice Doe <alice@example.com>
+```
+
+## 5. Developer Certificate of Origin (DCO)
+
+All commits must include a `Signed-off-by` line.
+
+Add this automatically with:
+
+```bash
+git commit -s -m "fix: your fix description"
+```
+
+The sign-off must match the commit author. Unsigned commits may fail CI and block merge.
+
+## 6. Pull Request Template
+
+A PR template is provided in `.github/PULL_REQUEST_TEMPLATE.md` and will populate the PR description when you open a PR.
+
+Fill out every section fully. Do not leave the template blank or remove required checklist items.
+
+The template ensures your change includes:
+
+- tests and validation
+- documentation updates when required
+- formatting and linting checks
+- DCO sign-off
+
+## 7. Development Environment
 
 ### Prerequisites
 
-- **Rust**: Latest stable version (1.88+)
-- **Kubernetes**: A local cluster like `kind` or `minikube`
-- **Docker**: For building container images
-- **Cargo-audit**: For security scans (`cargo install cargo-audit`)
+- Rust stable (1.88+)
+- Kubernetes local cluster (`kind`, `minikube`, etc.)
+- Docker
+- `cargo-audit`
+- `pre-commit` hooks
 
-### Setup & Local Checks
+### Setup
 
-1. Setup development environment:
-   ```bash
-   make dev-setup
-   ```
-2. Run local checks before committing:
-   ```bash
-   make quick     # Use this for a fast compilation check
-   make ci-local  # Comprehensive pre-push check mimicking CI
-   ```
+Use the OS setup script to install and pin all required tools, then run `make dev-setup` to install Rust components and pre-commit hooks:
 
-### Coding Standards
+```bash
+# macOS
+bash scripts/setup-mac.sh
 
-- **Formatting**: Always run `cargo fmt` before committing.
-- **Linting**: We use Clippy. Ensure `cargo clippy --all-targets --all-features -- -D warnings` passes.
-- **Shell scripts**: We lint scripts under `scripts/` with ShellCheck. Run `find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error` locally.
-- **Security**: All dependencies must be audited. We resolve all `RUSTSEC` advisories immediately.
-- **Error Handling**: Prefer the `Result<T>` type defined in `src/error.rs` using `thiserror`.
+# Linux (Ubuntu/Debian/Fedora)
+bash scripts/setup-linux.sh
 
-## Need Help?
-If you're stuck, feel free to open a Draft PR or reach out in the repository's discussions/issues!
+# Both platforms: install Rust components and pre-commit hooks
+make dev-setup
+```
+
+Both setup scripts are idempotent and print a summary of installed versions.
+
+### Local checks — Canonical Workflow
+
+Always drive the local pipeline through `make` targets. They wrap `cargo`
+with the workspace's feature flags so the results match CI exactly:
+
+```bash
+make dev-setup     # One-time: install Rust toolchain, tools, and pre-commit hooks
+make quick         # Fast pre-commit check (fmt-check + cargo check)
+make ci-local      # Full CI pipeline (fmt-check + lint + audit + test + build + link-check)
+make health        # Full contributor health gate
+```
+
+Or run individual steps:
+
+```bash
+make fmt           # Format (wraps `cargo fmt --all`)
+make lint          # Clippy with project feature flags
+make test          # Workspace tests + doc tests
+make security-all  # Audit + shellcheck
+make link-check    # Markdown link/anchor check (PR-time)
+make link-check-all # Repo-wide link check via lychee (markdown + source + configs)
+```
+
+## 8. Coding Standards
+
+- Format Rust code with `make fmt`.
+- Lint with `make lint` (clippy with the project's feature flags).
+- Run tests with `make test`.
+- Document behavior changes in code comments and docs.
+- Keep PRs small and easy to review.
+
+### Rust code conventions
+
+- Module names use `snake_case`.
+- Public types and functions require doc comments (`///`).
+- Do not add `#[allow(dead_code)]` without a comment explaining why the code must stay.
+- Unused imports must be removed before merging.
+- Feature-gated code that is no longer used should be deleted, not suppressed.
+
+### Documentation conventions
+
+- Documentation files use `kebab-case.md` (e.g., `disk-scaling.md`).
+- Files that belong to a topic area go in the matching `docs/<topic>/` subdirectory.
+- Root-level docs (`README.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md`) are entry points only — detailed content belongs in `docs/`.
+- New doc files must be linked from `docs/README.md` under the appropriate section.
+
+### Script conventions
+
+- Scripts use `kebab-case.sh` (e.g., `setup-mac.sh`).
+- Every script must pass `shellcheck -S error`.
+- Historical or one-off scripts should be moved to `scripts/archive/` rather than left in the root of `scripts/`.
+
+### Manifest and config conventions
+
+- CRD YAML files follow the `stellar{feature}-crd.yaml` naming pattern under `config/crd/`.
+- Example manifests in `examples/` use descriptive, feature-based names — not issue numbers.
+- Generated manifests (CRDs, API reference, bundle) must be regenerated from their source before merging. See the [Regenerating Manifests](DEVELOPMENT.md#regenerating-manifests) table in DEVELOPMENT.md.
+
+## 9. Repo Health Checklist
+
+Before requesting a review for a Pull Request, please ensure all checks listed in the [Canonical Repository Health Checklist](docs/development/repo-health-checklist.md) have been run and verified.
+
+## 10. Need Help?
+
+If you're stuck, open a Draft PR or create an issue to ask for guidance.
+
+Refer to [README.md](README.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for additional project setup and workflow information.
+
+## Troubleshooting
+
+### Setup Issues
+- **Problem**: `make` or `cargo` commands not found.
+  - **Solution**: Ensure you have installed the necessary dependencies from `DEVELOPMENT.md`.
+- **Problem**: Minikube / Kind cluster fails to start.
+  - **Solution**: Check your Docker daemon is running and has enough resources allocated (minimum 4GB RAM, 2 CPUs).
+
+### Build Failures
+- **Problem**: Code fails to compile due to missing dependencies.
+  - **Solution**: Run `cargo fetch` or `cargo update` to ensure you have the latest crates. Also, ensure your system has `cmake`, `libssl-dev`, and `pkg-config` installed.
+- **Problem**: Tests fail locally but pass on CI.
+  - **Solution**: Run `make clean` and then rebuild. Sometimes local artifacts can get stale.
+
+### Cargo Issues
+- **Problem**: Cargo build is extremely slow.
+  - **Solution**: We highly recommend using `sccache` to cache intermediate build results. Follow the instructions in `DEVELOPMENT.md` to set it up.
+
+### Docker Issues
+- **Problem**: Docker build fails with out of space errors.
+  - **Solution**: Run `docker system prune` to free up space. The build requires at least 10GB of free space due to the multi-stage cargo caching.
+- **Problem**: `make quick` fails during docker validation.
+  - **Solution**: Make sure you have the latest base images pulled locally.
+
+### Kubernetes Issues
+- **Problem**: Operator pod is crashlooping.
+  - **Solution**: Check the operator logs using `kubectl logs -n stellar-system -l app.kubernetes.io/name=stellar-operator`. Often, this is due to invalid RBAC permissions or missing secrets.
+- **Problem**: Custom Resource Definitions (CRDs) not applying.
+  - **Solution**: Ensure your KUBECONFIG points to the correct cluster. Run `make install` to manually install the CRDs into your cluster.
+
+### CI Failures
+- **Problem**: GitHub Actions workflow fails on linting.
+  - **Solution**: Run `make fmt` and `make lint` locally before pushing. Also, check `.pre-commit-config.yaml` to ensure your pre-commit hooks are installed.
+- **Problem**: Link validation CI fails.
+  - **Solution**: Run `make link-check` for markdown link/anchor issues, or `make link-check-all` for the full repo-wide check (markdown + source + configs).

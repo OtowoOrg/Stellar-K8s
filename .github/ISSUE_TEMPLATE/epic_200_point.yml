@@ -1,0 +1,72 @@
+name: 🚀 Epic (200 Points)
+description: Major feature or architectural improvement requiring significant effort
+title: "[EPIC] "
+labels: ["epic", "200-points", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 200-Point Epic Template
+        Use this template for major features that require:
+        - Multiple weeks of development
+        - Cross-cutting architectural changes
+        - Significant testing and documentation
+        - Potential breaking changes
+
+  - type: textarea
+    id: overview
+    attributes:
+      label: Epic Overview
+      description: High-level description of the feature or improvement
+      placeholder: Describe the epic and its business value
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope & Requirements
+      description: Detailed scope and functional requirements
+      placeholder: |
+        - Requirement 1
+        - Requirement 2
+        - Requirement 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: technical_design
+    attributes:
+      label: Technical Design
+      description: Architectural approach and technical considerations
+      placeholder: Describe the technical implementation approach
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Conditions that must be met for completion
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+        - [ ] Criterion 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies & Blockers
+      description: Other issues or external dependencies
+      placeholder: List any dependencies or potential blockers
+
+  - type: textarea
+    id: testing_strategy
+    attributes:
+      label: Testing Strategy
+      description: How this will be tested
+      placeholder: Describe unit, integration, and e2e testing approach
+    validations:
+      required: true

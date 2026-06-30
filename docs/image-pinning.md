@@ -22,7 +22,7 @@ metadata:
   name: validator
 spec:
   nodeType: Validator
-  network: Public
+  network: mainnet
   version: "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678"
   # ... other fields
 ```
@@ -37,7 +37,7 @@ metadata:
   name: horizon
 spec:
   nodeType: Horizon
-  network: Public
+  network: mainnet
   version: "v2.10.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678"
   # ... other fields
 ```

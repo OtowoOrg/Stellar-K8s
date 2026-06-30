@@ -848,7 +848,7 @@ trait ColoredOutput {
 
 impl ColoredOutput for &str {
     fn bold(&self) -> String {
-        format!("\x1b[1m{}\x1b[0m", self)
+        format!("\x1b[1m{self}\x1b[0m")
     }
 }
 

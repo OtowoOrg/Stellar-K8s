@@ -1,0 +1,127 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stellarsecuritypolicies.stellar.org
+spec:
+  group: stellar.org
+  names:
+    categories: []
+    kind: StellarSecurityPolicy
+    plural: stellarsecuritypolicies
+    shortNames:
+    - ssp
+    singular: stellarsecuritypolicy
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.enabled
+      name: Enabled
+      type: boolean
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .status.complianceStatus
+      name: Compliance
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: StellarSecurityPolicy defines security and compliance framework
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              enabled:
+                type: boolean
+                default: true
+              podSecurityStandards:
+                type: object
+                description: Pod security standards enforcement
+                properties:
+                  enforce:
+                    type: string
+                    enum:
+                    - "baseline"
+                    - "restricted"
+                    - "privileged"
+                    default: restricted
+              networkPolicies:
+                type: object
+                description: Network policy configuration
+                properties:
+                  enabled:
+                    type: boolean
+                    default: true
+                  defaultDenyIngress:
+                    type: boolean
+                    default: true
+                  defaultDenyEgress:
+                    type: boolean
+                    default: false
+              secretManagement:
+                type: object
+                description: Secret management configuration
+                properties:
+                  enabled:
+                    type: boolean
+                    default: true
+                  provider:
+                    type: string
+                    enum:
+                    - Vault
+                    - AWSSecretsManager
+                    - Sealed
+                  rotationInterval:
+                    type: string
+                    default: 30d
+              complianceFrameworks:
+                type: array
+                description: Enabled compliance frameworks
+                items:
+                  type: string
+                  enum:
+                  - SOC2
+                  - GDPR
+                  - PCI-DSS
+                  - HIPAA
+              securityMonitoring:
+                type: object
+                description: Real-time security monitoring
+                properties:
+                  enabled:
+                    type: boolean
+                    default: true
+          status:
+            type: object
+            properties:
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+                      enum:
+                      - "True"
+                      - "False"
+                      - "Unknown"
+              complianceStatus:
+                type: string
+                enum:
+                - Compliant
+                - NonCompliant
+                - Unknown
+              lastAuditTime:
+                type: string
+                format: date-time
+              vulnerabilityCount:
+                type: integer
+                default: 0
+    served: true
+    storage: true

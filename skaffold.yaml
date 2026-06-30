@@ -1,0 +1,38 @@
+apiVersion: skaffold/v4beta11
+kind: Config
+metadata:
+  name: stellar-k8s
+build:
+  artifacts:
+    - image: stellar-operator
+      docker:
+        dockerfile: Dockerfile
+        target: runtime-local
+  local:
+    push: false
+deploy:
+  helm:
+    releases:
+      - name: stellar-operator
+        chartPath: charts/stellar-operator
+        valuesFiles:
+          - charts/stellar-operator/values.yaml
+portForward:
+  - resourceType: service
+    resourceName: stellar-operator
+    port: 8080
+    localPort: 8080
+  - resourceType: service
+    resourceName: stellar-operator-metrics
+    port: 9090
+    localPort: 9090
+profiles:
+  - name: dev
+    activation:
+      - command: dev
+    build:
+      tagPolicy:
+        envTemplate:
+          template: "dev"
+    deploy:
+      kubeContext: kind-stellar

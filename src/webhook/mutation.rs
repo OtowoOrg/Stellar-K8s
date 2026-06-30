@@ -110,7 +110,8 @@ pub fn apply_mutations(req: &AdmissionRequest<StellarNode>) -> Result<Option<ser
     }
 
     // 4. Add standard annotations
-    let annotations = get_standard_annotations(spec);
+    let user = req.user_info.username.as_deref();
+    let annotations = get_standard_annotations(spec, user);
     if !annotations.is_empty() {
         let has_annotations = object.metadata.annotations.is_some();
 
@@ -216,7 +217,10 @@ fn get_standard_labels(spec: &StellarNodeSpec, name: &str) -> BTreeMap<String, S
 }
 
 /// Get standard annotations
-fn get_standard_annotations(spec: &StellarNodeSpec) -> BTreeMap<String, String> {
+fn get_standard_annotations(
+    spec: &StellarNodeSpec,
+    user: Option<&str>,
+) -> BTreeMap<String, String> {
     let mut annotations = BTreeMap::new();
 
     // Add version annotation
@@ -235,6 +239,14 @@ fn get_standard_annotations(spec: &StellarNodeSpec) -> BTreeMap<String, String> 
         "stellar.org/mutated-at".to_string(),
         chrono::Utc::now().to_rfc3339(),
     );
+
+    // Add audit attribution if user is known
+    if let Some(u) = user {
+        annotations.insert(
+            "audit.stellar.org/last-modified-by".to_string(),
+            u.to_string(),
+        );
+    }
 
     annotations
 }
@@ -280,12 +292,6 @@ mod tests {
             node_type: NodeType::Validator,
             network: StellarNetwork::Testnet,
             version: "v21.0.0".to_string(),
-            history_mode: Default::default(),
-            resources: Default::default(),
-            storage: Default::default(),
-            validator_config: None,
-            horizon_config: None,
-            soroban_config: None,
             replicas: 1,
             min_available: None,
             max_unavailable: None,
@@ -317,9 +323,13 @@ mod tests {
             vpa_config: None,
             read_pool_endpoint: None,
             sidecars: None,
+            cert_manager: None,
             label_propagation: None,
             custom_network_passphrase: None,
-        nat_traversal: None,
+            nat_traversal: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
+            ..Default::default()
         };
 
         let labels = get_standard_labels(&spec, "my-validator");
@@ -344,12 +354,6 @@ mod tests {
             node_type: NodeType::Horizon,
             network: StellarNetwork::Mainnet,
             version: "v2.31.0".to_string(),
-            history_mode: Default::default(),
-            resources: Default::default(),
-            storage: Default::default(),
-            validator_config: None,
-            horizon_config: None,
-            soroban_config: None,
             replicas: 1,
             min_available: None,
             max_unavailable: None,
@@ -381,12 +385,16 @@ mod tests {
             vpa_config: None,
             read_pool_endpoint: None,
             sidecars: None,
+            cert_manager: None,
             label_propagation: None,
             custom_network_passphrase: None,
-        nat_traversal: None,
+            nat_traversal: None,
+            cross_cloud_failover: None,
+            hitless_upgrade: None,
+            ..Default::default()
         };
 
-        let annotations = get_standard_annotations(&spec);
+        let annotations = get_standard_annotations(&spec, None);
 
         assert_eq!(
             annotations.get("stellar.org/version"),

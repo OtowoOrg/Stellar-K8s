@@ -19,10 +19,12 @@ pub struct ArchiveIntegrityCheckResult {
     /// Whether the integrity check passed
     pub healthy: bool,
     /// Number of checkpoints verified
+    #[allow(dead_code)]
     pub checkpoints_verified: u32,
     /// Details of the check
     pub message: String,
     /// Error message if the check failed
+    #[allow(dead_code)]
     pub error: Option<String>,
 }
 
@@ -113,7 +115,7 @@ pub async fn check_archive_integrity_random(
 
         // Construct path for a history file (simplified for demonstration)
         // Format: /history/00/00/00/history-0000003f.json
-        let hex_ledger = format!("{:08x}", checkpoint_ledger);
+        let hex_ledger = format!("{checkpoint_ledger:08x}");
         let path = format!(
             "history/{}/{}/{}/history-{}.json",
             &hex_ledger[0..2],
@@ -142,10 +144,7 @@ pub async fn check_archive_integrity_random(
                         url: url.to_string(),
                         healthy: false,
                         checkpoints_verified: verified_count,
-                        message: format!(
-                            "Corrupted checkpoint detected: empty file at {}",
-                            file_url
-                        ),
+                        message: format!("Corrupted checkpoint detected: empty file at {file_url}"),
                         error: Some("Empty checkpoint file".to_string()),
                     });
                 }
@@ -180,7 +179,7 @@ pub async fn check_archive_integrity_random(
                     url: url.to_string(),
                     healthy: false,
                     checkpoints_verified: verified_count,
-                    message: format!("Connection error: {}", e),
+                    message: format!("Connection error: {e}"),
                     error: Some(e.to_string()),
                 });
             }
@@ -191,10 +190,7 @@ pub async fn check_archive_integrity_random(
         url: url.to_string(),
         healthy: true,
         checkpoints_verified: verified_count,
-        message: format!(
-            "Successfully verified {} random checkpoints",
-            verified_count
-        ),
+        message: format!("Successfully verified {verified_count} random checkpoints",),
         error: None,
     })
 }

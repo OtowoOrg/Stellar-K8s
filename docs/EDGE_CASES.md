@@ -444,7 +444,7 @@ Bug in reconciler causes infinite state transitions within a single reconciliati
 **Property**: All actions check `reconcileSteps < MAX_RECONCILE_STEPS`
 
 ### Implementation
-**Location**: [formal_verification/StellarReconciler.tla](./StellarReconciler.tla#L250-260)
+**Location**: formal_verification/StellarReconciler.tla
 
 ```tla
 CONSTANT MAX_RECONCILE_STEPS  \* Safety bound
@@ -642,5 +642,5 @@ pub(crate) async fn apply_stellar_node(
 - Health checks: [src/controller/health.rs](../src/controller/health.rs)
 - Validation: [src/crd/stellar_node.rs](../src/crd/stellar_node.rs#L691)
 - Tests: [src/controller/reconciler_test.rs](../src/controller/reconciler_test.rs)
-- Formal model: [StellarReconciler.tla](./StellarReconciler.tla)
+- Formal model: StellarReconciler.tla
 

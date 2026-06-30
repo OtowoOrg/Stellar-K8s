@@ -16,3 +16,4 @@ data:
   enable_peer_discovery: {{ .Values.featureFlags.enablePeerDiscovery | quote }}
   enable_archive_health: {{ .Values.featureFlags.enableArchiveHealth | quote }}
   enable_soroban_metrics: {{ .Values.featureFlags.enableSorobanMetrics | quote }}
+  enable_scp_topology: {{ .Values.featureFlags.enableScpTopology | quote }}

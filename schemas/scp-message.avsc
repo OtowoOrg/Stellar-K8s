@@ -1,0 +1,137 @@
+{
+  "type": "record",
+  "name": "ScpMessage",
+  "namespace": "org.stellar.scp",
+  "doc": "Stellar Consensus Protocol message for real-time analytics",
+  "fields": [
+    {
+      "name": "message_id",
+      "type": "string",
+      "doc": "Unique message identifier for deduplication"
+    },
+    {
+      "name": "timestamp",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Message capture timestamp in milliseconds since epoch"
+    },
+    {
+      "name": "node_id",
+      "type": "string",
+      "doc": "Source validator public key"
+    },
+    {
+      "name": "namespace",
+      "type": "string",
+      "doc": "Kubernetes namespace of the Stellar node"
+    },
+    {
+      "name": "node_name",
+      "type": "string",
+      "doc": "Kubernetes name of the Stellar node"
+    },
+    {
+      "name": "network",
+      "type": "string",
+      "doc": "Stellar network (mainnet, testnet, etc.)"
+    },
+    {
+      "name": "phase",
+      "type": {
+        "type": "enum",
+        "name": "ScpPhase",
+        "symbols": ["PREPARE", "CONFIRM", "EXTERNALIZE", "UNKNOWN"]
+      },
+      "doc": "Current SCP phase"
+    },
+    {
+      "name": "ballot_counter",
+      "type": "int",
+      "doc": "Ballot counter for this consensus round"
+    },
+    {
+      "name": "value_hash",
+      "type": "string",
+      "doc": "Hash of the value being voted on"
+    },
+    {
+      "name": "quorum_set",
+      "type": {
+        "type": "record",
+        "name": "QuorumSet",
+        "fields": [
+          {
+            "name": "threshold",
+            "type": "int",
+            "doc": "Number of validators that must agree"
+          },
+          {
+            "name": "validators",
+            "type": {
+              "type": "array",
+              "items": "string"
+            },
+            "doc": "List of validator public keys"
+          },
+          {
+            "name": "inner_sets",
+            "type": {
+              "type": "array",
+              "items": {
+                "type": "record",
+                "name": "InnerQuorumSet",
+                "fields": [
+                  {
+                    "name": "threshold",
+                    "type": "int"
+                  },
+                  {
+                    "name": "validators",
+                    "type": {
+                      "type": "array",
+                      "items": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "doc": "Nested inner quorum sets"
+          }
+        ]
+      },
+      "doc": "Quorum set configuration for this validator"
+    },
+    {
+      "name": "nomination_votes",
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "doc": "Values being voted on in nomination phase"
+    },
+    {
+      "name": "nomination_accepted",
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "doc": "Values that have been accepted in nomination"
+    },
+    {
+      "name": "ledger_sequence",
+      "type": ["null", "long"],
+      "default": null,
+      "doc": "Ledger sequence number if available"
+    },
+    {
+      "name": "metadata",
+      "type": {
+        "type": "map",
+        "values": "string"
+      },
+      "doc": "Additional metadata key-value pairs"
+    }
+  ]
+}

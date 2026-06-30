@@ -11,13 +11,18 @@ spec:
   # 'Horizon' runs the API server and ingestion logic.
   nodeType: Horizon
 
-  network: Mainnet
+  network: mainnet
 
   # Horizon image version.
   version: "2.30.0"
 
   # Number of replicas to run. Horizon is horizontally scalable.
   replicas: 3
+
+  # Required rollout availability and spreading constraints.
+  maxUnavailable: 1
+  minAvailable: 2
+  topologySpreadConstraints: []
 
   # Horizon-specific settings.
   horizonConfig:

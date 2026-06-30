@@ -1,0 +1,58 @@
+apiVersion: stellar.org/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: horizon-traffic-policy
+  namespace: stellar-system
+spec:
+  targetNode: horizon-mainnet
+  adaptiveRateLimit:
+    baseRps: 1200
+    minRps: 150
+    maxRps: 6000
+    targetLoad: 0.72
+    boostFactor: 0.45
+    shedFactor: 1.30
+  tokenBucket:
+    capacity: 2000
+    refillRps: 1200
+  leakyBucket:
+    capacity: 4000
+    leakRateRps: 1200
+  qosClasses:
+    - className: critical-api
+      priority: critical
+      minSharePercent: 40
+      weight: 300
+    - className: authenticated
+      priority: high
+      minSharePercent: 30
+      weight: 200
+    - className: public
+      priority: normal
+      minSharePercent: 20
+      weight: 100
+    - className: bulk
+      priority: low
+      minSharePercent: 10
+      weight: 50
+  priorityRules:
+    - name: admin-ops
+      class: critical
+      pathPrefix: /api/v1/admin
+      method: POST
+    - name: rpc-writes
+      class: high
+      pathPrefix: /soroban/rpc
+      method: POST
+    - name: public-queries
+      class: normal
+      pathPrefix: /api/v1
+      method: GET
+    - name: bulk-export
+      class: low
+      pathPrefix: /api/v1/export
+      method: GET
+  circuitBreaker:
+    failureThreshold: 5
+    successThreshold: 2
+    openWindowSecs: 30

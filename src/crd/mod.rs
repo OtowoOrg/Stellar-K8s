@@ -48,23 +48,141 @@
 //! ```
 
 mod cnpg;
+pub mod dr_policy;
+pub mod federation;
+pub mod multi_region;
 pub mod read_replica;
 pub mod schema_utils;
+pub mod secret_policy;
 pub mod seed_secret;
 pub mod service_mesh;
+pub mod stellar_autoscaler;
+pub mod stellar_benchmark;
+pub mod stellar_federation;
+pub mod stellar_network_policy;
 mod stellar_node;
+pub mod stellar_observability;
+pub mod stellar_performance;
+pub mod stellar_topology;
+pub mod stellar_upgrade;
+pub mod tenant;
+pub mod traffic_policy;
 pub mod types;
+
+// New Epic CRDs (Wave 5)
+pub mod stellar_aiops;
+pub mod stellar_database;
+pub mod stellar_disaster_recovery;
+pub mod stellar_gitops;
+pub mod stellar_registry;
+pub mod stellar_security;
 
 #[cfg(test)]
 mod tests;
 
 pub use cnpg::*;
+pub use dr_policy::{
+    ComplianceStatus, DisasterRecoveryPolicy, DisasterRecoveryPolicySpec,
+    DisasterRecoveryPolicyStatus,
+};
+pub use federation::{
+    ClusterRegistry, ClusterRegistrySpec, ConflictResolutionStrategy, FederatedCluster,
+    FederatedPlacement, FederatedStellarNode, FederatedStellarNodeSpec,
+};
+pub use multi_region::{
+    ClusterConfig, ClusterHealthStatus, FailoverPolicy, MultiRegionConfig, MultiRegionHealthCheck,
+    MultiRegionSpec, MultiRegionStatus, SecretSyncConfig,
+};
 pub use read_replica::{ReadReplicaConfig, ReadReplicaStrategy};
+pub use secret_policy::{
+    AwsKmsConfig, AzureKeyVaultConfig, GcpKmsConfig, KmsProvider, RotationPolicy,
+    SecretAuditConfig, SecretPolicy, SecretPolicyCondition, SecretPolicyPhase, SecretPolicySpec,
+    SecretPolicyStatus, SecretPolicySyncConfig, SyncConflictResolution,
+};
 pub use service_mesh::{
     CircuitBreakerConfig, IstioMeshConfig, LinkerdMeshConfig, MtlsMode, RetryConfig,
     ServiceMeshConfig,
 };
+pub use stellar_autoscaler::{
+    CostAwareConfig, MetricType, PredictionModel, PredictiveScalingConfig, ScalingPolicy,
+    ScalingStrategy, StellarAutoscaler, StellarAutoscalerSpec, StellarAutoscalerStatus,
+    StellarMetric,
+};
+pub use stellar_benchmark::{
+    BenchmarkConfig, BenchmarkMetrics, BenchmarkPhase, BenchmarkReport, BenchmarkReportSpec,
+    BenchmarkReportStatus, BenchmarkResourceRequirements, BenchmarkSummary,
+    EnvVar as BenchmarkEnvVar, PodResult, ResultStorage, StellarBenchmark, StellarBenchmarkSpec,
+    StellarBenchmarkStatus, Toleration as BenchmarkToleration,
+};
+pub use stellar_federation::{
+    FederationCluster, ReplicationConfig, ReplicationMode, RoutingStrategy, StellarFederation,
+    StellarFederationSpec, StellarFederationStatus, TrafficRoutingPolicy,
+};
+pub use stellar_network_policy::{
+    AllowedDestination, Condition as NetworkPolicyCondition, DNSRule, EgressRule, GRPCRule,
+    HTTPRule, HeaderMatch, IPBlock, IngressRule, L7Rule, LabelSelector, LabelSelectorRequirement,
+    MetadataMatch, NetworkPolicyPeer, NetworkPolicyPort, SegmentSelector, StellarNetworkPolicy,
+    StellarNetworkPolicySpec, StellarNetworkPolicyStatus, StellarNetworkSegment,
+    StellarNetworkSegmentSpec, StellarNetworkSegmentStatus, StellarWorkloadProfile,
+    StellarWorkloadProfileSpec, TLSRule, WorkloadIdentity,
+};
 pub use stellar_node::{
-    BGPStatus, SpecValidationError, StellarNode, StellarNodeSpec, StellarNodeStatus,
+    BGPStatus, SnapshotBootstrapStatus, SpecValidationError, StellarNode, StellarNodeSpec,
+    StellarNodeStatus,
+};
+pub use stellar_observability::{
+    AlertRule, AlertingConfig, AnomalyDetectionConfig, AnomalyModel, AnomalySensitivity,
+    LoggingBackend, LoggingConfig, StellarObservability, StellarObservabilitySpec,
+    StellarObservabilityStatus, TracingBackend, TracingConfig,
+};
+pub use stellar_performance::{
+    BudgetResult, PerformanceBudgets, PerformancePhase, PerformanceSample, RegressionPolicy,
+    StellarPerformance, StellarPerformanceSpec, StellarPerformanceStatus,
+};
+pub use stellar_topology::{
+    StellarTopology, StellarTopologySpec, StellarTopologyStatus, TopologyPhase, TopologyValidator,
+};
+pub use stellar_upgrade::{
+    CanaryStrategy as UpgradeCanaryStrategy, HealthValidation, RollbackPolicy, StellarUpgrade,
+    StellarUpgradeSpec, StellarUpgradeStatus, UpgradePhase,
+};
+pub use traffic_policy::{
+    AdaptiveRateLimitPolicy, CircuitBreakerPolicy, LeakyBucketPolicy, PriorityRule, QosClassPolicy,
+    TokenBucketPolicy, TrafficPolicy, TrafficPolicySpec, TrafficPolicyStatus, TrafficPriorityClass,
 };
 pub use types::*;
+
+// Epic CRD exports (Wave 5)
+pub use stellar_aiops::{
+    AnomalyDetectionConfig as AIOpsAnomalyDetectionConfig, AutomatedRemediationConfig,
+    CapacityPlanningConfig, ChatOpsConfig, OperationalStatus, PredictiveMaintenanceConfig,
+    RootCauseAnalysisConfig, SlackIntegration, StellarAIOps, StellarAIOpsSpec, StellarAIOpsStatus,
+    TeamsIntegration,
+};
+pub use stellar_database::{
+    AutoTuningConfig as DbAutoTuningConfig, ConnectionPoolingConfig as DbConnectionPoolingConfig,
+    DatabasePhase, FailoverConfig as DbFailoverConfig,
+    QueryOptimizationConfig as DbQueryOptimizationConfig, ReadReplicaConfig as DbReadReplicaConfig,
+    StellarDatabase, StellarDatabaseSpec, StellarDatabaseStatus,
+};
+pub use stellar_disaster_recovery::{
+    BackupDestination, DrillStatus, EncryptionConfig, RestorePhase, RetentionPolicy, StellarBackup,
+    StellarBackupSpec, StellarBackupStatus, StellarDRDrill, StellarDRDrillSpec,
+    StellarDRDrillStatus, StellarRestore, StellarRestoreSpec, StellarRestoreStatus,
+};
+pub use stellar_gitops::{
+    ArgoCDConfig, ArgoCDSyncPolicy, FluxCDConfig, GitOpsProvider, ProgressiveDeliveryConfig,
+    StellarGitOpsConfig, StellarGitOpsConfigSpec, StellarGitOpsConfigStatus, SyncStatus,
+};
+pub use stellar_registry::{
+    AdmissionPolicy, AutoPatchConfig, ComplianceReport, GarbageCollectionConfig, MirrorStatus,
+    RegistryMirror, RegistryPhase, RegistryProxyConfig, ScannerBackend, ScanningConfig,
+    SigningConfig, StellarRegistry, StellarRegistrySpec, StellarRegistryStatus,
+    VulnerabilitySummary,
+};
+pub use stellar_security::{
+    AutomatedScanningConfig, ComplianceFramework, ComplianceStatus as SecurityComplianceStatus,
+    NetworkPoliciesConfig, PodSecurityLevel, PodSecurityStandardsConfig, RBACConfig,
+    SecretManagementConfig, SecretProvider, SecurityMonitoringConfig, StellarSecurityPolicy,
+    StellarSecurityPolicySpec, StellarSecurityPolicyStatus,
+};

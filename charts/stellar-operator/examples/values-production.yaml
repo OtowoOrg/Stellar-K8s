@@ -1,0 +1,176 @@
+# Production deployment example for Stellar Operator
+# This configuration is optimized for production workloads with high availability
+
+replicaCount: 3
+
+image:
+  repository: ghcr.io/stellar/stellar-k8s
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+  # Pin to specific digest for production
+  digest: ""
+
+# High availability configuration
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Production resource limits
+resources:
+  limits:
+    cpu: 2000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# Enable all production features
+operator:
+  logLevel: info
+  restApiEnabled: true
+  restApiPort: 9090
+  metricsPort: 9090
+  watchNamespace: ""
+
+# Production security settings
+security:
+  audit:
+    enabled: true
+    logLevel: Audit
+  podSecurityStandard: restricted
+  falco:
+    enabled: true
+  networkPolicy:
+    enabled: true
+    ingress:
+      namespaceSelector: true
+  admissionWebhook:
+    failurePolicy: Fail
+  imagePolicy:
+    allowLatestTag: false
+
+# Network isolation for multi-tenant environments
+networkIsolation:
+  enabled: true
+  labelReleaseNamespace: true
+  releaseNamespaceNetwork: "mainnet"
+  mainnetNamespaces:
+    - stellar-mainnet
+    - stellar-mainnet-validators
+  testnetNamespaces:
+    - stellar-testnet
+  allowMonitoringNamespace: true
+  monitoringNamespace: "monitoring"
+
+# Byzantine monitoring for consensus safety
+byzantineWatcher:
+  enabled: true
+  defaultNetwork: "mainnet"
+  pollIntervalSecs: 10
+  requestTimeoutSecs: 5
+  metricsPort: 9101
+  logLevel: "info"
+  regions:
+    - cloud: aws
+      region: us-east-1
+      nodeEndpoint: http://stellar-validator-1.stellar-mainnet.svc.cluster.local:11626
+    - cloud: aws
+      region: us-west-2
+      nodeEndpoint: http://stellar-validator-2.stellar-mainnet.svc.cluster.local:11626
+    - cloud: gcp
+      region: europe-west1
+      nodeEndpoint: http://stellar-validator-3.stellar-mainnet.svc.cluster.local:11626
+
+# OpenTelemetry for distributed tracing
+otel:
+  enabled: true
+  endpoint: "http://tempo.monitoring.svc.cluster.local:4317"
+  samplingRatio: "0.1"
+  collector:
+    enabled: true
+    config:
+      tempo:
+        enabled: true
+        endpoint: "http://tempo.monitoring.svc.cluster.local:4317"
+      loki:
+        enabled: true
+        endpoint: "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+
+# Feature flags
+featureFlags:
+  enableCveScanning: true
+  enableReadPool: true
+  enableDr: true
+  enablePeerDiscovery: true
+  enableArchiveHealth: true
+  enableSorobanMetrics: true
+
+# Horizon HPA for auto-scaling
+horizonHpa:
+  enabled: true
+  namespace: "stellar-mainnet"
+  targetDeployment: "horizon"
+  stellarNodeName: "horizon"
+  minReplicas: 3
+  maxReplicas: 20
+  tpsTargetPerReplica: 100
+  queueLengthTarget: 500
+  scaleUpStabilizationSeconds: 60
+  scaleDownStabilizationSeconds: 300
+
+# Production-grade default resources for managed nodes
+defaultResources:
+  validator:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  horizon:
+    requests:
+      cpu: "1"
+      memory: "4Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  sorobanRpc:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "8"
+      memory: "32Gi"
+
+# Affinity for spreading across availability zones
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - stellar-operator
+          topologyKey: topology.kubernetes.io/zone
+
+# Tolerations for dedicated node pools
+tolerations:
+  - key: "stellar.org/dedicated"
+    operator: "Equal"
+    value: "operator"
+    effect: "NoSchedule"
+
+# Node selector for dedicated infrastructure
+nodeSelector:
+  stellar.org/node-pool: "operator"
+
+# Helm hooks enabled for safe upgrades
+hooks:
+  preInstall:
+    enabled: true
+  preUpgrade:
+    enabled: true
+    enableRollbackCheck: true

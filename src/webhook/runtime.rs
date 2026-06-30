@@ -35,7 +35,8 @@ pub struct WasmRuntime {
 struct CachedModule {
     module: Module,
     metadata: PluginMetadata,
-    #[allow(dead_code)]
+    /// Timestamp of compilation, kept for cache eviction and diagnostics.
+    #[allow(dead_code)] // used by future cache TTL eviction logic
     compiled_at: Instant,
 }
 

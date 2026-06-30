@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+  stellar-core:
+    image: stellar/stellar-core:21.0.0
+    restart: unless-stopped
+    environment:
+      STELLAR_CORE_SEED: "SB3FEXAMPLEVALIDATORSEED"
+      HISTORY_ARCHIVE_URLS: "https://history.stellar.org/prd/core-testnet/core_testnet_001,https://history.stellar.org/prd/core-testnet/core_testnet_002"
+    ports:
+      - "11625:11625"
+      - "11626:11626"
+    volumes:
+      - stellar-core-data:/var/lib/stellar
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.5"
+          memory: 1Gi
+        limits:
+          cpus: "2"
+          memory: 4Gi
+
+  horizon:
+    image: stellar/horizon:2.30.0
+    restart: unless-stopped
+    depends_on:
+      - stellar-core
+      - postgres
+    environment:
+      DATABASE_URL: "postgresql://stellar:supersecret@postgres:5432/horizon"
+      STELLAR_CORE_URL: "http://stellar-core:11626"
+      ENABLE_INGEST: "true"
+      INGEST_WORKERS: "2"
+    ports:
+      - "8000:8000"
+    deploy:
+      replicas: 2
+      resources:
+        reservations:
+          cpus: "0.5"
+          memory: 1Gi
+        limits:
+          cpus: "2"
+          memory: 4Gi
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: horizon
+      POSTGRES_USER: stellar
+      POSTGRES_PASSWORD: supersecret
+    volumes:
+      - horizon-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  stellar-core-data: {}
+  horizon-postgres-data: {}

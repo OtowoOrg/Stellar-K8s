@@ -1,0 +1,47 @@
+{
+    "dashboard": {
+        "id": null,
+        "uid": null,
+        "title": "Loki - Logs Overview",
+        "schemaVersion": 27,
+        "panels": [
+            {
+                "id": 1,
+                "type": "logs",
+                "title": "Recent Errors",
+                "gridPos": {
+                    "x": 0,
+                    "y": 0,
+                    "w": 24,
+                    "h": 8
+                },
+                "targets": [
+                    {
+                        "expr": "{level=\"ERROR\"} |~ \"ERROR\"",
+                        "refId": "A",
+                        "datasource": "Loki"
+                    }
+                ]
+            },
+            {
+                "id": 2,
+                "type": "timeseries",
+                "title": "Error Rate (5m)",
+                "gridPos": {
+                    "x": 0,
+                    "y": 8,
+                    "w": 24,
+                    "h": 8
+                },
+                "targets": [
+                    {
+                        "expr": "sum(count_over_time({namespace=\"default\",level=\"ERROR\"}[5m]))",
+                        "refId": "B",
+                        "datasource": "Loki"
+                    }
+                ]
+            }
+        ]
+    },
+    "overwrite": false
+}

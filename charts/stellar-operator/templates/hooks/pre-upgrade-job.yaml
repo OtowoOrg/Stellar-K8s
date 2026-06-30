@@ -1,0 +1,10 @@
+{{- if .Values.hooks.preUpgrade.enabled }}
+{{- include "stellar-operator.hookJob" (dict
+  "root" .
+  "name" "pre-upgrade"
+  "hook" "pre-upgrade"
+  "component" "pre-upgrade-hook"
+  "containerName" "pre-upgrade-checks"
+  "script" (include "stellar-operator.preUpgradeScript" .)
+) }}
+{{- end }}

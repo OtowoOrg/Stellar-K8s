@@ -23,13 +23,6 @@ pub const CVE_ROLLOUT_STATUS_ANNOTATION: &str = "stellar.org/cve-rollout-status"
 pub const CVE_ROLLBACK_REASON_ANNOTATION: &str = "stellar.org/cve-rollback-reason";
 pub const CVE_AUTO_PATCH_ANNOTATION: &str = "stellar.org/cve-auto-patch";
 
-#[allow(dead_code)]
-const CANARY_TEST_TIMEOUT_SECS: u64 = 300;
-#[allow(dead_code)]
-const CONSENSUS_HEALTH_CHECK_INTERVAL_SECS: u64 = 30;
-#[allow(dead_code)]
-const CONSENSUS_HEALTH_DEGRADATION_THRESHOLD: f64 = 0.95;
-
 /// Result of a CVE scan from registry scanner
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CVEDetectionResult {
@@ -239,9 +232,11 @@ struct TrivyScanRequest {
     image_name: String,
 }
 
-/// Trivy API response for vulnerabilities
+/// Trivy API response for vulnerabilities.
+/// Fields are populated via serde deserialization from Trivy's JSON response;
+/// the compiler cannot see that path so `#[allow(dead_code)]` is required.
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[allow(dead_code)] // fields populated via serde, not direct Rust access
 #[serde(rename_all = "PascalCase")]
 struct TrivyVulnerability {
     #[serde(default)]
@@ -275,7 +270,7 @@ struct TrivyScanResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[allow(dead_code)] // fields populated via serde
 #[serde(rename_all = "PascalCase")]
 struct TrivyArtifact {
     #[serde(default)]
@@ -286,7 +281,7 @@ struct TrivyArtifact {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[allow(dead_code)] // fields populated via serde
 #[serde(rename_all = "PascalCase")]
 struct TrivyMisconfiguration {
     #[serde(default)]
@@ -294,7 +289,7 @@ struct TrivyMisconfiguration {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[allow(dead_code)] // fields populated via serde
 #[serde(rename_all = "PascalCase")]
 struct TrivyResult {
     #[serde(default)]

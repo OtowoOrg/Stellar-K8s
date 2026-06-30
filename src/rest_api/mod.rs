@@ -45,14 +45,29 @@
 //!   --cert client.crt --key client.key --cacert ca.crt
 //! ```
 
+mod audit_handlers;
 mod auth;
-mod custom_metrics;
+mod compliance_handlers;
+pub mod custom_metrics;
 mod dashboard_dto;
 mod dashboard_handlers;
 mod dto;
 mod handlers;
+mod health_summary;
+mod horizon_cache_handlers;
+mod job_handlers;
+pub mod metrics_store;
+mod oidc;
+mod resource_optimization_handlers;
+mod scp_topology;
 mod server;
+pub mod stellar_metrics_server;
 mod sustainability;
 
+pub mod gateway;
+
 pub use auth::{check_rbac_permission, k8s_rbac_auth};
+pub use health_summary::{get_health_incidents, get_health_summary, get_node_health_status};
+pub use metrics_store::StellarMetricsStore;
+pub use oidc::{oidc_auth, require_admin, require_reader, ApiRole, OidcConfig};
 pub use server::{build_tls_server_config, run_server};

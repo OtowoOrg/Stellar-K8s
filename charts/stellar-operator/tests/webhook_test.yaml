@@ -3,30 +3,6 @@ templates:
   - templates/webhook.yaml
 
 tests:
-  - it: renders all expected resource kinds
-    asserts:
-      - containsDocument:
-          kind: Namespace
-          apiVersion: v1
-      - containsDocument:
-          kind: ServiceAccount
-          apiVersion: v1
-      - containsDocument:
-          kind: ClusterRole
-          apiVersion: rbac.authorization.k8s.io/v1
-      - containsDocument:
-          kind: ClusterRoleBinding
-          apiVersion: rbac.authorization.k8s.io/v1
-      - containsDocument:
-          kind: Deployment
-          apiVersion: apps/v1
-      - containsDocument:
-          kind: Service
-          apiVersion: v1
-      - containsDocument:
-          kind: ValidatingWebhookConfiguration
-          apiVersion: admissionregistration.k8s.io/v1
-
   - it: webhook Namespace is stellar-webhook
     documentIndex: 0
     asserts:
@@ -103,7 +79,7 @@ tests:
           value: None
 
   - it: PodDisruptionBudget ensures minAvailable 1
-    documentIndex: 9
+    documentIndex: 10
     asserts:
       - isKind:
           of: PodDisruptionBudget

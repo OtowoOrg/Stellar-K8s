@@ -1,0 +1,96 @@
+# Development deployment example for Stellar Operator
+# This configuration is optimized for local development and testing
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/stellar/stellar-k8s
+  pullPolicy: Always
+  tag: "latest"
+
+# Minimal resources for development
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Development operator configuration
+operator:
+  logLevel: debug
+  restApiEnabled: true
+  restApiPort: 9090
+  metricsPort: 9090
+  watchNamespace: "default"
+
+# Relaxed security for development
+security:
+  audit:
+    enabled: false
+  podSecurityStandard: baseline
+  falco:
+    enabled: false
+  networkPolicy:
+    enabled: false
+  admissionWebhook:
+    failurePolicy: Ignore
+  imagePolicy:
+    allowLatestTag: true
+
+# No network isolation in dev
+networkIsolation:
+  enabled: false
+
+# No Byzantine monitoring in dev
+byzantineWatcher:
+  enabled: false
+
+# Basic OpenTelemetry for local debugging
+otel:
+  enabled: false
+
+# All feature flags enabled for testing
+featureFlags:
+  enableCveScanning: false
+  enableReadPool: true
+  enableDr: false
+  enablePeerDiscovery: true
+  enableArchiveHealth: false
+  enableSorobanMetrics: true
+
+# No HPA in development
+horizonHpa:
+  enabled: false
+
+# Minimal default resources for managed nodes
+defaultResources:
+  validator:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  horizon:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  sorobanRpc:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+# Hooks disabled for faster iteration
+hooks:
+  preInstall:
+    enabled: false
+  preUpgrade:
+    enabled: false

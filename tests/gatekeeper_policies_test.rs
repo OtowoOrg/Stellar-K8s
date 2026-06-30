@@ -18,9 +18,9 @@ use std::fs;
 /// file is missing or contains invalid YAML.
 fn load_manifest(path: &str) -> serde_yaml::Value {
     let content = fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("Failed to read manifest '{}': {}", path, e));
+        .unwrap_or_else(|e| panic!("Failed to read manifest '{path}': {e}"));
     serde_yaml::from_str(&content)
-        .unwrap_or_else(|e| panic!("Failed to parse YAML in '{}': {}", path, e))
+        .unwrap_or_else(|e| panic!("Failed to parse YAML in '{path}': {e}"))
 }
 
 /// Reads all `*-template.yaml` files from `config/manifests/gatekeeper/`.
@@ -29,7 +29,7 @@ fn load_template_files() -> Vec<(String, serde_yaml::Value)> {
     let dir = "config/manifests/gatekeeper";
     let mut results = Vec::new();
     let entries =
-        fs::read_dir(dir).unwrap_or_else(|e| panic!("Failed to read directory '{}': {}", dir, e));
+        fs::read_dir(dir).unwrap_or_else(|e| panic!("Failed to read directory '{dir}': {e}"));
     for entry in entries.flatten() {
         let path = entry.path();
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
@@ -50,7 +50,7 @@ fn load_constraint_files() -> Vec<(String, serde_yaml::Value)> {
     let dir = "config/manifests/gatekeeper";
     let mut results = Vec::new();
     let entries =
-        fs::read_dir(dir).unwrap_or_else(|e| panic!("Failed to read directory '{}': {}", dir, e));
+        fs::read_dir(dir).unwrap_or_else(|e| panic!("Failed to read directory '{dir}': {e}"));
     for entry in entries.flatten() {
         let path = entry.path();
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
@@ -121,7 +121,7 @@ proptest! {
         let (constraint_path, constraint_value) = idx.get(&constraints);
         let constraint_kind = constraint_value["kind"]
             .as_str()
-            .unwrap_or_else(|| panic!("Constraint '{}' has no 'kind' field", constraint_path));
+            .unwrap_or_else(|| panic!("Constraint '{constraint_path}' has no 'kind' field"));
 
         let template_kinds: Vec<&str> = templates
             .iter()
@@ -276,8 +276,7 @@ proptest! {
         let excluded = value["spec"]["match"]["excludedNamespaces"]
             .as_sequence()
             .unwrap_or_else(|| panic!(
-                "Constraint '{}' must have spec.match.excludedNamespaces as a sequence",
-                path
+                "Constraint '{path}' must have spec.match.excludedNamespaces as a sequence"
             ));
 
         prop_assert!(
@@ -316,8 +315,7 @@ fn test_all_manifest_files_exist() {
     for path in &files {
         assert!(
             std::path::Path::new(path).exists(),
-            "Expected manifest file to exist: {}",
-            path
+            "Expected manifest file to exist: {path}"
         );
     }
 }
@@ -327,8 +325,7 @@ fn test_gatekeeper_config_exists_with_system_exclusions() {
     let path = "config/manifests/gatekeeper/gatekeeper-config.yaml";
     assert!(
         std::path::Path::new(path).exists(),
-        "gatekeeper-config.yaml must exist at {}",
-        path
+        "gatekeeper-config.yaml must exist at {path}"
     );
 
     let value = load_manifest(path);
@@ -346,13 +343,11 @@ fn test_gatekeeper_config_exists_with_system_exclusions() {
 
     assert!(
         all_excluded.contains(&"kube-system"),
-        "gatekeeper-config.yaml must exclude 'kube-system', found: {:?}",
-        all_excluded
+        "gatekeeper-config.yaml must exclude 'kube-system', found: {all_excluded:?}"
     );
     assert!(
         all_excluded.contains(&"gatekeeper-system"),
-        "gatekeeper-config.yaml must exclude 'gatekeeper-system', found: {:?}",
-        all_excluded
+        "gatekeeper-config.yaml must exclude 'gatekeeper-system', found: {all_excluded:?}"
     );
 }
 
@@ -361,14 +356,14 @@ fn test_all_manifest_yaml_files_parse_without_error() {
     let dir = "config/manifests/gatekeeper";
     let mut parsed_count = 0;
     let entries =
-        fs::read_dir(dir).unwrap_or_else(|e| panic!("Failed to read directory '{}': {}", dir, e));
+        fs::read_dir(dir).unwrap_or_else(|e| panic!("Failed to read directory '{dir}': {e}"));
 
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
             let path_str = path.to_string_lossy().into_owned();
             let content = fs::read_to_string(&path_str)
-                .unwrap_or_else(|e| panic!("Failed to read '{}': {}", path_str, e));
+                .unwrap_or_else(|e| panic!("Failed to read '{path_str}': {e}"));
             let result: Result<serde_yaml::Value, _> = serde_yaml::from_str(&content);
             assert!(
                 result.is_ok(),
@@ -382,8 +377,7 @@ fn test_all_manifest_yaml_files_parse_without_error() {
 
     assert!(
         parsed_count > 0,
-        "Expected at least one .yaml file in {}",
-        dir
+        "Expected at least one .yaml file in {dir}"
     );
 }
 

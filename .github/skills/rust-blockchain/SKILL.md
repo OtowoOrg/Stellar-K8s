@@ -1022,10 +1022,9 @@ CMD ["start", "--config", "/data/config.toml"]
 ## Additional Resources
 
 - **Advanced consensus**: [references/consensus-pos.md](references/consensus-pos.md), [references/consensus-bft.md](references/consensus-bft.md)
-- **Framework-specific guides**: [references/substrate.md](references/substrate.md), [references/solana.md](references/solana.md), [references/near.md](references/near.md)
+- **Framework-specific guides**: [references/substrate.md](references/substrate.md)
 - **Security patterns**: [references/security-audit.md](references/security-audit.md)
 - **Performance tuning**: [references/performance.md](references/performance.md)
-- **Production deployment**: [references/production.md](references/production.md)
 
 ## Common Dependencies
 

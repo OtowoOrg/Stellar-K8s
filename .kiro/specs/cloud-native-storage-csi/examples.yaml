@@ -1,0 +1,253 @@
+# Example StellarStorageClass Manifests for Cloud-Native Storage Management
+
+---
+# Example 1: AWS High-Performance Validator Storage
+apiVersion: stellar.org/v1alpha1
+kind: StellarStorageClass
+metadata:
+  name: aws-validator-high-perf
+  namespace: stellar-system
+spec:
+  provider: AWS
+  storageType: SSD
+  performanceProfile: Validator
+  tieringPolicy: Hot
+  
+  volumeExpansion:
+    enabled: true
+    autoExpand: true
+    thresholdPercent: 80
+    incrementGiB: 50
+  
+  snapshotPolicy:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retentionDays: 30
+    retentionCount: 10
+  
+  performanceTuning:
+    iops: 10000
+    throughputMBps: 500
+    latencyTarget: Low
+  
+  encryption:
+    enabled: true
+    kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+    encryptionAlgorithm: "AES-256"
+
+---
+# Example 2: GCP Balanced Horizon Storage
+apiVersion: stellar.org/v1alpha1
+kind: StellarStorageClass
+metadata:
+  name: gcp-horizon-balanced
+  namespace: stellar-system
+spec:
+  provider: GCP
+  storageType: SSD
+  performanceProfile: Horizon
+  tieringPolicy: Auto
+  
+  volumeExpansion:
+    enabled: true
+    autoExpand: true
+    thresholdPercent: 85
+    incrementGiB: 30
+  
+  snapshotPolicy:
+    enabled: true
+    schedule: "0 3 * * *"  # Daily at 3 AM
+    retentionDays: 14
+    retentionCount: 7
+  
+  performanceTuning:
+    iops: 6000
+    throughputMBps: 250
+    latencyTarget: Medium
+  
+  encryption:
+    enabled: true
+    encryptionAlgorithm: "AES-256"
+
+---
+# Example 3: Azure Cost-Optimized Archive Storage
+apiVersion: stellar.org/v1alpha1
+kind: StellarStorageClass
+metadata:
+  name: azure-archive-optimized
+  namespace: stellar-system
+spec:
+  provider: Azure
+  storageType: HDD
+  performanceProfile: Archive
+  tieringPolicy: Cold
+  
+  volumeExpansion:
+    enabled: true
+    autoExpand: true
+    thresholdPercent: 90
+    incrementGiB: 100
+  
+  snapshotPolicy:
+    enabled: true
+    schedule: "0 4 * * 0"  # Weekly on Sunday at 4 AM
+    retentionDays: 90
+    retentionCount: 12
+  
+  performanceTuning:
+    latencyTarget: High
+  
+  encryption:
+    enabled: true
+    encryptionAlgorithm: "AES-256"
+
+---
+# Example 4: AWS Custom Performance Profile
+apiVersion: stellar.org/v1alpha1
+kind: StellarStorageClass
+metadata:
+  name: aws-custom-performance
+  namespace: stellar-system
+spec:
+  provider: AWS
+  storageType: SSD
+  performanceProfile: Custom
+  tieringPolicy: Hot
+  
+  volumeExpansion:
+    enabled: true
+    autoExpand: false  # Manual expansion only
+    thresholdPercent: 75
+  
+  snapshotPolicy:
+    enabled: true
+    schedule: "0 */6 * * *"  # Every 6 hours
+    retentionDays: 7
+    retentionCount: 28
+  
+  performanceTuning:
+    iops: 15000
+    throughputMBps: 750
+    latencyTarget: Low
+  
+  encryption:
+    enabled: true
+    kmsKeyId: "arn:aws:kms:us-west-2:123456789012:key/87654321-4321-4321-4321-210987654321"
+
+---
+# Example 5: Multi-Tier Auto Storage with GCP
+apiVersion: stellar.org/v1alpha1
+kind: StellarStorageClass
+metadata:
+  name: gcp-auto-tier
+  namespace: stellar-system
+spec:
+  provider: GCP
+  storageType: SSD
+  performanceProfile: Horizon
+  tieringPolicy: Auto  # Automatically move between Hot/Warm/Cold
+  
+  volumeExpansion:
+    enabled: true
+    autoExpand: true
+    thresholdPercent: 80
+    incrementGiB: 50
+  
+  snapshotPolicy:
+    enabled: true
+    schedule: "0 1 * * *"
+    retentionDays: 30
+    retentionCount: 15
+  
+  performanceTuning:
+    iops: 5000
+    throughputMBps: 200
+    latencyTarget: Medium
+  
+  encryption:
+    enabled: true
+
+---
+# Example 6: StellarNode using StellarStorageClass
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: mainnet-validator-01
+  namespace: stellar
+spec:
+  nodeType: Validator
+  network: mainnet
+  version: "v21.0.0"
+  
+  storage:
+    storageClassName: aws-validator-high-perf  # References StellarStorageClass
+    size: "200Gi"
+  
+  validatorConfig:
+    seedSecretRef: "validator-seed-secret"
+    enableHistoryArchive: true
+  
+  resources:
+    requests:
+      cpu: "4"
+      memory: "16Gi"
+    limits:
+      cpu: "8"
+      memory: "32Gi"
+
+---
+# Example 7: Horizon Node with Balanced Storage
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: mainnet-horizon-01
+  namespace: stellar
+spec:
+  nodeType: Horizon
+  network: mainnet
+  version: "v21.0.0"
+  
+  storage:
+    storageClassName: gcp-horizon-balanced
+    size: "500Gi"
+  
+  horizonConfig:
+    ingestEnabled: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+  
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+
+---
+# Example 8: Archive Node with Cost Optimization
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: mainnet-archive-01
+  namespace: stellar
+spec:
+  nodeType: Archive
+  network: mainnet
+  version: "v21.0.0"
+  
+  storage:
+    storageClassName: azure-archive-optimized
+    size: "1Ti"
+  
+  archiveConfig:
+    retentionDays: 365
+    compressionEnabled: true
+  
+  resources:
+    requests:
+      cpu: "1"
+      memory: "4Gi"
+    limits:
+      cpu: "2"
+      memory: "8Gi"

@@ -1,0 +1,49 @@
+name: 🔧 Maintenance Task
+description: Repo hygiene, CI, documentation, or cleanup task
+title: "[Maintenance]: "
+labels: ["maintenance", "hygiene"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > When opening a PR for this issue, select **Maintenance / hygiene** in the PR template
+        > and fill in the **Maintenance task checklist** section.
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - CI / Workflow
+        - Documentation
+        - Dependency update
+        - Code cleanup / refactor
+        - Configuration drift
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to be done and why?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: How can a reviewer confirm this is complete?
+    validations:
+      required: true

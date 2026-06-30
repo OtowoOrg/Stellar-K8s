@@ -57,9 +57,9 @@ struct QuorumAnalysisCache {
 
 impl QuorumAnalyzer {
     /// Create a new quorum analyzer
-    pub fn new(timeout: Duration, window_size: usize) -> Self {
+    pub fn new(timeout: Duration, window_size: usize, max_attempts: u32) -> Self {
         Self {
-            scp_client: ScpClient::new(timeout),
+            scp_client: ScpClient::new(timeout, max_attempts),
             latency_tracker: ConsensusLatencyTracker::new(window_size),
             uptime_tracker: PeerUptimeTracker::new(window_size),
             cache: QuorumAnalysisCache {
@@ -570,13 +570,13 @@ mod tests {
 
     #[test]
     fn test_analyzer_creation() {
-        let analyzer = QuorumAnalyzer::new(Duration::from_secs(10), 100);
+        let analyzer = QuorumAnalyzer::new(Duration::from_secs(10), 100, 3);
         assert!(analyzer.cache.last_analysis.is_none());
     }
 
     #[test]
     fn test_fragility_score_bounds() {
-        let analyzer = QuorumAnalyzer::new(Duration::from_secs(10), 100);
+        let analyzer = QuorumAnalyzer::new(Duration::from_secs(10), 100, 3);
 
         // Test various scenarios
         let score1 = analyzer.calculate_fragility_score(0, 5, 0.0, 10);
@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn test_fragility_score_empty_quorum() {
-        let analyzer = QuorumAnalyzer::new(Duration::from_secs(10), 100);
+        let analyzer = QuorumAnalyzer::new(Duration::from_secs(10), 100, 3);
         let score = analyzer.calculate_fragility_score(0, 0, 0.0, 0);
         assert_eq!(score, 1.0); // Maximum fragility
     }

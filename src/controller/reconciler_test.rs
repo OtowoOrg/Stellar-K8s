@@ -10,12 +10,15 @@
 #[cfg(test)]
 mod tests {
     use super::super::reconciler::*;
+    use crate::controller::{AnomalyDetector, AuditLog, AuditRecorder, JobRegistry};
     use crate::crd::{
         CaptiveCoreConfig, Condition, HorizonConfig, ManagedDatabaseConfig, NodeType,
         ResourceRequirements, ResourceSpec, SorobanConfig, StellarNetwork, StellarNode,
         StellarNodeSpec, StorageConfig, ValidatorConfig,
     };
     use crate::error::Error;
+    #[cfg(feature = "rest-api")]
+    use crate::rest_api::metrics_store::StellarMetricsStore;
     use kube::api::ObjectMeta;
     use kube::runtime::controller::Action;
     use kube::Client;
@@ -85,6 +88,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                     kms_config: None,
                     vl_source: None,
                     hsm_config: None,
+                    external_dns: None,
+                    known_peers: None,
+                    quorum_optimization: None,
                 }),
                 horizon_config: None,
                 soroban_config: None,
@@ -118,10 +124,17 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 label_propagation: None,
                 read_pool_endpoint: None,
                 sidecars: None,
+                cert_manager: None,
                 resource_meta: None,
                 vpa_config: None,
                 custom_network_passphrase: None,
-            nat_traversal: None,
+                nat_traversal: None,
+                cross_cloud_failover: None,
+                hitless_upgrade: None,
+                probes: None,
+                proximity_aware: false,
+                replication_config: None,
+                ..Default::default()
             },
             status: None,
         }
@@ -188,6 +201,8 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                     backup: None,
                     pooling: None,
                     postgres_version: "16".to_string(),
+                    database_name: None,
+                    username: None,
                 }),
                 autoscaling: None,
                 ingress: None,
@@ -212,10 +227,14 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 label_propagation: None,
                 read_pool_endpoint: None,
                 sidecars: None,
+                cert_manager: None,
                 resource_meta: None,
                 vpa_config: None,
                 custom_network_passphrase: None,
-            nat_traversal: None,
+                nat_traversal: None,
+                cross_cloud_failover: None,
+                hitless_upgrade: None,
+                ..Default::default()
             },
             status: None,
         }
@@ -273,6 +292,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                     }),
                     enable_preflight: true,
                     max_events_per_request: 10000,
+                    cache_config: None,
                 }),
                 replicas: 3,
                 min_available: None,
@@ -304,17 +324,24 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 label_propagation: None,
                 read_pool_endpoint: None,
                 sidecars: None,
+                cert_manager: None,
                 resource_meta: None,
                 vpa_config: None,
                 custom_network_passphrase: None,
-            nat_traversal: None,
+                nat_traversal: None,
+                cross_cloud_failover: None,
+                hitless_upgrade: None,
+                ..Default::default()
             },
             status: None,
         }
     }
 
-    /// Helper function to create a dummy client for tests without kubeconfig
-    #[allow(dead_code)]
+    /// Helper function to create a dummy client for tests without kubeconfig.
+    /// Panics intentionally — used only to document the expected usage pattern
+    /// for tests that require a real client. Suppress the dead-code warning
+    /// because this is a test-only sentinel.
+    #[allow(dead_code)] // test sentinel — documents client requirement for kubeconfig-gated tests
     fn create_dummy_client() -> Client {
         // For tests that don't actually call Kubernetes APIs, we skip client creation
         // In a real test environment, you would use a mock server or test cluster
@@ -329,6 +356,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
         let state = Arc::new(ControllerState {
             client: client.clone(),
             enable_mtls: false,
@@ -336,6 +366,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             watch_namespace: None,
             mtls_config: None,
             dry_run: true,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 60,
+            retry_budget_max_attempts: 3,
             is_leader: Arc::new(AtomicBool::new(true)),
             event_reporter: kube::runtime::events::Reporter {
                 controller: "stellar-operator".to_string(),
@@ -347,6 +380,17 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             log_reload_handle: make_reload_handle(),
             log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
             last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         });
 
         // Test with a retriable error (network-related)
@@ -368,6 +412,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
         let state = Arc::new(ControllerState {
             client: client.clone(),
             enable_mtls: false,
@@ -375,6 +422,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             watch_namespace: None,
             mtls_config: None,
             dry_run: true,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 60,
+            retry_budget_max_attempts: 3,
             is_leader: Arc::new(AtomicBool::new(true)),
             event_reporter: kube::runtime::events::Reporter {
                 controller: "stellar-operator".to_string(),
@@ -386,6 +436,17 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             log_reload_handle: make_reload_handle(),
             log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
             last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         });
 
         // Test with validation error (non-retriable)
@@ -406,6 +467,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
         let state = Arc::new(ControllerState {
             client: client.clone(),
             enable_mtls: false,
@@ -413,6 +477,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             watch_namespace: None,
             mtls_config: None,
             dry_run: true,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 60,
+            retry_budget_max_attempts: 3,
             is_leader: Arc::new(AtomicBool::new(true)),
             event_reporter: kube::runtime::events::Reporter {
                 controller: "stellar-operator".to_string(),
@@ -424,6 +491,17 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
             log_reload_handle: make_reload_handle(),
             last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         });
 
         let errors = vec![
@@ -636,6 +714,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
         let state = ControllerState {
             client: client.clone(),
             enable_mtls: true,
@@ -643,6 +724,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             watch_namespace: None,
             mtls_config: None,
             dry_run: false,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 60,
+            retry_budget_max_attempts: 3,
             is_leader: Arc::new(AtomicBool::new(true)),
             event_reporter: kube::runtime::events::Reporter {
                 controller: "stellar-operator".to_string(),
@@ -654,6 +738,17 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             log_reload_handle: make_reload_handle(),
             log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
             last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         };
 
         assert_eq!(state.operator_namespace, "test-namespace");
@@ -669,6 +764,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
 
         let state = ControllerState {
             client,
@@ -677,6 +775,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             watch_namespace: None,
             mtls_config: None,
             dry_run: true,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 60,
+            retry_budget_max_attempts: 3,
             is_leader: Arc::new(AtomicBool::new(true)),
             event_reporter: kube::runtime::events::Reporter {
                 controller: "stellar-operator".to_string(),
@@ -688,6 +789,17 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             log_reload_handle: make_reload_handle(),
             log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
             last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
         };
 
         assert!(
@@ -753,29 +865,31 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             let mut conditions = Vec::new();
             apply_phase_conditions(&mut conditions, &phase, message.as_deref());
 
-            let ready = condition_status(&conditions, super::super::conditions::CONDITION_TYPE_READY);
+            let ready = condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_READY);
+            let available = condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_AVAILABLE);
             prop_assert!(ready.is_some());
+            prop_assert!(available.is_some());
 
             match phase.as_str() {
                 "Ready" | "Running" => {
-                    prop_assert_eq!(ready, Some(super::super::conditions::CONDITION_STATUS_TRUE));
+                    prop_assert_eq!(ready, Some(crate::controller::conditions::CONDITION_STATUS_TRUE));
                 }
                 _ => {
-                    prop_assert_ne!(ready, Some(super::super::conditions::CONDITION_STATUS_TRUE));
+                    prop_assert_ne!(ready, Some(crate::controller::conditions::CONDITION_STATUS_TRUE));
                 }
             }
 
             match phase.as_str() {
                 "Degraded" | "Failed" | "Remediating" => {
                     prop_assert_eq!(
-                        condition_status(&conditions, super::super::conditions::CONDITION_TYPE_DEGRADED),
-                        Some(super::super::conditions::CONDITION_STATUS_TRUE)
+                        condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_DEGRADED),
+                        Some(crate::controller::conditions::CONDITION_STATUS_TRUE)
                     );
                 }
                 "Ready" => {
                     prop_assert_eq!(
-                        condition_status(&conditions, super::super::conditions::CONDITION_TYPE_DEGRADED),
-                        Some(super::super::conditions::CONDITION_STATUS_FALSE)
+                        condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_DEGRADED),
+                        Some(crate::controller::conditions::CONDITION_STATUS_FALSE)
                     );
                 }
                 _ => {}
@@ -795,8 +909,12 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             apply_phase_conditions(&mut conditions, &phase, None);
 
             prop_assert_eq!(
-                condition_status(&conditions, super::super::conditions::CONDITION_TYPE_READY),
-                Some(super::super::conditions::CONDITION_STATUS_UNKNOWN)
+                condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_READY),
+                Some(crate::controller::conditions::CONDITION_STATUS_UNKNOWN)
+            );
+            prop_assert_eq!(
+                condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_AVAILABLE),
+                Some(crate::controller::conditions::CONDITION_STATUS_UNKNOWN)
             );
         }
 

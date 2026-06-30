@@ -224,6 +224,6 @@ impl From<StellarNodeV1Beta1> for StellarNodeV1 {
 
 ## References
 
-- [Kubernetes CRD Versioning](https://kubernetes.io/docs/tasks/access-kubernetes-api/custom-resources/custom-resource-definition-versioning/)
+- [Kubernetes CRD Versioning](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definition-versioning/)
 - [Kubernetes API Deprecation Policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/)
 - [Semantic Versioning](https://semver.org/)

@@ -12,10 +12,15 @@ spec:
   nodeType: Validator
 
   # The target Stellar network. 'Mainnet' uses the public network passphrase.
-  network: Mainnet
+  network: mainnet
 
   # The container version (image tag) to use for stellar-core.
   version: "v21.0.0"
+
+  # Required rollout availability and spreading constraints.
+  maxUnavailable: 0
+  minAvailable: 1
+  topologySpreadConstraints: []
 
   # Resource requests and limits for the validator pod.
   # Adjust based on your infrastructure and expected load.
@@ -42,15 +47,15 @@ spec:
   validatorConfig:
     # Name of a K8s Secret containing the 'STELLAR_CORE_SEED' key.
     seedSecretRef: "validator-seed-mainnet"
-    
+
     # Whether to enable history archive publishing/fetching.
     enableHistoryArchive: true
-    
+
     # List of history archive URLs to fetch from (SDF archives are common for Mainnet).
     historyArchiveUrls:
       - "https://history.stellar.org/prd/core-live/core_live_001"
       - "https://history.stellar.org/prd/core-live/core_live_002"
-    
+
     # Quorum set configuration in TOML format.
     # Defines which nodes this validator trusts to achieve consensus.
     quorumSet: |
@@ -64,6 +69,6 @@ spec:
   # Enables Prometheus metrics collection and alerting hooks.
   alerting: true
 
-  # Default pod anti-affinity ensures this node is not scheduled on the same 
+  # Default pod anti-affinity ensures this node is not scheduled on the same
   # physical host as another node of the same type/network.
   podAntiAffinity: Hard

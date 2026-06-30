@@ -54,8 +54,7 @@ pub fn generate_runbook(node: &StellarNode) -> Result<String> {
 
     // Header
     runbook.push_str(&format!(
-        "# Troubleshooting Runbook: {}/{}\n\n",
-        namespace, name
+        "# Troubleshooting Runbook: {namespace}/{name}\n\n"
     ));
     runbook.push_str(&format!(
         "**Generated**: {}\n",
@@ -84,6 +83,16 @@ pub fn generate_runbook(node: &StellarNode) -> Result<String> {
 
     // Common troubleshooting
     runbook.push_str(&generate_common_troubleshooting(&name, &namespace));
+
+    // DR section if applicable
+    if spec
+        .dr_config
+        .as_ref()
+        .map(|dr| dr.enabled)
+        .unwrap_or(false)
+    {
+        runbook.push_str(&generate_dr_runbook(node)?);
+    }
 
     // Archive section if applicable
     if spec
@@ -120,24 +129,85 @@ fn generate_status_commands(name: &str, namespace: &str) -> String {
 
     commands.push_str("```bash\n");
     commands.push_str(&format!(
-        "# Check node status\nkubectl get stellarnode {}/{}\n\n",
-        namespace, name
+        "# Check node status\nkubectl get stellarnode {namespace}/{name}\n\n"
     ));
     commands.push_str(&format!(
-        "# Check pod status\nkubectl get pods -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={}\n\n",
-        namespace, name
+        "# Check pod status\nkubectl get pods -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name}\n\n"
     ));
     commands.push_str(&format!(
-        "# Check node conditions\nkubectl describe stellarnode {}/{}\n\n",
-        namespace, name
+        "# Check node conditions\nkubectl describe stellarnode {namespace}/{name}\n\n"
     ));
     commands.push_str(&format!(
-        "# View recent events\nkubectl get events -n {} --sort-by='.lastTimestamp' | grep {}\n",
-        namespace, name
+        "# View recent events\nkubectl get events -n {namespace} --sort-by='.lastTimestamp' | grep {name}\n"
     ));
     commands.push_str("```\n\n");
 
     commands
+}
+
+/// Generate DR-specific troubleshooting steps
+fn generate_dr_runbook(node: &StellarNode) -> Result<String> {
+    let name = node.name_any();
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let dr_config = match &node.spec.dr_config {
+        Some(config) if config.enabled => config,
+        _ => return Ok(String::new()),
+    };
+
+    let mut runbook = String::new();
+    runbook.push_str("## Disaster Recovery Runbook\n\n");
+
+    runbook.push_str("### 1. DR Configuration\n\n");
+    runbook.push_str(&format!("- **Role**: {:?}\n", dr_config.role));
+    runbook.push_str(&format!(
+        "- **Peer Cluster**: {}\n",
+        dr_config.peer_cluster_id
+    ));
+    runbook.push_str(&format!(
+        "- **Sync Strategy**: {:?}\n",
+        dr_config.sync_strategy
+    ));
+    runbook.push_str(&format!(
+        "- **Policy Ref**: {}\n\n",
+        dr_config.policy_ref.as_deref().unwrap_or("None")
+    ));
+
+    runbook.push_str("### 2. Manual Failover Procedure\n\n");
+    runbook.push_str("If automated failover is disabled or failed, follow these steps:\n\n");
+    runbook.push_str("```bash\n");
+    runbook.push_str(&format!(
+        "# 1. Verify primary cluster status\nkubectl get stellarnode {name} -n {namespace} -o jsonpath='{{.status.drStatus}}'\n\n"
+    ));
+    runbook.push_str(&format!(
+        "# 2. Promote this node to Primary\nkubectl patch stellarnode {name} -n {namespace} --type merge -p '{{\"spec\": {{\"drConfig\": {{\"role\": \"primary\"}}}}}}'\n\n"
+    ));
+    runbook.push_str(&format!(
+        "# 3. Verify DNS update\nkubectl get stellarnode {name} -n {namespace} -o jsonpath='{{.status.drStatus.failoverActive}}'\n"
+    ));
+    runbook.push_str("```\n\n");
+
+    runbook.push_str("### 3. Automated DR Drill\n\n");
+    runbook.push_str("To run a manual DR drill:\n\n");
+    runbook.push_str("```bash\n");
+    runbook.push_str(&format!(
+        "# Trigger a manual drill\nkubectl annotate stellarnode {name} -n {namespace} stellar.org/run-dr-drill=true\n\n"
+    ));
+    runbook.push_str(&format!(
+        "# Watch drill progress\nkubectl get stellarnode {name} -n {namespace} -o jsonpath='{{.status.drStatus.lastDrillResult}}'\n"
+    ));
+    runbook.push_str("```\n\n");
+
+    runbook.push_str("### 4. Integrity Verification\n\n");
+    runbook.push_str("```bash\n");
+    runbook.push_str(&format!(
+        "# Check sync lag\nkubectl get stellarnode {name} -n {namespace} -o jsonpath='{{.status.drStatus.syncLag}}'\n\n"
+    ));
+    runbook.push_str(&format!(
+        "# Run history archive integrity check\nkubectl annotate stellarnode {name} -n {namespace} stellar.org/run-archive-check=true\n"
+    ));
+    runbook.push_str("```\n\n");
+
+    Ok(runbook)
 }
 
 /// Generate validator-specific troubleshooting steps
@@ -154,16 +224,13 @@ fn generate_validator_runbook(node: &StellarNode) -> Result<String> {
     runbook.push_str("### 1. Check Stellar Core Logs\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Stream core logs\nkubectl logs -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -c core -f\n\n",
-        namespace, name
+        "# Stream core logs\nkubectl logs -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -c core -f\n\n"
     ));
     runbook.push_str(&format!(
-        "# Get last 100 lines\nkubectl logs -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -c core --tail=100\n\n",
-        namespace, name
+        "# Get last 100 lines\nkubectl logs -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -c core --tail=100\n\n"
     ));
     runbook.push_str(&format!(
-        "# Get logs from last hour\nkubectl logs -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -c core --since=1h\n",
-        namespace, name
+        "# Get logs from last hour\nkubectl logs -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -c core --since=1h\n"
     ));
     runbook.push_str("```\n\n");
 
@@ -171,16 +238,13 @@ fn generate_validator_runbook(node: &StellarNode) -> Result<String> {
     runbook.push_str("### 2. Check Database Status\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Check database pod\nkubectl get pods -n {} -l app.kubernetes.io/name=stellar-db,app.kubernetes.io/instance={}\n\n",
-        namespace, name
+        "# Check database pod\nkubectl get pods -n {namespace} -l app.kubernetes.io/name=stellar-db,app.kubernetes.io/instance={name}\n\n"
     ));
     runbook.push_str(&format!(
-        "# Check database logs\nkubectl logs -n {} -l app.kubernetes.io/name=stellar-db,app.kubernetes.io/instance={} --tail=50\n\n",
-        namespace, name
+        "# Check database logs\nkubectl logs -n {namespace} -l app.kubernetes.io/name=stellar-db,app.kubernetes.io/instance={name} --tail=50\n\n"
     ));
     runbook.push_str(&format!(
-        "# Check PVC status\nkubectl get pvc -n {} -l app.kubernetes.io/instance={}\n",
-        namespace, name
+        "# Check PVC status\nkubectl get pvc -n {namespace} -l app.kubernetes.io/instance={name}\n"
     ));
     runbook.push_str("```\n\n");
 
@@ -198,8 +262,7 @@ fn generate_validator_runbook(node: &StellarNode) -> Result<String> {
     runbook.push_str("### 4. Check Sync Status\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Check if node is synced\nkubectl exec -n {} -it $(kubectl get pods -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -o jsonpath='{{.items[0].metadata.name}}') -c core -- stellar-core info\n",
-        namespace, namespace, name
+        "# Check if node is synced\nkubectl exec -n {namespace} -it $(kubectl get pods -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -o jsonpath='{{.items[0].metadata.name}}') -c core -- stellar-core info\n"
     ));
     runbook.push_str("```\n\n");
 
@@ -219,12 +282,10 @@ fn generate_horizon_runbook(node: &StellarNode) -> Result<String> {
     runbook.push_str("### 1. Check Horizon Logs\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Stream Horizon logs\nkubectl logs -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -c horizon -f\n\n",
-        namespace, name
+        "# Stream Horizon logs\nkubectl logs -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -c horizon -f\n\n"
     ));
     runbook.push_str(&format!(
-        "# Get last 100 lines\nkubectl logs -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -c horizon --tail=100\n",
-        namespace, name
+        "# Get last 100 lines\nkubectl logs -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -c horizon --tail=100\n"
     ));
     runbook.push_str("```\n\n");
 
@@ -232,8 +293,7 @@ fn generate_horizon_runbook(node: &StellarNode) -> Result<String> {
     runbook.push_str("### 2. Check Horizon Health\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Port-forward to Horizon\nkubectl port-forward -n {} svc/{} 8000:8000 &\n\n",
-        namespace, name
+        "# Port-forward to Horizon\nkubectl port-forward -n {namespace} svc/{name} 8000:8000 &\n\n"
     ));
     runbook.push_str("# Check health endpoint\ncurl http://localhost:8000/health\n\n");
     runbook.push_str("# Check sync status\ncurl http://localhost:8000/\n");
@@ -243,8 +303,7 @@ fn generate_horizon_runbook(node: &StellarNode) -> Result<String> {
     runbook.push_str("### 3. Check Database Sync\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Check if Horizon database is synced\nkubectl exec -n {} -it $(kubectl get pods -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -o jsonpath='{{.items[0].metadata.name}}') -c horizon -- horizon db status\n",
-        namespace, namespace, name
+        "# Check if Horizon database is synced\nkubectl exec -n {namespace} -it $(kubectl get pods -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -o jsonpath='{{.items[0].metadata.name}}') -c horizon -- horizon db status\n"
     ));
     runbook.push_str("```\n\n");
 
@@ -264,12 +323,10 @@ fn generate_soroban_runbook(node: &StellarNode) -> Result<String> {
     runbook.push_str("### 1. Check Soroban RPC Logs\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Stream RPC logs\nkubectl logs -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -c soroban-rpc -f\n\n",
-        namespace, name
+        "# Stream RPC logs\nkubectl logs -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -c soroban-rpc -f\n\n"
     ));
     runbook.push_str(&format!(
-        "# Get last 100 lines\nkubectl logs -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -c soroban-rpc --tail=100\n",
-        namespace, name
+        "# Get last 100 lines\nkubectl logs -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -c soroban-rpc --tail=100\n"
     ));
     runbook.push_str("```\n\n");
 
@@ -277,8 +334,7 @@ fn generate_soroban_runbook(node: &StellarNode) -> Result<String> {
     runbook.push_str("### 2. Check RPC Health\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Port-forward to RPC\nkubectl port-forward -n {} svc/{} 8000:8000 &\n\n",
-        namespace, name
+        "# Port-forward to RPC\nkubectl port-forward -n {namespace} svc/{name} 8000:8000 &\n\n"
     ));
     runbook.push_str("# Check RPC health\ncurl -X POST http://localhost:8000 -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getHealth\"}'\n\n");
     runbook.push_str("# Check ledger info\ncurl -X POST http://localhost:8000 -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getLedgerEntries\",\"params\":{\"keys\":[]}}'\n");
@@ -296,47 +352,38 @@ fn generate_common_troubleshooting(name: &str, namespace: &str) -> String {
     runbook.push_str("### 1. Check Pod Status\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Get detailed pod information\nkubectl describe pods -n {} -l app.kubernetes.io/instance={}\n\n",
-        namespace, name
+        "# Get detailed pod information\nkubectl describe pods -n {namespace} -l app.kubernetes.io/instance={name}\n\n"
     ));
     runbook.push_str(&format!(
-        "# Check for pod restart loops\nkubectl get pods -n {} -l app.kubernetes.io/instance={} -o jsonpath='{{range .items[*]}}{{.metadata.name}}{{\"\\t\"}}{{.status.containerStatuses[0].restartCount}}{{\"\\n\"}}{{end}}'\n",
-        namespace, name
+        "# Check for pod restart loops\nkubectl get pods -n {namespace} -l app.kubernetes.io/instance={name} -o jsonpath='{{range .items[*]}}{{.metadata.name}}{{\"\\t\"}}{{.status.containerStatuses[0].restartCount}}{{\"\\n\"}}{{end}}'\n",
     ));
     runbook.push_str("```\n\n");
 
     runbook.push_str("### 2. Check Resource Usage\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Check CPU and memory usage\nkubectl top pods -n {} -l app.kubernetes.io/instance={}\n\n",
-        namespace, name
+        "# Check CPU and memory usage\nkubectl top pods -n {namespace} -l app.kubernetes.io/instance={name}\n\n"
     ));
-    runbook.push_str(&format!(
-        "# Check node resource availability\nkubectl top nodes\n"
-    ));
+    runbook.push_str("# Check node resource availability\nkubectl top nodes\n");
     runbook.push_str("```\n\n");
 
     runbook.push_str("### 3. Check Storage\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Check PVC status\nkubectl get pvc -n {} -l app.kubernetes.io/instance={}\n\n",
-        namespace, name
+        "# Check PVC status\nkubectl get pvc -n {namespace} -l app.kubernetes.io/instance={name}\n\n"
     ));
     runbook.push_str(&format!(
-        "# Check PVC usage\nkubectl exec -n {} -it $(kubectl get pods -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -o jsonpath='{{.items[0].metadata.name}}') -- df -h /data\n",
-        namespace, namespace, name
+        "# Check PVC usage\nkubectl exec -n {namespace} -it $(kubectl get pods -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -o jsonpath='{{.items[0].metadata.name}}') -- df -h /data\n",
     ));
     runbook.push_str("```\n\n");
 
     runbook.push_str("### 4. Check Network Connectivity\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Test DNS resolution\nkubectl exec -n {} -it $(kubectl get pods -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -o jsonpath='{{.items[0].metadata.name}}') -- nslookup kubernetes.default\n\n",
-        namespace, namespace, name
+        "# Test DNS resolution\nkubectl exec -n {namespace} -it $(kubectl get pods -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -o jsonpath='{{.items[0].metadata.name}}') -- nslookup kubernetes.default\n\n"
     ));
     runbook.push_str(&format!(
-        "# Check service endpoints\nkubectl get endpoints -n {} {}\n",
-        namespace, name
+        "# Check service endpoints\nkubectl get endpoints -n {namespace} {name}\n"
     ));
     runbook.push_str("```\n\n");
 
@@ -357,21 +404,19 @@ fn generate_archive_troubleshooting(node: &StellarNode) -> Result<String> {
         if !validator_config.history_archive_urls.is_empty() {
             runbook.push_str("### Archive URLs\n\n");
             for url in &validator_config.history_archive_urls {
-                runbook.push_str(&format!("- `{}`\n", url));
+                runbook.push_str(&format!("- `{url}`\n"));
             }
-            runbook.push_str("\n");
+            runbook.push('\n');
         }
     }
 
     runbook.push_str("### 1. Check Archive Health\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Check archive connectivity\nkubectl exec -n {} -it $(kubectl get pods -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -o jsonpath='{{.items[0].metadata.name}}') -c core -- curl -I https://history.stellar.org/pyx/history-00.json.gz\n\n",
-        namespace, namespace, name
+        "# Check archive connectivity\nkubectl exec -n {namespace} -it $(kubectl get pods -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -o jsonpath='{{.items[0].metadata.name}}') -c core -- curl -I https://history.stellar.org/pyx/history-00.json.gz\n\n"
     ));
     runbook.push_str(&format!(
-        "# Check archive lag\nkubectl logs -n {} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={} -c core | grep 'archive lag'\n",
-        namespace, name
+        "# Check archive lag\nkubectl logs -n {namespace} -l app.kubernetes.io/name=stellar-node,app.kubernetes.io/instance={name} -c core | grep 'archive lag'\n"
     ));
     runbook.push_str("```\n\n");
 
@@ -403,9 +448,9 @@ fn generate_kms_troubleshooting(node: &StellarNode) -> Result<String> {
             runbook.push_str(&format!("- **Provider**: {}\n", kms_config.provider));
             runbook.push_str(&format!("- **Key ID**: {}\n", kms_config.key_id));
             if let Some(region) = &kms_config.region {
-                runbook.push_str(&format!("- **Region**: {}\n", region));
+                runbook.push_str(&format!("- **Region**: {region}\n"));
             }
-            runbook.push_str("\n");
+            runbook.push('\n');
         }
     }
 
@@ -427,12 +472,10 @@ fn generate_kms_troubleshooting(node: &StellarNode) -> Result<String> {
     runbook.push_str("### 3. Check Pod IAM/Service Account\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Check service account\nkubectl get sa -n {} -l app.kubernetes.io/instance={}\n\n",
-        namespace, name
+        "# Check service account\nkubectl get sa -n {namespace} -l app.kubernetes.io/instance={name}\n\n"
     ));
     runbook.push_str(&format!(
-        "# Check service account annotations (for IRSA/Workload Identity)\nkubectl describe sa -n {} $(kubectl get sa -n {} -l app.kubernetes.io/instance={} -o jsonpath='{{.items[0].metadata.name}}')\n",
-        namespace, namespace, name
+        "# Check service account annotations (for IRSA/Workload Identity)\nkubectl describe sa -n {namespace} $(kubectl get sa -n {namespace} -l app.kubernetes.io/instance={name} -o jsonpath='{{.items[0].metadata.name}}')\n",
     ));
     runbook.push_str("```\n\n");
 
@@ -459,28 +502,23 @@ fn generate_network_troubleshooting(node: &StellarNode) -> Result<String> {
     runbook.push_str("### 1. Check Service\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Get service details\nkubectl get svc -n {} {}\n\n",
-        namespace, name
+        "# Get service details\nkubectl get svc -n {namespace} {name}\n\n"
     ));
     runbook.push_str(&format!(
-        "# Check service endpoints\nkubectl get endpoints -n {} {}\n\n",
-        namespace, name
+        "# Check service endpoints\nkubectl get endpoints -n {namespace} {name}\n\n"
     ));
     runbook.push_str(&format!(
-        "# Test service connectivity\nkubectl run -n {} -it --rm debug --image=busybox --restart=Never -- wget -O- http://{}:8000/health\n",
-        namespace, name
+        "# Test service connectivity\nkubectl run -n {namespace} -it --rm debug --image=busybox --restart=Never -- wget -O- http://{name}:8000/health\n"
     ));
     runbook.push_str("```\n\n");
 
     runbook.push_str("### 2. Check Ingress (if configured)\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Get ingress status\nkubectl get ingress -n {} -l app.kubernetes.io/instance={}\n\n",
-        namespace, name
+        "# Get ingress status\nkubectl get ingress -n {namespace} -l app.kubernetes.io/instance={name}\n\n"
     ));
     runbook.push_str(&format!(
-        "# Check ingress details\nkubectl describe ingress -n {} -l app.kubernetes.io/instance={}\n",
-        namespace, name
+        "# Check ingress details\nkubectl describe ingress -n {namespace} -l app.kubernetes.io/instance={name}\n"
     ));
     runbook.push_str("```\n\n");
 
@@ -510,35 +548,29 @@ fn generate_resource_troubleshooting(name: &str, namespace: &str) -> String {
     runbook.push_str("### 1. Check Resource Requests and Limits\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# View resource configuration\nkubectl get stellarnode {}/{} -o jsonpath='{{.spec.resources}}' | jq\n\n",
-        namespace, name
+        "# View resource configuration\nkubectl get stellarnode {namespace}/{name} -o jsonpath='{{.spec.resources}}' | jq\n\n"
     ));
     runbook.push_str(&format!(
-        "# Check actual resource usage\nkubectl top pods -n {} -l app.kubernetes.io/instance={}\n",
-        namespace, name
+        "# Check actual resource usage\nkubectl top pods -n {namespace} -l app.kubernetes.io/instance={name}\n"
     ));
     runbook.push_str("```\n\n");
 
     runbook.push_str("### 2. Check Node Affinity\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Check pod node assignment\nkubectl get pods -n {} -l app.kubernetes.io/instance={} -o wide\n\n",
-        namespace, name
+        "# Check pod node assignment\nkubectl get pods -n {namespace} -l app.kubernetes.io/instance={name} -o wide\n\n"
     ));
-    runbook.push_str(&format!(
-        "# Check node labels\nkubectl get nodes --show-labels\n"
-    ));
+    runbook.push_str("# Check node labels\nkubectl get nodes --show-labels\n");
     runbook.push_str("```\n\n");
 
     runbook.push_str("### 3. Check for Resource Constraints\n\n");
     runbook.push_str("```bash\n");
     runbook.push_str(&format!(
-        "# Check for pending pods\nkubectl get pods -n {} -l app.kubernetes.io/instance={} --field-selector=status.phase=Pending\n\n",
-        namespace, name
+        "# Check for pending pods\nkubectl get pods -n {namespace} -l app.kubernetes.io/instance={name} --field-selector=status.phase=Pending\n\n"
     ));
-    runbook.push_str(&format!(
-        "# Check node capacity\nkubectl describe nodes | grep -A 5 'Allocated resources'\n"
-    ));
+    runbook.push_str(
+        "# Check node capacity\nkubectl describe nodes | grep -A 5 'Allocated resources'\n",
+    );
     runbook.push_str("```\n\n");
 
     runbook

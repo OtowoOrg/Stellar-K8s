@@ -35,6 +35,13 @@ spec:
         description: Auto-generated derived type for StellarNodeSpec via `CustomResource`
         properties:
           spec:
+            x-kubernetes-validations:
+            - message: horizonConfig is required when nodeType is Horizon
+              rule: self.nodeType != 'Horizon' || has(self.horizonConfig)
+            - message: validatorConfig is required when nodeType is Validator
+              rule: self.nodeType != 'Validator' || has(self.validatorConfig)
+            - message: customNetworkPassphrase can only be set when network is Custom
+              rule: '!has(self.customNetworkPassphrase) || self.network == ''custom'''
             properties:
               alerting:
                 default: false
@@ -651,6 +658,17 @@ spec:
                 required:
                 - hosts
                 type: object
+              initContainers:
+                description: |-
+                  Optional init containers to run before the main Stellar container starts.
+                  These run to completion in order before the main container starts.
+                  Useful for tasks like fetching custom configuration, restoring state,
+                  or pre-populating volumes.
+                items:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                nullable: true
+                type: array
               loadBalancer:
                 description: Load balancer configuration for external access (e.g. MetalLB)
                 nullable: true
@@ -938,11 +956,12 @@ spec:
                     nullable: true
                     type: object
                   enabled:
-                    default: false
+                    default: true
                     type: boolean
                   metricsNamespace:
                     default: monitoring
                     type: string
+
                 type: object
               nodeType:
                 description: Supported Stellar node types
@@ -1078,6 +1097,36 @@ spec:
                     cpu: 500m
                     memory: 1Gi
                 description: Kubernetes-style resource requirements
+                properties:
+                  limits:
+                    description: Resource specification for CPU and memory
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - memory
+                    type: object
+                  requests:
+                    description: Resource specification for CPU and memory
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - memory
+                    type: object
+                required:
+                - limits
+                - requests
+                type: object
+              diagnosticSidecarResources:
+                description: Resource requests and limits for the operator-managed diagnostic health-check sidecar. Defaults to 50m CPU and 64Mi memory for both requests and limits when unset.
+                nullable: true
                 properties:
                   limits:
                     description: Resource specification for CPU and memory
@@ -1314,6 +1363,49 @@ spec:
                     type: string
                   storageClass:
                     type: string
+                  snapshotRef:
+                    description: >-
+                      Bootstrap this node from a pre-computed snapshot or compressed DB backup.
+                      Supports CSI VolumeSnapshot (zero-copy PVC clone) or a compressed archive
+                      (.tar.gz / .tar.zst) downloaded by an init container before Stellar Core starts.
+                      Reduces catch-up time from days to minutes.
+                    nullable: true
+                    properties:
+                      volumeSnapshotName:
+                        description: >-
+                          Name of an existing VolumeSnapshot (snapshot.storage.k8s.io/v1) in the
+                          same namespace. The PVC is provisioned from this snapshot — no init
+                          container is needed.
+                        nullable: true
+                        type: string
+                      volumeSnapshotNamespace:
+                        description: >-
+                          Optional namespace of the VolumeSnapshot when it lives in a different
+                          namespace. Requires CrossNamespaceVolumeDataSource feature gate.
+                        nullable: true
+                        type: string
+                      backupUrl:
+                        description: >-
+                          URL of a compressed DB backup archive (.tar.gz or .tar.zst).
+                          Supported schemes: s3://bucket/path/backup.tar.gz or https://host/path/backup.tar.gz.
+                          An init container (snapshot-restore) downloads and extracts the archive
+                          into /data before Stellar Core starts.
+                        nullable: true
+                        type: string
+                      credentialsSecretRef:
+                        description: >-
+                          Name of a Kubernetes Secret containing credentials for the backup URL.
+                          For S3: keys AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION.
+                          For HTTPS: key BEARER_TOKEN.
+                        nullable: true
+                        type: string
+                      restoreImage:
+                        description: >-
+                          Container image for the restore init container.
+                          Defaults to amazon/aws-cli:latest for S3 URLs, alpine:3 for HTTPS.
+                        nullable: true
+                        type: string
+                    type: object
                 required:
                 - size
                 - storageClass
@@ -1828,6 +1920,53 @@ spec:
                 description: Last observed Vault secret version annotation (for rotation-driven rollouts).
                 nullable: true
                 type: string
+              labelPropagationStatus:
+                description: Result of the last label propagation pass. One of "Synced", "Partial", "Failed"
+                nullable: true
+                type: string
+              snapshotBootstrap:
+                description: >-
+                  Bootstrap status when the node was started from a snapshot or compressed backup.
+                  Tracks the restore phase and time-to-sync for observability.
+                  A secondsToSync value ≤ 600 satisfies the "synced within 10 minutes" acceptance criterion.
+                nullable: true
+                properties:
+                  phase:
+                    description: >-
+                      Current phase of the bootstrap operation.
+                      One of: Pending, Restoring, Restored, Syncing, Synced, Failed
+                    type: string
+                  source:
+                    description: Source used for bootstrap (VolumeSnapshot name or backup URL).
+                    nullable: true
+                    type: string
+                  restoreStartedAt:
+                    description: RFC3339 timestamp when the restore init container started.
+                    nullable: true
+                    type: string
+                  restoreCompletedAt:
+                    description: RFC3339 timestamp when the restore init container completed successfully.
+                    nullable: true
+                    type: string
+                  syncedAt:
+                    description: RFC3339 timestamp when the node first reached Synced state after bootstrap.
+                    nullable: true
+                    type: string
+                  secondsToSync:
+                    description: >-
+                      Elapsed seconds from restore completion to first Synced state.
+                      A value ≤ 600 satisfies the "synced within 10 minutes" acceptance criterion.
+                    format: uint64
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
+                  message:
+                    description: Human-readable message about the current bootstrap state.
+                    nullable: true
+                    type: string
+                required:
+                - phase
+                type: object
             required:
             - phase
             type: object

@@ -1,0 +1,109 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stellargitopsconfigs.stellar.org
+spec:
+  group: stellar.org
+  names:
+    categories: []
+    kind: StellarGitOpsConfig
+    plural: stellargitopsconfigs
+    shortNames:
+    - sgc
+    singular: stellargitopsconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.provider
+      name: Provider
+      type: string
+    - jsonPath: .spec.enabled
+      name: Enabled
+      type: boolean
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: StellarGitOpsConfig defines GitOps configuration for Stellar K8s
+        type: object
+        properties:
+          spec:
+            type: object
+            required:
+            - provider
+            properties:
+              provider:
+                type: string
+                enum:
+                - ArgoCD
+                - FluxCD
+                description: GitOps provider to use
+              enabled:
+                type: boolean
+                default: true
+                description: Enable or disable GitOps
+              gitRepository:
+                type: object
+                description: Git repository configuration
+                properties:
+                  url:
+                    type: string
+                    description: Git repository URL
+                  branch:
+                    type: string
+                    default: main
+                    description: Git branch to track
+                  interval:
+                    type: string
+                    default: 1m
+                    description: Sync interval
+              argocdConfig:
+                type: object
+                description: ArgoCD-specific configuration
+                properties:
+                  project:
+                    type: string
+                    default: default
+                  syncPolicy:
+                    type: string
+                    enum:
+                    - Manual
+                    - Auto
+                    default: Manual
+          status:
+            type: object
+            properties:
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+                      enum:
+                      - "True"
+                      - "False"
+                      - "Unknown"
+                    message:
+                      type: string
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
+              lastSyncTime:
+                type: string
+                format: date-time
+              syncStatus:
+                type: string
+                enum:
+                - Synced
+                - OutOfSync
+                - Unknown
+    served: true
+    storage: true

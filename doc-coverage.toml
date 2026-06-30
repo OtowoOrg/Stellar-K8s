@@ -1,0 +1,242 @@
+# doc-coverage.toml
+#
+# Maps documentation files to the source files they describe.
+#
+# When a source file changes without a corresponding update to its linked
+# documentation, `make check-stale-docs` (or the CI workflow) will flag that
+# doc as stale.
+#
+# Schema
+# ------
+# [[entry]]
+# doc  = "relative path to the doc file"
+# src  = ["one or more source globs that this doc covers"]
+#
+# Globs follow the same syntax as `.gitignore`:
+#   *       – any sequence of characters except '/'
+#   **      – any sequence of characters including '/'
+#   ?       – any single character except '/'
+#   [abc]   – character class
+#
+# Tips
+# ----
+# • Keep entries sorted alphabetically by `doc` for easy diffing.
+# • Use multiple `src` paths when a single doc spans several modules.
+# • Add a new entry whenever you create a new doc/feature pair.
+# • To silence a false-positive temporarily, set `ignore = true` on the
+#   entry and open a follow-up issue.
+
+# ── API Reference ──────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/api-reference.md"
+src = [
+    "src/crd/types.rs",
+    "src/crd/stellar_node.rs",
+    "src/crd/mod.rs",
+    "src/crd/seed_secret.rs",
+    "src/crd/read_replica.rs",
+    "src/crd/service_mesh.rs",
+    "config/crd/stellarnode-crd.yaml",
+]
+
+# ── Archive Pruning ────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/archive-pruning.md"
+src = [
+    "src/controller/archive_prune.rs",
+    "src/controller/archive_checker.rs",
+    "src/controller/archive_health.rs",
+]
+
+# ── Benchmarking ───────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/benchmarking.md"
+src = [
+    "benchmarks/k6/operator-load-test.js",
+    "benchmarks/run-regression-test.sh",
+    "benchmarks/scripts/compare_benchmarks.py",
+]
+
+# ── CVE Auto-Patch ─────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/cve-auto-patch.md"
+src = [
+    "src/controller/cve.rs",
+    "src/controller/cve_reconciler.rs",
+]
+
+# ── Development Guide ──────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/development.md"
+src = [
+    "Makefile",
+    "CONTRIBUTING.md",
+    "Dockerfile",
+    "Dockerfile.dev",
+    "docker-compose.yml",
+    "docker-compose.dev.yml",
+]
+
+# ── Diff Utility ───────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/diff-utility.md"
+src = [
+    "src/controller/diff.rs",
+]
+
+# ── Disaster Recovery ──────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/dr-failover.md"
+src = [
+    "src/controller/dr.rs",
+    "src/controller/dr_drill.rs",
+    "src/backup/mod.rs",
+    "src/backup/scheduler.rs",
+]
+
+# ── Error Reference ────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/errors.md"
+src = [
+    "src/error.rs",
+]
+
+# ── Formal Verification ────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/FORMAL_VERIFICATION.md"
+src = [
+    "formal_verification/StellarReconciler.tla",
+    "formal_verification/StellarReconcilerChecks.tla",
+    "formal_verification/StellarReconciler_Model.cfg",
+]
+
+# ── Fuzzing ────────────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/fuzzing.md"
+src = [
+    "tests/reconciler_fuzz.rs",
+]
+
+# ── Gatekeeper Policies ────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/gatekeeper-policies.md"
+src = [
+    "config/manifests/gatekeeper",
+    "policy/kyverno-policies.yaml",
+    "tests/gatekeeper_policies_test.rs",
+]
+
+# ── Health Checks ──────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/health-checks.md"
+src = [
+    "src/controller/health.rs",
+    "src/preflight.rs",
+]
+
+# ── Ingress Guide ──────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/ingress-guide.md"
+src = [
+    "examples/ingress-example.yaml",
+    "charts/stellar-operator/templates",
+]
+
+# ── kubectl Plugin ─────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/kubectl-plugin.md"
+src = [
+    "src/kubectl_plugin.rs",
+]
+
+# ── MetalLB / BGP Anycast ──────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/metallb-bgp-anycast.md"
+src = [
+    "examples/metallb-bgp-anycast.yaml",
+    "src/controller/cross_cluster.rs",
+]
+
+# ── mTLS Guide ─────────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/mtls-guide.md"
+src = [
+    "src/controller/mtls.rs",
+]
+
+# ── Peer Discovery ─────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/peer-discovery.md"
+src = [
+    "src/controller/peer_discovery.rs",
+]
+
+# ── Pod Disruption Budget ──────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/pod-disruption-budget.md"
+src = [
+    "charts/stellar-operator/values.yaml",
+    "charts/stellar-operator/templates",
+]
+
+# ── Resource Limits ────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/resource-limits.md"
+src = [
+    "src/controller/resources.rs",
+    "src/controller/vpa.rs",
+]
+
+# ── Scalability ────────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/scalability.md"
+src = [
+    "src/controller/reconciler.rs",
+    "src/controller/operator_config.rs",
+    "src/controller/feature_flags.rs",
+]
+
+# ── Service Mesh ───────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/service-mesh.md"
+src = [
+    "src/controller/service_mesh.rs",
+    "src/crd/service_mesh.rs",
+]
+
+# ── Stale Docs Detector ────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/stale-docs-detector.md"
+src = [
+    "src/bin/doc_check.rs",
+    "doc-coverage.toml",
+    ".github/workflows/stale-docs.yml",
+    "Makefile",
+]
+
+# ── Volume Snapshots ───────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/volume-snapshots.md"
+src = [
+    "src/controller/snapshot.rs",
+    "src/controller/oci_snapshot.rs",
+]
+
+# ── Wasm Webhook ───────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/wasm-webhook.md"
+src = [
+    "src/webhook/server.rs",
+    "src/webhook/runtime.rs",
+    "src/webhook/mutation.rs",
+    "src/webhook/types.rs",
+    "examples/plugins",
+]
+
+# ── Webhook Benchmarking ───────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/webhook-benchmarking.md"
+src = [
+    "benchmarks/run-webhook-benchmark.sh",
+    "benchmarks/k6/webhook-load-test.js",
+]

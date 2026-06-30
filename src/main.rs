@@ -25,13 +25,6 @@ use stellar_k8s::{incident, Error};
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
 
-    // Handle --version/-v flag
-    if args.version {
-        println!("stellar-cli v{}", env!("CARGO_PKG_VERSION"));
-        println!("Build Date: {}", env!("BUILD_DATE"));
-        return Ok(());
-    }
-
     let offline = args.offline;
 
     let result = match args.command {

@@ -383,6 +383,7 @@ mod tests {
     // to see timing output.
 
     #[test]
+    #[ignore = "performance benchmark — timing assertions are unreliable in CI; run manually with `cargo test bench_wasm_cache_speedup -- --ignored --nocapture`"]
     fn bench_wasm_cache_speedup() {
         use std::time::{Duration, Instant};
 

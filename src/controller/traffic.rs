@@ -618,7 +618,6 @@ struct LedgerInfo {
 
 /// Reconcile traffic routing for read-only replicas.
 /// Called when `spec.readReplicaConfig` is set on a StellarNode.
-#[allow(dead_code)] // invoked via reconciler read-replica path
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub async fn reconcile_traffic_routing(client: &Client, node: &StellarNode) -> Result<()> {
     if node.spec.read_replica_config.is_none() {
@@ -642,7 +641,6 @@ pub async fn reconcile_traffic_routing(client: &Client, node: &StellarNode) -> R
     Ok(())
 }
 
-#[allow(dead_code)]
 async fn ensure_traffic_service(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
@@ -688,7 +686,6 @@ async fn ensure_traffic_service(client: &Client, node: &StellarNode) -> Result<(
     Ok(())
 }
 
-#[allow(dead_code)]
 async fn update_pod_labels_based_on_lag(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let pod_api: Api<Pod> = Api::namespaced(client.clone(), &namespace);
@@ -751,7 +748,6 @@ async fn update_pod_labels_based_on_lag(client: &Client, node: &StellarNode) -> 
     Ok(())
 }
 
-#[allow(dead_code)]
 async fn ensure_all_ready_pods_enabled(client: &Client, node: &StellarNode) -> Result<()> {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let pod_api: Api<Pod> = Api::namespaced(client.clone(), &namespace);
@@ -782,7 +778,6 @@ async fn ensure_all_ready_pods_enabled(client: &Client, node: &StellarNode) -> R
     Ok(())
 }
 
-#[allow(dead_code)]
 async fn ensure_traffic_label(api: &Api<Pod>, pod: &Pod, enabled: bool) -> Result<()> {
     let current_val = pod
         .metadata

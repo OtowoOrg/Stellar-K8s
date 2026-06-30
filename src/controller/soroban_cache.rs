@@ -118,9 +118,6 @@ impl SorobanCache {
         {
             let mut l1 = self.l1.lock().unwrap();
             if let Some(v) = l1.get(key) {
-                // Bump the L2 counter so LFU scoring stays accurate even
-                // while the entry is hot in L1.
-                self.l2_bump_cnt(key);
                 return Some(v.clone());
             }
         }
@@ -149,14 +146,6 @@ impl SorobanCache {
     }
 
     // ── L2 helpers ────────────────────────────────────────────────────────────
-
-    /// Increment the L2 access counter for a key without reading the data file.
-    /// Called on L1 hits so the LFU score remains accurate.
-    fn l2_bump_cnt(&self, key: &str) {
-        let cnt_path = self.l2_cnt_path(key);
-        let cnt = read_cnt(&cnt_path).unwrap_or(0) + 1;
-        let _ = std::fs::write(&cnt_path, cnt.to_string());
-    }
 
     fn l2_data_path(&self, key: &str) -> PathBuf {
         self.l2_path.join(sanitise_key(key))
@@ -352,17 +341,18 @@ mod tests {
         };
         let cache = SorobanCache::new(&cfg).unwrap();
 
-        // Write two entries that together exceed the budget.
-        // "hot" is accessed more times so it should survive.
-        cache.put("hot", b"AAAAAAAAAA".to_vec()); // 10 bytes
-                                                  // Access "hot" multiple times to raise its count
-        cache.get("hot");
-        cache.get("hot");
-        cache.get("hot");
+        // Write "hot" then raise its L2 count via actual L2 reads: displace it
+        // from L1 with a zero-byte sentinel, then get() it back from L2.
+        cache.put("hot", b"AAAAAAAAAA".to_vec()); // 10 bytes, L2 count = 1
+        for _ in 0..3 {
+            cache.put("bump", b"".to_vec()); // evicts "hot" from L1 (capacity = 1)
+            cache.get("hot"); // L2 hit → count++, promotes back to L1
+        }
+        // "hot" L2 count is now 4.
 
         cache.put("cold", b"BBBBBBBBBB".to_vec()); // 10 bytes → total 20, at limit
 
-        // Writing "new" (10 bytes) should evict "cold" (count=1) not "hot" (count>1)
+        // Writing "new" (10 bytes) should evict "cold" (count=1) not "hot" (count=4)
         cache.put("new", b"CCCCCCCCCC".to_vec());
 
         // "hot" should still be retrievable from L2
@@ -393,7 +383,7 @@ mod tests {
     // to see timing output.
 
     #[test]
-    #[ignore = "timing-based benchmark; flaky under CI runner load, run manually with --ignored"]
+    #[ignore = "performance benchmark — timing assertions are unreliable in CI; run manually with `cargo test bench_wasm_cache_speedup -- --ignored --nocapture`"]
     fn bench_wasm_cache_speedup() {
         use std::time::{Duration, Instant};
 

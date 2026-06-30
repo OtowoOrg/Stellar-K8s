@@ -39,21 +39,6 @@ pub struct NodeDetailResponse {
     pub created_at: Option<String>,
 }
 
-/// Request to create a node (simplified).
-/// Reserved for the `POST /api/v1/nodes` endpoint which is not yet wired into
-/// the router. The struct is kept here alongside the other DTOs so the schema
-/// stays close to its consumers.
-#[allow(dead_code)] // endpoint not yet routed; kept for upcoming POST /nodes implementation
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateNodeRequest {
-    pub name: String,
-    pub namespace: String,
-    pub node_type: NodeType,
-    pub network: StellarNetwork,
-    pub version: String,
-}
-
 /// Health check response
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {

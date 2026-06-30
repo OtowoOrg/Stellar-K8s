@@ -35,72 +35,19 @@ The following one-off scripts were removed as part of repository hygiene (#1002)
 
 ## Prerequisites
 
-Before you begin, ensure you have the following tools installed:
+You need: **Rust**, **Docker**, **kind**, **kubectl**, **Helm**, **gh**, **pre-commit**, **shellcheck**, and **k6**.
 
-### Required Tools
+The setup scripts install and pin all of these in one step — run the one that matches your OS:
 
-1. **Rust** (1.88+ required, 1.93+ recommended)
-   ```bash
-   # Install via rustup (recommended)
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```bash
+# macOS
+bash scripts/setup-mac.sh
 
-   # Verify installation
-   rustc --version
-   cargo --version
-   ```
+# Linux (Ubuntu/Debian/Fedora)
+bash scripts/setup-linux.sh
+```
 
-2. **Docker** (for building container images)
-   ```bash
-   # Install Docker Engine
-   # See: https://docs.docker.com/engine/install/
-
-   # Verify installation
-   docker --version
-   docker ps  # Should not error
-   ```
-
-3. **kind** (Kubernetes in Docker - for local testing)
-   ```bash
-   # Linux/macOS
-   curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-   chmod +x ./kind
-   sudo mv ./kind /usr/local/bin/kind
-
-   # Verify installation
-   kind version
-   ```
-
-4. **kubectl** (Kubernetes CLI)
-   ```bash
-   # Linux
-   curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-   chmod +x kubectl
-   sudo mv kubectl /usr/local/bin/
-
-   # Verify installation
-   kubectl version --client
-   ```
-
-5. **Helm** (Kubernetes package manager)
-   ```bash
-   # Install Helm 3
-   curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-   # Verify installation
-   helm version
-   ```
-
-### Optional Tools
-
-- **cargo-watch**: Auto-rebuild on file changes
-  ```bash
-  cargo install cargo-watch
-  ```
-
-- **k6**: For running performance benchmarks
-  ```bash
-  # See: https://k6.io/docs/get-started/installation/
-  ```
+Both scripts are idempotent (safe to re-run) and print a version summary at the end.
 
 ---
 
@@ -115,7 +62,7 @@ cd Stellar-K8s
 
 ### 2. Run Development Setup
 
-This installs required Rust components and tools:
+Run the setup script for your OS (see [Prerequisites](#prerequisites) above), then install the Rust components and pre-commit hooks:
 
 ```bash
 make dev-setup

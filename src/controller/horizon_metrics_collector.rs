@@ -142,6 +142,22 @@ impl HorizonMetricsCollector {
                                 &ep.hardware_generation,
                                 snap.ingestion_lag,
                             );
+                            crate::controller::metrics::set_horizon_request_error_ratio(
+                                &ep.namespace,
+                                &ep.name,
+                                &ep.node_type,
+                                &ep.network,
+                                &ep.hardware_generation,
+                                snap.request_error_ratio,
+                            );
+                            crate::controller::metrics::set_horizon_db_query_duration_seconds(
+                                &ep.namespace,
+                                &ep.name,
+                                &ep.node_type,
+                                &ep.network,
+                                &ep.hardware_generation,
+                                snap.db_query_duration_seconds,
+                            );
                         }
 
                         info!(
@@ -284,10 +300,17 @@ impl HorizonMetricsCollector {
 /// Extracts:
 /// - `horizon_ingest_transactions_per_second` → `tps`
 /// - `horizon_ingest_pending_txqueue_count`   → `queue_length`
-/// - `horizon_ingest_ledger_ingestion_count`  → proxy for ingestion lag when
-///   combined with the current ledger (best-effort)
+/// - `horizon_ingest_latest_ledger_age_seconds` → `ingestion_lag`
+/// - `horizon_requests_total{status_code="4xx/5xx"}` → `request_error_ratio`
+/// - `horizon_db_query_duration_seconds_{sum,count}` → `db_query_duration_seconds`
 pub fn parse_prometheus_metrics(text: &str) -> StellarMetricsSnapshot {
     let mut values: HashMap<&str, f64> = HashMap::new();
+
+    // Accumulators for label-aware metrics.
+    let mut request_total: f64 = 0.0;
+    let mut request_error: f64 = 0.0;
+    let mut db_duration_sum: f64 = 0.0;
+    let mut db_duration_count: f64 = 0.0;
 
     for line in text.lines() {
         let line = line.trim();
@@ -295,7 +318,6 @@ pub fn parse_prometheus_metrics(text: &str) -> StellarMetricsSnapshot {
             continue;
         }
         // Lines look like: `metric_name{labels} value [timestamp]`
-        // We split on the first '{' or space.
         let (key, rest) = if let Some(pos) = line.find('{') {
             (&line[..pos], &line[pos..])
         } else if let Some(pos) = line.find(' ') {
@@ -304,17 +326,50 @@ pub fn parse_prometheus_metrics(text: &str) -> StellarMetricsSnapshot {
             continue;
         };
 
-        // The value is the first whitespace-separated token after closing '}' or after the key.
-        let value_str = if rest.contains('}') {
-            rest.split_once('}').map(|x| x.1).unwrap_or("").trim()
+        // Extract label block (between '{' and '}') and value after '}'.
+        let (labels_str, value_str) = if rest.starts_with('{') {
+            let after_open = &rest[1..];
+            if let Some(close) = after_open.find('}') {
+                let lbls = &after_open[..close];
+                let val = after_open[close + 1..].trim();
+                (lbls, val)
+            } else {
+                ("", rest.trim())
+            }
         } else {
-            rest.trim()
+            ("", rest.trim())
         };
 
-        // May have trailing timestamp.
         let value_str = value_str.split_whitespace().next().unwrap_or("");
-        if let Ok(v) = value_str.parse::<f64>() {
-            values.insert(key, v);
+        let v = match value_str.parse::<f64>() {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+
+        match key {
+            "horizon_requests_total" => {
+                request_total += v;
+                // Check if status_code label starts with '4' or '5'.
+                for part in labels_str.split(',') {
+                    let part = part.trim();
+                    if let Some(val) = part.strip_prefix("status_code=\"") {
+                        let code = val.trim_end_matches('"');
+                        if code.starts_with('4') || code.starts_with('5') {
+                            request_error += v;
+                        }
+                        break;
+                    }
+                }
+            }
+            "horizon_db_query_duration_seconds_sum" => {
+                db_duration_sum += v;
+            }
+            "horizon_db_query_duration_seconds_count" => {
+                db_duration_count += v;
+            }
+            _ => {
+                values.insert(key, v);
+            }
         }
     }
 
@@ -344,12 +399,26 @@ pub fn parse_prometheus_metrics(text: &str) -> StellarMetricsSnapshot {
         .copied()
         .unwrap_or(0.0) as i64;
 
+    let request_error_ratio = if request_total > 0.0 {
+        request_error / request_total
+    } else {
+        0.0
+    };
+
+    let db_query_duration_seconds = if db_duration_count > 0.0 {
+        db_duration_sum / db_duration_count
+    } else {
+        0.0
+    };
+
     StellarMetricsSnapshot {
         tps,
         queue_length,
         ingestion_lag,
         ledger_sequence,
         active_connections,
+        request_error_ratio,
+        db_query_duration_seconds,
         updated_at: chrono::Utc::now(),
     }
 }
@@ -378,6 +447,8 @@ fn parse_info_json(info: &serde_json::Value) -> StellarMetricsSnapshot {
         ingestion_lag,
         ledger_sequence,
         active_connections: 0,
+        request_error_ratio: 0.0,
+        db_query_duration_seconds: 0.0,
         updated_at: chrono::Utc::now(),
     }
 }
@@ -444,6 +515,45 @@ horizon_ingest_pending_txqueue_count{instance="h0"} 300
         let snap = parse_prometheus_metrics(text);
         // i64 truncation: 99.7 -> 99
         assert_eq!(snap.tps, 99);
+    }
+
+    #[test]
+    fn test_parse_prometheus_metrics_request_error_ratio() {
+        let text = r#"
+horizon_requests_total{status_code="200",route="/transactions"} 900
+horizon_requests_total{status_code="404",route="/not-found"} 80
+horizon_requests_total{status_code="500",route="/metrics"} 20
+"#;
+        let snap = parse_prometheus_metrics(text);
+        // 100 errors out of 1000 total = 0.1
+        let ratio = snap.request_error_ratio;
+        assert!((ratio - 0.1).abs() < 1e-9, "expected 0.1, got {ratio}");
+    }
+
+    #[test]
+    fn test_parse_prometheus_metrics_request_error_ratio_zero_total() {
+        let snap = parse_prometheus_metrics("");
+        assert_eq!(snap.request_error_ratio, 0.0);
+    }
+
+    #[test]
+    fn test_parse_prometheus_metrics_db_query_duration() {
+        let text = r#"
+horizon_db_query_duration_seconds_sum{db="core"} 0.5
+horizon_db_query_duration_seconds_count{db="core"} 100
+horizon_db_query_duration_seconds_sum{db="history"} 1.5
+horizon_db_query_duration_seconds_count{db="history"} 300
+"#;
+        let snap = parse_prometheus_metrics(text);
+        // sum=2.0, count=400 → avg=0.005
+        let dur = snap.db_query_duration_seconds;
+        assert!((dur - 0.005).abs() < 1e-9, "expected 0.005, got {dur}");
+    }
+
+    #[test]
+    fn test_parse_prometheus_metrics_db_query_duration_zero_count() {
+        let snap = parse_prometheus_metrics("");
+        assert_eq!(snap.db_query_duration_seconds, 0.0);
     }
 
     #[test]

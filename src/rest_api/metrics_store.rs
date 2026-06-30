@@ -27,6 +27,8 @@
 //!     ingestion_lag: 2,
 //!     ledger_sequence: 49_500_000,
 //!     active_connections: 15,
+//!     request_error_ratio: 0.02,
+//!     db_query_duration_seconds: 0.005,
 //!     updated_at: chrono::Utc::now(),
 //! });
 //!
@@ -74,6 +76,10 @@ pub struct StellarMetricsSnapshot {
     pub ledger_sequence: u64,
     /// Number of active peer connections.
     pub active_connections: i64,
+    /// Ratio (0.0–1.0) of Horizon API requests returning 4xx/5xx, derived from `/metrics`.
+    pub request_error_ratio: f64,
+    /// Average Horizon database query duration in seconds, derived from `/metrics`.
+    pub db_query_duration_seconds: f64,
     /// Wall-clock time when this snapshot was last written.
     pub updated_at: DateTime<Utc>,
 }
@@ -86,6 +92,8 @@ impl Default for StellarMetricsSnapshot {
             ingestion_lag: 0,
             ledger_sequence: 0,
             active_connections: 0,
+            request_error_ratio: 0.0,
+            db_query_duration_seconds: 0.0,
             updated_at: Utc::now(),
         }
     }
@@ -228,6 +236,8 @@ mod tests {
             ingestion_lag: 1,
             ledger_sequence: 50_000_000,
             active_connections: 8,
+            request_error_ratio: 0.0,
+            db_query_duration_seconds: 0.0,
             updated_at: Utc::now(),
         }
     }

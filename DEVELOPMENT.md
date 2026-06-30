@@ -341,7 +341,7 @@ Run the operator binary directly on your machine, connecting to a Kubernetes clu
 export KUBECONFIG=~/.kube/config
 
 # Build and run
-make run
+make run-local
 
 # Or with debug logging
 RUST_LOG=debug cargo run --bin stellar-operator
@@ -454,11 +454,10 @@ make ci-local      # Full CI pipeline locally (fmt-check + lint + audit + test +
 ### Security
 
 ```bash
-make audit          # Run cargo-audit on dependencies
-make security-audit # Alias for audit
-make security-scan  # Run audit + shellcheck
-make shellcheck     # Run shellcheck on all shell scripts
-make security-all   # Run all security checks
+make audit         # Run cargo-audit on dependencies
+make security-scan # Run audit + shellcheck
+make shellcheck    # Run shellcheck on all shell scripts
+make security-all  # Run all security checks
 ```
 
 ### Kubernetes Operations
@@ -474,7 +473,6 @@ make regenerate    # Regenerate all derived artifacts (CRDs, API docs, OLM bundl
 
 ```bash
 make run-local     # Build and run operator from release binary
-make run           # Alias for run-local
 make run-dev       # Run with hot reload (debug mode)
 make watch         # Watch mode: rebuild on changes
 ```

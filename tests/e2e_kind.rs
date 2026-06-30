@@ -2210,6 +2210,22 @@ fn teardown_recovery_cluster(op_yaml: &str) {
     );
 }
 
+struct RecoveryCleanup {
+    operator_manifest: String,
+}
+
+impl RecoveryCleanup {
+    fn new(operator_manifest: String) -> Self {
+        Self { operator_manifest }
+    }
+}
+
+impl Drop for RecoveryCleanup {
+    fn drop(&mut self) {
+        teardown_recovery_cluster(&self.operator_manifest);
+    }
+}
+
 fn running_pod_name(namespace: &str, instance: &str) -> Result<String, Box<dyn Error>> {
     run_cmd(
         "kubectl",
@@ -2239,6 +2255,7 @@ fn e2e_recovery_node_crash() -> Result<(), Box<dyn Error>> {
     let image =
         std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
     let op_yaml = setup_recovery_cluster(&cluster, &image)?;
+    let _cleanup = RecoveryCleanup::new(op_yaml.clone());
 
     let original_pod = running_pod_name(RECOVERY_NAMESPACE, RECOVERY_NODE)?;
     // Force-delete pod to simulate crash
@@ -2281,7 +2298,6 @@ fn e2e_recovery_node_crash() -> Result<(), Box<dyn Error>> {
     })
     .map_err(|_| -> Box<dyn Error> { "StellarNode did not recover after crash".into() })?;
 
-    teardown_recovery_cluster(&op_yaml);
     Ok(())
 }
 
@@ -2297,6 +2313,7 @@ fn e2e_recovery_disk_full() -> Result<(), Box<dyn Error>> {
     let image =
         std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
     let op_yaml = setup_recovery_cluster(&cluster, &image)?;
+    let _cleanup = RecoveryCleanup::new(op_yaml.clone());
 
     let pvc = format!("{RECOVERY_NODE}-data");
 
@@ -2438,7 +2455,6 @@ spec:
     )
     .map_err(|_| -> Box<dyn Error> { "StellarNode did not recover after disk-full".into() })?;
 
-    teardown_recovery_cluster(&op_yaml);
     Ok(())
 }
 
@@ -2454,6 +2470,7 @@ fn e2e_recovery_network_partition() -> Result<(), Box<dyn Error>> {
     let image =
         std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
     let op_yaml = setup_recovery_cluster(&cluster, &image)?;
+    let _cleanup = RecoveryCleanup::new(op_yaml.clone());
 
     // Deny all traffic to the node pod — simulates network partition
     let deny_policy = format!(
@@ -2527,6 +2544,5 @@ spec:
         "StellarNode did not recover after network partition".into()
     })?;
 
-    teardown_recovery_cluster(&op_yaml);
     Ok(())
 }

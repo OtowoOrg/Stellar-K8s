@@ -4031,6 +4031,51 @@ fn extract_peers_from_config(node: &StellarNode) -> Vec<String> {
     peers
 }
 
+/// Build a zero-trust NetworkPolicy manifest for a StellarNode.
+///
+/// # Architecture
+///
+/// This function implements a **default-deny** network isolation strategy:
+/// - All traffic is **denied by default** (via `policyTypes: [Ingress, Egress]`)
+/// - Only explicitly allowed traffic is permitted
+/// - Network isolation labels prevent cross-network communication (Mainnet ↔ Testnet)
+///
+/// # Ingress Rules (Allow)
+///
+/// **Validator nodes**:
+/// - Peer-to-peer traffic on port 11625 from other validators
+/// - HTTP admin API on port 11626 from validators (for operator health checks)
+/// - Optional: Metrics scraping from Prometheus namespace on port 9090
+/// - Optional: Traffic from allowed namespaces/pods/CIDRs per config
+///
+/// **Horizon/Soroban RPC nodes**:
+/// - Public access on port 8000 from any source (ingress gateway)
+/// - Optional: Metrics scraping from Prometheus namespace on port 9090
+///
+/// # Egress Rules (Allow)
+///
+/// All node types:
+/// 1. **Same-network egress**: Pods in namespaces with matching `stellar.org/network` label
+///    - Enforces network isolation (prevents Testnet → Mainnet connections)
+///    - Supports custom networks via `custom_network_passphrase`
+/// 2. **DNS resolution**: kube-system/kube-dns on UDP/TCP port 53
+/// 3. **Intra-namespace communication**: Any traffic within the same namespace
+///
+/// **Validator-specific**:
+/// - Egress to configured QUORUM_SET peers on port 11625 (TCP)
+/// - Egress to history archives on ports 80/443 (HTTP/HTTPS) if configured
+///
+/// **Horizon/Soroban RPC-specific**:
+/// - Egress to Stellar Core pods (same namespace, matching label selector) on ports 11625/11626
+/// - Egress to external database servers on port 5432 (PostgreSQL) if configured
+///
+/// # Zero-Trust Enforcement
+///
+/// By including both "Ingress" and "Egress" in `spec.policyTypes`, Kubernetes activates
+/// the default-deny semantics. Any traffic not explicitly matched by an ingress/egress rule
+/// is automatically denied at the network layer.
+///
+/// See `docs/network-policy-zero-trust.md` for detailed security considerations and testing.
 pub(crate) fn build_network_policy(
     node: &StellarNode,
     config: &NetworkPolicyConfig,

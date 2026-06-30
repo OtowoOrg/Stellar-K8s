@@ -248,44 +248,55 @@ service:
   restApiPort: 9090
   metricsPort: 9090
 
-# Prometheus Operator monitoring integration — ServiceMonitor, PodMonitor,
-# PrometheusRule (Stellar node-health alerts), and Grafana dashboard ConfigMaps.
-# Requires the Prometheus Operator CRDs (monitoring.coreos.com/v1) on the cluster.
+# Monitoring configuration for Prometheus Operator integration
+# Requires: Prometheus Operator (CRDs: PrometheusRule) to be installed
 monitoring:
-  # Master switch. Set to true to deploy any monitoring resources below.
-  enabled: false
-
-  serviceMonitor:
-    enabled: true
-    interval: 30s
-    scrapeTimeout: 10s
-    labels: {}
-
-  # PodMonitor for direct (Service-less) pod scraping, e.g. operator-managed
-  # StellarNode pods that don't have a dedicated Service.
-  podMonitor:
+  # PrometheusRule manifests for alerting on Stellar node and operator health
+  prometheusRules:
+    # Master switch to enable/disable PrometheusRule generation
     enabled: false
+    # Rule evaluation interval (default: 30s, aligned with Prometheus scrape interval)
     interval: 30s
-    portName: metrics
-    labels: {}
-    selector:
-      matchExpressions:
-        - key: stellar.org/node-type
-          operator: Exists
-
-  prometheusRule:
-    enabled: true
-    labels: {}
-    ingestionLagThresholdSeconds: 30
-    ledgerCloseTimeThresholdSeconds: 10
-    # Extra PrometheusRule rule groups, appended as-is under spec.groups[0].rules.
-    additionalRules: []
-
-  grafanaDashboards:
-    enabled: true
-    # Standard label used by the Grafana sidecar dashboard-loader to auto-discover ConfigMaps.
-    labels:
-      grafana_dashboard: "1"
+    # Alert severity levels and thresholds
+    alerts:
+      # Node is lagging behind network consensus (ledger sync lag)
+      syncLag:
+        enabled: true
+        # Trigger alert if node is behind by this many ledgers
+        lagThreshold: 100
+        # Duration threshold before alerting (allows for temporary lag)
+        forDuration: 5m
+      # Memory pressure on Stellar node pods
+      memoryPressure:
+        enabled: true
+        # Trigger alert when RSS exceeds this percentage of limit
+        percentageThreshold: 90
+        # Duration threshold before alerting
+        forDuration: 2m
+      # Operator reconciliation is failing
+      reconcileErrors:
+        enabled: true
+        # Alert if errors exceed this rate (errors per second)
+        errorRateThreshold: 0
+        # Duration threshold before alerting
+        forDuration: 5m
+      # History archive is unresponsive
+      historyArchiveUnresponsive:
+        enabled: true
+        # Trigger alert on HTTP 404/500 errors or timeout
+        forDuration: 10m
+      # Operator has stalled (no reconciliations happening)
+      reconciliationStalled:
+        enabled: true
+        # No reconciliation activity in this time window
+        stalledDuration: 10m
+      # Operator is experiencing high latency
+      reconciliationLatency:
+        enabled: true
+        # Alert if p99 latency exceeds this value (in seconds)
+        latencyThreshold: 30
+        # Duration threshold before alerting
+        forDuration: 10m
 
 # Default resource requests/limits for managed StellarNode pods.
 # Precedence: StellarNode spec.resources > Helm defaults > operator hardcoded fallback.

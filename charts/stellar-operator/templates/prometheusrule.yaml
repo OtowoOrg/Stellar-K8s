@@ -1,0 +1,178 @@
+{{- /*
+  Prometheus Alert Rules for Stellar-K8s Operator
+  =================================================
+
+  This template generates PrometheusRule manifests that define alert conditions
+  for monitoring the health and performance of Stellar nodes managed by the operator.
+
+  Requires: Prometheus Operator to be installed in the cluster
+
+  Alerts:
+  - StellarNodeSyncLag: Triggers if a node is > 100 ledgers behind the network
+  - StellarNodeMemoryPressure: Triggers if RSS is > 90% of the limit
+  - StellarOperatorReconcileErrors: Triggers if operator fails to reconcile for > 5 mins
+  - StellarHistoryArchiveUnresponsive: Triggers if history archive returns 404/500
+*/}}
+
+{{- if .Values.monitoring.prometheusRules.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-rules
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: stellar-node-health.rules
+      interval: 30s
+      rules:
+        # Alert: Node is significantly behind the network consensus
+        {{- if .Values.monitoring.prometheusRules.alerts.syncLag.enabled }}
+        - alert: StellarNodeSyncLag
+          expr: |
+            (max(stellar_node_ledger_sequence) by (namespace, name, network) -
+             on(network) group_left
+             max(stellar_node_ledger_sequence{node_type="validator"}) by (network)) > {{ .Values.monitoring.prometheusRules.alerts.syncLag.lagThreshold }}
+          for: {{ .Values.monitoring.prometheusRules.alerts.syncLag.forDuration }}
+          labels:
+            severity: warning
+            component: stellar-node
+          annotations:
+            summary: "StellarNode {{ $labels.namespace }}/{{ $labels.name }} is {{ $value | humanize }} ledgers behind the network"
+            description: |
+              Node {{ $labels.namespace }}/{{ $labels.name }} on {{ $labels.network }} network
+              is {{ $value | humanize }} ledgers behind the highest observed ledger sequence.
+              This suggests slow synchronization or peer issues.
+
+              Investigation steps:
+              1. Check node logs: kubectl logs -n {{ $labels.namespace }} -l app.kubernetes.io/name=stellar-node
+              2. Verify peer connectivity: kubectl exec -n {{ $labels.namespace }} <pod> -- stellar-core http-command 'peers'
+              3. Check network connectivity: kubectl exec -n {{ $labels.namespace }} <pod> -- ping <peer-address>
+        {{- end }}
+
+        # Alert: Node memory usage is critical
+        {{- if .Values.monitoring.prometheusRules.alerts.memoryPressure.enabled }}
+        - alert: StellarNodeMemoryPressure
+          expr: |
+            (container_memory_rss_bytes{pod=~".*stellar-node.*"} /
+             container_spec_memory_limit_bytes{pod=~".*stellar-node.*"}) > {{ div .Values.monitoring.prometheusRules.alerts.memoryPressure.percentageThreshold 100.0 }}
+          for: {{ .Values.monitoring.prometheusRules.alerts.memoryPressure.forDuration }}
+          labels:
+            severity: critical
+            component: stellar-node
+          annotations:
+            summary: "StellarNode {{ $labels.namespace }}/{{ $labels.pod }} memory pressure critical ({{ $value | humanizePercentage }})"
+            description: |
+              StellarNode pod {{ $labels.namespace }}/{{ $labels.pod }} is using {{ $value | humanizePercentage }}
+              of its memory limit. The node may be evicted or crash soon.
+
+              Investigation steps:
+              1. Check pod memory usage: kubectl top pod {{ $labels.pod }} -n {{ $labels.namespace }}
+              2. Review pod events: kubectl describe pod {{ $labels.pod }} -n {{ $labels.namespace }}
+              3. Consider increasing memory limits in the StellarNode spec
+        {{- end }}
+
+        # Alert: Operator reconciliation is failing
+        {{- if .Values.monitoring.prometheusRules.alerts.reconcileErrors.enabled }}
+        - alert: StellarOperatorReconcileErrors
+          expr: |
+            rate(stellar_operator_reconcile_errors_total[5m]) > {{ .Values.monitoring.prometheusRules.alerts.reconcileErrors.errorRateThreshold }}
+          for: {{ .Values.monitoring.prometheusRules.alerts.reconcileErrors.forDuration }}
+          labels:
+            severity: warning
+            component: operator
+          annotations:
+            summary: "StellarOperator reconciliation errors detected ({{ $value | humanize }} errors/sec)"
+            description: |
+              The Stellar-K8s operator is experiencing reconciliation errors.
+              Error rate: {{ $value | humanize }} errors/second over the last 5 minutes.
+
+              Investigation steps:
+              1. Check operator logs: kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=stellar-operator
+              2. Look for error patterns in recent logs
+              3. Verify operator RBAC permissions: kubectl describe clusterrolebinding stellar-operator
+              4. Check API server connectivity and quota
+        {{- end }}
+
+        # Alert: History archive is unresponsive
+        {{- if .Values.monitoring.prometheusRules.alerts.historyArchiveUnresponsive.enabled }}
+        - alert: StellarHistoryArchiveUnresponsive
+          expr: |
+            (increase(stellar_history_archive_errors_total{error_code=~"404|500"}[5m]) > 0) or
+            (increase(stellar_history_archive_request_timeout_total[5m]) > 0)
+          for: {{ .Values.monitoring.prometheusRules.alerts.historyArchiveUnresponsive.forDuration }}
+          labels:
+            severity: warning
+            component: history-archive
+          annotations:
+            summary: "History archive unresponsive for {{ $labels.namespace }}/{{ $labels.name }}"
+            description: |
+              History archive for {{ $labels.namespace }}/{{ $labels.name }} is returning errors
+              (HTTP 404/500) or timing out. This may indicate:
+              - Archive URL is misconfigured or moved
+              - Archive service is down or overloaded
+              - Network connectivity issues
+
+              Investigation steps:
+              1. Test archive URL: curl -I {{ $labels.archive_url }}
+              2. Check node history archive config: kubectl get stellarnode {{ $labels.name }} -n {{ $labels.namespace }} -o yaml
+              3. Verify firewall/security group allows outbound HTTPS
+              4. Review history archive service status
+        {{- end }}
+
+    - name: stellar-operator-health.rules
+      interval: 30s
+      rules:
+        # Alert: Operator is not reconciling
+        {{- if .Values.monitoring.prometheusRules.alerts.reconciliationStalled.enabled }}
+        - alert: StellarOperatorReconciliationStalled
+          expr: |
+            rate(stellar_reconcile_duration_seconds_count[5m]) == 0
+          for: {{ .Values.monitoring.prometheusRules.alerts.reconciliationStalled.stalledDuration }}
+          labels:
+            severity: critical
+            component: operator
+          annotations:
+            summary: "StellarOperator is not reconciling any objects"
+            description: |
+              The Stellar-K8s operator has not performed any reconciliations in the last {{ .Values.monitoring.prometheusRules.alerts.reconciliationStalled.stalledDuration }}.
+              This suggests the operator may be deadlocked, OOMKilled, or crashed.
+
+              Investigation steps:
+              1. Check operator pod status: kubectl get pod -n {{ .Release.Namespace }} -l app.kubernetes.io/name=stellar-operator
+              2. Review recent operator logs: kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=stellar-operator --tail=200
+              3. Check for pod restarts: kubectl describe pod -n {{ .Release.Namespace }} -l app.kubernetes.io/name=stellar-operator
+              4. Monitor operator resource usage: kubectl top pod -n {{ .Release.Namespace }} -l app.kubernetes.io/name=stellar-operator
+        {{- end }}
+
+        # Alert: High reconciliation latency
+        {{- if .Values.monitoring.prometheusRules.alerts.reconciliationLatency.enabled }}
+        - alert: StellarOperatorHighReconciliationLatency
+          expr: |
+            histogram_quantile(0.99, rate(stellar_reconcile_duration_seconds_bucket[5m])) > {{ .Values.monitoring.prometheusRules.alerts.reconciliationLatency.latencyThreshold }}
+          for: {{ .Values.monitoring.prometheusRules.alerts.reconciliationLatency.forDuration }}
+          labels:
+            severity: warning
+            component: operator
+          annotations:
+            summary: "StellarOperator reconciliation latency is high (p99: {{ $value | humanize }}s)"
+            description: |
+              The 99th percentile reconciliation time is {{ $value | humanize }} seconds.
+              This indicates the operator is under load or experiencing performance issues.
+
+              Potential causes:
+              - High number of StellarNode resources
+              - Slow Kubernetes API server
+              - Resource contention on the operator pod
+              - Network latency to Kubernetes API
+
+              Investigation steps:
+              1. Check operator CPU/memory usage: kubectl top pod -n {{ .Release.Namespace }}
+              2. Count managed StellarNodes: kubectl get stellarnode --all-namespaces | wc -l
+              3. Monitor API server latency
+              4. Consider scaling to multiple operator replicas
+        {{- end }}
+
+{{- end }}

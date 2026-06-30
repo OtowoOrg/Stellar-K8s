@@ -25,7 +25,8 @@ use tracing::{error, info, warn};
 use crate::error::{Error, Result};
 
 /// Labels required by issue automation before opening new issues.
-pub const REQUIRED_GH_LABELS: &[&str] = &["ci", "security", "stellar-wave", "maintenance", "hygiene"];
+pub const REQUIRED_GH_LABELS: &[&str] =
+    &["ci", "security", "stellar-wave", "maintenance", "hygiene"];
 
 /// Tools that must be present for local development and CI to function.
 /// Each entry is `(binary, install_hint)`.
@@ -47,10 +48,7 @@ pub const REQUIRED_LOCAL_TOOLS: &[(&str, &str)] = &[
         "Install Helm 3: https://helm.sh/docs/intro/install/",
     ),
     ("cargo", "Install Rust via rustup: https://rustup.rs/"),
-    (
-        "gh",
-        "Install GitHub CLI: https://cli.github.com/",
-    ),
+    ("gh", "Install GitHub CLI: https://cli.github.com/"),
 ];
 
 const GH_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(5);

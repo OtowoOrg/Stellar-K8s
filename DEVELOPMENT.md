@@ -830,13 +830,13 @@ If you modify source code that affects these outputs (such as CRDs, CLI definiti
 |---|---|---|
 | `docs/api-reference.md` | CRD types in `src/crd/` | `make generate-api-docs` |
 | `config/crd/*.yaml` | CRD structs in `src/crd/` | `make crd-gen` |
-| `bundle/manifests/*.yaml` | `config/manifests/bases/` + operator metadata | `make bundle` (requires operator-sdk) |
+| `bundle/manifests/*.yaml` (gitignored — do not commit) | `config/manifests/bases/` + operator metadata | `make bundle` (requires operator-sdk) |
 | `charts/stellar-operator/templates/*.yaml` | Hand-written (see [guide](docs/development/regeneration-guide.md)) | `helm template` for validation |
 | Shell completions | CLI definitions in `src/cli.rs` | `make completions` |
 
 For detailed instructions on each regeneration step, see the [Regeneration Guide](docs/development/regeneration-guide.md).
 
-After running any of the above, commit the updated generated file alongside the source change in the same PR.
+After running any of the above, commit the updated generated file alongside the source change in the same PR — except `bundle/manifests/*.yaml`, which is gitignored and must be regenerated locally on demand instead.
 
 ---
 

@@ -44,11 +44,14 @@ impl QualityReport {
     }
 }
 
+/// (field, message) emitted by a [`ValidationRule`] check when validation fails
+type CheckFn = dyn Fn(&EtlRecord) -> Option<(String, String)> + Send + Sync;
+
 /// A validation rule applied to ETL records
 pub struct ValidationRule {
     pub name: String,
     pub severity: Severity,
-    check: Box<dyn Fn(&EtlRecord) -> Option<(String, String)> + Send + Sync>,
+    check: Box<CheckFn>,
 }
 
 impl ValidationRule {

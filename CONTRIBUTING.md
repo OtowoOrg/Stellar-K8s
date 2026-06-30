@@ -246,15 +246,7 @@ make link-check-all # Repo-wide link check via lychee (markdown + source + confi
 
 ## 9. Repo Health Checklist
 
-Run through this before marking a PR ready for review:
-
-- [ ] `make ci-local` passes (format + lint + audit + test + build)
-- [ ] No new `#[allow(dead_code)]` without an explanatory comment
-- [ ] No unused imports in modified files
-- [ ] Generated manifests are up to date with their source
-- [ ] Shell scripts pass `shellcheck -S error`
-- [ ] New doc files are linked from `docs/README.md`
-- [ ] Commit messages follow Conventional Commits and include a `Signed-off-by` line
+Before requesting a review for a Pull Request, please ensure all checks listed in the [Canonical Repository Health Checklist](docs/development/repo-health-checklist.md) have been run and verified.
 
 ## 10. Need Help?
 

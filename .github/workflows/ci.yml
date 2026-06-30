@@ -439,6 +439,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/powershell \
+            /usr/share/swift
+          sudo docker image prune --all --force 2>/dev/null || true
+          df -h
+
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
         with:
@@ -494,6 +502,14 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@v7
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/powershell \
+            /usr/share/swift
+          sudo docker image prune --all --force 2>/dev/null || true
+          df -h
 
       - name: Setup Rust
         uses: ./.github/actions/setup-rust

@@ -33,7 +33,6 @@ pub use hpa::ensure_hpa;
 pub use ingress::{delete_ingress, ensure_ingress};
 pub use load_balancer::{
     delete_load_balancer_service, delete_metallb_config, delete_service,
-    ensure_load_balancer_service, ensure_metallb_config,
 };
 pub use network_policy::{delete_network_policy, ensure_network_policy};
 pub use pdb::delete_pvc;

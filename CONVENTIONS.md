@@ -131,8 +131,8 @@ must not appear in filenames — use the feature name instead
 
 These conventions are enforced by:
 
-- **Pre-commit hooks** (`shellcheck`, `cargo fmt`, `yamllint`) — run `make pre-commit-install`
-- **CI lint step** (`cargo clippy`, `make fmt-check`) — runs on every PR
+- **Pre-commit hooks** (`shellcheck`, `make fmt`, `yamllint`) — run `make pre-commit-install`
+- **CI lint step** (`make lint`, `make fmt-check`) — runs on every PR
 - **PR checklist** in [CONTRIBUTING.md](CONTRIBUTING.md#9-repo-health-checklist)
 
 If you find a file that violates these conventions and is not covered by the checklist, open

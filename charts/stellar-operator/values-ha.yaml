@@ -45,13 +45,6 @@ resources:
     cpu: 500m
     memory: 256Mi
 
-# Operator-specific configuration
-operator:
-  logLevel: info
-  restApiEnabled: true
-  restApiPort: 9090
-  metricsPort: 9090
-
 # Optional: node selection for operator pods
 # nodeSelector: {}
 

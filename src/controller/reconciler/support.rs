@@ -48,27 +48,6 @@ pub(crate) async fn get_ready_replicas(client: &Client, node: &StellarNode) -> R
     }
 }
 
-/// Fetch the ready replicas for the canary deployment
-#[allow(dead_code)]
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-pub(crate) async fn get_canary_ready_replicas(client: &Client, node: &StellarNode) -> Result<i32> {
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let name = format!("{}-canary", node.name_any());
-
-    let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
-    match api.get(&name).await {
-        Ok(deployment) => {
-            let ready_replicas = deployment
-                .status
-                .as_ref()
-                .and_then(|s| s.ready_replicas)
-                .unwrap_or(0);
-            Ok(ready_replicas)
-        }
-        Err(_) => Ok(0),
-    }
-}
-
 /// Get the current version of the stable deployment
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub(crate) async fn get_current_deployment_version(
@@ -99,7 +78,6 @@ pub(crate) async fn get_current_deployment_version(
 }
 
 /// Check health of canary pods
-#[allow(dead_code)]
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 pub(crate) async fn check_canary_health(
     client: &Client,
@@ -893,48 +871,6 @@ pub(crate) async fn update_status_with_health(
                 .and_then(|s| s.last_migrated_version.clone())
         },
         conditions,
-        ..Default::default()
-    };
-
-    let patch = serde_json::json!({ "status": status });
-    api.patch_status(
-        &node.name_any(),
-        &PatchParams::apply("stellar-operator"),
-        &Patch::Merge(&patch),
-    )
-    .await
-    .map_err(Error::KubeError)?;
-
-    Ok(())
-}
-
-/// Update the status subresource with canary information
-#[allow(dead_code)]
-pub(crate) async fn update_status_with_canary(
-    client: &Client,
-    node: &StellarNode,
-    phase: &str,
-    message: Option<&str>,
-    ready_replicas: i32,
-    canary_ready_replicas: i32,
-    canary_version: Option<String>,
-) -> Result<()> {
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
-
-    #[allow(deprecated)]
-    let status = StellarNodeStatus {
-        phase: phase.to_string(),
-        message: message.map(String::from),
-        observed_generation: node.metadata.generation,
-        replicas: if node.spec.suspended {
-            0
-        } else {
-            node.spec.replicas
-        },
-        ready_replicas,
-        canary_ready_replicas,
-        canary_version,
         ..Default::default()
     };
 

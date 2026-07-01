@@ -1017,9 +1017,6 @@ pub(crate) fn apply_stellar_node(
             ActionType::Update,
             "MetalLB configuration",
             move |_client: Client, _ctx: Arc<ControllerState>, _node: Arc<StellarNode>| async move {
-                // TODO: Load balancer and global discovery fields not yet implemented in StellarNodeSpec
-                // resources::ensure_metallb_config(&client, &node).await?;
-                // resources::ensure_load_balancer_service(&client, &node).await?;
                 Ok(())
             }
         )

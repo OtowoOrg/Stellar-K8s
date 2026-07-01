@@ -175,7 +175,7 @@ mod tests {
         store.record(ev("stellar.disk.warning")).await;
         store.record(ev("stellar.node.deleted")).await;
 
-        let mut replayed = vec![];
+        let replayed = std::cell::RefCell::new(Vec::new());
         store
             .replay(
                 ReplayOptions {
@@ -183,14 +183,14 @@ mod tests {
                     ..Default::default()
                 },
                 |rec| {
-                    replayed.push(rec.event.event_type.clone());
+                    replayed.borrow_mut().push(rec.event.event_type.clone());
                     async {}
                 },
             )
             .await;
 
         assert_eq!(
-            replayed,
+            replayed.into_inner(),
             vec!["stellar.node.created", "stellar.node.deleted"]
         );
     }

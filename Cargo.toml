@@ -25,7 +25,7 @@ kube = { version = "0.94", features = [
     "ws",
 ] }
 kube-runtime = { version = "0.94", features = ["unstable-runtime"] }
-k8s-openapi = { version = "0.22", default-features = false, features = [
+k8s-openapi = { version = "0.26", default-features = false, features = [
     "v1_30",
 ] }
 
@@ -192,7 +192,7 @@ wiremock = "=0.6.5"
 proptest = "1.5"
 wat = "1.251"
 # Ensure dev builds that pull k8s-openapi 0.22 have an explicit API version feature.
-k8s-openapi = { version = "0.22", default-features = false, features = [
+k8s-openapi = { version = "0.26", default-features = false, features = [
     "v1_30",
 ] }
 

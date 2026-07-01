@@ -37,6 +37,106 @@ The following one-off scripts were removed as part of repository hygiene (#1002)
 
 You need: **Rust**, **Docker**, **kind**, **kubectl**, **Helm**, **gh**, **pre-commit**, **shellcheck**, and **k6**.
 
+> **macOS users:** run `scripts/setup-mac.sh` for a one-command automated setup of all required tools and the local kind cluster.
+
+### Required Tools
+
+1. **Rust 1.92+** (CI pins 1.92; any 1.92+ version works locally)
+
+   ```bash
+   # All platforms — install via rustup
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+   # Verify
+   rustc --version   # should print 1.92.x or higher
+   cargo --version
+   ```
+
+2. **Docker** (for building container images and running kind)
+
+   | Platform | Install |
+   |----------|---------|
+   | macOS | `brew install --cask docker` or [Docker Desktop](https://docs.docker.com/desktop/install/mac-install/) |
+   | Linux | [docs.docker.com/engine/install](https://docs.docker.com/engine/install/) |
+   | Windows | [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/) (WSL 2 backend recommended) |
+
+   ```bash
+   # Verify
+   docker --version
+   docker ps   # should not error (daemon must be running)
+   ```
+
+3. **kind** (Kubernetes in Docker — for local cluster testing)
+
+   ```bash
+   # macOS
+   brew install kind
+
+   # Linux
+   curl -Lo ./kind "https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64"
+   chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+
+   # Windows (PowerShell — run as Administrator)
+   choco install kind
+   # or: winget install Kubernetes.kind
+
+   # Verify
+   kind version
+   ```
+
+4. **kubectl** (Kubernetes CLI)
+
+   ```bash
+   # macOS
+   brew install kubectl
+
+   # Linux
+   curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+   chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+
+   # Windows (PowerShell — run as Administrator)
+   choco install kubernetes-cli
+   # or: winget install Kubernetes.kubectl
+
+   # Verify
+   kubectl version --client
+   ```
+
+5. **Helm** (Kubernetes package manager)
+
+   ```bash
+   # macOS
+   brew install helm
+
+   # Linux
+   curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+   # Windows (PowerShell — run as Administrator)
+   choco install kubernetes-helm
+   # or: winget install Helm.Helm
+
+   # Verify
+   helm version
+   ```
+
+6. **Python 3.9+** (required for `make link-check` and API doc generation)
+
+   ```bash
+   # macOS
+   brew install python
+
+   # Linux (Debian/Ubuntu)
+   sudo apt-get install -y python3
+
+   # Windows
+   winget install Python.Python.3
+   # or download from https://python.org/downloads/
+
+   # Verify
+   python3 --version
+   ```
+
+### Optional Tools
 The setup scripts install and pin all of these in one step — run the one that matches your OS:
 
 ```bash
@@ -47,6 +147,17 @@ bash scripts/setup-mac.sh
 bash scripts/setup-linux.sh
 ```
 
+- **k6**: Load testing (required only for `make benchmark`)
+  ```bash
+  # macOS
+  brew install k6
+  # Linux/Windows — see https://k6.io/docs/get-started/installation/
+  ```
+
+- **git-cliff**: Changelog generation (required only for `make changelog` / `make release-notes`)
+  ```bash
+  cargo install git-cliff
+  ```
 Both scripts are idempotent (safe to re-run) and print a version summary at the end.
 
 ---

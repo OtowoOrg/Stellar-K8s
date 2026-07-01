@@ -2,14 +2,25 @@
 
 load "test_helper" 2>/dev/null || true
 
+# Runs once before any test. Fails fast with a clear message if the library is
+# missing, so bats reports "setup_file failed" rather than 8 mysterious skips.
+setup_file() {
+  local lib="${BATS_TEST_DIRNAME}/../lib/common.sh"
+  if [[ ! -f "$lib" ]]; then
+    echo "FATAL: library not found: $lib" >&2
+    return 1
+  fi
+}
+
 setup() {
   export REPO="TestOrg/TestRepo"
   export DRY_RUN="false"
   export RETRY_MAX_ATTEMPTS=2
   export RETRY_DELAY_SECONDS=0
 
-  # Source the common helper script
-  source "${BATS_TEST_DIRNAME}/../lib/common.sh"
+  # Suppress the "Active repository: ..." line that common.sh prints on source;
+  # it would leak into bats' output buffer and corrupt test assertions.
+  source "${BATS_TEST_DIRNAME}/../lib/common.sh" > /dev/null
 
   # Mock gh command
   gh() {

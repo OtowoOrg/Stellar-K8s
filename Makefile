@@ -25,7 +25,7 @@
 	install-crd apply-samples crd-gen regenerate completions completions-bash completions-zsh completions-fish \
 	dev-setup pre-commit pre-commit-install run-local run-dev \
 	install-crd apply-samples crd-gen regenerate completions \
-	helm-lint link-check link-check-all changelog \
+	helm-lint link-check link-check-all changelog release-notes \
 	generate-api-docs check-api-docs \
 	third-party-licenses check-third-party-licenses \
 	benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health \
@@ -171,11 +171,22 @@ docker-multiarch: ## Build multi-arch Docker image
 
 # ── Quality & Health ───────────────────────────────────────────────────────────
 
-link-check: ## Check markdown links (internal anchors + relative paths)
-	@echo "→ Running markdown link checker..."
-	@python3 scripts/check-links.py
+link-check: ## Check markdown links repository-wide (docs + examples); install markdown-link-check via npm for full external checks
+	@echo "→ Running local link checker (docs + examples)..."
+	@python3 scripts/check-links.py --dirs docs examples
+	@if command -v markdown-link-check >/dev/null 2>&1; then \
+		echo "→ Running markdown-link-check on all .md files..."; \
+		find . -name "*.md" \
+			-not -path "*/node_modules/*" \
+			-not -path "*/.git/*" \
+			-not -path "*/target/*" \
+			-not -path "*/.kiro/*" \
+			-exec markdown-link-check -c mlc_config.json -q {} +; \
+	else \
+		echo "  (skipping markdown-link-check; install with: npm install -g markdown-link-check)"; \
+	fi
 
-link-check-all: ## Repo-wide link check (markdown + source + configs) via lychee
+link-check-all: ## Repo-wide link check (markdown + HTML) via lychee
 	@echo "→ Running repo-wide link checker (lychee)..."
 	@command -v lychee >/dev/null 2>&1 || { \
 		echo "lychee not found. Install with: cargo install lychee --locked"; \
@@ -185,10 +196,16 @@ link-check-all: ## Repo-wide link check (markdown + source + configs) via lychee
 		'./**/*.md' './**/*.rs' './**/*.toml' \
 		'./**/*.yaml' './**/*.yml' './**/*.sh' './**/*.html'
 
-changelog: ## Generate/update CHANGELOG.md using git-cliff
+changelog: ## Regenerate CHANGELOG.md from full git history (requires git-cliff: cargo install git-cliff)
 	@echo "→ Generating changelog..."
-	@command -v git-cliff >/dev/null 2>&1 || cargo install git-cliff
+	@command -v git-cliff >/dev/null 2>&1 || { echo "git-cliff not found. Install with: cargo install git-cliff"; exit 1; }
 	git-cliff --output CHANGELOG.md
+
+release-notes: ## Generate release notes for the latest tag into release-notes.md (requires git-cliff)
+	@echo "→ Generating release notes for the latest tag..."
+	@command -v git-cliff >/dev/null 2>&1 || { echo "git-cliff not found. Install with: cargo install git-cliff"; exit 1; }
+	git-cliff --latest --strip header --output release-notes.md
+	@echo "✓ Written to release-notes.md"
 
 ci-local: fmt-check lint audit test build link-check ## Run full CI locally
 	@echo ""
@@ -264,6 +281,19 @@ test-shell: ## Run bats unit tests for shared shell helpers
 	@echo "→ Running shell helper bats tests..."
 	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
 	@bats scripts/tests/common.bats
+
+test-validate: ## Run bats regression tests for scripts/validate.sh
+	@echo "→ Running validate script bats tests..."
+	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
+	@bats scripts/tests/validate.bats
+
+test-repo-health: ## Run bats regression tests for scripts/repo-health.sh and lib/errors.sh
+	@echo "→ Running repo-health bats tests..."
+	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
+	@bats scripts/tests/repo_health.bats
+
+test-scripts: test-shell test-preflight test-validate test-repo-health ## Run all shell script bats tests
+	@echo "✓ All shell script tests passed"
 
 # ── Completions ────────────────────────────────────────────────────────────────
 

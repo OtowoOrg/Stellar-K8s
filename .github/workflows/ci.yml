@@ -176,28 +176,52 @@ jobs:
         if: needs.changes.outputs.rust_core == 'true'
         run: make lint-strict
 
-  # ── 3.5. Link Check ──────────────────────────────────────────────────────────
+  # ── 3.5. Link Check (repository-wide: docs + examples) ──────────────────────
   link-check:
-    name: Markdown Link Check
+    name: Repository-Wide Link Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: Install markdown-link-check
         run: npm install -g markdown-link-check
 
-      - name: Run link check
+      - name: Check local links in docs and examples
+        run: python3 scripts/check-links.py --dirs docs examples
+
+      - name: Check all markdown files repository-wide
         run: find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/target/*" -not -path "*/.kiro/*" -exec markdown-link-check -c mlc_config.json -q {} +
 
-  # ── 3.6. Repo-wide link check (lychee) ───────────────────────────────────────
-  # Repo-wide companion to the markdown-link-check job above. Lychee scans
-  # documentation files (Markdown + HTML) for broken links — anchors, redirects,
-  # and rot. Source files (*.rs, *.toml, *.yaml, *.sh) are intentionally NOT
-  # scanned: their URL string literals are K8s service DNS, cloud metadata
-  # endpoints, and format-string fragments that lychee cannot reach from CI and
-  # that aren't meaningful "links" anyway. Excludes and accept-codes live in
-  # `lychee.toml`. Runs on every push/PR and on a weekly schedule (see the
-  # standalone .github/workflows/link-check.yml) to catch link rot.
+  # ── 3.6. Shell script tests ───────────────────────────────────────────────────
+  shell-tests:
+    name: Shell Script Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install bats
+        run: sudo apt-get install -y bats
+
+      - name: Run shell helper tests
+        run: bats scripts/tests/common.bats
+
+      - name: Run preflight tests
+        run: bats scripts/tests/preflight.bats
+
+      - name: Run validate tests
+        run: bats scripts/tests/validate.bats
+
+      - name: Run repo-health tests
+        run: bats scripts/tests/repo_health.bats
+
+  # ── 3.7. Repo-wide link check (lychee) ───────────────────────────────────────
+  # Scans docs (Markdown + HTML) for broken links, anchors, and redirects.
+  # Excludes and accept-codes live in lychee.toml.
   repo-wide-link-check:
     name: Repo-Wide Link Check (lychee)
     runs-on: ubuntu-latest
@@ -377,21 +401,6 @@ jobs:
           fi
           echo "OK: docs/api-reference.md is up to date."
 
-  # ── 7b. Docs link check ───────────────────────────────────────────────────────
-  docs-link-check:
-    name: Docs Link Checker
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Run link checker
-        run: python3 scripts/check-links.py
-
   # ── 8. Examples smoke test ────────────────────────────────────────────────────
   examples-smoke-test:
     name: Examples Smoke Test
@@ -432,6 +441,14 @@ jobs:
       (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped')
     steps:
       - uses: actions/checkout@v7
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/powershell \
+            /usr/share/swift
+          sudo docker image prune --all --force 2>/dev/null || true
+          df -h
 
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
@@ -488,6 +505,14 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@v7
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/powershell \
+            /usr/share/swift
+          sudo docker image prune --all --force 2>/dev/null || true
+          df -h
 
       - name: Setup Rust
         uses: ./.github/actions/setup-rust

@@ -53,6 +53,10 @@
          <lastmod>2026-07-02</lastmod>
     </url>
     <url>
+         <loc>https://m1s0g1.github.io/Stellar-K8s/compat-matrix/</loc>
+         <lastmod>2026-07-02</lastmod>
+    </url>
+    <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/compliance-reporting/</loc>
          <lastmod>2026-07-02</lastmod>
     </url>
@@ -202,6 +206,10 @@
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/operator-sdk-guide/</loc>
+         <lastmod>2026-07-02</lastmod>
+    </url>
+    <url>
+         <loc>https://m1s0g1.github.io/Stellar-K8s/orphan-audit/</loc>
          <lastmod>2026-07-02</lastmod>
     </url>
     <url>

@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Restore lychee cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .lycheecache
           key: cache-lychee-weekly-${{ github.run_id }}
@@ -46,7 +46,7 @@ jobs:
 
       - name: Open / update tracking issue on failure
         if: env.lychee_exit_code != '0'
-        uses: peter-evans/create-issue-from-file@v5
+        uses: peter-evans/create-issue-from-file@v6
         with:
           title: "Link Check Report"
           content-filepath: lychee-report.md

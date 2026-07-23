@@ -51,10 +51,10 @@ tracing event
 
 All operator binaries should initialize logging via `stellar_k8s::logging::init_subscriber`
 (or `init_binary_subscriber` for sidecars). This ensures JSON/pretty output uses
-[`RedactingFields`](../../src/log_scrub.rs) so secrets are replaced with
+[`RedactingFields`](../src/log_scrub.rs) so secrets are replaced with
 `[REDACTED:<rule_name>]` markers before they reach stdout.
 
-[`ScrubLayer`](../../src/log_scrub.rs) remains available as a detection-only layer that
+[`ScrubLayer`](../src/log_scrub.rs) remains available as a detection-only layer that
 emits `[LOG_SCRUB]` warnings; prefer the shared subscriber for production formatting.
 
 ## Reconciler audit

@@ -259,9 +259,9 @@ impl EventReason {
             | Self::MtlsCertRotated
             | Self::SecretRotated => EventCategory::Security,
 
-            Self::DiskExpanded
-            | Self::HpaTargetAdjusted
-            | Self::VpaRecommendationApplied => EventCategory::Scaling,
+            Self::DiskExpanded | Self::HpaTargetAdjusted | Self::VpaRecommendationApplied => {
+                EventCategory::Scaling
+            }
 
             Self::BackupCreated
             | Self::RestoreCompleted
@@ -269,9 +269,9 @@ impl EventReason {
             | Self::DrDrillPassed
             | Self::DrDrillFailed => EventCategory::DisasterRecovery,
 
-            Self::UpgradeInitiated
-            | Self::UpgradeSucceeded
-            | Self::UpgradeRolledBack => EventCategory::Upgrade,
+            Self::UpgradeInitiated | Self::UpgradeSucceeded | Self::UpgradeRolledBack => {
+                EventCategory::Upgrade
+            }
 
             Self::ConfigReloaded | Self::FeatureFlagChanged => EventCategory::Configuration,
 
@@ -387,7 +387,10 @@ mod tests {
             (EventReason::NodeCreated, "NodeCreated"),
             (EventReason::NodeDeleted, "NodeDeleted"),
             (EventReason::PodRestarted, "PodRestarted"),
-            (EventReason::DatabaseClearInitiated, "DatabaseClearInitiated"),
+            (
+                EventReason::DatabaseClearInitiated,
+                "DatabaseClearInitiated",
+            ),
             (EventReason::CvePatchApplied, "CvePatchApplied"),
             (EventReason::DiskExpanded, "DiskExpanded"),
             (EventReason::BackupCreated, "BackupCreated"),
@@ -447,11 +450,7 @@ mod tests {
             EventReason::UpgradeSucceeded,
         ];
         for r in normal_reasons {
-            assert_eq!(
-                r.event_type(),
-                EventType::Normal,
-                "{r:?} should be Normal"
-            );
+            assert_eq!(r.event_type(), EventType::Normal, "{r:?} should be Normal");
         }
     }
 
@@ -495,9 +494,21 @@ mod tests {
 
     #[test]
     fn descriptor_category_delegates_to_reason() {
-        assert_eq!(descriptors::POD_RESTARTED.category(), EventCategory::Remediation);
-        assert_eq!(descriptors::DISK_EXPANDED.category(), EventCategory::Scaling);
-        assert_eq!(descriptors::BACKUP_CREATED.category(), EventCategory::DisasterRecovery);
-        assert_eq!(descriptors::ADMISSION_REJECTED.category(), EventCategory::Audit);
+        assert_eq!(
+            descriptors::POD_RESTARTED.category(),
+            EventCategory::Remediation
+        );
+        assert_eq!(
+            descriptors::DISK_EXPANDED.category(),
+            EventCategory::Scaling
+        );
+        assert_eq!(
+            descriptors::BACKUP_CREATED.category(),
+            EventCategory::DisasterRecovery
+        );
+        assert_eq!(
+            descriptors::ADMISSION_REJECTED.category(),
+            EventCategory::Audit
+        );
     }
 }

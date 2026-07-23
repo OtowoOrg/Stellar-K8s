@@ -50,8 +50,8 @@
 
 use std::collections::BTreeMap;
 
-use stellar_k8s::webhook::{WasmRuntime, WebhookServer};
 use stellar_k8s::webhook::types::{Operation, UserInfo, ValidationInput};
+use stellar_k8s::webhook::{WasmRuntime, WebhookServer};
 
 // ---------------------------------------------------------------------------
 // Helper utilities
@@ -77,10 +77,7 @@ fn make_input(operation: Operation, object: Option<serde_json::Value>) -> Valida
 }
 
 /// Build an `UPDATE` [`ValidationInput`] with the supplied current and old objects.
-fn make_update_input(
-    object: serde_json::Value,
-    old_object: serde_json::Value,
-) -> ValidationInput {
+fn make_update_input(object: serde_json::Value, old_object: serde_json::Value) -> ValidationInput {
     ValidationInput {
         operation: Operation::Update,
         object: Some(object),
@@ -243,10 +240,7 @@ async fn conformance_missing_spec_is_denied() {
     let result = server
         .validate(make_input(Operation::Create, Some(payload)))
         .await;
-    assert!(
-        !result.allowed,
-        "payload missing spec must be denied"
-    );
+    assert!(!result.allowed, "payload missing spec must be denied");
 }
 
 /// A StellarNode JSON with `spec: null` must be denied.
@@ -260,10 +254,7 @@ async fn conformance_null_spec_is_denied() {
     let result = server
         .validate(make_input(Operation::Create, Some(payload)))
         .await;
-    assert!(
-        !result.allowed,
-        "null spec must be denied"
-    );
+    assert!(!result.allowed, "null spec must be denied");
 }
 
 /// A `None` object (no object attached to the review) is treated as admitted
@@ -271,9 +262,7 @@ async fn conformance_null_spec_is_denied() {
 #[tokio::test]
 async fn conformance_none_object_is_admitted_with_no_plugins() {
     let server = WebhookServer::new(WasmRuntime::new().unwrap());
-    let result = server
-        .validate(make_input(Operation::Create, None))
-        .await;
+    let result = server.validate(make_input(Operation::Create, None)).await;
     // With no plugins and no object the server allows through
     assert!(
         result.allowed,
@@ -294,10 +283,7 @@ async fn conformance_non_stellarnode_json_is_denied() {
     let result = server
         .validate(make_input(Operation::Create, Some(payload)))
         .await;
-    assert!(
-        !result.allowed,
-        "non-StellarNode JSON must be denied"
-    );
+    assert!(!result.allowed, "non-StellarNode JSON must be denied");
 }
 
 // ---------------------------------------------------------------------------
@@ -371,7 +357,10 @@ async fn conformance_validator_missing_config_is_denied() {
     let result = server
         .validate(make_input(Operation::Create, Some(payload)))
         .await;
-    assert!(!result.allowed, "Validator without validatorConfig must be denied");
+    assert!(
+        !result.allowed,
+        "Validator without validatorConfig must be denied"
+    );
     let msg = result.message.unwrap_or_default();
     assert!(
         msg.contains("validatorConfig") || msg.contains("required"),
@@ -499,7 +488,10 @@ async fn conformance_horizon_missing_config_is_denied() {
     let result = server
         .validate(make_input(Operation::Create, Some(payload)))
         .await;
-    assert!(!result.allowed, "Horizon without horizonConfig must be denied");
+    assert!(
+        !result.allowed,
+        "Horizon without horizonConfig must be denied"
+    );
     let msg = result.message.unwrap_or_default();
     assert!(
         msg.contains("horizonConfig") || msg.contains("required"),
@@ -566,7 +558,10 @@ async fn conformance_soroban_missing_config_is_denied() {
     let result = server
         .validate(make_input(Operation::Create, Some(payload)))
         .await;
-    assert!(!result.allowed, "SorobanRpc without sorobanConfig must be denied");
+    assert!(
+        !result.allowed,
+        "SorobanRpc without sorobanConfig must be denied"
+    );
     let msg = result.message.unwrap_or_default();
     assert!(
         msg.contains("sorobanConfig") || msg.contains("required"),
@@ -1240,7 +1235,8 @@ async fn conformance_rejection_messages_are_non_empty() {
         );
         // Ensure the message contains only valid UTF-8 printable text
         assert!(
-            msg.chars().all(|c| !c.is_control() || c == '\n' || c == '\t'),
+            msg.chars()
+                .all(|c| !c.is_control() || c == '\n' || c == '\t'),
             "[{label}] message contains unexpected control characters: {msg:?}"
         );
     }
@@ -1291,8 +1287,9 @@ async fn conformance_mutable_version_tag_admitted_with_warning() {
 async fn conformance_digest_pinned_version_admitted_without_warning() {
     let server = WebhookServer::new(WasmRuntime::new().unwrap());
     let mut payload = valid_validator_json();
-    payload["spec"]["version"] =
-        serde_json::json!("v21.0.0@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1");
+    payload["spec"]["version"] = serde_json::json!(
+        "v21.0.0@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1"
+    );
     let result = server
         .validate(make_input(Operation::Create, Some(payload)))
         .await;

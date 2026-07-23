@@ -99,7 +99,7 @@ mod stale_artifact_cleanup_regression {
         let mut p = policy(30);
         p.enabled = false;
         p.schedule = Some("* * * * * *".to_string()); // every second
-        // disabled policies skip validation, so construct directly
+                                                      // disabled policies skip validation, so construct directly
         let worker = PruningWorker::new(PruningPolicy {
             enabled: false,
             ..PruningPolicy::default()

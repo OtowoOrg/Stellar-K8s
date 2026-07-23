@@ -221,11 +221,7 @@ impl<'writer> RedactingFieldVisitor<'writer> {
 }
 
 impl<'writer> FormatFields<'writer> for RedactingFields {
-    fn format_fields<R>(
-        &self,
-        writer: Writer<'writer>,
-        fields: R,
-    ) -> fmt::Result
+    fn format_fields<R>(&self, writer: Writer<'writer>, fields: R) -> fmt::Result
     where
         R: RecordFields,
     {

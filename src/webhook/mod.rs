@@ -62,7 +62,9 @@ pub mod runtime;
 pub mod server;
 pub mod types;
 
-pub use config_guardrails::{blocking_violations, check_config_guardrails, GuardrailViolation, Severity};
+pub use config_guardrails::{
+    blocking_violations, check_config_guardrails, GuardrailViolation, Severity,
+};
 pub use mutation::apply_mutations;
 pub use runtime::{WasmRuntime, WasmRuntimeBuilder};
 pub use server::{LoadPluginRequest, PluginInfo, PluginListResponse, TlsConfig, WebhookServer};

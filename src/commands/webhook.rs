@@ -18,32 +18,6 @@ pub async fn run_webhook(args: WebhookArgs) -> Result<(), Error> {
         format: log_format,
         ..Default::default()
     });
-    let scrub_layer = ScrubLayer::new();
-
-    match args.log_format {
-        LogFormat::Json => {
-            let fmt_layer = fmt::layer()
-                .json()
-                .flatten_event(true)
-                .with_current_span(true)
-                .with_span_list(true)
-                .with_target(true);
-            tracing_subscriber::registry()
-                .with(env_filter)
-                .with(scrub_layer)
-                .with(fmt_layer)
-                .init();
-        }
-        LogFormat::Pretty => {
-            let fmt_layer = fmt::layer().pretty().with_target(true);
-            tracing_subscriber::registry()
-                .with(env_filter)
-                .with(scrub_layer)
-                .with(fmt_layer)
-                .init();
-        }
-    }
-
     let namespace = std::env::var("OPERATOR_NAMESPACE").unwrap_or_else(|_| "default".to_string());
 
     let root_span =

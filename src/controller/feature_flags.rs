@@ -452,7 +452,10 @@ mod tests {
             ("enable_soroban_metrics", "no"),
         ]);
         let warnings = validate_config_map_data(&d);
-        assert!(warnings.is_empty(), "expected no warnings, got: {warnings:?}");
+        assert!(
+            warnings.is_empty(),
+            "expected no warnings, got: {warnings:?}"
+        );
     }
 
     #[test]

@@ -175,7 +175,11 @@ impl KeyState {
 
         // Rate-limit-heavy windows get a slightly higher base delay to space
         // out retries more gently.
-        let base_delay_secs = if rate_limit_heavy { 30 } else { DEFAULT_BASE_DELAY_SECS };
+        let base_delay_secs = if rate_limit_heavy {
+            30
+        } else {
+            DEFAULT_BASE_DELAY_SECS
+        };
 
         RetryPolicy {
             base_delay: Duration::from_secs(base_delay_secs),

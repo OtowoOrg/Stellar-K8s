@@ -61,9 +61,9 @@ fn env_filter_for(config: &SubscriberConfig) -> EnvFilter {
 
 fn analytics_engine_for(config: &SubscriberConfig) -> Option<Arc<AnalyticsEngine>> {
     if config.analytics {
-        Some(Arc::new(AnalyticsEngine::new(std::time::Duration::from_secs(
-            3600,
-        ))))
+        Some(Arc::new(AnalyticsEngine::new(
+            std::time::Duration::from_secs(3600),
+        )))
     } else {
         None
     }
@@ -85,7 +85,10 @@ fn init_simple(config: &SubscriberConfig) {
                 .init();
         }
         LogOutputFormat::Pretty => {
-            let fmt_layer = fmt::layer().pretty().with_target(true).fmt_fields(redacting);
+            let fmt_layer = fmt::layer()
+                .pretty()
+                .with_target(true)
+                .fmt_fields(redacting);
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(fmt_layer)
@@ -123,7 +126,10 @@ fn init_operator_stack(
             }
         }
         LogOutputFormat::Pretty => {
-            let fmt_layer = fmt::layer().pretty().with_target(true).fmt_fields(redacting);
+            let fmt_layer = fmt::layer()
+                .pretty()
+                .with_target(true)
+                .fmt_fields(redacting);
             let registry = tracing_subscriber::registry()
                 .with(filter_layer)
                 .with(analytics_layer)
@@ -144,9 +150,9 @@ pub fn init_subscriber(config: SubscriberConfig) -> SubscriberInit {
     let mut reload_handle = None;
 
     if config.reload_handle {
-        let engine = analytics_engine
-            .clone()
-            .unwrap_or_else(|| Arc::new(AnalyticsEngine::new(std::time::Duration::from_secs(3600))));
+        let engine = analytics_engine.clone().unwrap_or_else(|| {
+            Arc::new(AnalyticsEngine::new(std::time::Duration::from_secs(3600)))
+        });
         init_operator_stack(&config, &engine, &mut reload_handle);
         return SubscriberInit {
             guard: SubscriberGuard { reload_handle },
@@ -171,7 +177,10 @@ pub fn init_subscriber(config: SubscriberConfig) -> SubscriberInit {
                     .init();
             }
             LogOutputFormat::Pretty => {
-                let fmt_layer = fmt::layer().pretty().with_target(true).fmt_fields(redacting);
+                let fmt_layer = fmt::layer()
+                    .pretty()
+                    .with_target(true)
+                    .fmt_fields(redacting);
                 tracing_subscriber::registry()
                     .with(env_filter)
                     .with(analytics_layer)
@@ -180,14 +189,18 @@ pub fn init_subscriber(config: SubscriberConfig) -> SubscriberInit {
             }
         }
         return SubscriberInit {
-            guard: SubscriberGuard { reload_handle: None },
+            guard: SubscriberGuard {
+                reload_handle: None,
+            },
             analytics_engine: Some(engine),
         };
     }
 
     init_simple(&config);
     SubscriberInit {
-        guard: SubscriberGuard { reload_handle: None },
+        guard: SubscriberGuard {
+            reload_handle: None,
+        },
         analytics_engine: None,
     }
 }

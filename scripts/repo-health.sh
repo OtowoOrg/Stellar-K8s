@@ -88,17 +88,6 @@ if [[ "${WITH_HELM}" -eq 1 ]]; then
 fi
 
 TOTAL_STEPS="${#STEPS[@]}"
-
-print_header() {
-  echo ""
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "  Stellar-K8s repository health check (${MODE})"
-  echo "  repo: ${REPO_ROOT}"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-K8S_OPENAPI_ENABLED_VERSION="${K8S_OPENAPI_ENABLED_VERSION:-1.30}"
-export K8S_OPENAPI_ENABLED_VERSION
-
-readonly TOTAL_STEPS=5
 STEP=0
 
 print_header() {

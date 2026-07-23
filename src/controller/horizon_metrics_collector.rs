@@ -327,8 +327,7 @@ pub fn parse_prometheus_metrics(text: &str) -> StellarMetricsSnapshot {
         };
 
         // Extract label block (between '{' and '}') and value after '}'.
-        let (labels_str, value_str) = if rest.starts_with('{') {
-            let after_open = &rest[1..];
+        let (labels_str, value_str) = if let Some(after_open) = rest.strip_prefix('{') {
             if let Some(close) = after_open.find('}') {
                 let lbls = &after_open[..close];
                 let val = after_open[close + 1..].trim();

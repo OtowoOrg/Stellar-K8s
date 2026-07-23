@@ -8,16 +8,13 @@ use kube::{
 use serde_json::json;
 use std::env;
 use std::time::Duration;
+use stellar_k8s::logging::{init_binary_subscriber, LogOutputFormat};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn, Level};
-use stellar_k8s::logging::{init_binary_subscriber, LogOutputFormat};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_binary_subscriber(
-        Level::INFO,
-        LogOutputFormat::Json,
-    );
+    init_binary_subscriber(Level::INFO, LogOutputFormat::Json);
 
     info!("Starting Stellar-K8s Crash Loop Analysis sidecar");
 

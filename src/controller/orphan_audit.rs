@@ -32,7 +32,7 @@ pub const MANAGED_BY_LABEL: &str = "app.kubernetes.io/managed-by";
 pub const MANAGED_BY_VALUE: &str = "stellar-operator";
 
 /// A single orphaned Kubernetes resource discovered during an audit.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct OrphanedResource {
     /// Kubernetes resource kind (e.g. "ConfigMap", "Service", "PersistentVolumeClaim").
     pub kind: String,
@@ -46,19 +46,6 @@ pub struct OrphanedResource {
     pub age_seconds: i64,
     /// Human-readable reason why this resource is considered orphaned.
     pub reason: String,
-}
-
-impl Default for OrphanedResource {
-    fn default() -> Self {
-        Self {
-            kind: String::new(),
-            name: String::new(),
-            namespace: String::new(),
-            labels: BTreeMap::new(),
-            age_seconds: 0,
-            reason: String::new(),
-        }
-    }
 }
 
 /// Summary statistics for an audit report.
@@ -160,15 +147,9 @@ impl OrphanAuditor {
         );
 
         // Audit each resource kind.
-        let cm_orphans = self
-            .audit_config_maps(namespace, &existing_nodes)
-            .await?;
-        let svc_orphans = self
-            .audit_services(namespace, &existing_nodes)
-            .await?;
-        let pvc_orphans = self
-            .audit_pvcs(namespace, &existing_nodes)
-            .await?;
+        let cm_orphans = self.audit_config_maps(namespace, &existing_nodes).await?;
+        let svc_orphans = self.audit_services(namespace, &existing_nodes).await?;
+        let pvc_orphans = self.audit_pvcs(namespace, &existing_nodes).await?;
 
         report.orphaned_resources.extend(cm_orphans);
         report.orphaned_resources.extend(svc_orphans);
@@ -221,8 +202,7 @@ impl OrphanAuditor {
 
     /// Build `ListParams` that filter by the managed-by label.
     fn managed_by_params() -> ListParams {
-        ListParams::default()
-            .labels(&format!("{MANAGED_BY_LABEL}={MANAGED_BY_VALUE}"))
+        ListParams::default().labels(&format!("{MANAGED_BY_LABEL}={MANAGED_BY_VALUE}"))
     }
 
     /// Compute age in seconds for a resource given its creation timestamp.
@@ -272,15 +252,8 @@ impl OrphanAuditor {
 
         let mut orphans = Vec::new();
         for cm in &cms.items {
-            let labels: BTreeMap<String, String> = cm
-                .metadata
-                .labels
-                .clone()
-                .unwrap_or_default();
-            let owner = Self::owner_node_name(
-                cm.metadata.owner_references.as_ref(),
-                &labels,
-            );
+            let labels: BTreeMap<String, String> = cm.metadata.labels.clone().unwrap_or_default();
+            let owner = Self::owner_node_name(cm.metadata.owner_references.as_ref(), &labels);
             let is_orphaned = match &owner {
                 Some(node_name) => !existing_nodes.contains(node_name.as_str()),
                 None => true, // no owner identifiable → treat as orphaned
@@ -317,15 +290,8 @@ impl OrphanAuditor {
 
         let mut orphans = Vec::new();
         for svc in &services.items {
-            let labels: BTreeMap<String, String> = svc
-                .metadata
-                .labels
-                .clone()
-                .unwrap_or_default();
-            let owner = Self::owner_node_name(
-                svc.metadata.owner_references.as_ref(),
-                &labels,
-            );
+            let labels: BTreeMap<String, String> = svc.metadata.labels.clone().unwrap_or_default();
+            let owner = Self::owner_node_name(svc.metadata.owner_references.as_ref(), &labels);
             let is_orphaned = match &owner {
                 Some(node_name) => !existing_nodes.contains(node_name.as_str()),
                 None => true,
@@ -354,8 +320,7 @@ impl OrphanAuditor {
         namespace: &str,
         existing_nodes: &std::collections::HashSet<String>,
     ) -> Result<Vec<OrphanedResource>> {
-        let api: Api<PersistentVolumeClaim> =
-            Api::namespaced(self.client.clone(), namespace);
+        let api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), namespace);
         let pvcs = api
             .list(&Self::managed_by_params())
             .await
@@ -363,15 +328,8 @@ impl OrphanAuditor {
 
         let mut orphans = Vec::new();
         for pvc in &pvcs.items {
-            let labels: BTreeMap<String, String> = pvc
-                .metadata
-                .labels
-                .clone()
-                .unwrap_or_default();
-            let owner = Self::owner_node_name(
-                pvc.metadata.owner_references.as_ref(),
-                &labels,
-            );
+            let labels: BTreeMap<String, String> = pvc.metadata.labels.clone().unwrap_or_default();
+            let owner = Self::owner_node_name(pvc.metadata.owner_references.as_ref(), &labels);
             let is_orphaned = match &owner {
                 Some(node_name) => !existing_nodes.contains(node_name.as_str()),
                 None => true,
@@ -467,17 +425,16 @@ mod tests {
 
     fn sample_report() -> OrphanAuditReport {
         let mut report = OrphanAuditReport::new("stellar", "test-cluster");
-        report.orphaned_resources.push(sample_orphaned_resource(
-            "ConfigMap",
-            "my-validator-config",
-        ));
-        report.orphaned_resources.push(sample_orphaned_resource(
-            "Service",
-            "my-validator-svc",
-        ));
         report
             .orphaned_resources
-            .push(sample_orphaned_resource("PersistentVolumeClaim", "data-pvc"));
+            .push(sample_orphaned_resource("ConfigMap", "my-validator-config"));
+        report
+            .orphaned_resources
+            .push(sample_orphaned_resource("Service", "my-validator-svc"));
+        report.orphaned_resources.push(sample_orphaned_resource(
+            "PersistentVolumeClaim",
+            "data-pvc",
+        ));
         report.recompute_summary();
         report
     }
@@ -574,7 +531,10 @@ mod tests {
 
         assert!(table.contains("KIND"), "table must contain KIND column");
         assert!(table.contains("NAME"), "table must contain NAME column");
-        assert!(table.contains("NAMESPACE"), "table must contain NAMESPACE column");
+        assert!(
+            table.contains("NAMESPACE"),
+            "table must contain NAMESPACE column"
+        );
         assert!(table.contains("AGE"), "table must contain AGE column");
         assert!(table.contains("REASON"), "table must contain REASON column");
     }

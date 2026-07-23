@@ -52,7 +52,7 @@ spec:
   # Cross-cluster using Direct IP
   crossCluster:
     enabled: true
-    mode: DirectIP
+    mode: directIP
 
     # Peer clusters with static IPs
     peerClusters:

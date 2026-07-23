@@ -18,7 +18,7 @@
 # =============================================================================
 
 .PHONY: help \
-	fmt fmt-check lint lint-strict shellcheck audit security-scan security-all \
+	fmt fmt-check lint lint-strict shellcheck check-unsafe-shell audit security-scan security-all \
 	build test ci-local quick watch \
 	docker-build docker-build-ci \
 	docker-build docker-build-ci docker-multiarch \
@@ -26,8 +26,8 @@
 	install-crd apply-samples crd-gen regenerate completions completions-bash completions-zsh completions-fish \
 	dev-setup pre-commit pre-commit-install run-local run-dev \
 	install-crd apply-samples crd-gen regenerate completions \
-	helm-lint link-check link-check-all changelog \
-	generate-api-docs check-api-docs \
+	helm-lint crd-drift-check link-check link-check-all changelog \
+	generate-api-docs check-api-docs schema-validate \
 	third-party-licenses check-third-party-licenses \
 	benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health \
 	benchmark-webhook-compare benchmark-webhook-save benchmark-all \
@@ -132,17 +132,22 @@ audit: ## Security audit (cargo audit)
 	@command -v cargo-audit >/dev/null 2>&1 || cargo install --locked cargo-audit
 	@$(CARGO) audit --deny unsound || echo "⚠️  Security issues found - review before production"
 
-security-scan: ## Run security scan (audit + shellcheck)
+security-scan: ## Run security scan (audit + shellcheck + unsafe shell patterns)
 	$(MAKE) audit
 	$(MAKE) shellcheck
+	$(MAKE) check-unsafe-shell
 
-security-all: ## Run all security checks (audit + shellcheck)
+security-all: ## Run all security checks (audit + shellcheck + unsafe shell patterns)
 	$(MAKE) audit
 	$(MAKE) shellcheck
+	$(MAKE) check-unsafe-shell
 
 shellcheck: ## Run shellcheck on all shell scripts
 	@echo "→ Running shellcheck..."
 	@find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error || true
+
+check-unsafe-shell: ## Gate on unsafe shell patterns (eval, curl|sh, chmod 777, ...)
+	@bash scripts/check-unsafe-shell.sh
 
 # ── Test & Build ──────────────────────────────────────────────────────────────
 
@@ -248,6 +253,9 @@ check-api-docs: ## Check API docs are up to date (used in CI)
 		--output docs/api-reference.md \
 		--check
 
+schema-validate: ## Validate examples/ and config/samples/ against config/crd/ schemas
+	@$(CARGO) run --quiet --bin schema-validate
+
 # ── Kubernetes ────────────────────────────────────────────────────────────────
 
 install-crd: ## Install CRDs
@@ -276,6 +284,7 @@ test-shell: ## Run bats unit tests for shared shell helpers
 	@echo "→ Running shell helper bats tests..."
 	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
 	@bats scripts/tests/common.bats
+	@bats scripts/tests/check-unsafe-shell.bats
 
 # ── Completions ────────────────────────────────────────────────────────────────
 
@@ -307,6 +316,9 @@ helm-lint: ## Helm lint check
 	@echo "→ Validating Helm template rendering..."
 	helm template stellar-operator charts/stellar-operator > /dev/null
 	@echo "✓ Helm charts passed linting and validation"
+
+crd-drift-check: ## Detect drift between config/crd/ and the Helm chart's rendered CRDs
+	@$(CARGO) run --quiet --bin crd-drift-check
 
 # ── Development Setup ─────────────────────────────────────────────────────────
 

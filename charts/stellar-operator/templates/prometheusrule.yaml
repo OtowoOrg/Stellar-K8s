@@ -40,16 +40,16 @@ spec:
             severity: warning
             component: stellar-node
           annotations:
-            summary: "StellarNode {{ $labels.namespace }}/{{ $labels.name }} is {{ $value | humanize }} ledgers behind the network"
+            summary: "StellarNode {{`{{ $labels.namespace }}`}}/{{`{{ $labels.name }}`}} is {{`{{ $value | humanize }}`}} ledgers behind the network"
             description: |
-              Node {{ $labels.namespace }}/{{ $labels.name }} on {{ $labels.network }} network
-              is {{ $value | humanize }} ledgers behind the highest observed ledger sequence.
+              Node {{`{{ $labels.namespace }}`}}/{{`{{ $labels.name }}`}} on {{`{{ $labels.network }}`}} network
+              is {{`{{ $value | humanize }}`}} ledgers behind the highest observed ledger sequence.
               This suggests slow synchronization or peer issues.
 
               Investigation steps:
-              1. Check node logs: kubectl logs -n {{ $labels.namespace }} -l app.kubernetes.io/name=stellar-node
-              2. Verify peer connectivity: kubectl exec -n {{ $labels.namespace }} <pod> -- stellar-core http-command 'peers'
-              3. Check network connectivity: kubectl exec -n {{ $labels.namespace }} <pod> -- ping <peer-address>
+              1. Check node logs: kubectl logs -n {{`{{ $labels.namespace }}`}} -l app.kubernetes.io/name=stellar-node
+              2. Verify peer connectivity: kubectl exec -n {{`{{ $labels.namespace }}`}} <pod> -- stellar-core http-command 'peers'
+              3. Check network connectivity: kubectl exec -n {{`{{ $labels.namespace }}`}} <pod> -- ping <peer-address>
         {{- end }}
 
         # Alert: Node memory usage is critical
@@ -63,14 +63,14 @@ spec:
             severity: critical
             component: stellar-node
           annotations:
-            summary: "StellarNode {{ $labels.namespace }}/{{ $labels.pod }} memory pressure critical ({{ $value | humanizePercentage }})"
+            summary: "StellarNode {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}} memory pressure critical ({{`{{ $value | humanizePercentage }}`}})"
             description: |
-              StellarNode pod {{ $labels.namespace }}/{{ $labels.pod }} is using {{ $value | humanizePercentage }}
+              StellarNode pod {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}} is using {{`{{ $value | humanizePercentage }}`}}
               of its memory limit. The node may be evicted or crash soon.
 
               Investigation steps:
-              1. Check pod memory usage: kubectl top pod {{ $labels.pod }} -n {{ $labels.namespace }}
-              2. Review pod events: kubectl describe pod {{ $labels.pod }} -n {{ $labels.namespace }}
+              1. Check pod memory usage: kubectl top pod {{`{{ $labels.pod }}`}} -n {{`{{ $labels.namespace }}`}}
+              2. Review pod events: kubectl describe pod {{`{{ $labels.pod }}`}} -n {{`{{ $labels.namespace }}`}}
               3. Consider increasing memory limits in the StellarNode spec
         {{- end }}
 
@@ -84,10 +84,10 @@ spec:
             severity: warning
             component: operator
           annotations:
-            summary: "StellarOperator reconciliation errors detected ({{ $value | humanize }} errors/sec)"
+            summary: "StellarOperator reconciliation errors detected ({{`{{ $value | humanize }}`}} errors/sec)"
             description: |
               The Stellar-K8s operator is experiencing reconciliation errors.
-              Error rate: {{ $value | humanize }} errors/second over the last 5 minutes.
+              Error rate: {{`{{ $value | humanize }}`}} errors/second over the last 5 minutes.
 
               Investigation steps:
               1. Check operator logs: kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=stellar-operator
@@ -107,17 +107,17 @@ spec:
             severity: warning
             component: history-archive
           annotations:
-            summary: "History archive unresponsive for {{ $labels.namespace }}/{{ $labels.name }}"
+            summary: "History archive unresponsive for {{`{{ $labels.namespace }}`}}/{{`{{ $labels.name }}`}}"
             description: |
-              History archive for {{ $labels.namespace }}/{{ $labels.name }} is returning errors
+              History archive for {{`{{ $labels.namespace }}`}}/{{`{{ $labels.name }}`}} is returning errors
               (HTTP 404/500) or timing out. This may indicate:
               - Archive URL is misconfigured or moved
               - Archive service is down or overloaded
               - Network connectivity issues
 
               Investigation steps:
-              1. Test archive URL: curl -I {{ $labels.archive_url }}
-              2. Check node history archive config: kubectl get stellarnode {{ $labels.name }} -n {{ $labels.namespace }} -o yaml
+              1. Test archive URL: curl -I {{`{{ $labels.archive_url }}`}}
+              2. Check node history archive config: kubectl get stellarnode {{`{{ $labels.name }}`}} -n {{`{{ $labels.namespace }}`}} -o yaml
               3. Verify firewall/security group allows outbound HTTPS
               4. Review history archive service status
         {{- end }}
@@ -157,9 +157,9 @@ spec:
             severity: warning
             component: operator
           annotations:
-            summary: "StellarOperator reconciliation latency is high (p99: {{ $value | humanize }}s)"
+            summary: "StellarOperator reconciliation latency is high (p99: {{`{{ $value | humanize }}`}}s)"
             description: |
-              The 99th percentile reconciliation time is {{ $value | humanize }} seconds.
+              The 99th percentile reconciliation time is {{`{{ $value | humanize }}`}} seconds.
               This indicates the operator is under load or experiencing performance issues.
 
               Potential causes:

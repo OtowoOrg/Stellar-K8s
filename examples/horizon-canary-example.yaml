@@ -22,6 +22,7 @@ spec:
       checkIntervalSeconds: 300
 
   horizonConfig:
+    databaseSecretRef: "horizon-db-secret"
     stellarCoreUrl: "http://core-mainnet.default.svc.cluster.local:11626"
     enableIngest: true
     historyArchiveUrls:

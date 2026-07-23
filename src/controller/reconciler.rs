@@ -18,11 +18,19 @@
 //! 5. Handle node remediation if needed
 //! 6. Update StellarNode status with current state
 //! 7. Schedule requeue for periodic health checks
+//!
+//! `apply_stellar_node` and `cleanup_stellar_node` additionally track their
+//! progress through this workflow as an explicit [`super::phase::Phase`]
+//! state machine (see [`super::phase`]) — a typed, testable name for the
+//! numbered-comment sections below, layered on top of the existing logic
+//! without changing it.
 
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use std::sync::Arc;
 use std::time::Duration;
+
+use super::phase::{Phase, PhaseTracker};
 
 use k8s_openapi::api::policy::v1::PodDisruptionBudget;
 
@@ -904,6 +912,8 @@ pub(crate) fn apply_stellar_node(
 
         info!("Applying StellarNode: {}/{}", namespace, name);
 
+        let mut reconcile_phase = PhaseTracker::new(format!("{namespace}/{name}"));
+
         // Resolve effective resource requirements:
         // Precedence: spec.resources (non-empty) > Helm defaults > hardcoded fallback.
         let effective_resources = {
@@ -990,6 +1000,7 @@ pub(crate) fn apply_stellar_node(
             );
         }
 
+        reconcile_phase.transition(Phase::Provisioning);
         // 1. Core infrastructure (PVC and ConfigMap) always managed by operator
         apply_or_emit!(
             &ctx,
@@ -1324,6 +1335,7 @@ pub(crate) fn apply_stellar_node(
         })
         .await?;
 
+        reconcile_phase.transition(Phase::Configuring);
         // 1. Create/update the PersistentVolumeClaim
         apply_or_emit!(&ctx, &node, ActionType::Create, "PVC", clones: [propagated_labels], move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
             resources::ensure_pvc(&client, &node, &propagated_labels, ctx.dry_run).await?;
@@ -1943,6 +1955,7 @@ pub(crate) fn apply_stellar_node(
         )
         .await?;
 
+        reconcile_phase.transition(Phase::Observing);
         // 6. Autoscaling and Monitoring
         apply_or_emit!(
             &ctx,
@@ -2169,6 +2182,7 @@ pub(crate) fn apply_stellar_node(
             }
         }
 
+        reconcile_phase.transition(Phase::Reconciling);
         // 8. Disaster Recovery reconciliation
         let prev_dr_failover = node
             .status
@@ -2376,6 +2390,7 @@ pub(crate) fn apply_stellar_node(
             }
         }
 
+        reconcile_phase.transition(Phase::Finalizing);
         // 10. Final Status Update
         let (phase, message) = if node.spec.suspended {
             ("Suspended", "Node is suspended".to_string())
@@ -2778,6 +2793,8 @@ pub(crate) fn apply_stellar_node(
         // ── Plugin SDK: post_reconcile hooks ──────────────────────────────────
         ctx.plugin_registry.run_post_reconcile(&plugin_ctx).await;
 
+        reconcile_phase.transition(Phase::Completed);
+
         Ok(Action::requeue(Duration::from_secs(if phase == "Ready" {
             requeue_interval
         } else {
@@ -2799,6 +2816,9 @@ pub(crate) fn cleanup_stellar_node(
         let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
 
         info!("Cleaning up StellarNode: {}/{}", namespace, name);
+
+        let mut reconcile_phase = PhaseTracker::new(format!("{namespace}/{name}"));
+        reconcile_phase.transition(Phase::Deleting);
 
         let recorder = recorder_for(&client, &ctx.event_reporter, &node);
         if let Err(e) = publish_object_event(
@@ -2962,6 +2982,8 @@ pub(crate) fn cleanup_stellar_node(
         }
 
         info!("Cleanup complete for StellarNode: {}/{}", namespace, name);
+
+        reconcile_phase.transition(Phase::Completed);
 
         // Return await_change to signal finalizer completion
         Ok(Action::await_change())

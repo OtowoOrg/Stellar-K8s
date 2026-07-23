@@ -1699,11 +1699,8 @@ spec:
                     type: string
                 type: object
             required:
-            - maxUnavailable
-            - minAvailable
             - network
             - nodeType
-            - topologySpreadConstraints
             - version
             type: object
           status:

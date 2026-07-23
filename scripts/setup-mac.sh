@@ -28,6 +28,7 @@ echo    "    Rust ${RUST_TOOLCHAIN} | kind ${KIND_VERSION} | kubectl ${KUBECTL_V
 # ── Homebrew ──────────────────────────────────────────────────────────────────
 step "Homebrew"
 if ! command -v brew &>/dev/null; then
+    # unsafe-shell-allow: official Homebrew installer, documented upstream install method
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 else
     ok "Homebrew $(brew --version | head -1)"
@@ -36,6 +37,7 @@ fi
 # ── Rust / rustup ─────────────────────────────────────────────────────────────
 step "Rust toolchain (${RUST_TOOLCHAIN})"
 if ! command -v rustup &>/dev/null; then
+    # unsafe-shell-allow: official rustup installer, HTTPS with TLS 1.2 pinned
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
         -y --default-toolchain "${RUST_TOOLCHAIN}" --profile minimal
     # shellcheck source=/dev/null

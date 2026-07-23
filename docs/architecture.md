@@ -87,6 +87,39 @@ Each `StellarNode` becomes one or more Kubernetes workloads representing Stellar
 - optional operator-managed sidecars for features such as Vault Agent injection, SCP analytics, or specialized monitoring workloads
 - an injected service mesh proxy when Istio/Linkerd integration is enabled
 
+### 4a. Reconcile phase state machine
+
+Each pass through the reconciliation loop for a `StellarNode` moves through an
+explicit, typed sequence of phases (`src/controller/phase.rs`), replacing what
+used to be an implicit sequence of numbered comments inside the reconciler:
+
+```mermaid
+stateDiagram-v2
+  [*] --> Initializing
+  Initializing --> Provisioning: create/update
+  Initializing --> Deleting: deletionTimestamp set
+  Provisioning --> Configuring
+  Configuring --> Observing
+  Observing --> Reconciling
+  Reconciling --> Finalizing
+  Finalizing --> Completed
+  Deleting --> Completed
+  Completed --> [*]
+```
+
+- **Initializing** — spec/security validation, network-safety checks, plugin `pre_reconcile` hooks.
+- **Provisioning** — core infrastructure: PVC, ConfigMap, managed database.
+- **Configuring** — suspension handling, mTLS certs, Deployment/StatefulSet creation, the canary state machine.
+- **Observing** — health checks, sync-state scaling, quorum analysis, archive pruning.
+- **Reconciling** — disaster recovery, cross-cloud failover, auto-remediation.
+- **Finalizing** — status/condition patch and metrics emission.
+- **Deleting** — the finalizer cleanup path taken when the resource has a `deletionTimestamp`.
+
+Recording a phase transition is purely observational: an out-of-order
+transition is logged as a warning, never returned as an error, so a bug in
+phase bookkeeping can never affect actual reconciliation. See
+[`docs/reconciler-phases.md`](reconciler-phases.md) for details.
+
 ### 5. Monitoring stack
 
 The monitoring stack collects telemetry from the operator, webhook, and managed workloads:

@@ -164,6 +164,12 @@ jobs:
           [[ -n "${SHELLCHECK_EXCLUDES}" ]] && shellcheck_cmd+=(-e "${SHELLCHECK_EXCLUDES}")
           "${shellcheck_cmd[@]}" "${shell_files[@]}"
 
+      - name: Static analysis gate for unsafe shell patterns
+        run: make check-unsafe-shell
+
+      - name: Repository-wide YAML schema validation
+        run: make schema-validate
+
       - name: Check formatting
         if: needs.changes.outputs.rust_core == 'true'
         run: make fmt-check
@@ -298,6 +304,11 @@ jobs:
         with:
           version: "3.14.0"
 
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-helm-lint"
+
       - name: Lint chart (default values)
         run: make helm-lint
 
@@ -350,6 +361,9 @@ jobs:
         run: |
           test -f charts/stellar-operator/Chart.yaml || exit 1
           echo "Chart.yaml exists and is valid"
+
+      - name: CRD drift check (config/crd/ vs Helm chart)
+        run: make crd-drift-check
 
   # ── 6. Helm unit tests ────────────────────────────────────────────────────────
   helm-test:

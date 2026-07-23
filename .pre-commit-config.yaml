@@ -33,6 +33,41 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+      - id: check-unsafe-shell
+        name: check unsafe shell patterns
+        entry: bash scripts/check-unsafe-shell.sh
+        language: system
+        types: [shell]
+        pass_filenames: false
+
+      - id: schema-validate
+        name: schema validate examples/config-samples
+        entry: cargo run --quiet --bin schema-validate --
+        language: system
+        files: >-
+          (?x)^(
+            examples/.*\.ya?ml|
+            config/samples/.*\.ya?ml|
+            config/crd/.*\.ya?ml|
+            \.schema-validate-ignore|
+            src/bin/schema_validate\.rs
+          )$
+        pass_filenames: false
+
+      - id: crd-drift-check
+        name: crd drift check (config/crd vs helm chart)
+        entry: cargo run --quiet --bin crd-drift-check --
+        language: system
+        files: >-
+          (?x)^(
+            config/crd/.*\.ya?ml|
+            charts/stellar-operator/templates/.*crd.*\.ya?ml|
+            \.crd-drift-baseline\.toml|
+            src/bin/crd_drift_check\.rs
+          )$
+        pass_filenames: false
+        args: ["--warn-only"]
+
       - id: check-stale-docs
         name: check stale docs
         entry: cargo run --quiet --bin doc-check --

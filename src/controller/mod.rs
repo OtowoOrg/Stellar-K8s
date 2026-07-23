@@ -51,8 +51,8 @@
 pub mod benchmark;
 pub mod blue_green;
 pub mod canary;
-pub mod event_taxonomy;
 pub mod cross_cloud_failover;
+pub mod event_taxonomy;
 pub mod feature_flags;
 pub mod gas_autoscaling;
 pub mod gitops_upgrade;
@@ -64,6 +64,7 @@ pub mod label_propagation;
 pub mod maintenance;
 pub mod migration;
 pub mod network_isolation;
+pub mod phase;
 pub mod predictive_scaling;
 pub mod pss;
 pub mod quota;
@@ -179,6 +180,7 @@ pub use disk_scaler::{
     check_and_expand, get_disk_usage, supports_expansion, DiskScalerConfig, DiskUsage,
     ScalingResult, DEFAULT_EXPANSION_INCREMENT, DEFAULT_EXPANSION_THRESHOLD,
 };
+pub use event_taxonomy::{EventAction, EventCategory, EventDescriptor, EventReason};
 pub use feature_flags::{
     watch_feature_flags, FeatureFlags, SharedFeatureFlags, FEATURE_FLAGS_CONFIGMAP,
 };
@@ -212,11 +214,10 @@ pub use pss::{
 };
 #[cfg(feature = "reconciler-fuzz")]
 pub use reconciler::reconcile_for_fuzz;
-pub use event_taxonomy::{EventAction, EventCategory, EventDescriptor, EventReason};
 pub use reconciler::{run_controller, BatchSummaryReport, ControllerState};
-pub use retry_policy_tuner::{ErrorClass, RetryPolicy, RetryPolicyTuner};
 pub use registry_controller::{check_admission, reconcile_stellar_registry, summary_to_cve_count};
 pub use remediation::{can_remediate, check_stale_node, RemediationLevel, StaleCheckResult};
+pub use retry_policy_tuner::{ErrorClass, RetryPolicy, RetryPolicyTuner};
 pub use service_mesh::{
     delete_service_mesh_resources, ensure_destination_rule, ensure_peer_authentication,
     ensure_request_authentication, ensure_virtual_service,

@@ -88,8 +88,7 @@ spec:
     storageClass: "standard"
     size: "200Gi"
   sorobanConfig:
-    captiveCoreConfig:
-      stellarCoreImage: "stellar/stellar-core:v21.0.0"
+    stellarCoreUrl: "http://validator-testnet:11626"
   probes:
     startup:
       # Allow up to 15 minutes for Wasm module loading (45 × 20s)

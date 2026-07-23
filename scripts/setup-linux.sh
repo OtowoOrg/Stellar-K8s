@@ -40,6 +40,7 @@ fi
 # ── Rust / rustup ─────────────────────────────────────────────────────────────
 step "Rust toolchain (${RUST_TOOLCHAIN})"
 if ! command -v rustup &>/dev/null; then
+    # unsafe-shell-allow: official rustup installer, HTTPS with TLS 1.2 pinned
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
         -y --default-toolchain "${RUST_TOOLCHAIN}" --profile minimal
     # shellcheck source=/dev/null

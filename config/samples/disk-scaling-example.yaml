@@ -69,10 +69,9 @@ spec:
       - name: sdf3
         publicKey: "GABMKJM6I25XI4K7U6XWMULOUQIQ27BCTMLS6BYYSOWKTBUXVRJSXHYQ"
   
-  # Enable monitoring for disk usage metrics
-  autoscaling:
-    enabled: false  # HPA not needed for validators
-  
+  # HPA not needed for validators, so `autoscaling` is omitted entirely
+  # (it is optional and only required when horizontal scaling is desired).
+
   # Snapshot schedule for backup (optional)
   snapshotSchedule:
     enabled: true
@@ -80,25 +79,10 @@ spec:
     retentionPolicy:
       maxSnapshots: 7
   
-  # Alerting configuration
-  alerting:
-    enabled: true
-    rules:
-      - alert: HighDiskUsage
-        expr: stellar_pvc_disk_usage_percent > 75
-        for: 10m
-        severity: warning
-        annotations:
-          summary: "High disk usage detected"
-          description: "Disk usage is above 75%, automatic expansion will trigger at 80%"
-      
-      - alert: MaxExpansionsReached
-        expr: stellar_pvc_expansion_count >= 10
-        for: 5m
-        severity: critical
-        annotations:
-          summary: "Maximum disk expansions reached"
-          description: "PVC has been expanded 10 times, manual intervention required"
+  # Enable the operator's built-in disk-usage alerting.
+  # (Alert thresholds and routing are configured operator-wide, not per-node;
+  # see monitoring/snapshot-integrity-alerts.yaml for the underlying PrometheusRule.)
+  alerting: true
 
 ---
 # StorageClass configuration for disk scaling

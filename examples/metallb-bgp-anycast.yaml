@@ -54,7 +54,7 @@ spec:
     externalTrafficPolicy: Local   # Preserve source IP
 
     bgp:
-      localASN: 64512              # Your cluster's ASN
+      localAsn: 64512              # Your cluster's ASN
       peers:
         - address: "192.168.1.1"   # Primary BGP router
           asn: 64513

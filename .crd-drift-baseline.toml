@@ -1,0 +1,33 @@
+["benchmarkreports.stellar.org".versions.v1alpha1]
+config_hash = '772ece77ae419c16'
+helm_hash = '807ec8d3dab06aa1'
+["starlarfederations.stellar.org".versions.v1alpha1]
+config_hash = 'f603dce35c4ad577'
+["stellaraiops.stellar.org".versions.v1alpha1]
+config_hash = '0d2745ae72583976'
+["stellarautoscalers.stellar.org".versions.v1alpha1]
+config_hash = 'e898307f89f73382'
+["stellarbackups.stellar.org".versions.v1alpha1]
+config_hash = '0993a74bc92943d1'
+["stellarbenchmarks.stellar.org".versions.v1alpha1]
+config_hash = '0323f9dd525ccb46'
+helm_hash = 'f72817c986073c51'
+["stellardrdrills.stellar.org".versions.v1alpha1]
+config_hash = 'a41bc4e3435c9424'
+["stellargitopsconfigs.stellar.org".versions.v1alpha1]
+config_hash = '4b6ec3b1f4dc97ef'
+["stellarnodes.stellar.org".versions.v1alpha1]
+config_hash = 'f589a29fa8825601'
+helm_hash = 'c2764858f4e2b43f'
+["stellarobservabilities.stellar.org".versions.v1alpha1]
+config_hash = '26dfa75dadb91bf0'
+["stellarrestores.stellar.org".versions.v1alpha1]
+config_hash = '933070dbb8d2b10d'
+["stellarsecuritypolicies.stellar.org".versions.v1alpha1]
+config_hash = 'b18469ae82988405'
+["stellarupgrades.stellar.org".versions.v1alpha1]
+config_hash = '03d82ce24d832577'
+["tenants.stellar.org".versions.v1alpha1]
+helm_hash = '52092fbcb7b8cf77'
+["tenantusages.stellar.org".versions.v1alpha1]
+helm_hash = '39002049bebbb787'

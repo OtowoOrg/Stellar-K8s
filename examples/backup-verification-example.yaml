@@ -24,16 +24,16 @@ spec:
 
   # Database configuration
   managedDatabase:
-    enabled: true
-    databaseName: horizon
-    username: horizon
-    storageSize: "200Gi"
+    storage:
+      storageClass: "standard"
+      size: "200Gi"
     instances: 2
     backup:
       enabled: true
       schedule: "0 2 * * *" # Daily backups at 2 AM
-      retentionDays: 30
+      retentionPolicy: 30d
       destinationPath: "s3://stellar-backups/horizon-testnet"
+      credentialsSecretRef: "horizon-backup-credentials"
 
   # Automated backup verification configuration
   backupVerification:
@@ -109,10 +109,9 @@ spec:
 
   # Managed database
   managedDatabase:
-    enabled: true
-    databaseName: stellar
-    username: stellar
-    storageSize: "1Ti"
+    storage:
+      storageClass: "fast-ssd"
+      size: "1Ti"
     instances: 3
 
   # Volume snapshot schedule
@@ -180,11 +179,9 @@ spec:
   version: "v21.0.0"
 
   database:
-    host: postgres-pgbackrest.stellar.svc.cluster.local
-    port: 5432
-    database: horizon
-    user: horizon
-    passwordSecret: horizon-db-credentials
+    secretKeyRef:
+      name: horizon-db-credentials
+      key: connection-string
 
   # Backup verification using pgBackRest
   backupVerification:

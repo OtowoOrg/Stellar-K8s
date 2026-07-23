@@ -77,8 +77,7 @@ spec:
     storageClass: "gp3"
     size: "200Gi"
   sorobanConfig:
-    captiveCoreConfig:
-      stellarCoreImage: "stellar/stellar-core:v21.0.0"
+    stellarCoreUrl: "http://validator-testnet:11626"
 
 ---
 # Testnet Horizon — default priority

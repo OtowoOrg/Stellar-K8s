@@ -209,6 +209,14 @@ name = "doc-check"
 path = "src/bin/doc_check.rs"
 
 [[bin]]
+name = "schema-validate"
+path = "src/bin/schema_validate.rs"
+
+[[bin]]
+name = "crd-drift-check"
+path = "src/bin/crd_drift_check.rs"
+
+[[bin]]
 name = "stellar-sidecar"
 path = "src/sidecar.rs"
 

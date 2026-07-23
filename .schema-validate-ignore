@@ -1,0 +1,10 @@
+# Path prefixes (relative to repo root) that schema-validate should skip.
+# One prefix per line; blank lines and lines starting with # are ignored.
+#
+# These are all *intentionally invalid* fixtures used to document expected
+# API-server rejection behavior (see the comments in each file) — they are
+# not meant to conform to the schema, so they aren't real drift.
+
+examples/broken.yaml
+config/samples/invalid-network-empty.yaml
+config/samples/invalid-network-special-chars.yaml

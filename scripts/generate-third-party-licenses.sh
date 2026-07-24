@@ -57,7 +57,7 @@ HEADER
     --avoid-dev-deps \
     --tsv 2>/dev/null \
     | tail -n +2 \
-    | sort -f \
+    | LC_ALL=C sort -f \
     | awk -F'\t' '{
         name=$1; version=$2; authors=$3; license=$4;
         gsub(/\|/, "\\|", name);

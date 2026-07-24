@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Stellar K8s Contributors"]
 description = "Cloud-Native Kubernetes Operator for Stellar Infrastructure"
 license = "Apache-2.0"
-repository = "https://github.com/stellar/stellar-k8s"
+repository = "https://github.com/OtowoOrg/Stellar-K8s"
 
 [dependencies]
 ed25519-dalek = { version = "2", features = ["rand_core"] }

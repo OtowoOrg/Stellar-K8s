@@ -33,6 +33,7 @@
     { "pattern": "^https://lamport\\.azurewebsites\\.net/" },
     { "pattern": "^https://nvd\\.nist\\.gov/" },
     { "pattern": "^https://www\\.cisecurity\\.org/" },
-    { "pattern": "^https://llvm\\.org/" }
+    { "pattern": "^https://llvm\\.org/" },
+    { "pattern": "^https://github\\.com/RustCrypto/utils/tree/master/zeroize/derive" }
   ]
 }

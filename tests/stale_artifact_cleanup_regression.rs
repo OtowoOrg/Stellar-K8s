@@ -119,7 +119,7 @@ mod stale_artifact_cleanup_regression {
     #[test]
     fn enabled_policy_with_no_last_run_triggers() {
         let mut p = policy(30);
-        p.schedule = Some("0 0 * * *".to_string()); // daily at midnight
+        p.schedule = Some("0 0 0 * * *".to_string()); // daily at midnight
         let worker = PruningWorker::new(p).unwrap();
         // No last run recorded → should trigger immediately
         assert!(worker.should_run_scheduled(None));
@@ -128,7 +128,7 @@ mod stale_artifact_cleanup_regression {
     #[test]
     fn enabled_policy_does_not_trigger_before_schedule_elapses() {
         let mut p = policy(30);
-        p.schedule = Some("0 0 1 1 *".to_string()); // yearly (Jan 1)
+        p.schedule = Some("0 0 0 1 1 *".to_string()); // yearly (Jan 1)
         let worker = PruningWorker::new(p).unwrap();
         // Last run just now → next occurrence is far in the future
         let just_ran = Utc::now();

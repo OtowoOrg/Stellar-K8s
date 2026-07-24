@@ -29,6 +29,10 @@ helm version
 > - **Memory**: 8 GB
 > - **Disk**: 40 GB
 
+> **Rust toolchain**: if you'll be building the operator from source rather
+> than only deploying it, `make dev-setup` installs the pinned Rust
+> toolchain, dev tools, and git hooks in one step.
+
 ---
 
 ## Step 1: Create the k3d Cluster

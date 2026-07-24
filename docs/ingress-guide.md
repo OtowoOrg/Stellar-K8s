@@ -225,6 +225,11 @@ curl https://horizon.example.com/
 
 ## Monitoring and Troubleshooting
 
+Ingress controllers (e.g. ingress-nginx) typically expose their own request
+metrics; the operator's `monitoring.enabled` PrometheusRule/ServiceMonitor
+(see [pod-disruption-budget.md](pod-disruption-budget.md#monitoring-and-alerting))
+covers operator and node health, not the ingress layer itself.
+
 ### Check Ingress Status
 
 ```bash

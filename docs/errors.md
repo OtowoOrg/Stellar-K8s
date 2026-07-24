@@ -33,3 +33,11 @@ When encountering these errors, the primary source of detailed insight will be t
 kubectl logs -n stellar-system deploy/stellar-operator
 ```
 Look for the `[SK8S-XXX]` prefix in the logging output for rapid filtering.
+
+## Retries
+
+The reconciler's `error_policy` requeues automatically for a subset of error
+codes considered transient — currently **SK8S-001** (`KubeError`),
+**SK8S-003** (`FinalizerError`), and **SK8S-011** (`RemediationError`). All
+other codes above still get requeued on a longer backoff, but are treated as
+needing operator attention rather than a routine retry.

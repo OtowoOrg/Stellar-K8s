@@ -616,10 +616,16 @@ async fn conformance_both_database_and_managed_database_is_denied() {
     let server = WebhookServer::new(WasmRuntime::new().unwrap());
     let mut payload = valid_horizon_json();
     payload["spec"]["database"] = serde_json::json!({
-        "secretRef": "pg-secret"
+        "host": "pg.example.com",
+        "database": "horizon",
+        "user": "horizon",
+        "passwordSecret": "pg-secret"
     });
     payload["spec"]["managedDatabase"] = serde_json::json!({
-        "storageSize": "50Gi"
+        "storage": {
+            "storageClass": "standard",
+            "size": "50Gi"
+        }
     });
     let result = server
         .validate(make_input(Operation::Create, Some(payload)))

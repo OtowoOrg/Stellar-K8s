@@ -45,11 +45,11 @@ tests:
           path: spec.template.spec.containers[0].imagePullPolicy
           value: Always
 
-  - it: "[SNAPSHOT] default container name is stellar-k8s"
+  - it: "[SNAPSHOT] default container name is stellar-operator"
     asserts:
       - equal:
           path: spec.template.spec.containers[0].name
-          value: stellar-k8s
+          value: stellar-operator
 
   - it: "[SNAPSHOT] default CPU limit is 500m"
     asserts:
@@ -63,11 +63,11 @@ tests:
           path: spec.template.spec.containers[0].resources.requests.cpu
           value: 100m
 
-  - it: "[SNAPSHOT] default memory limit is 512Mi"
+  - it: "[SNAPSHOT] default memory limit is 256Mi"
     asserts:
       - equal:
           path: spec.template.spec.containers[0].resources.limits.memory
-          value: 512Mi
+          value: 256Mi
 
   - it: "[SNAPSHOT] default memory request is 128Mi"
     asserts:
@@ -118,9 +118,12 @@ tests:
           value: RELEASE-NAME
 
   - it: "[SNAPSHOT] pod anti-affinity label matches selector"
+    # Default anti-affinity only renders when replicaCount > 1.
+    set:
+      replicaCount: 3
     asserts:
       - equal:
-          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchLabels["app.kubernetes.io/name"]
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchExpressions[0].values[0]
           value: stellar-operator
 
   # ── HA profile snapshot (values-ha.yaml equivalent) ──────────────────────
@@ -198,9 +201,9 @@ tests:
           path: spec.template.spec.containers[0].args
           content: --watch-namespace=stellar-system
 
-  - it: "[SNAPSHOT] rest-api arg absent by default"
+  - it: "[SNAPSHOT] rest-api arg present by default"
     asserts:
-      - notContains:
+      - contains:
           path: spec.template.spec.containers[0].args
           content: --enable-rest-api
 

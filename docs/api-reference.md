@@ -1485,7 +1485,6 @@ or pre-populating volumes. |
 | **Path** | `spec.maxUnavailable` |
 | **Type** | `object` |
 | **Description** | IntOrString |
-| **Required** | *(required)* |
 
 ### `spec.minAvailable`
 
@@ -1494,7 +1493,6 @@ or pre-populating volumes. |
 | **Path** | `spec.minAvailable` |
 | **Type** | `object` |
 | **Description** | IntOrString |
-| **Required** | *(required)* |
 
 ### `spec.network`
 
@@ -2332,7 +2330,6 @@ or pre-populating volumes. |
 |---|---|
 | **Path** | `spec.topologySpreadConstraints` |
 | **Type** | `array` of `object` |
-| **Required** | *(required)* |
 
 ### `spec.validatorConfig`
 

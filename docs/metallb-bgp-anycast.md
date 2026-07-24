@@ -73,7 +73,7 @@ spec:
     externalTrafficPolicy: Local
 
     bgp:
-      localASN: 64512
+      localAsn: 64512
       peers:
         - address: "192.168.1.1"
           asn: 64513
@@ -188,7 +188,7 @@ spec:
   loadBalancer:
     loadBalancerIP: "192.0.2.100"  # Same IP
     bgp:
-      localASN: 64512
+      localAsn: 64512
       advertisement:
         localPref: 100  # Primary
 ```
@@ -204,7 +204,7 @@ spec:
   loadBalancer:
     loadBalancerIP: "192.0.2.100"  # Same IP
     bgp:
-      localASN: 64513
+      localAsn: 64513
       advertisement:
         localPref: 90   # Secondary
 ```
@@ -220,7 +220,7 @@ spec:
   loadBalancer:
     loadBalancerIP: "192.0.2.100"  # Same IP
     bgp:
-      localASN: 64514
+      localAsn: 64514
       advertisement:
         localPref: 80   # Tertiary
 ```

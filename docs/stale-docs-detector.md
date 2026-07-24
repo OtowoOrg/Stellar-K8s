@@ -44,6 +44,8 @@ make list-doc-coverage
 make update-doc-baseline
 ```
 
+These targets are thin wrappers around `cargo run --bin doc-check -- status|list|update-baseline`.
+
 ---
 
 ## Understanding the Output

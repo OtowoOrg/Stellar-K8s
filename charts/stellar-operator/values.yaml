@@ -298,6 +298,38 @@ monitoring:
         # Duration threshold before alerting
         forDuration: 10m
 
+  # Master switch for the templates/monitoring/* resources below (ServiceMonitor,
+  # PodMonitor, PrometheusRule, Grafana dashboard ConfigMaps). Requires the
+  # Prometheus Operator CRDs to be installed.
+  enabled: false
+  serviceMonitor:
+    enabled: true
+    labels: {}
+    interval: 30s
+    scrapeTimeout: 10s
+  podMonitor:
+    enabled: false
+    labels: {}
+    portName: metrics
+    interval: 30s
+    selector:
+      matchExpressions: []
+  prometheusRule:
+    enabled: true
+    labels: {}
+    ingestionLagThresholdSeconds: 30
+    ledgerCloseTimeThresholdSeconds: 10
+    additionalRules: []
+  grafanaDashboards:
+    enabled: true
+    labels:
+      grafana_dashboard: "1"
+
+# Enables the ServiceMonitor for the SCP topology-health-consumer sidecar's
+# metrics endpoint. Requires the Prometheus Operator CRDs to be installed.
+prometheus:
+  enabled: false
+
 # Default resource requests/limits for managed StellarNode pods.
 # Precedence: StellarNode spec.resources > Helm defaults > operator hardcoded fallback.
 # These are written into a ConfigMap that the operator reads at startup.

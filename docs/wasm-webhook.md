@@ -525,6 +525,14 @@ Typical plugin performance:
 4. **Profile with fuel**: Monitor `fuel_consumed` in results
 5. **Cache compiled modules**: The runtime caches compiled plugins
 
+### Concurrency
+
+`WebhookServer::validate` is exercised under concurrent mixed valid/invalid
+load in `src/webhook/server.rs`'s test suite
+(`stress_mixed_concurrent_requests_segregated_correctly`), confirming that
+results stay correctly segregated per-request when many `AdmissionReview`s
+are validated in parallel.
+
 ## Best Practices
 
 1. **Keep plugins focused**: One policy per plugin

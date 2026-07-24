@@ -28,6 +28,7 @@
 	install-crd apply-samples crd-gen regenerate completions \
 	helm-lint crd-drift-check link-check link-check-all changelog \
 	generate-api-docs check-api-docs schema-validate \
+	check-stale-docs update-doc-baseline list-doc-coverage \
 	third-party-licenses check-third-party-licenses \
 	benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health \
 	benchmark-webhook-compare benchmark-webhook-save benchmark-all \
@@ -255,6 +256,15 @@ check-api-docs: ## Check API docs are up to date (used in CI)
 
 schema-validate: ## Validate examples/ and config/samples/ against config/crd/ schemas
 	@$(CARGO) run --quiet --bin schema-validate
+
+check-stale-docs: ## Check for stale docs (full repo scan; see docs/stale-docs-detector.md)
+	@$(CARGO) run --quiet --bin doc-check -- status
+
+update-doc-baseline: ## Record the current HEAD as the stale-docs baseline
+	@$(CARGO) run --quiet --bin doc-check -- update-baseline
+
+list-doc-coverage: ## Print all doc-check doc -> source mappings
+	@$(CARGO) run --quiet --bin doc-check -- list
 
 # ── Kubernetes ────────────────────────────────────────────────────────────────
 

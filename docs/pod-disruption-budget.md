@@ -364,6 +364,11 @@ kube_poddisruptionbudget_status_disruptions_allowed{namespace="stellar-system"} 
     description: "PDB {{ $labels.poddisruptionbudget }} has 0 allowed disruptions for more than 1 hour"
 ```
 
+To scrape these `kube_poddisruptionbudget_*` metrics via the Prometheus
+Operator, set `monitoring.enabled: true` (and, if `kube-state-metrics` isn't
+already scraped separately, `monitoring.serviceMonitor.enabled: true`, which
+is the default once `monitoring.enabled` is on) in the chart's `values.yaml`.
+
 ## Related Documentation
 
 - [Kubernetes PodDisruptionBudget Documentation](https://kubernetes.io/docs/tasks/run-application/configure-pdb/)

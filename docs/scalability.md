@@ -177,6 +177,16 @@ resources:
     memory: 1Gi
 ```
 
+## Reconciler Phases
+
+`apply_stellar_node` and `cleanup_stellar_node` in `src/controller/reconciler.rs`
+track their progress through the reconcile loop as an explicit phase state
+machine (`Initializing` → `Provisioning` → `Configuring` → `Observing` →
+`Reconciling` → `Completed`, with `Finalizing`/`Deleting` on the cleanup
+path), layered on top of the existing logic without changing its behavior.
+See [docs/reconciler-phases.md](reconciler-phases.md) for the full state
+machine and how it's surfaced in logs/metrics.
+
 ## Performance Optimizations
 
 ### Implemented Optimizations

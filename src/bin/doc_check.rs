@@ -17,10 +17,10 @@
 //! cargo run --bin doc-check -- --changed-files src/controller/health.rs
 //!
 //! # Show all mappings without checking staleness
-//! cargo run --bin doc-check -- --list
+//! cargo run --bin doc-check -- list
 //!
 //! # Update the stored baseline hashes (after deliberately updating docs)
-//! cargo run --bin doc-check -- --update-baseline
+//! cargo run --bin doc-check -- update-baseline
 //! ```
 //!
 //! See `docs/stale-docs-detector.md` for the full user guide.

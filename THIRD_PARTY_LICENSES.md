@@ -9,71 +9,672 @@ Their names, versions, authors, and license identifiers are listed below.
 
 | Crate | Version | License | Authors |
 |-------|---------|---------|---------|
-| anyhow | 1 | MIT OR Apache-2.0 | David Tolnay |
-| async-nats | 0.35 | Apache-2.0 | Tomasz Pietrek, Casper Beyer |
-| async-trait | 0.1 | MIT OR Apache-2.0 | David Tolnay |
-| aws-config | 1 | Apache-2.0 | AWS Rust SDK Team |
-| aws-sdk-s3 | 1 | Apache-2.0 | AWS Rust SDK Team |
-| axum | 0.7 | MIT | tokio-rs contributors |
-| axum-server | 0.7 | MIT | programatik29 |
-| base64 | 0.21 | MIT OR Apache-2.0 | Alice Maz, Marshall Pierce |
-| bytes | 1 | MIT | Carl Lerche, Sean McArthur |
-| chrono | 0.4 | MIT OR Apache-2.0 | Various contributors |
-| clap | 4 | MIT OR Apache-2.0 | Kevin K., Ed Page |
-| clap_complete | 4 | MIT OR Apache-2.0 | Ed Page |
-| comfy-table | 7 | MIT | Nico Böhm |
-| cron | 0.15 | MIT | Matthew Downey |
-| csv | 1 | MIT OR Unlicense | Andrew Gallant |
-| ed25519-dalek | 2 | BSD-3-Clause | isis agora lovecruft, Henry de Valence |
-| flate2 | 1 | MIT OR Apache-2.0 | Alex Crichton, Josh Triplett |
-| futures | 0.3 | MIT OR Apache-2.0 | Alex Crichton |
-| glob | 0.3 | MIT OR Apache-2.0 | The Rust Project Developers |
-| hex | 0.4 | MIT OR Apache-2.0 | Various contributors |
-| hmac | 0.12 | MIT OR Apache-2.0 | RustCrypto Developers |
-| hostname | 0.4 | MIT | Yuri Titov |
-| http | 1 | MIT OR Apache-2.0 | Sean McArthur |
-| json-patch | 4 | MIT | Ivan Dubrov |
-| jsonwebtoken | 9 | MIT | Vincent Prouillet |
-| k8s-openapi | 0.22 | Apache-2.0 | Arnavion |
-| kube | 0.94 | Apache-2.0 | Eirik Albrigtsen, Arnav Singh |
-| kube-runtime | 0.94 | Apache-2.0 | Eirik Albrigtsen |
-| lru | 0.16 | MIT | Jerome Froelich |
-| md5 | 0.8 | MIT OR Apache-2.0 | Ivan Ukhov |
-| once_cell | 1 | MIT OR Apache-2.0 | Aleksey Kladov |
-| opentelemetry | 0.21 | Apache-2.0 | OpenTelemetry Authors |
-| opentelemetry-otlp | 0.14 | Apache-2.0 | OpenTelemetry Authors |
-| opentelemetry_sdk | 0.21 | Apache-2.0 | OpenTelemetry Authors |
-| printpdf | 0.7 | MIT | Felix Schütt |
-| prometheus-client | 0.22 | Apache-2.0 | Various contributors |
-| rand | 0.8 | MIT OR Apache-2.0 | The Rand Project Developers |
-| rcgen | 0.13 | MIT OR Apache-2.0 | est31 |
-| rdkafka | 0.36 | MIT | Federico Giraud |
-| regex | 1 | MIT OR Apache-2.0 | The Rust Project Developers |
-| reqwest | 0.12 | MIT OR Apache-2.0 | Sean McArthur |
-| rustls | 0.23 | MIT OR Apache-2.0 OR ISC | Joseph Birr-Pixton |
-| rustls-pki-types | 1 | MIT OR Apache-2.0 | Various contributors |
-| sasl2-sys | 0.1 | MIT | Various contributors |
-| schemars | 0.8 | MIT | Graham Esau |
-| serde | 1 | MIT OR Apache-2.0 | Erick Tryzelaar, David Tolnay |
-| serde_json | 1 | MIT OR Apache-2.0 | Erick Tryzelaar, David Tolnay |
-| serde_yaml | 0.9 | MIT OR Apache-2.0 | David Tolnay |
-| sha2 | 0.10 | MIT OR Apache-2.0 | RustCrypto Developers |
-| sqlx | 0.8 | MIT OR Apache-2.0 | Ryan Leckey, Austin Bonander |
-| tar | 0.4 | MIT OR Apache-2.0 | Alex Crichton |
-| thiserror | 1 | MIT OR Apache-2.0 | David Tolnay |
-| time | 0.3 | MIT OR Apache-2.0 | Jacob Pratt, Time-rs contributors |
-| tokio | 1 | MIT | Tokio Contributors |
-| tokio-rustls | 0.26 | MIT OR Apache-2.0 | Various contributors |
-| tokio-util | 0.7 | MIT | Tokio Contributors |
-| toml | 0.5 | MIT OR Apache-2.0 | Alex Crichton |
-| tower | 0.4 | MIT | Tower Contributors |
-| tower-http | 0.5 | MIT | Tower-HTTP Contributors |
-| tracing | 0.1 | MIT | Tokio Contributors |
-| tracing-opentelemetry | 0.22 | MIT | Julian Tescher, Nikolay Kim |
-| tracing-subscriber | 0.3 | MIT | Tokio Contributors |
-| url | 2 | MIT OR Apache-2.0 | The rust-url developers |
-| urlencoding | 2 | MIT | Kornel Lesiński, David Tolnay |
-| wasmtime | 24 | Apache-2.0 | The Wasmtime Project Developers |
-| wasmtime-wasi | 24 | Apache-2.0 | The Wasmtime Project Developers |
-| x509-parser | 0.16 | MIT OR Apache-2.0 | Pierre Chifflier |
-| zip | 2 | MIT | Mathijs van de Nes |
+| addr2line | 0.22.0 | https://github.com/gimli-rs/addr2line |  |
+| adler2 | 2.0.1 | https://github.com/oyvindln/adler2 | Jonas Schievink <jonasschievink@gmail.com>\|oyvindln <oyvindln@users.noreply.github.com> |
+| aes | 0.8.4 | https://github.com/RustCrypto/block-ciphers | RustCrypto Developers |
+| ahash | 0.8.12 | https://github.com/tkaitchuck/ahash | Tom Kaitchuck <Tom.Kaitchuck@gmail.com> |
+| aho-corasick | 1.1.4 | https://github.com/BurntSushi/aho-corasick | Andrew Gallant <jamslam@gmail.com> |
+| allocator-api2 | 0.2.21 | https://github.com/zakarumych/allocator-api2 | Zakarum <zaq.dev@icloud.com> |
+| ambient-authority | 0.0.2 | https://github.com/sunfishcode/ambient-authority | Dan Gohman <dev@sunfishcode.online> |
+| android_system_properties | 0.1.5 | https://github.com/nical/android_system_properties | Nicolas Silva <nical@fastmail.com> |
+| anstream | 1.0.0 | https://github.com/rust-cli/anstyle.git |  |
+| anstyle | 1.0.14 | https://github.com/rust-cli/anstyle.git |  |
+| anstyle-parse | 1.0.0 | https://github.com/rust-cli/anstyle.git |  |
+| anstyle-query | 1.1.5 | https://github.com/rust-cli/anstyle.git |  |
+| anstyle-wincon | 3.0.11 | https://github.com/rust-cli/anstyle.git |  |
+| anyhow | 1.0.103 | https://github.com/dtolnay/anyhow | David Tolnay <dtolnay@gmail.com> |
+| arbitrary | 1.4.2 | https://github.com/rust-fuzz/arbitrary/ | The Rust-Fuzz Project Developers\|Nick Fitzgerald <fitzgen@gmail.com>\|Manish Goregaokar <manishsmail@gmail.com>\|Simonas Kazlauskas <arbitrary@kazlauskas.me>\|Brian L. Troutwine <brian@troutwine.us>\|Corey Farwell <coreyf@rwell.org> |
+| arc-swap | 1.9.1 | https://github.com/vorner/arc-swap | Michal 'vorner' Vaner <vorner@vorner.cz> |
+| asn1-rs | 0.6.2 | https://github.com/rusticata/asn1-rs.git | Pierre Chifflier <chifflier@wzdftpd.net> |
+| asn1-rs-derive | 0.5.1 | https://github.com/rusticata/asn1-rs.git | Pierre Chifflier <chifflier@wzdftpd.net> |
+| asn1-rs-impl | 0.2.0 | https://github.com/rusticata/asn1-rs.git | Pierre Chifflier <chifflier@wzdftpd.net> |
+| async-broadcast | 0.7.2 | https://github.com/smol-rs/async-broadcast | Stjepan Glavina <stjepang@gmail.com>\|Yoshua Wuyts <yoshuawuyts@gmail.com>\|Zeeshan Ali Khan <zeeshanak@gnome.org> |
+| async-stream | 0.3.6 | https://github.com/tokio-rs/async-stream | Carl Lerche <me@carllerche.com> |
+| async-stream-impl | 0.3.6 | https://github.com/tokio-rs/async-stream | Carl Lerche <me@carllerche.com> |
+| async-trait | 0.1.89 | https://github.com/dtolnay/async-trait | David Tolnay <dtolnay@gmail.com> |
+| atoi | 2.0.0 | https://github.com/pacman82/atoi-rs | Markus Klein |
+| atomic-waker | 1.1.2 | https://github.com/smol-rs/atomic-waker | Stjepan Glavina <stjepang@gmail.com>\|Contributors to futures-rs |
+| aws-config | 1.8.17 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|Russell Cohen <rcoh@amazon.com> |
+| aws-credential-types | 1.2.14 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com> |
+| aws-lc-rs | 1.16.3 | https://github.com/aws/aws-lc-rs | AWS-LibCrypto |
+| aws-lc-sys | 0.40.0 | https://github.com/aws/aws-lc-rs | AWS-LC |
+| aws-runtime | 1.7.4 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com> |
+| aws-sdk-s3 | 1.132.0 | https://github.com/awslabs/aws-sdk-rust | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|Russell Cohen <rcoh@amazon.com> |
+| aws-sdk-sso | 1.100.0 | https://github.com/awslabs/aws-sdk-rust | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|Russell Cohen <rcoh@amazon.com> |
+| aws-sdk-ssooidc | 1.102.0 | https://github.com/awslabs/aws-sdk-rust | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|Russell Cohen <rcoh@amazon.com> |
+| aws-sdk-sts | 1.105.0 | https://github.com/awslabs/aws-sdk-rust | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|Russell Cohen <rcoh@amazon.com> |
+| aws-sigv4 | 1.4.4 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|David Barsky <me@davidbarsky.com> |
+| aws-smithy-async | 1.2.14 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|John DiSanti <jdisanti@amazon.com> |
+| aws-smithy-checksums | 0.64.7 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|Zelda Hessler <zhessler@amazon.com> |
+| aws-smithy-eventstream | 0.60.20 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|John DiSanti <jdisanti@amazon.com> |
+| aws-smithy-http | 0.63.6 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|Russell Cohen <rcoh@amazon.com> |
+| aws-smithy-http-client | 1.1.12 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com> |
+| aws-smithy-json | 0.62.6 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|John DiSanti <jdisanti@amazon.com> |
+| aws-smithy-observability | 0.2.6 | https://github.com/awslabs/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com> |
+| aws-smithy-query | 0.60.15 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|John DiSanti <jdisanti@amazon.com> |
+| aws-smithy-runtime | 1.11.3 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|Zelda Hessler <zhessler@amazon.com> |
+| aws-smithy-runtime-api | 1.12.1 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|Zelda Hessler <zhessler@amazon.com> |
+| aws-smithy-runtime-api-macros | 1.0.0 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com> |
+| aws-smithy-schema | 0.1.0 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com> |
+| aws-smithy-types | 1.4.8 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|Russell Cohen <rcoh@amazon.com> |
+| aws-smithy-xml | 0.60.15 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|Russell Cohen <rcoh@amazon.com> |
+| aws-types | 1.3.16 | https://github.com/smithy-lang/smithy-rs | AWS Rust SDK Team <aws-sdk-rust@amazon.com>\|Russell Cohen <rcoh@amazon.com> |
+| axum | 0.6.20 | https://github.com/tokio-rs/axum |  |
+| axum | 0.7.9 | https://github.com/tokio-rs/axum |  |
+| axum-core | 0.3.4 | https://github.com/tokio-rs/axum |  |
+| axum-core | 0.4.5 | https://github.com/tokio-rs/axum |  |
+| axum-server | 0.7.3 | https://github.com/programatik29/axum-server | Programatik <programatik29@gmail.com>\|Adi Salimgereev <adisalimgereev@gmail.com> |
+| backoff | 0.4.0 | https://github.com/ihrwein/backoff | Tibor Benke <ihrwein@gmail.com> |
+| base16ct | 0.2.0 | https://github.com/RustCrypto/formats/tree/master/base16ct | RustCrypto Developers |
+| base64 | 0.21.7 | https://github.com/marshallpierce/rust-base64 | Alice Maz <alice@alicemaz.com>\|Marshall Pierce <marshall@mpierce.org> |
+| base64 | 0.22.1 | https://github.com/marshallpierce/rust-base64 | Marshall Pierce <marshall@mpierce.org> |
+| base64ct | 1.8.3 | https://github.com/RustCrypto/formats | RustCrypto Developers |
+| base64-simd | 0.8.0 | https://github.com/Nugine/simd |  |
+| bitflags | 1.3.2 | https://github.com/bitflags/bitflags | The Rust Project Developers |
+| bitflags | 2.11.1 | https://github.com/bitflags/bitflags | The Rust Project Developers |
+| block-buffer | 0.10.4 | https://github.com/RustCrypto/utils | RustCrypto Developers |
+| block-buffer | 0.12.0 | https://github.com/RustCrypto/utils | RustCrypto Developers |
+| bstr | 1.12.1 | https://github.com/BurntSushi/bstr | Andrew Gallant <jamslam@gmail.com> |
+| bumpalo | 3.20.2 | https://github.com/fitzgen/bumpalo | Nick Fitzgerald <fitzgen@gmail.com> |
+| byteorder | 1.5.0 | https://github.com/BurntSushi/byteorder | Andrew Gallant <jamslam@gmail.com> |
+| bytes | 1.11.1 | https://github.com/tokio-rs/bytes | Carl Lerche <me@carllerche.com>\|Sean McArthur <sean@seanmonstar.com> |
+| bytes-utils | 0.1.4 | https://github.com/vorner/bytes-utils | Michal 'vorner' Vaner <vorner@vorner.cz> |
+| bzip2 | 0.5.2 | https://github.com/trifectatechfoundation/bzip2-rs |  |
+| bzip2-sys | 0.1.13+1.0.8 | https://github.com/alexcrichton/bzip2-rs | Alex Crichton <alex@alexcrichton.com> |
+| cap-fs-ext | 3.4.5 | https://github.com/bytecodealliance/cap-std | Dan Gohman <dev@sunfishcode.online>\|Jakub Konka <kubkon@jakubkonka.com> |
+| cap-net-ext | 3.4.5 | https://github.com/bytecodealliance/cap-std | Dan Gohman <dev@sunfishcode.online>\|Jakub Konka <kubkon@jakubkonka.com> |
+| cap-primitives | 3.4.5 | https://github.com/bytecodealliance/cap-std | Dan Gohman <dev@sunfishcode.online>\|Jakub Konka <kubkon@jakubkonka.com> |
+| cap-rand | 3.4.5 | https://github.com/bytecodealliance/cap-std | Dan Gohman <dev@sunfishcode.online>\|Jakub Konka <kubkon@jakubkonka.com> |
+| cap-std | 3.4.5 | https://github.com/bytecodealliance/cap-std | Dan Gohman <dev@sunfishcode.online>\|Jakub Konka <kubkon@jakubkonka.com> |
+| cap-time-ext | 3.4.5 | https://github.com/bytecodealliance/cap-std | Dan Gohman <dev@sunfishcode.online>\|Jakub Konka <kubkon@jakubkonka.com> |
+| cfg-if | 1.0.4 | https://github.com/rust-lang/cfg-if | Alex Crichton <alex@alexcrichton.com> |
+| chrono | 0.4.44 | https://github.com/chronotope/chrono |  |
+| cipher | 0.4.4 | https://github.com/RustCrypto/traits | RustCrypto Developers |
+| clap | 4.6.1 | https://github.com/clap-rs/clap |  |
+| clap_builder | 4.6.0 | https://github.com/clap-rs/clap |  |
+| clap_complete | 4.6.5 | https://github.com/clap-rs/clap |  |
+| clap_derive | 4.6.1 | https://github.com/clap-rs/clap |  |
+| clap_lex | 1.1.0 | https://github.com/clap-rs/clap |  |
+| cmov | 0.5.3 | https://github.com/RustCrypto/utils | RustCrypto Developers |
+| cobs | 0.3.0 | https://github.com/jamesmunns/cobs.rs | Allen Welkie <>\|James Munns <james@onevariable.com> |
+| colorchoice | 1.0.5 | https://github.com/rust-cli/anstyle.git |  |
+| comfy-table | 7.2.2 | https://github.com/nukesor/comfy-table | Arne Beer <contact@arne.beer> |
+| concurrent-queue | 2.5.0 | https://github.com/smol-rs/concurrent-queue | Stjepan Glavina <stjepang@gmail.com>\|Taiki Endo <te316e89@gmail.com>\|John Nunley <dev@notgull.net> |
+| constant_time_eq | 0.3.1 | https://github.com/cesarb/constant_time_eq | Cesar Eduardo Barros <cesarb@cesarb.eti.br> |
+| const-oid | 0.10.2 | https://github.com/RustCrypto/formats | RustCrypto Developers |
+| const-oid | 0.9.6 | https://github.com/RustCrypto/formats/tree/master/const-oid | RustCrypto Developers |
+| core-foundation | 0.10.1 | https://github.com/servo/core-foundation-rs | The Servo Project Developers |
+| core-foundation | 0.9.4 | https://github.com/servo/core-foundation-rs | The Servo Project Developers |
+| core-foundation-sys | 0.8.7 | https://github.com/servo/core-foundation-rs | The Servo Project Developers |
+| cpp_demangle | 0.4.5 | https://github.com/gimli-rs/cpp_demangle | Nick Fitzgerald <fitzgen@gmail.com>\|Jim Blandy <jimb@red-bean.com>\|Kyle Huey <khuey@kylehuey.com> |
+| cpufeatures | 0.2.17 | https://github.com/RustCrypto/utils | RustCrypto Developers |
+| cpufeatures | 0.3.0 | https://github.com/RustCrypto/utils | RustCrypto Developers |
+| cranelift-bforest | 0.111.11 | https://github.com/bytecodealliance/wasmtime | The Cranelift Project Developers |
+| cranelift-bitset | 0.111.11 | https://github.com/bytecodealliance/wasmtime | The Cranelift Project Developers |
+| cranelift-codegen | 0.111.11 | https://github.com/bytecodealliance/wasmtime | The Cranelift Project Developers |
+| cranelift-codegen-shared | 0.111.11 | https://github.com/bytecodealliance/wasmtime | The Cranelift Project Developers |
+| cranelift-control | 0.111.11 | https://github.com/bytecodealliance/wasmtime | The Cranelift Project Developers |
+| cranelift-entity | 0.111.11 | https://github.com/bytecodealliance/wasmtime | The Cranelift Project Developers |
+| cranelift-frontend | 0.111.11 | https://github.com/bytecodealliance/wasmtime | The Cranelift Project Developers |
+| cranelift-native | 0.111.11 | https://github.com/bytecodealliance/wasmtime | The Cranelift Project Developers |
+| cranelift-wasm | 0.111.11 | https://github.com/bytecodealliance/wasmtime | The Cranelift Project Developers |
+| crc32fast | 1.5.0 | https://github.com/srijs/rust-crc32fast | Sam Rijs <srijs@airpost.net>\|Alex Crichton <alex@alexcrichton.com> |
+| crc | 3.3.0 | https://github.com/mrhooray/crc-rs.git | Rui Hu <code@mrhooray.com>\|Akhil Velagapudi <4@4khil.com> |
+| crc-catalog | 2.4.0 | https://github.com/akhilles/crc-catalog.git | Akhil Velagapudi <akhilvelagapudi@gmail.com> |
+| crc-fast | 1.9.0 | https://github.com/awesomized/crc-fast-rust | Don MacAskill |
+| cron | 0.15.0 | https://github.com/zslayton/cron | Zack Slayton <zack.slayton@gmail.com> |
+| crossbeam-channel | 0.5.15 | https://github.com/crossbeam-rs/crossbeam |  |
+| crossbeam-deque | 0.8.6 | https://github.com/crossbeam-rs/crossbeam |  |
+| crossbeam-epoch | 0.9.20 | https://github.com/crossbeam-rs/crossbeam |  |
+| crossbeam-queue | 0.3.12 | https://github.com/crossbeam-rs/crossbeam |  |
+| crossbeam-utils | 0.8.21 | https://github.com/crossbeam-rs/crossbeam |  |
+| crossterm | 0.29.0 | https://github.com/crossterm-rs/crossterm | T. Post |
+| crossterm_winapi | 0.9.1 | https://github.com/crossterm-rs/crossterm-winapi | T. Post |
+| crypto-bigint | 0.5.5 | https://github.com/RustCrypto/crypto-bigint | RustCrypto Developers |
+| crypto-common | 0.1.7 | https://github.com/RustCrypto/traits | RustCrypto Developers |
+| crypto-common | 0.2.1 | https://github.com/RustCrypto/traits | RustCrypto Developers |
+| csv | 1.4.0 | https://github.com/BurntSushi/rust-csv | Andrew Gallant <jamslam@gmail.com> |
+| csv-core | 0.1.13 | https://github.com/BurntSushi/rust-csv | Andrew Gallant <jamslam@gmail.com> |
+| ctutils | 0.4.2 | https://github.com/RustCrypto/utils | RustCrypto Developers |
+| curve25519-dalek | 4.1.3 | https://github.com/dalek-cryptography/curve25519-dalek/tree/main/curve25519-dalek | Isis Lovecruft <isis@patternsinthevoid.net>\|Henry de Valence <hdevalence@hdevalence.ca> |
+| curve25519-dalek-derive | 0.1.1 | https://github.com/dalek-cryptography/curve25519-dalek |  |
+| darling | 0.20.11 | https://github.com/TedDriggs/darling | Ted Driggs <ted.driggs@outlook.com> |
+| darling_core | 0.20.11 | https://github.com/TedDriggs/darling | Ted Driggs <ted.driggs@outlook.com> |
+| darling_macro | 0.20.11 | https://github.com/TedDriggs/darling | Ted Driggs <ted.driggs@outlook.com> |
+| data-encoding | 2.10.0 | https://github.com/ia0/data-encoding | Julien Cretin <git@ia0.eu> |
+| debugid | 0.8.0 | https://github.com/getsentry/rust-debugid | Sentry <hello@sentry.io> |
+| deflate64 | 0.1.12 | https://github.com/anatawa12/deflate64-rs | anatawa12 <anatawa12@icloud.com> |
+| der | 0.7.10 | https://github.com/RustCrypto/formats/tree/master/der | RustCrypto Developers |
+| deranged | 0.5.8 | https://github.com/jhpratt/deranged | Jacob Pratt <jacob@jhpratt.dev> |
+| derivative | 2.2.0 | https://github.com/mcarton/rust-derivative | mcarton <cartonmartin+git@gmail.com> |
+| derive_arbitrary | 1.4.2 | https://github.com/rust-fuzz/arbitrary | The Rust-Fuzz Project Developers\|Nick Fitzgerald <fitzgen@gmail.com>\|Manish Goregaokar <manishsmail@gmail.com>\|Andre Bogus <bogusandre@gmail.com>\|Corey Farwell <coreyf@rwell.org> |
+| der-parser | 9.0.0 | https://github.com/rusticata/der-parser.git | Pierre Chifflier <chifflier@wzdftpd.net> |
+| digest | 0.10.7 | https://github.com/RustCrypto/traits | RustCrypto Developers |
+| digest | 0.11.2 | https://github.com/RustCrypto/traits | RustCrypto Developers |
+| directories-next | 2.0.0 | https://github.com/xdg-rs/dirs/tree/master/directories | The @xdg-rs members |
+| dirs | 4.0.0 | https://github.com/soc/dirs-rs | Simon Ochsenreither <simon@ochsenreither.de> |
+| dirs-sys | 0.3.7 | https://github.com/dirs-dev/dirs-sys-rs | Simon Ochsenreither <simon@ochsenreither.de> |
+| dirs-sys-next | 0.1.2 | https://github.com/xdg-rs/dirs/tree/master/dirs-sys | The @xdg-rs members |
+| displaydoc | 0.2.5 | https://github.com/yaahc/displaydoc | Jane Lusby <jlusby@yaah.dev> |
+| document-features | 0.2.12 | https://github.com/slint-ui/document-features | Slint Developers <info@slint.dev> |
+| dotenvy | 0.15.7 | https://github.com/allan2/dotenvy | Noemi Lapresta <noemi.lapresta@gmail.com>\|Craig Hills <chills@gmail.com>\|Mike Piccolo <mfpiccolo@gmail.com>\|Alice Maz <alice@alicemaz.com>\|Sean Griffin <sean@seantheprogrammer.com>\|Adam Sharp <adam@sharplet.me>\|Arpad Borsos <arpad.borsos@googlemail.com>\|Allan Zhang <al@ayz.ai> |
+| dtoa | 1.0.11 | https://github.com/dtolnay/dtoa | David Tolnay <dtolnay@gmail.com> |
+| dyn-clone | 1.0.20 | https://github.com/dtolnay/dyn-clone | David Tolnay <dtolnay@gmail.com> |
+| ecdsa | 0.16.9 | https://github.com/RustCrypto/signatures/tree/master/ecdsa | RustCrypto Developers |
+| ed25519 | 2.2.3 | https://github.com/RustCrypto/signatures/tree/master/ed25519 | RustCrypto Developers |
+| ed25519-dalek | 2.2.0 | https://github.com/dalek-cryptography/curve25519-dalek/tree/main/ed25519-dalek | isis lovecruft <isis@patternsinthevoid.net>\|Tony Arcieri <bascule@gmail.com>\|Michael Rosenberg <michael@mrosenberg.pub> |
+| either | 1.15.0 | https://github.com/rayon-rs/either | bluss |
+| elliptic-curve | 0.13.8 | https://github.com/RustCrypto/traits/tree/master/elliptic-curve | RustCrypto Developers |
+| embedded-io | 0.4.0 | https://github.com/embassy-rs/embedded-io |  |
+| embedded-io | 0.6.1 | https://github.com/rust-embedded/embedded-hal |  |
+| encoding_rs | 0.8.35 | https://github.com/hsivonen/encoding_rs | Henri Sivonen <hsivonen@hsivonen.fi> |
+| equivalent | 1.0.2 | https://github.com/indexmap-rs/equivalent |  |
+| errno | 0.3.14 | https://github.com/lambda-fairy/rust-errno | Chris Wong <lambda.fairy@gmail.com>\|Dan Gohman <dev@sunfishcode.online> |
+| etcetera | 0.8.0 | https://github.com/lunacookies/etcetera |  |
+| event-listener | 5.4.1 | https://github.com/smol-rs/event-listener | Stjepan Glavina <stjepang@gmail.com>\|John Nunley <dev@notgull.net> |
+| event-listener-strategy | 0.5.4 | https://github.com/smol-rs/event-listener-strategy | John Nunley <dev@notgull.net> |
+| fallible-iterator | 0.3.0 | https://github.com/sfackler/rust-fallible-iterator | Steven Fackler <sfackler@gmail.com> |
+| fastrand | 2.4.1 | https://github.com/smol-rs/fastrand | Stjepan Glavina <stjepang@gmail.com> |
+| fd-lock | 4.0.4 | https://github.com/yoshuawuyts/fd-lock | Yoshua Wuyts <yoshuawuyts@gmail.com> |
+| ff | 0.13.1 | https://github.com/zkcrypto/ff | Sean Bowe <ewillbefull@gmail.com>\|Jack Grigg <thestr4d@gmail.com> |
+| fiat-crypto | 0.2.9 | https://github.com/mit-plv/fiat-crypto | Fiat Crypto library authors <jgross@mit.edu> |
+| filetime | 0.2.29 | https://github.com/alexcrichton/filetime | Alex Crichton <alex@alexcrichton.com> |
+| flate2 | 1.1.9 | https://github.com/rust-lang/flate2-rs | Alex Crichton <alex@alexcrichton.com>\|Josh Triplett <josh@joshtriplett.org> |
+| fluent-uri | 0.1.4 | https://github.com/yescallop/fluent-uri-rs | Scallop Ye <yescallop@gmail.com> |
+| flume | 0.11.1 | https://github.com/zesterer/flume | Joshua Barretto <joshua.s.barretto@gmail.com> |
+| fnv | 1.0.7 | https://github.com/servo/rust-fnv | Alex Crichton <alex@alexcrichton.com> |
+| foldhash | 0.1.5 | https://github.com/orlp/foldhash | Orson Peters <orsonpeters@gmail.com> |
+| foldhash | 0.2.0 | https://github.com/orlp/foldhash | Orson Peters <orsonpeters@gmail.com> |
+| foreign-types | 0.3.2 | https://github.com/sfackler/foreign-types | Steven Fackler <sfackler@gmail.com> |
+| foreign-types-shared | 0.1.1 | https://github.com/sfackler/foreign-types | Steven Fackler <sfackler@gmail.com> |
+| form_urlencoded | 1.2.2 | https://github.com/servo/rust-url | The rust-url developers |
+| fs-err | 3.3.0 | https://github.com/andrewhickman/fs-err | Andrew Hickman <andrew.hickman1@sky.com> |
+| fs-set-times | 0.20.3 | https://github.com/bytecodealliance/fs-set-times | Dan Gohman <dev@sunfishcode.online> |
+| futures | 0.3.32 | https://github.com/rust-lang/futures-rs |  |
+| futures-channel | 0.3.32 | https://github.com/rust-lang/futures-rs |  |
+| futures-core | 0.3.32 | https://github.com/rust-lang/futures-rs |  |
+| futures-executor | 0.3.32 | https://github.com/rust-lang/futures-rs |  |
+| futures-intrusive | 0.5.0 | https://github.com/Matthias247/futures-intrusive | Matthias Einwag <matthias.einwag@live.com> |
+| futures-io | 0.3.32 | https://github.com/rust-lang/futures-rs |  |
+| futures-macro | 0.3.32 | https://github.com/rust-lang/futures-rs |  |
+| futures-sink | 0.3.32 | https://github.com/rust-lang/futures-rs |  |
+| futures-task | 0.3.32 | https://github.com/rust-lang/futures-rs |  |
+| futures-util | 0.3.32 | https://github.com/rust-lang/futures-rs |  |
+| fxhash | 0.2.1 | https://github.com/cbreeden/fxhash | cbreeden <github@u.breeden.cc> |
+| fxprof-processed-profile | 0.6.0 | https://github.com/mstange/samply/ | Markus Stange <mstange.moz@gmail.com> |
+| generic-array | 0.14.7 | https://github.com/fizyk20/generic-array.git | Bartłomiej Kamiński <fizyk20@gmail.com>\|Aaron Trent <novacrazy@gmail.com> |
+| getrandom | 0.2.17 | https://github.com/rust-random/getrandom | The Rand Project Developers |
+| getrandom | 0.3.4 | https://github.com/rust-random/getrandom | The Rand Project Developers |
+| getrandom | 0.4.2 | https://github.com/rust-random/getrandom | The Rand Project Developers |
+| gimli | 0.29.0 | https://github.com/gimli-rs/gimli |  |
+| glob | 0.3.3 | https://github.com/rust-lang/glob | The Rust Project Developers |
+| group | 0.13.0 | https://github.com/zkcrypto/group | Sean Bowe <ewillbefull@gmail.com>\|Jack Grigg <jack@z.cash> |
+| h2 | 0.3.27 | https://github.com/hyperium/h2 | Carl Lerche <me@carllerche.com>\|Sean McArthur <sean@seanmonstar.com> |
+| h2 | 0.4.13 | https://github.com/hyperium/h2 | Carl Lerche <me@carllerche.com>\|Sean McArthur <sean@seanmonstar.com> |
+| hashbrown | 0.12.3 | https://github.com/rust-lang/hashbrown | Amanieu d'Antras <amanieu@gmail.com> |
+| hashbrown | 0.13.2 | https://github.com/rust-lang/hashbrown | Amanieu d'Antras <amanieu@gmail.com> |
+| hashbrown | 0.14.5 | https://github.com/rust-lang/hashbrown | Amanieu d'Antras <amanieu@gmail.com> |
+| hashbrown | 0.15.5 | https://github.com/rust-lang/hashbrown | Amanieu d'Antras <amanieu@gmail.com> |
+| hashbrown | 0.16.1 | https://github.com/rust-lang/hashbrown | Amanieu d'Antras <amanieu@gmail.com> |
+| hashbrown | 0.17.0 | https://github.com/rust-lang/hashbrown | Amanieu d'Antras <amanieu@gmail.com> |
+| hashlink | 0.10.0 | https://github.com/kyren/hashlink | kyren <kerriganw@gmail.com> |
+| headers | 0.4.1 | https://github.com/hyperium/headers | Sean McArthur <sean@seanmonstar.com> |
+| headers-core | 0.3.0 | https://github.com/hyperium/headers | Sean McArthur <sean@seanmonstar.com> |
+| heck | 0.4.1 | https://github.com/withoutboats/heck | Without Boats <woboats@gmail.com> |
+| heck | 0.5.0 | https://github.com/withoutboats/heck |  |
+| hex | 0.4.3 | https://github.com/KokaKiwi/rust-hex | KokaKiwi <kokakiwi@kokakiwi.net> |
+| hkdf | 0.12.4 | https://github.com/RustCrypto/KDFs/ | RustCrypto Developers |
+| hmac | 0.12.1 | https://github.com/RustCrypto/MACs | RustCrypto Developers |
+| hmac | 0.13.0 | https://github.com/RustCrypto/MACs | RustCrypto Developers |
+| home | 0.5.12 | https://github.com/rust-lang/cargo | Brian Anderson <andersrb@gmail.com> |
+| hostname | 0.4.2 | https://github.com/djc/hostname |  |
+| http | 0.2.12 | https://github.com/hyperium/http | Alex Crichton <alex@alexcrichton.com>\|Carl Lerche <me@carllerche.com>\|Sean McArthur <sean@seanmonstar.com> |
+| http | 1.4.0 | https://github.com/hyperium/http | Alex Crichton <alex@alexcrichton.com>\|Carl Lerche <me@carllerche.com>\|Sean McArthur <sean@seanmonstar.com> |
+| httparse | 1.10.1 | https://github.com/seanmonstar/httparse | Sean McArthur <sean@seanmonstar.com> |
+| http-body | 0.4.6 | https://github.com/hyperium/http-body | Carl Lerche <me@carllerche.com>\|Lucio Franco <luciofranco14@gmail.com>\|Sean McArthur <sean@seanmonstar.com> |
+| http-body | 1.0.1 | https://github.com/hyperium/http-body | Carl Lerche <me@carllerche.com>\|Lucio Franco <luciofranco14@gmail.com>\|Sean McArthur <sean@seanmonstar.com> |
+| http-body-util | 0.1.3 | https://github.com/hyperium/http-body | Carl Lerche <me@carllerche.com>\|Lucio Franco <luciofranco14@gmail.com>\|Sean McArthur <sean@seanmonstar.com> |
+| httpdate | 1.0.3 | https://github.com/pyfisch/httpdate | Pyfisch <pyfisch@posteo.org> |
+| hybrid-array | 0.4.11 | https://github.com/RustCrypto/hybrid-array | RustCrypto Developers |
+| hyper | 0.14.32 | https://github.com/hyperium/hyper | Sean McArthur <sean@seanmonstar.com> |
+| hyper | 1.9.0 | https://github.com/hyperium/hyper | Sean McArthur <sean@seanmonstar.com> |
+| hyper-http-proxy | 1.1.0 | https://github.com/metalbear-co/hyper-http-proxy | MetalBear Tech LTD <hi@metalbear.co> |
+| hyper-rustls | 0.24.2 | https://github.com/rustls/hyper-rustls |  |
+| hyper-rustls | 0.27.9 | https://github.com/rustls/hyper-rustls |  |
+| hyper-timeout | 0.4.1 | https://github.com/hjr3/hyper-timeout | Herman J. Radtke III <herman@hermanradtke.com> |
+| hyper-timeout | 0.5.2 | https://github.com/hjr3/hyper-timeout | Herman J. Radtke III <herman@hermanradtke.com> |
+| hyper-tls | 0.6.0 | https://github.com/hyperium/hyper-tls | Sean McArthur <sean@seanmonstar.com> |
+| hyper-util | 0.1.20 | https://github.com/hyperium/hyper-util | Sean McArthur <sean@seanmonstar.com> |
+| iana-time-zone | 0.1.65 | https://github.com/strawlab/iana-time-zone | Andrew Straw <strawman@astraw.com>\|René Kijewski <rene.kijewski@fu-berlin.de>\|Ryan Lopopolo <rjl@hyperbo.la> |
+| iana-time-zone-haiku | 0.1.2 | https://github.com/strawlab/iana-time-zone | René Kijewski <crates.io@k6i.de> |
+| icu_collections | 2.2.0 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| icu_locale_core | 2.2.0 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| icu_normalizer | 2.2.0 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| icu_normalizer_data | 2.2.0 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| icu_properties | 2.2.0 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| icu_properties_data | 2.2.0 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| icu_provider | 2.2.0 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| id-arena | 2.3.0 | https://github.com/fitzgen/id-arena | Nick Fitzgerald <fitzgen@gmail.com>\|Aleksey Kladov <aleksey.kladov@gmail.com> |
+| ident_case | 1.0.1 | https://github.com/TedDriggs/ident_case | Ted Driggs <ted.driggs@outlook.com> |
+| idna | 1.1.0 | https://github.com/servo/rust-url/ | The rust-url developers |
+| idna_adapter | 1.2.1 | https://github.com/hsivonen/idna_adapter | The rust-url developers |
+| indexmap | 1.9.3 | https://github.com/bluss/indexmap |  |
+| indexmap | 2.14.0 | https://github.com/indexmap-rs/indexmap |  |
+| inout | 0.1.4 | https://github.com/RustCrypto/utils | RustCrypto Developers |
+| instant | 0.1.13 | https://github.com/sebcrozet/instant | sebcrozet <developer@crozet.re> |
+| io-extras | 0.18.4 | https://github.com/sunfishcode/io-extras | Dan Gohman <dev@sunfishcode.online> |
+| io-lifetimes | 2.0.4 | https://github.com/sunfishcode/io-lifetimes | Dan Gohman <dev@sunfishcode.online> |
+| ipnet | 2.12.0 | https://github.com/krisprice/ipnet | Kris Price <kris@krisprice.nz> |
+| iri-string | 0.7.12 | https://github.com/lo48576/iri-string | YOSHIOKA Takuma <nop_thread@nops.red> |
+| is_terminal_polyfill | 1.70.2 | https://github.com/polyfill-rs/is_terminal_polyfill |  |
+| itertools | 0.10.5 | https://github.com/rust-itertools/itertools | bluss |
+| itertools | 0.12.1 | https://github.com/rust-itertools/itertools | bluss |
+| itoa | 1.0.18 | https://github.com/dtolnay/itoa | David Tolnay <dtolnay@gmail.com> |
+| ittapi | 0.4.0 | https://github.com/intel/ittapi | Johnnie Birch <45402135+jlb6740@users.noreply.github.com>\|Benjamin Bouvier <public@benj.me> |
+| ittapi-sys | 0.4.0 | https://github.com/intel/ittapi | Johnnie Birch <45402135+jlb6740@users.noreply.github.com> |
+| json-patch | 2.0.0 | https://github.com/idubrov/json-patch | Ivan Dubrov <dubrov.ivan@gmail.com> |
+| json-patch | 4.2.0 | https://github.com/idubrov/json-patch | Ivan Dubrov <dubrov.ivan@gmail.com> |
+| jsonpath-rust | 0.5.1 | https://github.com/besok/jsonpath-rust | BorisZhguchev <zhguchev@gmail.com> |
+| jsonptr | 0.4.7 | https://github.com/chanced/jsonptr | chance dinkins |
+| jsonptr | 0.7.1 | https://github.com/chanced/jsonptr | chance dinkins\|André Sá de Mello <codasm@pm.me>\|Oliver Wangler <oliver@wngr.de> |
+| jsonwebtoken | 9.3.1 | https://github.com/Keats/jsonwebtoken | Vincent Prouillet <hello@vincentprouillet.com> |
+| js-sys | 0.3.95 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys | The wasm-bindgen Developers |
+| k8s-openapi | 0.22.0 | https://github.com/Arnavion/k8s-openapi | Arnav Singh <me@arnavion.dev> |
+| kube | 0.94.2 | https://github.com/kube-rs/kube | clux <sszynrae@gmail.com>\|Natalie Klestrup Röijezon <nat@nullable.se>\|kazk <kazk.dev@gmail.com> |
+| kube-client | 0.94.2 | https://github.com/kube-rs/kube | clux <sszynrae@gmail.com>\|Natalie Klestrup Röijezon <nat@nullable.se>\|kazk <kazk.dev@gmail.com> |
+| kube-core | 0.94.2 | https://github.com/kube-rs/kube | clux <sszynrae@gmail.com>\|Natalie Klestrup Röijezon <nat@nullable.se>\|kazk <kazk.dev@gmail.com> |
+| kube-derive | 0.94.2 | https://github.com/kube-rs/kube | clux <sszynrae@gmail.com>\|Natalie Klestrup Röijezon <nat@nullable.se>\|kazk <kazk.dev@gmail.com> |
+| kube-runtime | 0.94.2 | https://github.com/kube-rs/kube | clux <sszynrae@gmail.com>\|Natalie Klestrup Röijezon <nat@nullable.se>\|kazk <kazk.dev@gmail.com> |
+| lazy_static | 1.5.0 | https://github.com/rust-lang-nursery/lazy-static.rs | Marvin Löbel <loebel.marvin@gmail.com> |
+| leb128 | 0.2.6 | https://github.com/gimli-rs/leb128 | Nick Fitzgerald <fitzgen@gmail.com>\|Philip Craig <philipjcraig@gmail.com> |
+| leb128fmt | 0.1.0 | https://github.com/bluk/leb128fmt | Bryant Luk <code@bryantluk.com> |
+| libc | 0.2.185 | https://github.com/rust-lang/libc | The Rust Project Developers |
+| libm | 0.2.16 | https://github.com/rust-lang/compiler-builtins | Alex Crichton <alex@alexcrichton.com>\|Amanieu d'Antras <amanieu@gmail.com>\|Jorge Aparicio <japaricious@gmail.com>\|Trevor Gross <tg@trevorgross.com> |
+| libredox | 0.1.16 | https://gitlab.redox-os.org/redox-os/libredox.git | 4lDO2 <4lDO2@protonmail.com> |
+| libsqlite3-sys | 0.30.1 | https://github.com/rusqlite/rusqlite | The rusqlite developers |
+| linked-hash-map | 0.5.6 | https://github.com/contain-rs/linked-hash-map | Stepan Koltsov <stepan.koltsov@gmail.com>\|Andrew Paseltiner <apaseltiner@gmail.com> |
+| linux-raw-sys | 0.12.1 | https://github.com/sunfishcode/linux-raw-sys | Dan Gohman <dev@sunfishcode.online> |
+| linux-raw-sys | 0.4.15 | https://github.com/sunfishcode/linux-raw-sys | Dan Gohman <dev@sunfishcode.online> |
+| litemap | 0.8.2 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| litrs | 1.0.0 | https://github.com/LukasKalbertodt/litrs | Lukas Kalbertodt <lukas.kalbertodt@gmail.com> |
+| lock_api | 0.4.14 | https://github.com/Amanieu/parking_lot | Amanieu d'Antras <amanieu@gmail.com> |
+| log | 0.4.29 | https://github.com/rust-lang/log | The Rust Project Developers |
+| lopdf | 0.31.0 | https://github.com/J-F-Liu/lopdf.git | Junfeng Liu <china.liujunfeng@gmail.com>\|Emulator <emulator@hotmail.it> |
+| lru | 0.16.4 | https://github.com/jeromefroe/lru-rs.git | Jerome Froelich <jeromefroelic@hotmail.com> |
+| lru-slab | 0.1.2 | https://github.com/Ralith/lru-slab | Benjamin Saunders <ben.e.saunders@gmail.com> |
+| lzma-rs | 0.3.0 | https://github.com/gendx/lzma-rs | Guillaume Endignoux <ggendx@gmail.com> |
+| lzma-sys | 0.1.20 | https://github.com/alexcrichton/xz2-rs | Alex Crichton <alex@alexcrichton.com> |
+| mach2 | 0.4.3 | https://github.com/JohnTitor/mach2 |  |
+| matchers | 0.2.0 | https://github.com/hawkw/matchers | Eliza Weisman <eliza@buoyant.io> |
+| matchit | 0.7.3 | https://github.com/ibraheemdev/matchit | Ibraheem Ahmed <ibraheem@ibraheem.ca> |
+| maybe-owned | 0.3.4 | https://github.com/rustonaut/maybe-owned | Philipp korber <philippkorber@gmail.com>\|darkstalker <slayerbeast@gmail.com>\|daboross <daboross@daboross.net>\|Zac Burns (That3Percent) <that3percent@gmail.com> |
+| md-5 | 0.10.6 | https://github.com/RustCrypto/hashes | RustCrypto Developers |
+| md-5 | 0.11.0 | https://github.com/RustCrypto/hashes | RustCrypto Developers |
+| md5 | 0.7.0 | https://github.com/stainless-steel/md5 | Ivan Ukhov <ivan.ukhov@gmail.com>\|Kamal Ahmad <shibe@openmailbox.org>\|Konstantin Stepanov <milezv@gmail.com>\|Lukas Kalbertodt <lukas.kalbertodt@gmail.com>\|Nathan Musoke <nathan.musoke@gmail.com>\|Scott Mabin <scott@mabez.dev>\|Tony Arcieri <bascule@gmail.com>\|Wim de With <register@dewith.io>\|Yosef Dinerstein <yosefdi@gmail.com> |
+| md5 | 0.8.0 | https://github.com/stainless-steel/md5 | Ivan Ukhov <ivan.ukhov@gmail.com>\|Kamal Ahmad <shibe@openmailbox.org>\|Konstantin Stepanov <milezv@gmail.com>\|Lukas Kalbertodt <lukas.kalbertodt@gmail.com>\|Nathan Musoke <nathan.musoke@gmail.com>\|Scott Mabin <scott@mabez.dev>\|Tony Arcieri <bascule@gmail.com>\|Wim de With <register@dewith.io>\|Yosef Dinerstein <yosefdi@gmail.com> |
+| memchr | 2.8.0 | https://github.com/BurntSushi/memchr | Andrew Gallant <jamslam@gmail.com>\|bluss |
+| memfd | 0.6.5 | https://github.com/lucab/memfd-rs | Luca Bruno <lucab@lucabruno.net>\|Simonas Kazlauskas <memfd@kazlauskas.me> |
+| mime | 0.3.17 | https://github.com/hyperium/mime | Sean McArthur <sean@seanmonstar.com> |
+| mime_guess | 2.0.5 | https://github.com/abonander/mime_guess | Austin Bonander <austin.bonander@gmail.com> |
+| minimal-lexical | 0.2.1 | https://github.com/Alexhuszagh/minimal-lexical | Alex Huszagh <ahuszagh@gmail.com> |
+| miniz_oxide | 0.8.9 | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide | Frommi <daniil.liferenko@gmail.com>\|oyvindln <oyvindln@users.noreply.github.com>\|Rich Geldreich richgel99@gmail.com |
+| mio | 1.2.0 | https://github.com/tokio-rs/mio | Carl Lerche <me@carllerche.com>\|Thomas de Zeeuw <thomasdezeeuw@gmail.com>\|Tokio Contributors <team@tokio.rs> |
+| native-tls | 0.2.18 | https://github.com/rust-native-tls/rust-native-tls | Steven Fackler <sfackler@gmail.com> |
+| nom | 7.1.3 | https://github.com/Geal/nom | contact@geoffroycouprie.com |
+| nu-ansi-term | 0.50.3 | https://github.com/nushell/nu-ansi-term | ogham@bsago.me\|Ryan Scheel (Havvy) <ryan.havvy@gmail.com>\|Josh Triplett <josh@joshtriplett.org>\|The Nushell Project Developers |
+| num-bigint | 0.4.6 | https://github.com/rust-num/num-bigint | The Rust Project Developers |
+| num-bigint-dig | 0.8.6 | https://github.com/dignifiedquire/num-bigint | dignifiedquire <dignifiedquire@gmail.com>\|The Rust Project Developers |
+| num-conv | 0.2.1 | https://github.com/jhpratt/num-conv | Jacob Pratt <jacob@jhpratt.dev> |
+| num-integer | 0.1.46 | https://github.com/rust-num/num-integer | The Rust Project Developers |
+| num-iter | 0.1.45 | https://github.com/rust-num/num-iter | The Rust Project Developers |
+| num-traits | 0.2.19 | https://github.com/rust-num/num-traits | The Rust Project Developers |
+| object | 0.36.7 | https://github.com/gimli-rs/object |  |
+| oid-registry | 0.7.1 | https://github.com/rusticata/oid-registry.git | Pierre Chifflier <chifflier@wzdftpd.net> |
+| once_cell | 1.21.4 | https://github.com/matklad/once_cell | Aleksey Kladov <aleksey.kladov@gmail.com> |
+| once_cell_polyfill | 1.70.2 | https://github.com/polyfill-rs/once_cell_polyfill |  |
+| openssl | 0.10.78 | https://github.com/rust-openssl/rust-openssl | Steven Fackler <sfackler@gmail.com> |
+| openssl-macros | 0.1.1 |  |  |
+| openssl-probe | 0.1.6 | https://github.com/alexcrichton/openssl-probe | Alex Crichton <alex@alexcrichton.com> |
+| openssl-probe | 0.2.1 | https://github.com/rustls/openssl-probe | Alex Crichton <alex@alexcrichton.com> |
+| openssl-sys | 0.9.114 | https://github.com/rust-openssl/rust-openssl | Alex Crichton <alex@alexcrichton.com>\|Steven Fackler <sfackler@gmail.com> |
+| opentelemetry | 0.21.0 | https://github.com/open-telemetry/opentelemetry-rust |  |
+| opentelemetry-http | 0.10.0 | https://github.com/open-telemetry/opentelemetry-rust |  |
+| opentelemetry-otlp | 0.14.0 | https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-otlp |  |
+| opentelemetry-proto | 0.4.0 | https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-proto |  |
+| opentelemetry_sdk | 0.21.2 | https://github.com/open-telemetry/opentelemetry-rust |  |
+| opentelemetry-semantic-conventions | 0.13.0 | https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-semantic-conventions |  |
+| ordered-float | 2.10.1 | https://github.com/reem/rust-ordered-float | Jonathan Reem <jonathan.reem@gmail.com>\|Matt Brubeck <mbrubeck@limpet.net> |
+| ordered-float | 4.6.0 | https://github.com/reem/rust-ordered-float | Jonathan Reem <jonathan.reem@gmail.com>\|Matt Brubeck <mbrubeck@limpet.net> |
+| outref | 0.5.2 | https://github.com/Nugine/outref |  |
+| owned_ttf_parser | 0.19.0 | https://github.com/alexheretic/owned-ttf-parser | Alex Butler <alexheretic@gmail.com> |
+| p256 | 0.13.2 | https://github.com/RustCrypto/elliptic-curves/tree/master/p256 | RustCrypto Developers |
+| parking | 2.2.1 | https://github.com/smol-rs/parking | Stjepan Glavina <stjepang@gmail.com>\|The Rust Project Developers |
+| parking_lot | 0.12.5 | https://github.com/Amanieu/parking_lot | Amanieu d'Antras <amanieu@gmail.com> |
+| parking_lot_core | 0.9.12 | https://github.com/Amanieu/parking_lot | Amanieu d'Antras <amanieu@gmail.com> |
+| paste | 1.0.15 | https://github.com/dtolnay/paste | David Tolnay <dtolnay@gmail.com> |
+| pbkdf2 | 0.12.2 | https://github.com/RustCrypto/password-hashes/tree/master/pbkdf2 | RustCrypto Developers |
+| pem | 3.0.6 | https://github.com/jcreekmore/pem-rs.git | Jonathan Creekmore <jonathan@thecreekmores.org> |
+| pem-rfc7468 | 0.7.0 | https://github.com/RustCrypto/formats/tree/master/pem-rfc7468 | RustCrypto Developers |
+| percent-encoding | 2.3.2 | https://github.com/servo/rust-url/ | The rust-url developers |
+| pest | 2.8.6 | https://github.com/pest-parser/pest | Dragoș Tiselice <dragostiselice@gmail.com> |
+| pest_derive | 2.8.6 | https://github.com/pest-parser/pest | Dragoș Tiselice <dragostiselice@gmail.com> |
+| pest_generator | 2.8.6 | https://github.com/pest-parser/pest | Dragoș Tiselice <dragostiselice@gmail.com> |
+| pest_meta | 2.8.6 | https://github.com/pest-parser/pest | Dragoș Tiselice <dragostiselice@gmail.com> |
+| pin-project | 1.1.11 | https://github.com/taiki-e/pin-project |  |
+| pin-project-internal | 1.1.11 | https://github.com/taiki-e/pin-project |  |
+| pin-project-lite | 0.2.17 | https://github.com/taiki-e/pin-project-lite |  |
+| pin-utils | 0.1.0 | https://github.com/rust-lang-nursery/pin-utils | Josef Brandl <mail@josefbrandl.de> |
+| pkcs1 | 0.7.5 | https://github.com/RustCrypto/formats/tree/master/pkcs1 | RustCrypto Developers |
+| pkcs8 | 0.10.2 | https://github.com/RustCrypto/formats/tree/master/pkcs8 | RustCrypto Developers |
+| plain | 0.2.3 | https://github.com/randomites/plain | jzr |
+| pom | 3.4.0 | https://github.com/J-F-Liu/pom.git | Junfeng Liu <china.liujunfeng@gmail.com> |
+| postcard | 1.1.3 | https://github.com/jamesmunns/postcard | James Munns <james@onevariable.com> |
+| potential_utf | 0.1.5 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| powerfmt | 0.2.0 | https://github.com/jhpratt/powerfmt | Jacob Pratt <jacob@jhpratt.dev> |
+| ppv-lite86 | 0.2.21 | https://github.com/cryptocorrosion/cryptocorrosion | The CryptoCorrosion Contributors |
+| prettyplease | 0.2.37 | https://github.com/dtolnay/prettyplease | David Tolnay <dtolnay@gmail.com> |
+| primeorder | 0.13.6 | https://github.com/RustCrypto/elliptic-curves/tree/master/primeorder | RustCrypto Developers |
+| printpdf | 0.7.0 | https://github.com/fschutt/printpdf | Felix Schütt <felix.schuett@maps4print.com>\|Julien Schminke <julien.schminke@web.de |
+| proc-macro2 | 1.0.106 | https://github.com/dtolnay/proc-macro2 | David Tolnay <dtolnay@gmail.com>\|Alex Crichton <alex@alexcrichton.com> |
+| prometheus-client | 0.22.3 | https://github.com/prometheus/client_rust | Max Inden <mail@max-inden.de> |
+| prometheus-client-derive-encode | 0.4.2 | https://github.com/prometheus/client_rust | Max Inden <mail@max-inden.de> |
+| prost | 0.11.9 | https://github.com/tokio-rs/prost | Dan Burkert <dan@danburkert.com>\|Lucio Franco <luciofranco14@gmail.com\|Tokio Contributors <team@tokio.rs> |
+| prost-derive | 0.11.9 | https://github.com/tokio-rs/prost | Dan Burkert <dan@danburkert.com>\|Lucio Franco <luciofranco14@gmail.com>\|Tokio Contributors <team@tokio.rs> |
+| psm | 0.1.31 | https://github.com/rust-lang/stacker/ | Simonas Kazlauskas <psm@kazlauskas.me> |
+| quinn | 0.11.9 | https://github.com/quinn-rs/quinn |  |
+| quinn-proto | 0.11.14 | https://github.com/quinn-rs/quinn |  |
+| quinn-udp | 0.5.14 | https://github.com/quinn-rs/quinn |  |
+| quote | 1.0.45 | https://github.com/dtolnay/quote | David Tolnay <dtolnay@gmail.com> |
+| rand | 0.8.6 | https://github.com/rust-random/rand | The Rand Project Developers\|The Rust Project Developers |
+| rand | 0.9.4 | https://github.com/rust-random/rand | The Rand Project Developers\|The Rust Project Developers |
+| rand_chacha | 0.3.1 | https://github.com/rust-random/rand | The Rand Project Developers\|The Rust Project Developers\|The CryptoCorrosion Contributors |
+| rand_chacha | 0.9.0 | https://github.com/rust-random/rand | The Rand Project Developers\|The Rust Project Developers\|The CryptoCorrosion Contributors |
+| rand_core | 0.6.4 | https://github.com/rust-random/rand | The Rand Project Developers\|The Rust Project Developers |
+| rand_core | 0.9.5 | https://github.com/rust-random/rand | The Rand Project Developers\|The Rust Project Developers |
+| rayon | 1.12.0 | https://github.com/rayon-rs/rayon |  |
+| rayon-core | 1.13.0 | https://github.com/rayon-rs/rayon |  |
+| rcgen | 0.13.2 | https://github.com/rustls/rcgen |  |
+| redox_syscall | 0.5.18 | https://gitlab.redox-os.org/redox-os/syscall | Jeremy Soller <jackpot51@gmail.com> |
+| redox_syscall | 0.7.4 | https://gitlab.redox-os.org/redox-os/syscall | Jeremy Soller <jackpot51@gmail.com> |
+| redox_users | 0.4.6 | https://gitlab.redox-os.org/redox-os/users | Jose Narvaez <goyox86@gmail.com>\|Wesley Hershberger <mggmugginsmc@gmail.com> |
+| r-efi | 5.3.0 | https://github.com/r-efi/r-efi |  |
+| r-efi | 6.0.0 | https://github.com/r-efi/r-efi |  |
+| regalloc2 | 0.9.3 | https://github.com/bytecodealliance/regalloc2 | Chris Fallin <chris@cfallin.org>\|Mozilla SpiderMonkey Developers |
+| regex | 1.12.3 | https://github.com/rust-lang/regex | The Rust Project Developers\|Andrew Gallant <jamslam@gmail.com> |
+| regex-automata | 0.4.14 | https://github.com/rust-lang/regex | The Rust Project Developers\|Andrew Gallant <jamslam@gmail.com> |
+| regex-lite | 0.1.9 | https://github.com/rust-lang/regex | The Rust Project Developers\|Andrew Gallant <jamslam@gmail.com> |
+| regex-syntax | 0.8.10 | https://github.com/rust-lang/regex | The Rust Project Developers\|Andrew Gallant <jamslam@gmail.com> |
+| reqwest | 0.12.28 | https://github.com/seanmonstar/reqwest | Sean McArthur <sean@seanmonstar.com> |
+| rfc6979 | 0.4.0 | https://github.com/RustCrypto/signatures/tree/master/rfc6979 | RustCrypto Developers |
+| ring | 0.17.14 | https://github.com/briansmith/ring |  |
+| rsa | 0.9.10 | https://github.com/RustCrypto/RSA | RustCrypto Developers\|dignifiedquire <dignifiedquire@gmail.com> |
+| rustc-demangle | 0.1.27 | https://github.com/rust-lang/rustc-demangle | Alex Crichton <alex@alexcrichton.com> |
+| rustc-hash | 1.1.0 | https://github.com/rust-lang-nursery/rustc-hash | The Rust Project Developers |
+| rustc-hash | 2.1.2 | https://github.com/rust-lang/rustc-hash | The Rust Project Developers |
+| rusticata-macros | 4.1.0 | https://github.com/rusticata/rusticata-macros.git | Pierre Chifflier <chifflier@wzdftpd.net> |
+| rustix | 0.38.44 | https://github.com/bytecodealliance/rustix | Dan Gohman <dev@sunfishcode.online>\|Jakub Konka <kubkon@jakubkonka.com> |
+| rustix | 1.1.4 | https://github.com/bytecodealliance/rustix | Dan Gohman <dev@sunfishcode.online>\|Jakub Konka <kubkon@jakubkonka.com> |
+| rustix-linux-procfs | 0.1.1 | https://github.com/sunfishcode/rustix-linux-procfs | Dan Gohman <dev@sunfishcode.online> |
+| rustls | 0.21.12 | https://github.com/rustls/rustls |  |
+| rustls | 0.23.40 | https://github.com/rustls/rustls |  |
+| rustls-native-certs | 0.7.3 | https://github.com/rustls/rustls-native-certs |  |
+| rustls-native-certs | 0.8.3 | https://github.com/rustls/rustls-native-certs |  |
+| rustls-pemfile | 2.2.0 | https://github.com/rustls/pemfile |  |
+| rustls-pki-types | 1.14.1 | https://github.com/rustls/pki-types |  |
+| rustls-webpki | 0.101.7 | https://github.com/rustls/webpki |  |
+| rustls-webpki | 0.103.13 | https://github.com/rustls/webpki |  |
+| rustversion | 1.0.22 | https://github.com/dtolnay/rustversion | David Tolnay <dtolnay@gmail.com> |
+| ryu | 1.0.23 | https://github.com/dtolnay/ryu | David Tolnay <dtolnay@gmail.com> |
+| same-file | 1.0.6 | https://github.com/BurntSushi/same-file | Andrew Gallant <jamslam@gmail.com> |
+| schannel | 0.1.29 | https://github.com/steffengy/schannel-rs | Steven Fackler <sfackler@gmail.com>\|Steffen Butzer <steffen.butzer@outlook.com> |
+| schemars | 0.8.22 | https://github.com/GREsau/schemars | Graham Esau <gesau@hotmail.co.uk> |
+| schemars_derive | 0.8.22 | https://github.com/GREsau/schemars | Graham Esau <gesau@hotmail.co.uk> |
+| scopeguard | 1.2.0 | https://github.com/bluss/scopeguard | bluss |
+| sct | 0.7.1 | https://github.com/rustls/sct.rs | Joseph Birr-Pixton <jpixton@gmail.com> |
+| sec1 | 0.7.3 | https://github.com/RustCrypto/formats/tree/master/sec1 | RustCrypto Developers |
+| secrecy | 0.8.0 | https://github.com/iqlusioninc/crates/tree/main/secrecy | Tony Arcieri <tony@iqlusion.io> |
+| security-framework | 2.11.1 | https://github.com/kornelski/rust-security-framework | Steven Fackler <sfackler@gmail.com>\|Kornel <kornel@geekhood.net> |
+| security-framework | 3.7.0 | https://github.com/kornelski/rust-security-framework | Steven Fackler <sfackler@gmail.com>\|Kornel <kornel@geekhood.net> |
+| security-framework-sys | 2.17.0 | https://github.com/kornelski/rust-security-framework | Steven Fackler <sfackler@gmail.com>\|Kornel <kornel@geekhood.net> |
+| semver | 1.0.28 | https://github.com/dtolnay/semver | David Tolnay <dtolnay@gmail.com> |
+| serde | 1.0.228 | https://github.com/serde-rs/serde | Erick Tryzelaar <erick.tryzelaar@gmail.com>\|David Tolnay <dtolnay@gmail.com> |
+| serde_core | 1.0.228 | https://github.com/serde-rs/serde | Erick Tryzelaar <erick.tryzelaar@gmail.com>\|David Tolnay <dtolnay@gmail.com> |
+| serde_derive | 1.0.228 | https://github.com/serde-rs/serde | Erick Tryzelaar <erick.tryzelaar@gmail.com>\|David Tolnay <dtolnay@gmail.com> |
+| serde_derive_internals | 0.29.1 | https://github.com/serde-rs/serde | Erick Tryzelaar <erick.tryzelaar@gmail.com>\|David Tolnay <dtolnay@gmail.com> |
+| serde_json | 1.0.150 | https://github.com/serde-rs/json | Erick Tryzelaar <erick.tryzelaar@gmail.com>\|David Tolnay <dtolnay@gmail.com> |
+| serde_path_to_error | 0.1.20 | https://github.com/dtolnay/path-to-error | David Tolnay <dtolnay@gmail.com> |
+| serde_spanned | 0.6.9 | https://github.com/toml-rs/toml |  |
+| serde_urlencoded | 0.7.1 | https://github.com/nox/serde_urlencoded | Anthony Ramine <n.oxyde@gmail.com> |
+| serde-value | 0.7.0 | https://github.com/arcnmx/serde-value | arcnmx |
+| serde_yaml | 0.9.34+deprecated | https://github.com/dtolnay/serde-yaml | David Tolnay <dtolnay@gmail.com> |
+| sha1 | 0.10.6 | https://github.com/RustCrypto/hashes | RustCrypto Developers |
+| sha1 | 0.11.0 | https://github.com/RustCrypto/hashes | RustCrypto Developers |
+| sha2 | 0.10.9 | https://github.com/RustCrypto/hashes | RustCrypto Developers |
+| sha2 | 0.11.0 | https://github.com/RustCrypto/hashes | RustCrypto Developers |
+| sharded-slab | 0.1.7 | https://github.com/hawkw/sharded-slab | Eliza Weisman <eliza@buoyant.io> |
+| shellexpand | 2.1.2 | https://gitlab.com/ijackson/rust-shellexpand | Vladimir Matveev <vmatveev@citrine.cc>\|Ian Jackson <iwj@torproject.org> |
+| signal-hook-registry | 1.4.8 | https://github.com/vorner/signal-hook | Michal 'vorner' Vaner <vorner@vorner.cz>\|Masaki Hara <ackie.h.gmai@gmail.com> |
+| signature | 2.2.0 | https://github.com/RustCrypto/traits/tree/master/signature | RustCrypto Developers |
+| simd-adler32 | 0.3.9 | https://github.com/mcountryman/simd-adler32 | Marvin Countryman <me@maar.vin> |
+| simple_asn1 | 0.6.4 | https://github.com/acw/simple_asn1 | Adam Wick <awick@uhsure.com> |
+| slab | 0.4.12 | https://github.com/tokio-rs/slab | Carl Lerche <me@carllerche.com> |
+| slice-group-by | 0.3.1 | https://github.com/Kerollmops/slice-group-by | Kerollmops <renault.cle@gmail.com> |
+| smallvec | 1.15.1 | https://github.com/servo/rust-smallvec | The Servo Project Developers |
+| socket2 | 0.5.10 | https://github.com/rust-lang/socket2 | Alex Crichton <alex@alexcrichton.com>\|Thomas de Zeeuw <thomasdezeeuw@gmail.com> |
+| socket2 | 0.6.3 | https://github.com/rust-lang/socket2 | Alex Crichton <alex@alexcrichton.com>\|Thomas de Zeeuw <thomasdezeeuw@gmail.com> |
+| spin | 0.10.0 | https://github.com/mvdnes/spin-rs.git | Mathijs van de Nes <git@mathijs.vd-nes.nl>\|John Ericson <git@JohnEricson.me>\|Joshua Barretto <joshua.s.barretto@gmail.com> |
+| spin | 0.9.8 | https://github.com/mvdnes/spin-rs.git | Mathijs van de Nes <git@mathijs.vd-nes.nl>\|John Ericson <git@JohnEricson.me>\|Joshua Barretto <joshua.s.barretto@gmail.com> |
+| spki | 0.7.3 | https://github.com/RustCrypto/formats/tree/master/spki | RustCrypto Developers |
+| sptr | 0.3.2 | https://github.com/Gankra/sptr |  |
+| sqlx | 0.8.6 | https://github.com/launchbadge/sqlx | Ryan Leckey <leckey.ryan@gmail.com>\|Austin Bonander <austin.bonander@gmail.com>\|Chloe Ross <orangesnowfox@gmail.com>\|Daniel Akhterov <akhterovd@gmail.com> |
+| sqlx-core | 0.8.6 | https://github.com/launchbadge/sqlx | Ryan Leckey <leckey.ryan@gmail.com>\|Austin Bonander <austin.bonander@gmail.com>\|Chloe Ross <orangesnowfox@gmail.com>\|Daniel Akhterov <akhterovd@gmail.com> |
+| sqlx-macros | 0.8.6 | https://github.com/launchbadge/sqlx | Ryan Leckey <leckey.ryan@gmail.com>\|Austin Bonander <austin.bonander@gmail.com>\|Chloe Ross <orangesnowfox@gmail.com>\|Daniel Akhterov <akhterovd@gmail.com> |
+| sqlx-macros-core | 0.8.6 | https://github.com/launchbadge/sqlx | Ryan Leckey <leckey.ryan@gmail.com>\|Austin Bonander <austin.bonander@gmail.com>\|Chloe Ross <orangesnowfox@gmail.com>\|Daniel Akhterov <akhterovd@gmail.com> |
+| sqlx-mysql | 0.8.6 | https://github.com/launchbadge/sqlx | Ryan Leckey <leckey.ryan@gmail.com>\|Austin Bonander <austin.bonander@gmail.com>\|Chloe Ross <orangesnowfox@gmail.com>\|Daniel Akhterov <akhterovd@gmail.com> |
+| sqlx-postgres | 0.8.6 | https://github.com/launchbadge/sqlx | Ryan Leckey <leckey.ryan@gmail.com>\|Austin Bonander <austin.bonander@gmail.com>\|Chloe Ross <orangesnowfox@gmail.com>\|Daniel Akhterov <akhterovd@gmail.com> |
+| sqlx-sqlite | 0.8.6 | https://github.com/launchbadge/sqlx | Ryan Leckey <leckey.ryan@gmail.com>\|Austin Bonander <austin.bonander@gmail.com>\|Chloe Ross <orangesnowfox@gmail.com>\|Daniel Akhterov <akhterovd@gmail.com> |
+| stable_deref_trait | 1.2.1 | https://github.com/storyyeller/stable_deref_trait | Robert Grosse <n210241048576@gmail.com> |
+| stellar-k8s | 0.1.0 | https://github.com/stellar/stellar-k8s | Stellar K8s Contributors |
+| stringprep | 0.1.5 | https://github.com/sfackler/rust-stringprep | Steven Fackler <sfackler@gmail.com> |
+| strsim | 0.11.1 | https://github.com/rapidfuzz/strsim-rs | Danny Guo <danny@dannyguo.com>\|maxbachmann <oss@maxbachmann.de> |
+| subtle | 2.6.1 | https://github.com/dalek-cryptography/subtle | Isis Lovecruft <isis@patternsinthevoid.net>\|Henry de Valence <hdevalence@hdevalence.ca> |
+| syn | 1.0.109 | https://github.com/dtolnay/syn | David Tolnay <dtolnay@gmail.com> |
+| syn | 2.0.117 | https://github.com/dtolnay/syn | David Tolnay <dtolnay@gmail.com> |
+| sync_wrapper | 0.1.2 | https://github.com/Actyx/sync_wrapper | Actyx AG <developer@actyx.io> |
+| sync_wrapper | 1.0.2 | https://github.com/Actyx/sync_wrapper | Actyx AG <developer@actyx.io> |
+| synstructure | 0.13.2 | https://github.com/mystor/synstructure | Nika Layzell <nika@thelayzells.com> |
+| system-configuration | 0.7.0 | https://github.com/mullvad/system-configuration-rs | Mullvad VPN |
+| system-configuration-sys | 0.6.0 | https://github.com/mullvad/system-configuration-rs | Mullvad VPN |
+| system-interface | 0.27.3 | https://github.com/bytecodealliance/system-interface | Dan Gohman <dev@sunfishcode.online> |
+| tar | 0.4.46 | https://github.com/composefs/tar-rs | Alex Crichton <alex@alexcrichton.com> |
+| target-lexicon | 0.12.16 | https://github.com/bytecodealliance/target-lexicon | Dan Gohman <sunfish@mozilla.com> |
+| tempfile | 3.27.0 | https://github.com/Stebalien/tempfile | Steven Allen <steven@stebalien.com>\|The Rust Project Developers\|Ashley Mannix <ashleymannix@live.com.au>\|Jason White <me@jasonwhite.io> |
+| termcolor | 1.4.1 | https://github.com/BurntSushi/termcolor | Andrew Gallant <jamslam@gmail.com> |
+| thiserror | 1.0.69 | https://github.com/dtolnay/thiserror | David Tolnay <dtolnay@gmail.com> |
+| thiserror | 2.0.18 | https://github.com/dtolnay/thiserror | David Tolnay <dtolnay@gmail.com> |
+| thiserror-impl | 1.0.69 | https://github.com/dtolnay/thiserror | David Tolnay <dtolnay@gmail.com> |
+| thiserror-impl | 2.0.18 | https://github.com/dtolnay/thiserror | David Tolnay <dtolnay@gmail.com> |
+| thread_local | 1.1.9 | https://github.com/Amanieu/thread_local-rs | Amanieu d'Antras <amanieu@gmail.com> |
+| time | 0.3.47 | https://github.com/time-rs/time | Jacob Pratt <open-source@jhpratt.dev>\|Time contributors |
+| time-core | 0.1.8 | https://github.com/time-rs/time | Jacob Pratt <open-source@jhpratt.dev>\|Time contributors |
+| time-macros | 0.2.27 | https://github.com/time-rs/time | Jacob Pratt <open-source@jhpratt.dev>\|Time contributors |
+| tinystr | 0.8.3 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| tinyvec | 1.11.0 | https://github.com/Lokathor/tinyvec | Lokathor <zefria@gmail.com> |
+| tinyvec_macros | 0.1.1 | https://github.com/Soveu/tinyvec_macros | Soveu <marx.tomasz@gmail.com> |
+| tokio | 1.52.3 | https://github.com/tokio-rs/tokio | Tokio Contributors <team@tokio.rs> |
+| tokio-io-timeout | 1.2.1 | https://github.com/sfackler/tokio-io-timeout | Steven Fackler <sfackler@gmail.com> |
+| tokio-macros | 2.7.0 | https://github.com/tokio-rs/tokio | Tokio Contributors <team@tokio.rs> |
+| tokio-native-tls | 0.3.1 | https://github.com/tokio-rs/tls | Tokio Contributors <team@tokio.rs> |
+| tokio-rustls | 0.24.1 | https://github.com/rustls/tokio-rustls |  |
+| tokio-rustls | 0.26.4 | https://github.com/rustls/tokio-rustls |  |
+| tokio-stream | 0.1.18 | https://github.com/tokio-rs/tokio | Tokio Contributors <team@tokio.rs> |
+| tokio-tungstenite | 0.23.1 | https://github.com/snapview/tokio-tungstenite | Daniel Abramov <dabramov@snapview.de>\|Alexey Galakhov <agalakhov@snapview.de> |
+| tokio-tungstenite | 0.24.0 | https://github.com/snapview/tokio-tungstenite | Daniel Abramov <dabramov@snapview.de>\|Alexey Galakhov <agalakhov@snapview.de> |
+| tokio-util | 0.7.18 | https://github.com/tokio-rs/tokio | Tokio Contributors <team@tokio.rs> |
+| toml | 0.5.11 | https://github.com/toml-rs/toml | Alex Crichton <alex@alexcrichton.com> |
+| toml | 0.8.23 | https://github.com/toml-rs/toml |  |
+| toml_datetime | 0.6.11 | https://github.com/toml-rs/toml |  |
+| toml_edit | 0.22.27 | https://github.com/toml-rs/toml |  |
+| toml_write | 0.1.2 | https://github.com/toml-rs/toml |  |
+| tonic | 0.9.2 | https://github.com/hyperium/tonic | Lucio Franco <luciofranco14@gmail.com> |
+| tower | 0.4.13 | https://github.com/tower-rs/tower | Tower Maintainers <team@tower-rs.com> |
+| tower | 0.5.3 | https://github.com/tower-rs/tower | Tower Maintainers <team@tower-rs.com> |
+| tower-http | 0.5.2 | https://github.com/tower-rs/tower-http | Tower Maintainers <team@tower-rs.com> |
+| tower-http | 0.6.8 | https://github.com/tower-rs/tower-http | Tower Maintainers <team@tower-rs.com> |
+| tower-layer | 0.3.3 | https://github.com/tower-rs/tower | Tower Maintainers <team@tower-rs.com> |
+| tower-service | 0.3.3 | https://github.com/tower-rs/tower | Tower Maintainers <team@tower-rs.com> |
+| tracing | 0.1.44 | https://github.com/tokio-rs/tracing | Eliza Weisman <eliza@buoyant.io>\|Tokio Contributors <team@tokio.rs> |
+| tracing-attributes | 0.1.31 | https://github.com/tokio-rs/tracing | Tokio Contributors <team@tokio.rs>\|Eliza Weisman <eliza@buoyant.io>\|David Barsky <dbarsky@amazon.com> |
+| tracing-core | 0.1.36 | https://github.com/tokio-rs/tracing | Tokio Contributors <team@tokio.rs> |
+| tracing-log | 0.2.0 | https://github.com/tokio-rs/tracing | Tokio Contributors <team@tokio.rs> |
+| tracing-opentelemetry | 0.22.0 | https://github.com/tokio-rs/tracing-opentelemetry | Julian Tescher <julian@tescher.me>\|Tokio Contributors <team@tokio.rs> |
+| tracing-serde | 0.2.0 | https://github.com/tokio-rs/tracing | Tokio Contributors <team@tokio.rs> |
+| tracing-subscriber | 0.3.23 | https://github.com/tokio-rs/tracing | Eliza Weisman <eliza@buoyant.io>\|David Barsky <me@davidbarsky.com>\|Tokio Contributors <team@tokio.rs> |
+| try-lock | 0.2.5 | https://github.com/seanmonstar/try-lock | Sean McArthur <sean@seanmonstar.com> |
+| ttf-parser | 0.19.2 | https://github.com/RazrFalcon/ttf-parser | Yevhenii Reizner <razrfalcon@gmail.com> |
+| tungstenite | 0.23.0 | https://github.com/snapview/tungstenite-rs | Alexey Galakhov\|Daniel Abramov |
+| tungstenite | 0.24.0 | https://github.com/snapview/tungstenite-rs | Alexey Galakhov\|Daniel Abramov |
+| typenum | 1.20.0 | https://github.com/paholg/typenum | Paho Lurie-Gregg <paho@paholg.com>\|Andre Bogus <bogusandre@gmail.com> |
+| ucd-trie | 0.1.7 | https://github.com/BurntSushi/ucd-generate | Andrew Gallant <jamslam@gmail.com> |
+| unicase | 2.9.0 | https://github.com/seanmonstar/unicase | Sean McArthur <sean@seanmonstar.com> |
+| unicode-bidi | 0.3.18 | https://github.com/servo/unicode-bidi | The Servo Project Developers |
+| unicode-ident | 1.0.24 | https://github.com/dtolnay/unicode-ident | David Tolnay <dtolnay@gmail.com> |
+| unicode-normalization | 0.1.25 | https://github.com/unicode-rs/unicode-normalization | kwantam <kwantam@gmail.com>\|Manish Goregaokar <manishsmail@gmail.com> |
+| unicode-properties | 0.1.4 | https://github.com/unicode-rs/unicode-properties | Charles Lew <crlf0710@gmail.com>\|Manish Goregaokar <manishsmail@gmail.com> |
+| unicode-segmentation | 1.13.2 | https://github.com/unicode-rs/unicode-segmentation | kwantam <kwantam@gmail.com>\|Manish Goregaokar <manishsmail@gmail.com> |
+| unicode-width | 0.2.2 | https://github.com/unicode-rs/unicode-width | kwantam <kwantam@gmail.com>\|Manish Goregaokar <manishsmail@gmail.com> |
+| unicode-xid | 0.2.6 | https://github.com/unicode-rs/unicode-xid | erick.tryzelaar <erick.tryzelaar@gmail.com>\|kwantam <kwantam@gmail.com>\|Manish Goregaokar <manishsmail@gmail.com> |
+| unsafe-libyaml | 0.2.11 | https://github.com/dtolnay/unsafe-libyaml | David Tolnay <dtolnay@gmail.com> |
+| untrusted | 0.9.0 | https://github.com/briansmith/untrusted | Brian Smith <brian@briansmith.org> |
+| url | 2.5.8 | https://github.com/servo/rust-url | The rust-url developers |
+| urlencoding | 2.1.3 | https://github.com/kornelski/rust_urlencoding | Kornel <kornel@geekhood.net>\|Bertram Truong <b@bertramtruong.com> |
+| utf-8 | 0.7.6 | https://github.com/SimonSapin/rust-utf8 | Simon Sapin <simon.sapin@exyr.org> |
+| utf8_iter | 1.0.4 | https://github.com/hsivonen/utf8_iter | Henri Sivonen <hsivonen@hsivonen.fi> |
+| utf8parse | 0.2.2 | https://github.com/alacritty/vte | Joe Wilm <joe@jwilm.com>\|Christian Duerr <contact@christianduerr.com> |
+| uuid | 1.23.1 | https://github.com/uuid-rs/uuid | Ashley Mannix<ashleymannix@live.com.au>\|Dylan DPC<dylan.dpc@gmail.com>\|Hunar Roop Kahlon<hunar.roop@gmail.com> |
+| valuable | 0.1.1 | https://github.com/tokio-rs/valuable |  |
+| vsimd | 0.8.0 | https://github.com/Nugine/simd |  |
+| walkdir | 2.5.0 | https://github.com/BurntSushi/walkdir | Andrew Gallant <jamslam@gmail.com> |
+| want | 0.3.1 | https://github.com/seanmonstar/want | Sean McArthur <sean@seanmonstar.com> |
+| wasi | 0.11.1+wasi-snapshot-preview1 | https://github.com/bytecodealliance/wasi | The Cranelift Project Developers |
+| wasip2 | 1.0.3+wasi-0.2.9 | https://github.com/bytecodealliance/wasi-rs |  |
+| wasip3 | 0.4.0+wasi-0.3.0-rc-2026-01-06 | https://github.com/bytecodealliance/wasi-rs |  |
+| wasite | 0.1.0 | https://github.com/ardaku/wasite |  |
+| wasm-bindgen | 0.2.118 | https://github.com/wasm-bindgen/wasm-bindgen | The wasm-bindgen Developers |
+| wasm-bindgen-futures | 0.4.68 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/futures | The wasm-bindgen Developers |
+| wasm-bindgen-macro | 0.2.118 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro | The wasm-bindgen Developers |
+| wasm-bindgen-macro-support | 0.2.118 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro-support | The wasm-bindgen Developers |
+| wasm-bindgen-shared | 0.2.118 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared | The wasm-bindgen Developers |
+| wasm-encoder | 0.215.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-encoder | Nick Fitzgerald <fitzgen@gmail.com> |
+| wasm-encoder | 0.244.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-encoder | Nick Fitzgerald <fitzgen@gmail.com> |
+| wasm-encoder | 0.251.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-encoder | Nick Fitzgerald <fitzgen@gmail.com> |
+| wasm-metadata | 0.244.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-metadata |  |
+| wasmparser | 0.215.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasmparser | Yury Delendik <ydelendik@mozilla.com> |
+| wasmparser | 0.244.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasmparser | Yury Delendik <ydelendik@mozilla.com> |
+| wasmparser | 0.251.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasmparser | Yury Delendik <ydelendik@mozilla.com> |
+| wasmprinter | 0.215.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasmprinter | Alex Crichton <alex@alexcrichton.com> |
+| wasmtime | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-asm-macros | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-cache | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-component-macro | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-component-util | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-cranelift | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-environ | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-fiber | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-jit-debug | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-jit-icache-coherence | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-slab | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-types | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-versioned-export-macros | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-wasi | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-winch | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wasmtime-wit-bindgen | 24.0.11 | https://github.com/bytecodealliance/wasmtime | The Wasmtime Project Developers |
+| wast | 251.0.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wast | Alex Crichton <alex@alexcrichton.com> |
+| wast | 35.0.2 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wast | Alex Crichton <alex@alexcrichton.com> |
+| wat | 1.251.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wat | Alex Crichton <alex@alexcrichton.com> |
+| web-sys | 0.3.95 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys | The wasm-bindgen Developers |
+| web-time | 0.2.4 | https://github.com/daxpedda/web-time |  |
+| web-time | 1.1.0 | https://github.com/daxpedda/web-time |  |
+| weezl | 0.1.12 | https://github.com/image-rs/weezl | The image-rs Developers |
+| whoami | 1.6.1 | https://github.com/ardaku/whoami |  |
+| wiggle | 24.0.11 | https://github.com/bytecodealliance/wasmtime | Pat Hickey <phickey@fastly.com>\|Jakub Konka <kubkonk@jakubkonka.com>\|Alex Crichton <alex@alexcrichton.com> |
+| wiggle-generate | 24.0.11 | https://github.com/bytecodealliance/wasmtime | Pat Hickey <phickey@fastly.com>\|Jakub Konka <kubkon@jakubkonka.com>\|Alex Crichton <alex@alexcrichton.com> |
+| wiggle-macro | 24.0.11 | https://github.com/bytecodealliance/wasmtime | Pat Hickey <phickey@fastly.com>\|Jakub Konka <kubkon@jakubkonka.com>\|Alex Crichton <alex@alexcrichton.com> |
+| winapi | 0.3.9 | https://github.com/retep998/winapi-rs | Peter Atashian <retep998@gmail.com> |
+| winapi-i686-pc-windows-gnu | 0.4.0 | https://github.com/retep998/winapi-rs | Peter Atashian <retep998@gmail.com> |
+| winapi-util | 0.1.11 | https://github.com/BurntSushi/winapi-util | Andrew Gallant <jamslam@gmail.com> |
+| winapi-x86_64-pc-windows-gnu | 0.4.0 | https://github.com/retep998/winapi-rs | Peter Atashian <retep998@gmail.com> |
+| winch-codegen | 0.22.11 | https://github.com/bytecodealliance/wasmtime | The Winch Project Developers |
+| windows_aarch64_gnullvm | 0.48.5 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_aarch64_gnullvm | 0.52.6 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_aarch64_gnullvm | 0.53.1 | https://github.com/microsoft/windows-rs |  |
+| windows_aarch64_msvc | 0.48.5 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_aarch64_msvc | 0.52.6 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_aarch64_msvc | 0.53.1 | https://github.com/microsoft/windows-rs |  |
+| windows-core | 0.62.2 | https://github.com/microsoft/windows-rs |  |
+| windows_i686_gnu | 0.48.5 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_i686_gnu | 0.52.6 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_i686_gnu | 0.53.1 | https://github.com/microsoft/windows-rs |  |
+| windows_i686_gnullvm | 0.52.6 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_i686_gnullvm | 0.53.1 | https://github.com/microsoft/windows-rs |  |
+| windows_i686_msvc | 0.48.5 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_i686_msvc | 0.52.6 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_i686_msvc | 0.53.1 | https://github.com/microsoft/windows-rs |  |
+| windows-implement | 0.60.2 | https://github.com/microsoft/windows-rs |  |
+| windows-interface | 0.59.3 | https://github.com/microsoft/windows-rs |  |
+| windows-link | 0.2.1 | https://github.com/microsoft/windows-rs |  |
+| windows-registry | 0.6.1 | https://github.com/microsoft/windows-rs |  |
+| windows-result | 0.4.1 | https://github.com/microsoft/windows-rs |  |
+| windows-strings | 0.5.1 | https://github.com/microsoft/windows-rs |  |
+| windows-sys | 0.48.0 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows-sys | 0.52.0 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows-sys | 0.59.0 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows-sys | 0.60.2 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows-sys | 0.61.2 | https://github.com/microsoft/windows-rs |  |
+| windows-targets | 0.48.5 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows-targets | 0.52.6 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows-targets | 0.53.5 | https://github.com/microsoft/windows-rs |  |
+| windows_x86_64_gnu | 0.48.5 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_x86_64_gnu | 0.52.6 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_x86_64_gnu | 0.53.1 | https://github.com/microsoft/windows-rs |  |
+| windows_x86_64_gnullvm | 0.48.5 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_x86_64_gnullvm | 0.52.6 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_x86_64_gnullvm | 0.53.1 | https://github.com/microsoft/windows-rs |  |
+| windows_x86_64_msvc | 0.48.5 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_x86_64_msvc | 0.52.6 | https://github.com/microsoft/windows-rs | Microsoft |
+| windows_x86_64_msvc | 0.53.1 | https://github.com/microsoft/windows-rs |  |
+| winnow | 0.6.26 | https://github.com/winnow-rs/winnow |  |
+| winnow | 0.7.15 | https://github.com/winnow-rs/winnow |  |
+| winx | 0.36.4 | https://github.com/sunfishcode/winx | Jakub Konka <kubkon@jakubkonka.com>\|Dan Gohman <dev@sunfishcode.online> |
+| wit-bindgen | 0.51.0 | https://github.com/bytecodealliance/wit-bindgen | Alex Crichton <alex@alexcrichton.com> |
+| wit-bindgen | 0.57.1 | https://github.com/bytecodealliance/wit-bindgen | Alex Crichton <alex@alexcrichton.com> |
+| wit-bindgen-core | 0.51.0 | https://github.com/bytecodealliance/wit-bindgen | Alex Crichton <alex@alexcrichton.com> |
+| wit-bindgen-rust | 0.51.0 | https://github.com/bytecodealliance/wit-bindgen | Alex Crichton <alex@alexcrichton.com> |
+| wit-bindgen-rust-macro | 0.51.0 | https://github.com/bytecodealliance/wit-bindgen | Alex Crichton <alex@alexcrichton.com> |
+| wit-component | 0.244.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wit-component | Peter Huene <peter@huene.dev> |
+| wit-parser | 0.215.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wit-parser | Alex Crichton <alex@alexcrichton.com> |
+| wit-parser | 0.244.0 | https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wit-parser | Alex Crichton <alex@alexcrichton.com> |
+| witx | 0.9.1 | https://github.com/WebAssembly/WASI | Pat Hickey <phickey@fastly.com>\|Alex Crichton <alex@alexcrichton.com> |
+| writeable | 0.6.3 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| x509-parser | 0.16.0 | https://github.com/rusticata/x509-parser.git | Pierre Chifflier <chifflier@wzdftpd.net> |
+| xattr | 1.6.1 | https://github.com/Stebalien/xattr | Steven Allen <steven@stebalien.com> |
+| xmlparser | 0.13.6 | https://github.com/RazrFalcon/xmlparser | Yevhenii Reizner <razrfalcon@gmail.com> |
+| xz2 | 0.1.7 | https://github.com/alexcrichton/xz2-rs | Alex Crichton <alex@alexcrichton.com> |
+| yasna | 0.5.2 | https://github.com/qnighy/yasna.rs | Masaki Hara <ackie.h.gmai@gmail.com> |
+| yoke | 0.8.2 | https://github.com/unicode-org/icu4x | Manish Goregaokar <manishsmail@gmail.com> |
+| yoke-derive | 0.8.2 | https://github.com/unicode-org/icu4x | Manish Goregaokar <manishsmail@gmail.com> |
+| zerocopy | 0.8.48 | https://github.com/google/zerocopy | Joshua Liebow-Feeser <joshlf@google.com>\|Jack Wrenn <jswrenn@amazon.com> |
+| zerocopy-derive | 0.8.48 | https://github.com/google/zerocopy | Joshua Liebow-Feeser <joshlf@google.com>\|Jack Wrenn <jswrenn@amazon.com> |
+| zerofrom | 0.1.7 | https://github.com/unicode-org/icu4x | Manish Goregaokar <manishsmail@gmail.com> |
+| zerofrom-derive | 0.1.7 | https://github.com/unicode-org/icu4x | Manish Goregaokar <manishsmail@gmail.com> |
+| zeroize | 1.8.2 | https://github.com/RustCrypto/utils | The RustCrypto Project Developers |
+| zeroize_derive | 1.4.3 | https://github.com/RustCrypto/utils/tree/master/zeroize/derive | The RustCrypto Project Developers |
+| zerotrie | 0.2.4 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| zerovec | 0.11.6 | https://github.com/unicode-org/icu4x | The ICU4X Project Developers |
+| zerovec-derive | 0.11.3 | https://github.com/unicode-org/icu4x | Manish Goregaokar <manishsmail@gmail.com> |
+| zip | 2.4.2 | https://github.com/zip-rs/zip2.git | Mathijs van de Nes <git@mathijs.vd-nes.nl>\|Marli Frost <marli@frost.red>\|Ryan Levick <ryan.levick@gmail.com>\|Chris Hennick <hennickc@amazon.com> |
+| zmij | 1.0.21 | https://github.com/dtolnay/zmij | David Tolnay <dtolnay@gmail.com> |
+| zopfli | 0.8.3 | https://github.com/zopfli-rs/zopfli |  |
+| zstd | 0.13.3 | https://github.com/gyscos/zstd-rs | Alexandre Bury <alexandre.bury@gmail.com> |
+| zstd-safe | 7.2.4 | https://github.com/gyscos/zstd-rs | Alexandre Bury <alexandre.bury@gmail.com> |
+| zstd-sys | 2.0.16+zstd.1.5.7 | https://github.com/gyscos/zstd-rs | Alexandre Bury <alexandre.bury@gmail.com> |

@@ -1,69 +1,592 @@
 openapi: 3.0.3
 info:
-  title: Stellar-K8s Operator API
+  title: Stellar-K8s Operator REST API
   version: 1.0.0
   description: |
-    REST API exposed by the Stellar-K8s operator for cluster management, health checks, and diagnostics.
+    REST API exposed by the Stellar-K8s operator for cluster management, health checks,
+    diagnostics, and the operator dashboard.
+
+    **Authentication:** Protected routes require a valid API token (Bearer) or mTLS client
+    certificate depending on deployment configuration. Public probe endpoints (`/healthz`,
+    `/readyz`, `/livez`) do not require authentication.
+
+    **Interactive explorer:** When the API gateway is enabled, open `/developer` for the
+    bundled Swagger UI backed by the live OpenAPI document at `/gateway/openapi.json`.
+
+  contact:
+    name: Stellar-K8s Contributors
+    url: https://github.com/OtowoOrg/Stellar-K8s
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
 servers:
   - url: https://{host}:{port}
+    description: Operator REST API (TLS)
     variables:
       host:
         default: localhost
       port:
         default: "9090"
+  - url: http://{host}:{port}
+    description: Local development (insecure)
+    variables:
+      host:
+        default: localhost
+      port:
+        default: "9090"
+
+tags:
+  - name: Health
+    description: Liveness, readiness, and aggregate health probes
+  - name: Nodes
+    description: StellarNode resource inspection
+  - name: Leader
+    description: Leader election status (HA deployments)
+  - name: Configuration
+    description: Runtime operator configuration
+  - name: Compliance
+    description: Compliance and regulatory reporting
+  - name: Dashboard
+    description: Operator dashboard and analytics APIs
+  - name: Optimization
+    description: Resource optimization recommendations
+  - name: Quorum
+    description: SCP quorum topology
+  - name: Jobs
+    description: Background job monitoring
+  - name: Audit
+    description: Operator audit log
+  - name: Metrics
+    description: Prometheus and custom metrics surfaces
+
 paths:
-  /healthz:
+  /health:
     get:
-      summary: Operator health probe
+      tags: [Health]
+      summary: Basic health check
+      description: Returns operator version and a healthy status string.
+      operationId: getHealth
       responses:
         '200':
           description: Operator is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Kubernetes liveness-style health probe
+      operationId: getHealthz
+      responses:
+        '200':
+          description: Probe succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProbeResponse'
+        '503':
+          description: Probe failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProbeResponse'
+
   /readyz:
     get:
-      summary: Readiness probe
+      tags: [Health]
+      summary: Kubernetes readiness probe
+      operationId: getReadyz
       responses:
         '200':
           description: Operator is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProbeResponse'
+        '503':
+          description: Operator is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProbeResponse'
+
   /livez:
     get:
-      summary: Liveness probe
+      tags: [Health]
+      summary: Kubernetes liveness probe
+      operationId: getLivez
       responses:
         '200':
-          description: Operator is alive
+          description: Operator process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProbeResponse'
+
+  /leader:
+    get:
+      tags: [Leader]
+      summary: Leader election status
+      description: Reports whether this operator replica is the active leader.
+      operationId: getLeaderStatus
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Leader status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaderResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/v1/nodes:
     get:
-      summary: List StellarNode resources
+      tags: [Nodes]
+      summary: List StellarNodes
+      description: Returns all StellarNode resources visible to the operator.
+      operationId: listNodes
+      security:
+        - bearerAuth: []
       responses:
         '200':
-          description: A list of StellarNode resources
+          description: Node list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /api/v1/nodes/{namespace}/{name}:
     get:
-      summary: Get a specific StellarNode resource
+      tags: [Nodes]
+      summary: Get StellarNode
+      operationId: getNode
+      security:
+        - bearerAuth: []
       parameters:
-        - name: namespace
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/NamespacePath'
+        - $ref: '#/components/parameters/NamePath'
       responses:
         '200':
-          description: StellarNode details
+          description: Node details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeDetailResponse'
         '404':
-          description: Resource not found
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/health/summary:
+    get:
+      tags: [Health]
+      summary: Cluster health summary
+      operationId: getHealthSummary
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Aggregated health summary
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v1/health/nodes:
+    get:
+      tags: [Health]
+      summary: Per-node health status
+      operationId: getNodeHealthStatus
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Per-node health records
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v1/health/incidents:
+    get:
+      tags: [Health]
+      summary: Active health incidents
+      operationId: getHealthIncidents
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Open incidents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /config/log-level:
+    get:
+      tags: [Configuration]
+      summary: Get current log level
+      operationId: getLogLevel
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current log level
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogLevelResponse'
+    post:
+      tags: [Configuration]
+      summary: Set log level
+      description: Admin action. Temporarily changes operator log verbosity.
+      operationId: setLogLevel
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogLevelRequest'
+      responses:
+        '200':
+          description: Log level updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogLevelResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/compliance/report:
+    get:
+      tags: [Compliance]
+      summary: Compliance report
+      operationId: getComplianceReport
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Compliance report payload
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/compliance/status:
+    get:
+      tags: [Compliance]
+      summary: Compliance status snapshot
+      operationId: getComplianceStatus
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Compliance status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/horizon/cache/status:
+    get:
+      tags: [Dashboard]
+      summary: Horizon cache observability
+      operationId: getHorizonCacheStatus
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Horizon cache metrics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/dashboard/overview:
+    get:
+      tags: [Dashboard]
+      summary: Dashboard overview
+      operationId: getDashboardOverview
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dashboard overview statistics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/dashboard/metrics:
+    get:
+      tags: [Dashboard]
+      summary: Dashboard metrics bundle
+      operationId: getDashboardMetrics
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dashboard metrics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/optimization/recommendations:
+    get:
+      tags: [Optimization]
+      summary: Resource optimization recommendations
+      operationId: getOptimizationRecommendations
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Recommendations list
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/quorum/topology:
+    get:
+      tags: [Quorum]
+      summary: SCP quorum topology snapshot
+      operationId: getQuorumTopology
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Topology graph
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/jobs:
+    get:
+      tags: [Jobs]
+      summary: List background jobs
+      operationId: listJobs
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Job list
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/jobs/stats:
+    get:
+      tags: [Jobs]
+      summary: Background job statistics
+      operationId: getJobStats
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Job statistics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/audit-log:
+    get:
+      tags: [Audit]
+      summary: List audit log entries
+      operationId: listAuditLog
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /metrics:
+    get:
+      tags: [Metrics]
+      summary: Prometheus metrics
+      description: Prometheus text exposition format (requires metrics feature build).
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Prometheus metrics text
+          content:
+            text/plain:
+              schema:
+                type: string
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API token
+      description: API token configured via operator authentication settings.
+
+  parameters:
+    NamespacePath:
+      name: namespace
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Kubernetes namespace of the StellarNode
+    NamePath:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+      description: StellarNode resource name
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
   schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: healthy
+        version:
+          type: string
+          example: 0.1.0
+      required: [status, version]
+
+    ProbeResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        reason:
+          type: string
+          nullable: true
+
+    LeaderResponse:
+      type: object
+      properties:
+        isLeader:
+          type: boolean
+        holderId:
+          type: string
+      required: [isLeader, holderId]
+
+    NodeSummary:
+      type: object
+      properties:
+        name:
+          type: string
+        namespace:
+          type: string
+        nodeType:
+          type: string
+          enum: [Validator, Horizon, SorobanRpc]
+        network:
+          type: string
+        phase:
+          type: string
+        replicas:
+          type: integer
+        readyReplicas:
+          type: integer
+
+    NodeListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeSummary'
+        total:
+          type: integer
+
+    NodeDetailResponse:
+      type: object
+      properties:
+        name:
+          type: string
+        namespace:
+          type: string
+        nodeType:
+          type: string
+        network:
+          type: string
+        version:
+          type: string
+        status:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    LogLevelRequest:
+      type: object
+      properties:
+        level:
+          type: string
+          description: Log level (trace, debug, info, warn, error)
+        durationMinutes:
+          type: integer
+          format: int64
+          nullable: true
+      required: [level]
+
+    LogLevelResponse:
+      type: object
+      properties:
+        currentLevel:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        message:
+          type: string
+
     ErrorResponse:
       type: object
       properties:
-        code:
+        error:
           type: string
         message:
           type: string
-      required:
-        - code
-        - message
+      required: [error, message]

@@ -2,7 +2,7 @@
 # Used by `make compose-dev` / docker-compose.dev.yml for local iteration.
 # The dummy-compile step below pre-warms the dependency cache so subsequent
 # `cargo watch` rebuilds only recompile changed application code.
-FROM rust:1.95-bookworm
+FROM rust:1.97-bookworm
 
 WORKDIR /app
 

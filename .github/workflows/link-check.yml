@@ -45,7 +45,7 @@ jobs:
 
       - name: Open / update tracking issue on failure
         if: env.lychee_exit_code != '0'
-        uses: peter-evans/create-issue-from-file@v5
+        uses: peter-evans/create-issue-from-file@v6
         with:
           title: "Link Check Report"
           content-filepath: lychee-report.md

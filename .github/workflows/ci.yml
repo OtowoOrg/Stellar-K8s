@@ -180,7 +180,7 @@ jobs:
     name: Repository Hygiene
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check Cache Key Consistency
         run: bash scripts/ci/check-cache-keys.sh
@@ -303,7 +303,7 @@ jobs:
     timeout-minutes: 5
     needs: [changes]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run secret-handling checks
         run: |
@@ -317,7 +317,7 @@ jobs:
     timeout-minutes: 5
     needs: [changes]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install bats
         run: sudo apt-get update && sudo apt-get install -y bats
@@ -339,7 +339,7 @@ jobs:
 
       - name: Upload self-test diagnostics bundle
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ci-diagnostics-selftest-${{ github.run_id }}
           path: /tmp/ci-diagnostics-selftest/
@@ -424,7 +424,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.rust_core == 'true' || needs.changes.outputs.deps == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
@@ -561,7 +561,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -631,7 +631,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -1006,7 +1006,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
@@ -1097,7 +1097,7 @@ jobs:
       DEP_GROWTH_LIMIT: "10"
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

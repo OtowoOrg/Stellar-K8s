@@ -25,7 +25,7 @@ All reusable logic lives under `.github/actions/`:
 ### `ci.yml`
 - **Change detection** gates expensive jobs (helm-lint, api-docs, examples-smoke-test,
   security-audit) so they only run when relevant files change.
-- **Unified Rust cache** via `setup-rust` composite action with per-job `shared-key`.
+- **Unified Rust cache** via `setup-rust` composite action with a single shared cache key.
 - **Removed duplicate** system-dependency install blocks (now in `setup-rust`).
 - **Removed duplicate** `actions/checkout@v6` references (standardised on `@v4`).
 - `lint` and `security-audit` run in **parallel** (both depend only on `changes`).

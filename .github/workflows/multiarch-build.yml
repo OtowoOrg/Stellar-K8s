@@ -139,8 +139,6 @@ jobs:
 
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
-        with:
-          cache-key: "image-build-bench-amd64"
 
       - name: Run reconciler benchmark
         run: |

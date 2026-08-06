@@ -58,8 +58,6 @@ jobs:
 
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
-        with:
-          cache-key: "chaos-build"
 
       - name: Build release binary
         run: cargo build --release --locked --bin stellar-operator

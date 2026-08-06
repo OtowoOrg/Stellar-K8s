@@ -55,8 +55,6 @@ jobs:
       - name: Setup Rust
         if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/setup-rust
-        with:
-          cache-key: "verify-boot"
 
       - name: Build release binary
         if: steps.scope.outputs.run == 'true'

@@ -72,8 +72,6 @@ jobs:
 
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
-        with:
-          cache-key: "perf-build"
 
       - name: Build operator binary
         run: cargo build --release --locked --bin stellar-operator

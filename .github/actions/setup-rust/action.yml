@@ -1,11 +1,7 @@
 name: Setup Rust Toolchain
-description: Install Rust, system dependencies, and restore cache with a shared key
+description: Install Rust, system dependencies, and restore a unified Rust cache
 
 inputs:
-  cache-key:
-    description: Shared cache key suffix for Swatinem/rust-cache
-    required: false
-    default: "default"
   components:
     description: Extra rustup components (e.g. "rustfmt clippy")
     required: false
@@ -38,7 +34,7 @@ runs:
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
       with:
-        shared-key: ${{ inputs.cache-key }}
+        shared-key: "stellar-k8s-rust-cache"
         # Cache ~/.cargo/bin so cargo-installed tools (cargo-audit, tarpaulin,
         # cargo-watch) are restored across runs without reinstalling.
         cache-all-crates: true

@@ -36,8 +36,6 @@ jobs:
 
       - name: Set up Rust (for cargo doc)
         uses: ./.github/actions/setup-rust
-        with:
-          cache-key: "docs-deploy"
 
       - name: Generate Rust API documentation
         run: |

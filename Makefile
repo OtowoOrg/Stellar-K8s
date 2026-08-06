@@ -102,8 +102,7 @@ link-check: ## Check markdown links
 
 changelog: ## Generate/update CHANGELOG.md using git-cliff
 	@echo "→ Generating changelog..."
-	@command -v git-cliff >/dev/null 2>&1 || cargo install git-cliff
-	git-cliff --output CHANGELOG.md
+	@bash scripts/generate-release-notes.sh --output CHANGELOG.md --config cliff.toml
 
 ci-local: fmt-check lint audit test build link-check ## Run full CI locally
 	@echo ""

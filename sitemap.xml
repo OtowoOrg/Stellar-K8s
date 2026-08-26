@@ -217,6 +217,10 @@
          <lastmod>2026-08-26</lastmod>
     </url>
     <url>
+         <loc>https://m1s0g1.github.io/Stellar-K8s/multi-tenancy/</loc>
+         <lastmod>2026-08-26</lastmod>
+    </url>
+    <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/network-isolation/</loc>
          <lastmod>2026-08-26</lastmod>
     </url>
@@ -270,6 +274,10 @@
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/quorum-optimization/</loc>
+         <lastmod>2026-08-26</lastmod>
+    </url>
+    <url>
+         <loc>https://m1s0g1.github.io/Stellar-K8s/reconciler-phases/</loc>
          <lastmod>2026-08-26</lastmod>
     </url>
     <url>
@@ -502,6 +510,10 @@
     </url>
     <url>
          <loc>https://m1s0g1.github.io/Stellar-K8s/development/repo-health-checklist/</loc>
+         <lastmod>2026-08-26</lastmod>
+    </url>
+    <url>
+         <loc>https://m1s0g1.github.io/Stellar-K8s/development/static-analysis-gates/</loc>
          <lastmod>2026-08-26</lastmod>
     </url>
     <url>

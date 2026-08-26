@@ -6,7 +6,7 @@
 </span><span id=__span-0-6><a id=__codelineno-0-6 name=__codelineno-0-6 href=#__codelineno-0-6></a>  |             |
 </span><span id=__span-0-7><a id=__codelineno-0-7 name=__codelineno-0-7 href=#__codelineno-0-7></a>  |             |-- YES --&gt; Check operator logs for repeated conflict/finalizer errors
 </span><span id=__span-0-8><a id=__codelineno-0-8 name=__codelineno-0-8 href=#__codelineno-0-8></a>  |             |            |
-</span><span id=__span-0-9><a id=__codelineno-0-9 name=__codelineno-0-9 href=#__codelineno-0-9></a>  |             |            |-- &quot;the object has been modified&quot;?
+</span><span id=__span-0-9><a id=__codelineno-0-9 name=__codelineno-0-9 href=#__codelineno-0-9></a>  |             |            |-- "the object has been modified"?
 </span><span id=__span-0-10><a id=__codelineno-0-10 name=__codelineno-0-10 href=#__codelineno-0-10></a>  |             |            |      |
 </span><span id=__span-0-11><a id=__codelineno-0-11 name=__codelineno-0-11 href=#__codelineno-0-11></a>  |             |            |      |-- YES --&gt; Verify optimistic lock retry + backoff config
 </span><span id=__span-0-12><a id=__codelineno-0-12 name=__codelineno-0-12 href=#__codelineno-0-12></a>  |             |            |      |-- NO  --&gt; Check dependent API latency and webhook health
@@ -41,7 +41,7 @@
 </span><span id=__span-2-12><a id=__codelineno-2-12 name=__codelineno-2-12 href=#__codelineno-2-12></a>         |-- NO --&gt; Check application-level query latency if issue observed in RPC only
 </span></code></pre></div> <hr> <h2 id=4-missing-secret-access-errors>4) Missing Secret Access Errors<a class=headerlink href=#4-missing-secret-access-errors title="Permanent link">&para;</a></h2> <div class="language-text highlight"><pre><span></span><code><span id=__span-3-1><a id=__codelineno-3-1 name=__codelineno-3-1 href=#__codelineno-3-1></a>START
 </span><span id=__span-3-2><a id=__codelineno-3-2 name=__codelineno-3-2 href=#__codelineno-3-2></a>  |
-</span><span id=__span-3-3><a id=__codelineno-3-3 name=__codelineno-3-3 href=#__codelineno-3-3></a>  |-- Pod events show &quot;Forbidden&quot; or mount failure for secret?
+</span><span id=__span-3-3><a id=__codelineno-3-3 name=__codelineno-3-3 href=#__codelineno-3-3></a>  |-- Pod events show "Forbidden" or mount failure for secret?
 </span><span id=__span-3-4><a id=__codelineno-3-4 name=__codelineno-3-4 href=#__codelineno-3-4></a>         |
 </span><span id=__span-3-5><a id=__codelineno-3-5 name=__codelineno-3-5 href=#__codelineno-3-5></a>         |-- YES --&gt; Validate serviceAccount + RoleBinding namespace alignment
 </span><span id=__span-3-6><a id=__codelineno-3-6 name=__codelineno-3-6 href=#__codelineno-3-6></a>         |           |

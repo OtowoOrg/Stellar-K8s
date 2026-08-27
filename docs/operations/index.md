@@ -23,6 +23,9 @@ Key signals to monitor:
 - Track the number of active `StellarNode` resources.
 - Estimate control-plane load from reconciliation frequency.
 - Plan horizontal scaling of the operator and webhook workloads as the cluster grows.
+- For per-node CPU/memory/storage sizing, 6/12/24-month storage growth
+  projections, and how automated volume expansion fits in, see the
+  [Capacity Planning & Storage Scaling Calculator Guide](capacity-planning.md).
 
 ## Backup and Disaster Recovery
 
@@ -51,6 +54,7 @@ Key signals to monitor:
 
 ## Related Documentation
 
+- [Capacity Planning & Storage Scaling Calculator Guide](capacity-planning.md)
 - [Incident Response](incident-response.md)
 - [API Reference](../api/index.md)
 - [Production Security Hardening](../production-security-hardening.md)

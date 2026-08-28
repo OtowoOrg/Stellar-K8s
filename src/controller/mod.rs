@@ -129,7 +129,6 @@ pub mod read_pool;
 pub(crate) mod reconciler;
 #[cfg(test)]
 mod reconciler_test;
-pub mod tenant_reconciler;
 pub(crate) mod remediation;
 #[cfg(test)]
 mod remediation_test;
@@ -147,6 +146,7 @@ pub mod state_sync;
 pub mod storage_migration;
 pub(crate) mod sync_scale;
 pub(crate) mod sync_state_monitor;
+pub mod tenant_reconciler;
 pub mod topology;
 pub mod traffic;
 #[cfg(test)]

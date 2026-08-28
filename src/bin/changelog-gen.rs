@@ -8,11 +8,11 @@
 //!   changelog-gen --output CHANGELOG.md --since v0.1.0 --until v0.2.0
 //!   changelog-gen --output CHANGELOG.md --range 0.1.0..0.2.0
 
+use chrono::Local;
 use std::collections::BTreeMap;
-use std::process::{Command, Stdio};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
-use chrono::Local;
+use std::process::{Command, Stdio};
 
 #[derive(Debug, Clone)]
 struct Commit {
@@ -161,8 +161,7 @@ fn fetch_commits(since: &Option<String>, until: &Option<String>) -> Result<Vec<C
         return Err("git log failed".to_string());
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+    let stdout = String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8: {}", e))?;
 
     let mut commits = Vec::new();
 
@@ -212,8 +211,7 @@ fn parse_commit_message(subject: &str) -> Option<(String, Option<String>, String
 }
 
 fn write_changelog(path: &str, content: &str) -> Result<(), String> {
-    let mut file = File::create(path)
-        .map_err(|e| format!("Failed to create file: {}", e))?;
+    let mut file = File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;
     file.write_all(content.as_bytes())
         .map_err(|e| format!("Failed to write file: {}", e))?;
     Ok(())

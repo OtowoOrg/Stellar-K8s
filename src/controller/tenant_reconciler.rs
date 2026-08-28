@@ -7,10 +7,14 @@
 //! 4. RBAC role and rolebinding setup per tenant
 
 use anyhow::Result;
-use k8s_openapi::api::core::v1::{Namespace, ResourceQuota, ResourceQuotaSpec, ResourceRequirements};
-use k8s_openapi::api::networking::v1::{NetworkPolicy, NetworkPolicyIngressRule, NetworkPolicyPeer, NetworkPolicySpec};
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, LabelSelector, LabelSelectorRequirement};
-use kube::{Api, Client, ResourceExt};
+use k8s_openapi::api::core::v1::{Namespace, ResourceQuota, ResourceQuotaSpec};
+use k8s_openapi::api::networking::v1::{
+    NetworkPolicy, NetworkPolicyIngressRule, NetworkPolicyPeer, NetworkPolicySpec,
+};
+use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta};
+use kube::api::{Patch, PatchParams, PostParams};
+use kube::{Api, Client};
 use std::collections::BTreeMap;
 use tracing::{info, warn};
 
@@ -53,7 +57,10 @@ async fn create_or_update_namespace(tenant_spec: &TenantSpec, client: &Client) -
     let ns_api: Api<Namespace> = Api::all(client.clone());
 
     let mut labels = tenant_spec.namespace_labels();
-    labels.insert("app.kubernetes.io/managed-by".to_string(), "stellar-operator".to_string());
+    labels.insert(
+        "app.kubernetes.io/managed-by".to_string(),
+        "stellar-operator".to_string(),
+    );
 
     let namespace = Namespace {
         metadata: ObjectMeta {
@@ -72,22 +79,27 @@ async fn create_or_update_namespace(tenant_spec: &TenantSpec, client: &Client) -
             } else {
                 existing.metadata.labels = Some(labels);
             }
-            ns_api.patch(
-                &tenant_spec.namespace,
-                &kube::api::PatchParams::apply("stellar-operator"),
-                &kube::utils::json_patch::JsonPatch(vec![
-                    kube::utils::json_patch::PatchOperation::Add(
-                        kube::utils::json_patch::AddOperation {
-                            path: "/metadata/labels".to_string(),
-                            value: serde_json::to_value(existing.metadata.labels)?,
-                        },
-                    ),
-                ]),
-            ).await?;
+            let label_patch = serde_json::json!({
+                "apiVersion": "v1",
+                "kind": "Namespace",
+                "metadata": {
+                    "name": tenant_spec.namespace,
+                    "labels": existing.metadata.labels,
+                }
+            });
+            ns_api
+                .patch(
+                    &tenant_spec.namespace,
+                    &PatchParams::apply("stellar-operator"),
+                    &Patch::Apply(&label_patch),
+                )
+                .await?;
             info!(namespace = %tenant_spec.namespace, "Updated existing namespace");
         }
         None => {
-            ns_api.create(&kube::api::PostParams::default(), &namespace).await?;
+            ns_api
+                .create(&PostParams::default(), &namespace)
+                .await?;
             info!(namespace = %tenant_spec.namespace, "Created namespace");
         }
     }
@@ -97,29 +109,26 @@ async fn create_or_update_namespace(tenant_spec: &TenantSpec, client: &Client) -
 
 /// Apply ResourceQuota to enforce tenant resource limits
 async fn apply_resource_quota(tenant_spec: &TenantSpec, client: &Client) -> Result<()> {
-    let quota_api: Api<ResourceQuota> = Api::namespaced(
-        client.clone(),
-        &tenant_spec.namespace,
-    );
+    let quota_api: Api<ResourceQuota> = Api::namespaced(client.clone(), &tenant_spec.namespace);
 
     let quota_name = format!("{}-quota", tenant_spec.tenant_id);
     let mut hard = BTreeMap::new();
 
     // Set CPU limits
     if let Some(cpu) = &tenant_spec.quota.cpu {
-        hard.insert("requests.cpu".to_string(), cpu.clone().into());
-        hard.insert("limits.cpu".to_string(), cpu.clone().into());
+        hard.insert("requests.cpu".to_string(), Quantity(cpu.clone()));
+        hard.insert("limits.cpu".to_string(), Quantity(cpu.clone()));
     }
 
     // Set memory limits
     if let Some(mem) = &tenant_spec.quota.memory {
-        hard.insert("requests.memory".to_string(), mem.clone().into());
-        hard.insert("limits.memory".to_string(), mem.clone().into());
+        hard.insert("requests.memory".to_string(), Quantity(mem.clone()));
+        hard.insert("limits.memory".to_string(), Quantity(mem.clone()));
     }
 
     // Set pod count limit
-    hard.insert("pods".to_string(), "1000".to_string().into());
-    hard.insert("requests.storage".to_string(), "100Gi".to_string().into());
+    hard.insert("pods".to_string(), Quantity("1000".to_string()));
+    hard.insert("requests.storage".to_string(), Quantity("100Gi".to_string()));
 
     let quota = ResourceQuota {
         metadata: ObjectMeta {
@@ -136,11 +145,15 @@ async fn apply_resource_quota(tenant_spec: &TenantSpec, client: &Client) -> Resu
 
     match quota_api.get_opt(&quota_name).await? {
         Some(_) => {
-            quota_api.replace(&quota_name, &kube::api::ReplaceParams::default(), &quota).await?;
+            quota_api
+                .replace(&quota_name, &PostParams::default(), &quota)
+                .await?;
             info!(quota = %quota_name, namespace = %tenant_spec.namespace, "Updated ResourceQuota");
         }
         None => {
-            quota_api.create(&kube::api::PostParams::default(), &quota).await?;
+            quota_api
+                .create(&PostParams::default(), &quota)
+                .await?;
             info!(quota = %quota_name, namespace = %tenant_spec.namespace, "Created ResourceQuota");
         }
     }
@@ -150,10 +163,7 @@ async fn apply_resource_quota(tenant_spec: &TenantSpec, client: &Client) -> Resu
 
 /// Apply NetworkPolicy to enforce tenant isolation (deny all, allow same-tenant)
 async fn apply_network_policies(tenant_spec: &TenantSpec, client: &Client) -> Result<()> {
-    let policy_api: Api<NetworkPolicy> = Api::namespaced(
-        client.clone(),
-        &tenant_spec.namespace,
-    );
+    let policy_api: Api<NetworkPolicy> = Api::namespaced(client.clone(), &tenant_spec.namespace);
 
     let tenant_id = &tenant_spec.tenant_id;
 
@@ -173,10 +183,9 @@ async fn apply_network_policies(tenant_spec: &TenantSpec, client: &Client) -> Re
         ports: None,
     };
 
-    // Deny egress to other tenants, allow to same tenant and external APIs
-    let egress_rule = kube::api::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition {
-        ..Default::default()
-    };
+    // Deny egress to other tenants, allow to same tenant and external APIs.
+    // TODO(tenant-egress): scope egress to same-tenant + external APIs instead of
+    // the fully restrictive empty rule set below.
 
     let policy = NetworkPolicy {
         metadata: ObjectMeta {
@@ -187,7 +196,7 @@ async fn apply_network_policies(tenant_spec: &TenantSpec, client: &Client) -> Re
         spec: Some(NetworkPolicySpec {
             policy_types: Some(vec!["Ingress".to_string(), "Egress".to_string()]),
             ingress: Some(vec![ingress_rule]),
-            egress: Some(vec![]),  // Restrictive: no external traffic by default
+            egress: Some(vec![]), // Restrictive: no external traffic by default
             pod_selector: Default::default(),
         }),
         ..Default::default()
@@ -197,11 +206,15 @@ async fn apply_network_policies(tenant_spec: &TenantSpec, client: &Client) -> Re
 
     match policy_api.get_opt(&policy_name).await? {
         Some(_) => {
-            policy_api.replace(&policy_name, &kube::api::ReplaceParams::default(), &policy).await?;
+            policy_api
+                .replace(&policy_name, &PostParams::default(), &policy)
+                .await?;
             info!(policy = %policy_name, namespace = %tenant_spec.namespace, "Updated NetworkPolicy");
         }
         None => {
-            policy_api.create(&kube::api::PostParams::default(), &policy).await?;
+            policy_api
+                .create(&PostParams::default(), &policy)
+                .await?;
             info!(policy = %policy_name, namespace = %tenant_spec.namespace, "Created NetworkPolicy");
         }
     }
@@ -236,10 +249,9 @@ pub async fn cleanup_tenant(tenant_spec: &TenantSpec, client: &Client) -> Result
     );
 
     if tenant_spec.cleanup_on_delete {
-        ns_api.delete(
-            &tenant_spec.namespace,
-            &kube::api::DeleteParams::default(),
-        ).await?;
+        ns_api
+            .delete(&tenant_spec.namespace, &kube::api::DeleteParams::default())
+            .await?;
         info!(
             namespace = %tenant_spec.namespace,
             "Namespace deleted (cascade delete of all resources)"

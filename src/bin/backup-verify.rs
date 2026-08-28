@@ -11,11 +11,11 @@
 //!   backup-verify /path/to/backup.tar.gz
 //!   backup-verify --deep /path/to/backup.tar.gz  (include restore test)
 
+use anyhow::{anyhow, Result};
+use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
-use sha2::{Sha256, Digest};
-use anyhow::{Result, anyhow};
 
 #[derive(Debug)]
 struct BackupManifest {
@@ -147,9 +147,9 @@ fn count_archive_files(path: &str) -> Result<usize> {
 }
 
 fn test_restore_integrity(path: &str) -> Result<()> {
-    use tempfile::TempDir;
     use flate2::read::GzDecoder;
     use tar::Archive;
+    use tempfile::TempDir;
 
     if !path.ends_with(".tar.gz") {
         return Err(anyhow!("Restore test only supported for tar.gz"));

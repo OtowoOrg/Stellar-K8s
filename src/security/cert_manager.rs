@@ -132,7 +132,10 @@ pub struct CertManagerResourceGenerator;
 
 impl CertManagerResourceGenerator {
     /// Generate a cert-manager Certificate manifest for a given service
-    pub fn generate_certificate_manifest(config: &InterServiceMtlsConfig, service_name: &str) -> String {
+    pub fn generate_certificate_manifest(
+        config: &InterServiceMtlsConfig,
+        service_name: &str,
+    ) -> String {
         format!(
             "apiVersion: cert-manager.io/v1\n\
              kind: Certificate\n\

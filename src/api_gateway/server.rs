@@ -8,18 +8,43 @@ use crate::api_gateway::{
     transform::{transform_request, transform_response},
     versioning::{check_version, deprecation_headers, VersionStatus},
 };
+use crate::error::{ApiErrorCode, ErrorResponse};
+use crate::telemetry::CorrelationId;
 use axum::{
     extract::{Request, State},
     http::{HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::any,
-    Router as AxumRouter,
+    Json, Router as AxumRouter,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
+
+/// Build a structured `ErrorResponse` JSON body (issue #1393), mirroring the
+/// envelope `rest_api` handlers use so gateway and operator errors are
+/// indistinguishable in shape to API consumers. The correlation ID (set by
+/// `telemetry::http_trace_middleware`, which wraps the whole gateway router)
+/// is echoed into the body here and is also present as an `X-Correlation-Id`
+/// response header added by that same middleware.
+fn error_response(
+    status: StatusCode,
+    code: ApiErrorCode,
+    message: impl Into<String>,
+    correlation_id: Option<&CorrelationId>,
+) -> Response {
+    (
+        status,
+        Json(ErrorResponse::structured(
+            code,
+            &message.into(),
+            correlation_id.map(|c| c.to_string()),
+        )),
+    )
+        .into_response()
+}
 
 // ── Rate limiter ──────────────────────────────────────────────────────────────
 
@@ -134,6 +159,9 @@ async fn handle_request(State(state): State<GatewayState>, req: Request) -> Resp
     let start = Instant::now();
     let method = req.method().to_string();
     let path = req.uri().path().to_string();
+    // Set by `telemetry::http_trace_middleware`, which wraps this whole
+    // router (issue #1393); used to populate `ErrorResponse::correlation_id`.
+    let correlation_id = req.extensions().get::<CorrelationId>().cloned();
 
     // Extract headers as a plain map for routing predicates
     let headers: HashMap<String, String> = req
@@ -156,7 +184,12 @@ async fn handle_request(State(state): State<GatewayState>, req: Request) -> Resp
 
     let api_key = state.key_store.authenticate(&raw_key).await;
     if api_key.is_none() && !raw_key.is_empty() {
-        return (StatusCode::UNAUTHORIZED, "Invalid API key").into_response();
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            ApiErrorCode::ErrUnauthorized,
+            "Invalid API key",
+            correlation_id.as_ref(),
+        );
     }
     let key_id = api_key.as_ref().map(|k| k.id.clone());
 
@@ -172,7 +205,12 @@ async fn handle_request(State(state): State<GatewayState>, req: Request) -> Resp
         let burst = state.config.rate_limiting.default_burst as f64;
         if !state.rate_limiter.check(&key.id, rps, burst).await {
             warn!(key_id = %key.id, "rate limit exceeded");
-            return (StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded").into_response();
+            return error_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                ApiErrorCode::ErrRateLimited,
+                "Rate limit exceeded",
+                correlation_id.as_ref(),
+            );
         }
     }
 
@@ -180,14 +218,20 @@ async fn handle_request(State(state): State<GatewayState>, req: Request) -> Resp
     let match_result = state.router.match_route(&path, &method, &headers);
     let route_match = match match_result {
         MatchResult::NotFound => {
-            return (StatusCode::NOT_FOUND, "No matching route").into_response();
+            return error_response(
+                StatusCode::NOT_FOUND,
+                ApiErrorCode::ErrNotFound,
+                "No matching route",
+                correlation_id.as_ref(),
+            );
         }
         MatchResult::Sunset(version) => {
-            return (
+            return error_response(
                 StatusCode::GONE,
+                ApiErrorCode::ErrGone,
                 format!("API version {version} has been sunset"),
-            )
-                .into_response();
+                correlation_id.as_ref(),
+            );
         }
         MatchResult::Matched(m) => m,
     };
@@ -208,7 +252,14 @@ async fn handle_request(State(state): State<GatewayState>, req: Request) -> Resp
     let (_parts, body) = req.into_parts();
     let body_bytes = match axum::body::to_bytes(body, 10 * 1024 * 1024).await {
         Ok(b) => b,
-        Err(_) => return (StatusCode::BAD_REQUEST, "Failed to read body").into_response(),
+        Err(_) => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                ApiErrorCode::ErrBadRequest,
+                "Failed to read body",
+                correlation_id.as_ref(),
+            )
+        }
     };
 
     // Protocol transformation (client → upstream)
@@ -216,7 +267,12 @@ async fn handle_request(State(state): State<GatewayState>, req: Request) -> Resp
     let normalized = match transform_request(&body_bytes, client_protocol, &route.protocol) {
         Ok(n) => n,
         Err(e) => {
-            return (StatusCode::BAD_REQUEST, e.to_string()).into_response();
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                ApiErrorCode::ErrBadRequest,
+                e.to_string(),
+                correlation_id.as_ref(),
+            );
         }
     };
 
@@ -246,7 +302,19 @@ async fn handle_request(State(state): State<GatewayState>, req: Request) -> Resp
         }
         Err(e) => {
             warn!(upstream = %upstream_url, error = %e, "upstream request failed");
-            return (StatusCode::BAD_GATEWAY, "Upstream error").into_response();
+            // Graceful degradation (#1393): the gateway keeps no response
+            // cache, so there is no stale/last-known-good body to fall back
+            // to here — this is a genuine full outage for this route, not a
+            // partial result, so `degraded` stays `false`. Still report it
+            // through the shared structured envelope (rather than a bare
+            // string) so `ERR_SERVICE_UNAVAILABLE` is machine-readable and
+            // consistent with every other gateway/rest_api error.
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                ApiErrorCode::ErrServiceUnavailable,
+                format!("Upstream request failed: {e}"),
+                correlation_id.as_ref(),
+            );
         }
     };
 
@@ -254,8 +322,32 @@ async fn handle_request(State(state): State<GatewayState>, req: Request) -> Resp
     let normalized_resp =
         match transform_response(&resp_body, &route.protocol, client_protocol, status_code) {
             Ok(r) => r,
-            Err(_) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR, "Transform error").into_response()
+            Err(e) => {
+                // Graceful degradation (#1393): unlike the upstream-request
+                // failure above, we *did* get a response body back from
+                // upstream — only the reshape into the client's expected
+                // protocol failed. Discarding a response we actually
+                // received would be strictly worse than handing it back
+                // as-is, so surface it as a degraded (not hard-failed)
+                // result with the raw upstream body attached.
+                warn!(
+                    upstream = %upstream_url,
+                    error = %e,
+                    "response transform failed; returning degraded raw upstream body"
+                );
+                return (
+                    StatusCode::from_u16(status_code).unwrap_or(StatusCode::BAD_GATEWAY),
+                    Json(ErrorResponse::degraded(
+                        ApiErrorCode::ErrPartialDegradation,
+                        &format!("Failed to transform upstream response: {e}"),
+                        serde_json::json!({
+                            "upstreamStatus": status_code,
+                            "rawUpstreamBody": String::from_utf8_lossy(&resp_body),
+                        }),
+                        correlation_id.as_ref().map(|c| c.to_string()),
+                    )),
+                )
+                    .into_response();
             }
         };
 

@@ -52,6 +52,87 @@ Non-retriable variants (such as `ConfigError` or `ValidationError`) require manu
 ### Status Reporting: `Error::status_message()`
 Delegates directly to the `Display` implementation (`self.to_string()`), serving as a single source of truth for updating `StellarNode` custom resource status conditions.
 
+## HTTP status mapping (REST API and API gateway, issue #1393)
+
+Every `Error` variant maps to an HTTP status via `Error::status_code()` and to
+a stable, machine-readable code via `Error::api_error_code()`
+(`src/error.rs`). REST handlers (`src/rest_api/handlers.rs`) and the gateway
+proxy (`src/api_gateway/server.rs`) both render failures through the same
+`ErrorResponse` JSON envelope (originally introduced for `rest_api` in issue
+#1282, now defined once in `crate::error` and re-exported from
+`rest_api::dto` so neither module has its own copy):
+
+```json
+{
+  "error": "err_not_found",
+  "error_code": "ERR_NOT_FOUND",
+  "message": "Node stellar/my-validator not found",
+  "correlation_id": "6f3a9c2e-...-b1d4",
+  "degraded": false,
+  "timestamp": "2026-08-28T12:34:56Z"
+}
+```
+
+| `Error` variant(s) | HTTP status | `ApiErrorCode` |
+| --- | --- | --- |
+| `NotFound` | 404 Not Found | `ERR_NOT_FOUND` |
+| `ValidationError`, `InvalidNodeType`, `MissingRequiredField`, `SerializationError` | 400 Bad Request | `ERR_BAD_REQUEST` |
+| `PhaseTransitionError` | 409 Conflict | `ERR_RECONCILE_STALLED` |
+| `KubeError`, `HttpError`, `NetworkError`, `KubeconfigError` | 503 Service Unavailable | `ERR_SERVICE_UNAVAILABLE` |
+| Everything else (`ConfigError`, `CertificateError`, `IoError`, `SqlxError`, `ZipError`, `InternalError`, ...) | 500 Internal Server Error | `ERR_INTERNAL_SERVER_ERROR` |
+
+`api_gateway` reports a few failure modes that have no equivalent `Error`
+variant, using additional `ApiErrorCode` members defined alongside the rest:
+
+| Gateway condition | HTTP status | `ApiErrorCode` |
+| --- | --- | --- |
+| Missing/invalid API key | 401 Unauthorized | `ERR_UNAUTHORIZED` |
+| Rate limit / quota exceeded | 429 Too Many Requests | `ERR_RATE_LIMITED` |
+| No route matches the request | 404 Not Found | `ERR_NOT_FOUND` |
+| Requested API version has been sunset | 410 Gone | `ERR_GONE` |
+| Malformed request body / protocol transform failure | 400 Bad Request | `ERR_BAD_REQUEST` |
+| Upstream request failed outright (connection/timeout) | 502 Bad Gateway | `ERR_SERVICE_UNAVAILABLE` |
+
+### Graceful degradation
+
+`ErrorResponse::degraded()` sets `"degraded": true` and attaches a `details`
+payload for responses that carry a genuine (if incomplete) result rather than
+a hard failure. The gateway uses it when an upstream call succeeds but the
+response can't be reshaped into the client's expected protocol: instead of
+discarding a response it actually received, it returns the raw upstream body
+under `details.rawUpstreamBody` with `ERR_PARTIAL_DEGRADATION`. When there is
+truly nothing to fall back on — e.g. the upstream connection itself fails, and
+the gateway keeps no response cache — the failure is reported as a normal
+(non-degraded) `ERR_SERVICE_UNAVAILABLE` / 502 instead of being dressed up as
+a partial success.
+
+## Correlation IDs
+
+`telemetry::http_trace_middleware` (`src/telemetry.rs`), the same middleware
+that starts the per-request tracing span, also resolves a per-request
+correlation ID and threads it through the whole request/response lifecycle:
+
+1. **Inbound**: reuses the caller's `X-Correlation-Id` request header when
+   present and non-blank; otherwise mints a new UUID v4
+   (`telemetry::resolve_correlation_id`).
+2. **Logs**: records it as a `correlation_id` field on the `http.request`
+   tracing span, which `logging::build_structured_log` (`src/logging/mod.rs`)
+   already knew how to surface on every structured JSON log line for that
+   request — no per-callsite logging changes were needed.
+3. **Handlers**: stores it in the request's `axum` extensions as
+   `telemetry::CorrelationId`, so REST handlers (via `Extension<CorrelationId>`)
+   and the gateway's `handle_request` (via `req.extensions()`) can attach it
+   to `ErrorResponse.correlation_id` without re-parsing headers.
+4. **Outbound**: echoes it back on every response — success or error — as an
+   `X-Correlation-Id` header, so a caller can always correlate its own
+   request with operator logs and traces even without opting into the OTel
+   `trace_id`/`span_id` fields that are logged alongside it.
+
+This middleware is applied once, at the outermost `.layer()` of both the
+`rest_api` protected router (`src/rest_api/server.rs`) and the `api_gateway`
+router (`src/api_gateway/server.rs`), so both surfaces get identical
+behavior.
+
 ## General Troubleshooting
 When encountering these errors, the primary source of detailed insight will be the operator logs. You can fetch them with:
 ```bash

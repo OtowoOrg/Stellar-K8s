@@ -151,21 +151,30 @@ pub fn build_router(state: Arc<ControllerState>) -> Router {
         .route("/api/v1/nodes", get(handlers::list_nodes))
         .route("/api/v1/nodes/:namespace/:name", get(handlers::get_node))
         // Health summary API (Issue #552) — legacy `/v1/...` prefix (not `/api/vN`)
-        .route("/v1/health/summary", get(health_summary::get_health_summary))
-        .route("/v1/health/nodes", get(health_summary::get_node_health_status))
-        .route("/v1/health/incidents", get(health_summary::get_health_incidents))
-        // Log level dynamic control (GET is reader, POST is admin)
         .route(
-            "/config/log-level",
-            get(handlers::get_log_level),
+            "/v1/health/summary",
+            get(health_summary::get_health_summary),
         )
+        .route(
+            "/v1/health/nodes",
+            get(health_summary::get_node_health_status),
+        )
+        .route(
+            "/v1/health/incidents",
+            get(health_summary::get_health_incidents),
+        )
+        // Log level dynamic control (GET is reader, POST is admin)
+        .route("/config/log-level", get(handlers::get_log_level))
         .route(
             "/config/log-level",
             axum::routing::post(handlers::set_log_level)
                 .route_layer(middleware::from_fn(auth::api_admin)),
         )
         // Compliance report
-        .route("/api/v1/compliance/report", get(handlers::compliance_report))
+        .route(
+            "/api/v1/compliance/report",
+            get(handlers::compliance_report),
+        )
         // Horizon cache observability (Issue #732)
         .route(
             "/api/v1/horizon/cache/status",
@@ -181,13 +190,34 @@ pub fn build_router(state: Arc<ControllerState>) -> Router {
         )
         // Dashboard routes
         .route("/", get(dashboard_ui))
-        .route("/api/v1/dashboard/overview", get(dashboard_handlers::dashboard_overview))
-        .route("/api/v1/dashboard/metrics", get(dashboard_handlers::dashboard_metrics))
-        .route("/api/v1/analytics/logs", get(dashboard_handlers::log_analytics))
-        .route("/api/v1/config/analyze", axum::routing::post(dashboard_handlers::analyze_config_impact))
-        .route("/api/v1/security/posture", get(dashboard_handlers::security_posture))
-        .route("/api/v1/capacity/plan", get(dashboard_handlers::capacity_planning))
-        .route("/api/v1/capacity/what-if", axum::routing::post(dashboard_handlers::run_what_if))
+        .route(
+            "/api/v1/dashboard/overview",
+            get(dashboard_handlers::dashboard_overview),
+        )
+        .route(
+            "/api/v1/dashboard/metrics",
+            get(dashboard_handlers::dashboard_metrics),
+        )
+        .route(
+            "/api/v1/analytics/logs",
+            get(dashboard_handlers::log_analytics),
+        )
+        .route(
+            "/api/v1/config/analyze",
+            axum::routing::post(dashboard_handlers::analyze_config_impact),
+        )
+        .route(
+            "/api/v1/security/posture",
+            get(dashboard_handlers::security_posture),
+        )
+        .route(
+            "/api/v1/capacity/plan",
+            get(dashboard_handlers::capacity_planning),
+        )
+        .route(
+            "/api/v1/capacity/what-if",
+            axum::routing::post(dashboard_handlers::run_what_if),
+        )
         // Resource optimization (Issue #734)
         .route(
             "/api/v1/optimization/recommendations",
@@ -201,7 +231,10 @@ pub fn build_router(state: Arc<ControllerState>) -> Router {
             "/api/v1/optimization/forecast",
             get(resource_optimization_handlers::optimization_forecast),
         )
-        .route("/api/v1/traffic/dashboard", get(dashboard_handlers::traffic_dashboard))
+        .route(
+            "/api/v1/traffic/dashboard",
+            get(dashboard_handlers::traffic_dashboard),
+        )
         .route(
             "/api/v1/dashboard/nodes/:namespace/:name/logs",
             get(dashboard_handlers::get_node_logs),
@@ -224,10 +257,16 @@ pub fn build_router(state: Arc<ControllerState>) -> Router {
                 .route_layer(middleware::from_fn(auth::api_admin)),
         )
         // Operator logs
-        .route("/api/v1/dashboard/operator/logs", get(dashboard_handlers::get_operator_logs))
+        .route(
+            "/api/v1/dashboard/operator/logs",
+            get(dashboard_handlers::get_operator_logs),
+        )
         // SCP topology endpoints (REST snapshot + WebSocket stream)
         .route("/api/v1/quorum/topology", get(scp_topology::get_topology))
-        .route("/api/v1/quorum/topology/stream", get(scp_topology::topology_ws))
+        .route(
+            "/api/v1/quorum/topology/stream",
+            get(scp_topology::topology_ws),
+        )
         // Documentation search API
         .route("/api/v1/docs/search-index", get(handlers::get_search_index))
         // Background job monitoring dashboard
@@ -235,9 +274,18 @@ pub fn build_router(state: Arc<ControllerState>) -> Router {
         .route("/api/v1/jobs/stats", get(job_handlers::job_stats))
         // Audit log
         .route("/api/v1/audit-log", get(audit_handlers::list_audit_log))
-        .route("/api/v1/audit-log/search", get(audit_handlers::search_audit_log))
-        .route("/api/v1/audit-log/stream", get(audit_handlers::audit_log_stream))
-        .route("/api/v1/audit-log/anomalies", get(audit_handlers::list_audit_anomalies));
+        .route(
+            "/api/v1/audit-log/search",
+            get(audit_handlers::search_audit_log),
+        )
+        .route(
+            "/api/v1/audit-log/stream",
+            get(audit_handlers::audit_log_stream),
+        )
+        .route(
+            "/api/v1/audit-log/anomalies",
+            get(audit_handlers::list_audit_anomalies),
+        );
 
     // Optional CPU/heap profiling (#1330). Registered only with `--features profiling`
     // and REST_API_PROFILING_ENABLED=true. Still behind api_reader + api_admin.

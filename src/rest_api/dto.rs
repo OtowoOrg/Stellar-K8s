@@ -53,86 +53,12 @@ pub struct LeaderResponse {
     pub holder_id: String,
 }
 
-/// Standardised API Error Codes for REST Endpoints (issue #1282)
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ApiErrorCode {
-    ErrNotFound,
-    ErrBadRequest,
-    ErrUnauthorized,
-    ErrForbidden,
-    ErrInternalServerError,
-    ErrServiceUnavailable,
-    ErrPartialDegradation,
-    ErrReconcileStalled,
-}
-
-impl ApiErrorCode {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::ErrNotFound => "ERR_NOT_FOUND",
-            Self::ErrBadRequest => "ERR_BAD_REQUEST",
-            Self::ErrUnauthorized => "ERR_UNAUTHORIZED",
-            Self::ErrForbidden => "ERR_FORBIDDEN",
-            Self::ErrInternalServerError => "ERR_INTERNAL_SERVER_ERROR",
-            Self::ErrServiceUnavailable => "ERR_SERVICE_UNAVAILABLE",
-            Self::ErrPartialDegradation => "ERR_PARTIAL_DEGRADATION",
-            Self::ErrReconcileStalled => "ERR_RECONCILE_STALLED",
-        }
-    }
-}
-
-/// Structured error response for all REST API endpoints
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ErrorResponse {
-    pub error: String,
-    pub error_code: String,
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub correlation_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub details: Option<serde_json::Value>,
-    pub degraded: bool,
-    pub timestamp: String,
-}
-
-impl ErrorResponse {
-    pub fn new(error: &str, message: &str) -> Self {
-        Self {
-            error: error.to_string(),
-            error_code: "ERR_INTERNAL_SERVER_ERROR".to_string(),
-            message: message.to_string(),
-            correlation_id: None,
-            details: None,
-            degraded: false,
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        }
-    }
-
-    pub fn structured(code: ApiErrorCode, message: &str, correlation_id: Option<String>) -> Self {
-        Self {
-            error: code.as_str().to_lowercase(),
-            error_code: code.as_str().to_string(),
-            message: message.to_string(),
-            correlation_id,
-            details: None,
-            degraded: false,
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        }
-    }
-
-    pub fn degraded(code: ApiErrorCode, message: &str, details: serde_json::Value, correlation_id: Option<String>) -> Self {
-        Self {
-            error: code.as_str().to_lowercase(),
-            error_code: code.as_str().to_string(),
-            message: message.to_string(),
-            correlation_id,
-            details: Some(details),
-            degraded: true,
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        }
-    }
-}
+/// Standardised API Error Codes and the structured `ErrorResponse` envelope
+/// (issue #1282) now live in [`crate::error`] so they can be shared between
+/// `rest_api` and `api_gateway` (issue #1393) without either module
+/// depending on the other. Re-exported here so existing `super::dto::*`
+/// imports throughout `rest_api` keep working unchanged.
+pub use crate::error::{ApiErrorCode, ErrorResponse};
 
 /// Generic probe response used by /healthz, /readyz, /livez
 #[derive(Debug, Serialize)]

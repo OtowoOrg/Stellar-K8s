@@ -63,6 +63,17 @@ data:
         Match         *
         Format        json_lines
     {{- end }}
+  parsers.conf: |
+    # CRI container runtime log format:
+    #   2016-02-04T06:51:48.555555405Z stdout F This is a sample log output
+    # Issue #1411 — the `cri` parser is required by the tail input above;
+    # without it Fluent Bit fails to start ("lookup of parser 'cri' failed").
+    [PARSER]
+        Name        cri
+        Format      regex
+        Regex       ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<flags>[^ ]*) (?<log>.*)$
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%LZ
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -148,6 +159,9 @@ spec:
             - name: config
               mountPath: /fluent-bit/etc/fluent-bit.conf
               subPath: fluent-bit.conf
+            - name: config
+              mountPath: /fluent-bit/etc/parsers.conf
+              subPath: parsers.conf
       volumes:
         - name: varlog
           hostPath:

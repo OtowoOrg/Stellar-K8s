@@ -99,3 +99,50 @@ controls:
       text: "Ensure that the kubelet configuration file has permissions 644 or more restrictive (Manual)"
       type: "manual"
       remediation: "chmod 644 on the kubelet config file."
+
+# ── Stellar-K8s organisational policies (issue #1410) ─────────────────────────
+- id: 3
+  text: "Stellar-K8s Organisational Controls"
+  type: "string"
+  groups:
+  - id: 3.1
+    text: "Operator hardening"
+    type: "scored"
+    checks:
+    - id: 3.1.1
+      text: "Ensure the Stellar operator listens on loopback address (Automated)"
+      type: "automated"
+      audit: "ps -ef | grep stellar-operator | grep -v grep"
+      tests:
+        test_items:
+        - flag: "--metrics-bind"
+          compare:
+            op: eq
+            value: "127.0.0.1"
+          set: true
+      remediation: "Bind the operator metrics server to 127.0.0.1 or an internal-only address."
+      scored: true
+    - id: 3.1.2
+      text: "Ensure the Stellar operator runs as a non-root user (Automated)"
+      type: "automated"
+      audit: "ps -o user= -p $(pgrep -f stellar-operator | head -1)"
+      tests:
+        test_items:
+        - flag: "root"
+          compare:
+            op: noteq
+            value: "root"
+      remediation: "Running the operator as non-root avoids privilege escalation through CR reconciliation."
+      scored: true
+  - id: 3.2
+    text: "Secrets hygiene"
+    type: "scored"
+    checks:
+    - id: 3.2.1
+      text: "Ensure validator seed secrets are not world-readable (Manual)"
+      type: "manual"
+      remediation: "Verify Secret resources holding validator seeds are never mounted world-readable; enforce RBAC on Secret get/list."
+    - id: 3.2.2
+      text: "Ensure no plaintext mnemonic or seed exists in ConfigMaps (Manual)"
+      type: "manual"
+      remediation: "Audit ConfigMaps in stellar-* namespaces — mnemonics/seeds belong in SealedSecrets or the cluster Secret store."

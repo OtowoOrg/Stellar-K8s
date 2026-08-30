@@ -83,11 +83,26 @@ jobs:
             security/kube-bench/reports/kube-bench-report.json \
             >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Generate standard-format compliance report (CSV)
+        if: always()
+        run: |
+          python3 security/kube-bench/report-parser.py \
+            --format csv \
+            security/kube-bench/reports/kube-bench-report.json \
+            > security/kube-bench/reports/kube-bench-report.csv
+          if [ ! -s security/kube-bench/reports/kube-bench-report.csv ]; then
+            echo "csv report empty; keeping raw json only" >&2
+          else
+            echo "csv compliance report generated ($(wc -l < security/kube-bench/reports/kube-bench-report.csv) lines)"
+          fi
+
       - name: Upload compliance report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: kube-bench-report-${{ github.sha }}
-          path: security/kube-bench/reports/kube-bench-report.json
+          path: |
+            security/kube-bench/reports/kube-bench-report.json
+            security/kube-bench/reports/kube-bench-report.csv
           retention-days: 30
           if-no-files-found: ignore

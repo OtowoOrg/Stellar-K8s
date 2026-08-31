@@ -3,6 +3,109 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## Chart v1.3.0 (2026-08-31) [minor]
+
+• Merge pull request #1447 from otsimaofficial/feat/issue-1393-structured-error-handling
+✨ feat: implement structured error handling across all services
+• Merge remote-tracking branch 'upstream/main' into feat/issue-1393-structured-error-handling
+• # Conflicts:
+• #	docs/errors.md
+• #	src/commands/backup.rs
+• #	src/controller/tenant_reconciler.rs
+• #	src/rest_api/dto.rs
+• #	src/rest_api/server.rs
+• #	src/security/cert_manager.rs
+• Merge pull request #1465 from rudeus112266/test/1259-chaos-make-target
+• Wire chaos engineering suite into make chaos-test
+• Merge pull request #1467 from rudeus112266/docs/1359-dashboard-access
+• Document metric naming conventions and Grafana dashboard access
+• Merge pull request #1464 from rudeus112266/chore/1256-dev-setup-script
+• Add unified developer environment setup script
+• Merge pull request #1466 from rudeus112266/test/1358-chaos-quorum-loss
+• Register Stellar Core crash-recovery chaos experiments in local runner
+• Merge pull request #1462 from TheCreatorNode/feat/helm-chart-release-versioning
+✨ feat(helm): harden automated chart release versioning (#1319)
+• Merge pull request #1463 from TheCreatorNode/feat/network-policy-enforcement
+✨ feat(helm): add pod-to-pod network policy enforcement (#1320)
+• Merge branch 'main' into feat/helm-chart-release-versioning
+• Merge pull request #1461 from TheCreatorNode/feat/helm-chart-release-tests
+📝 test(helm): add bump-chart-version tests and fix first-commit analysis
+• Document metric naming conventions and Grafana dashboard access
+• Register Stellar Core crash-recovery chaos experiments in local runner
+• Wire chaos engineering suite into make chaos-test
+• Add unified developer environment setup script
+✨ feat(helm): add pod-to-pod network policy enforcement (#1320)
+• Enforce zero-trust pod-to-pod segmentation with default-deny and explicit
+• allow rules for required service communication.
+• - Add explicit egress allow rules to the operator default-deny for the
+•   operator's required intra-cluster links (Redis rate limiting, Vault PKI,
+•   OTel collector, Kafka SCP analytics), each gated on the matching feature
+•   so the default render is unchanged.
+• - Add templates/network-pod-policy.yaml implementing a per-namespace
+•   default-deny (ingress+egress) baseline for any namespace listed in
+•   security.networkPolicy.defaultDenyNamespaces.
+• - Add helm-unittest coverage (network_policy_test.yaml, 11 tests).
+• - Document the network topology and policy rationale in
+•   docs/network-pod-to-pod.md and update related docs.
+✨ feat(helm): harden automated chart release versioning (#1319)
+• Implement the versioning.min-bump annotation as a minimum bump floor in
+• bump-chart-version.sh, fix the root-commit exclusion that dropped the very
+• first commit from analysis, and add bats coverage for the bump rules, the
+• floor, and the --output-env mode.
+• Also validate charts with helm lint --strict and helm unittest before
+• publishing to the OCI registry, and register the new tests in CI and the
+• Makefile.
+📝 test(helm): add bump-chart-version tests and fix first-commit analysis
+• Add bats coverage for scripts/bump-chart-version.sh (#1319) covering the
+• SemVer bump rules (major/minor/patch/none), changelog generation, the
+• --bump-override flag, --output-env GitHub Actions mode, and real Chart.yaml
+• writes.
+• Fix a bug where, before any chart-v* tag exists, the script used the root
+• commit SHA as the analysis baseline which excluded the very first commit from
+• the git log range. Leaving the baseline empty now analyzes all history.
+✨ feat: implement structured error handling across all services
+• Closes #1393.
+• - Move ApiErrorCode/ErrorResponse into error.rs (unconditional) so both
+•   rest_api and api_gateway share one definition instead of duplicating
+•   it; rest_api::dto re-exports for compatibility. Add Error::status_code()
+•   and Error::to_error_response() for consistent HTTP-code + JSON-envelope
+•   mapping, plus ErrRateLimited/ErrGone codes.
+• - Add correlation IDs: telemetry::resolve_correlation_id() reuses an
+•   inbound X-Correlation-Id header or mints a UUID, http_trace_middleware
+•   records it on the tracing span and echoes it back as a response header.
+•   REST API handlers (list_nodes, get_node, set_log_level,
+•   compliance_report) now populate ErrorResponse.correlation_id from it
+•   instead of hardcoding None.
+• - api_gateway::server: replace ad hoc (StatusCode, &str) responses with
+•   the shared ErrorResponse envelope. Add graceful degradation: a
+•   transform-response failure (we have upstream data, just couldn't
+•   reshape it) returns ErrorResponse::degraded() with the raw upstream
+•   body attached; an upstream-connection failure (no data, no cache)
+•   returns a structured ERR_SERVICE_UNAVAILABLE instead.
+• - docs/errors.md: document the Error -> StatusCode/ApiErrorCode mapping,
+•   gateway-specific codes, degradation semantics, and the correlation-ID
+•   mechanism end to end.
+• Validated with cargo check --locked --bin stellar-operator (clean).
+• Full clippy/lint-strict and test suite were not run locally due to this
+• host's disk constraints; deferred to CI.
+• Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+• Signed-off-by: otsimaofficial <iemmanuelogbu@gmail.com>
+🐛 fix: repair broken kube-rs APIs in tenant_reconciler and syntax error in backup
+• tenant_reconciler.rs referenced APIs that don't exist in kube 0.94
+• (kube::utils::json_patch::*, kube::api::ReplaceParams,
+• kube::api::apiextensions_apiserver::...::CustomResourceDefinition) and
+• tried to build k8s_openapi Quantity via a nonexistent From<String> impl,
+• so the crate failed to compile on every branch. backup.rs had a stray
+• closing brace and referenced an undefined variable. Neither bug is
+• specific to any single wave issue; fixing both here since they block
+• building this branch at all.
+• Also sweeps in cargo fmt output for a few pre-existing formatting-drifted
+• files (backup-verify.rs, changelog-gen.rs, conventional-commit-check.rs,
+• controller/mod.rs) picked up while validating the build.
+• Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+• Signed-off-by: otsimaofficial <iemmanuelogbu@gmail.com>
+
+
 ## Chart v1.2.0 (2026-08-31) [minor]
 
 • Merge pull request #1433 from Shindailulu/fix-license-and-security-1397-1400

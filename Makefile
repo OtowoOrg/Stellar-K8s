@@ -20,7 +20,7 @@
 
 .PHONY: help \
 	fmt fmt-check lint lint-strict shellcheck audit security-scan security-all security-report \
-	build test ci-local quick watch \
+	build test chaos-test ci-local quick watch \
 	docker-build docker-build-ci docker-multiarch \
 	dev-setup dev-setup-rust dev-setup-tools dev-setup-hooks health-check pre-commit pre-commit-install run run-local run-dev \
 	install-crd apply-samples crd-gen regenerate completions completions-bash completions-zsh completions-fish \
@@ -227,6 +227,10 @@ test: ## Run tests
 build: ## Build release
 	@echo "→ Building release..."
 	@$(CARGO) build --release --locked
+
+chaos-test: ## Run the chaos engineering resilience suite (needs kind + Chaos Mesh)
+	@echo "→ Running chaos engineering test suite..."
+	@bash tests/chaos/run-chaos-tests.sh
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 

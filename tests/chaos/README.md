@@ -84,6 +84,9 @@ You need only **Docker** installed. The script installs everything else.
 # From the project root:
 chmod +x tests/chaos/run-chaos-tests.sh
 ./tests/chaos/run-chaos-tests.sh
+
+# Or via the Makefile target:
+make chaos-test
 ```
 
 The script will:

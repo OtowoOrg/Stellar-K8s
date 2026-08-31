@@ -90,7 +90,13 @@ cd Stellar-K8s
 
 ### 2. Run Development Setup
 
-Install the manually-installed tools listed in [Prerequisites](#prerequisites) above, then run:
+Install the manually-installed tools listed in [Prerequisites](#prerequisites) above. On Linux or macOS you can automate this step with:
+
+```bash
+./scripts/setup-dev-env.sh
+```
+
+This detects your OS and runs the matching `scripts/setup-linux.sh` or `scripts/setup-mac.sh`. Then run:
 
 ```bash
 make dev-setup

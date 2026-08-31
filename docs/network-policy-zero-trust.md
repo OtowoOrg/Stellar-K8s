@@ -127,6 +127,11 @@ Both ingress and egress policies include their respective policy type in `spec.p
 - **Ingress**: Any traffic not explicitly allowed by an ingress rule is denied
 - **Egress**: Any traffic not explicitly allowed by an egress rule is denied
 
+In addition to the per-node and namespace-isolation policies, the Helm chart ships a
+pod-to-pod default-deny baseline (`templates/network-pod-policy.yaml`) and explicit
+allow rules for the operator's required service communication (see
+[Pod-to-Pod Network Segmentation](network-pod-to-pod.md)).
+
 ### Network Isolation Rules
 
 The `build_network_policy` function enforces three mandatory egress rules for all nodes:

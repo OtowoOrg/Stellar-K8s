@@ -8,6 +8,9 @@
 #   patch — fix/perf/refactor/revert
 #   none  — docs/chore/ci/test/style/build only
 #
+# It also honours the `versioning.min-bump` annotation in Chart.yaml as a minimum
+# bump floor (patch/minor/major), promoting a too-small bump up to the floor.
+#
 # Run:  bats scripts/tests/bump-chart-version.bats
 # Requires: bats-core (https://github.com/bats-core/bats-core)
 
@@ -38,6 +41,7 @@ teardown() {
 # Write a Chart.yaml at the given version inside the temp repo.
 _make_chart() {
   local version="$1"
+  local min_bump="${2:-}"
   cat > "${CHART_DIR}/Chart.yaml" <<EOF
 apiVersion: v2
 name: stellar-operator
@@ -45,6 +49,9 @@ description: test chart
 type: application
 version: ${version}
 appVersion: "${version}"
+annotations:${min_bump:+"
+  versioning.min-bump: ${min_bump}"}
+  oci.registry: ghcr.io
 EOF
 }
 
@@ -57,6 +64,7 @@ _commit() {
 }
 
 # ---------------------------------------------------------------------------
+# Version bump rules (analyzed from the repo root, no chart tag present)
 # Version bump rules (analyzed with --since against the initial commit)
 # ---------------------------------------------------------------------------
 
@@ -118,6 +126,59 @@ _commit() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"Bump type: minor"* ]]
   [[ "$output" == *"new version: 1.1.0"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# First commit is always picked up (no chart tag present)
+# ---------------------------------------------------------------------------
+
+@test "a single initial feat commit is released (root commit not excluded)" {
+  _make_chart "0.1.0"
+  _commit "feat: initial operator support"
+  run_bump --chart-path "${CHART_DIR}" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Bump type: minor"* ]]
+  [[ "$output" == *"new version: 0.2.0"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# versioning.min-bump floor
+# ---------------------------------------------------------------------------
+
+@test "min-bump: patch forces a patch release for docs-only commits" {
+  _make_chart "1.0.0" "patch"
+  _commit "docs: clarify installation"
+  run_bump --chart-path "${CHART_DIR}" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Bump type: patch"* ]]
+  [[ "$output" == *"new version: 1.0.1"* ]]
+}
+
+@test "min-bump: minor forces a minor release for fix-only commits" {
+  _make_chart "1.0.0" "minor"
+  _commit "fix: patch a bug"
+  run_bump --chart-path "${CHART_DIR}" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Bump type: minor"* ]]
+  [[ "$output" == *"new version: 1.1.0"* ]]
+}
+
+@test "min-bump does not override a higher bump type" {
+  _make_chart "1.0.0" "patch"
+  _commit "feat: add new feature"
+  run_bump --chart-path "${CHART_DIR}" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Bump type: minor"* ]]
+  [[ "$output" == *"new version: 1.1.0"* ]]
+}
+
+@test "min-bump none does not force a release for docs-only commits" {
+  _make_chart "1.0.0" "none"
+  _commit "docs: tweak wording"
+  run_bump --chart-path "${CHART_DIR}" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Bump type: none"* ]]
+  [[ "$output" == *"new version: 1.0.0"* ]]
 }
 
 # ---------------------------------------------------------------------------

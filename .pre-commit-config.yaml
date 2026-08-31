@@ -52,7 +52,7 @@ repos:
 
       - id: k8s-manifest-crd-validation
         name: Kubernetes manifest & CRD schema validation
-        entry: python3 scripts/validate-k8s-manifests.py
+        entry: bash -c 'command -v python3 >/dev/null 2>&1 && python3 scripts/validate-k8s-manifests.py || python scripts/validate-k8s-manifests.py'
         language: system
         files: '^(config|charts|examples|bundle)/.*\.ya?ml$'
         pass_filenames: false

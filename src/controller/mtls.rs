@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! mTLS Certificate Management for internal communication
 //!
 //! Handles CA creation and certificate issuance for the Operator REST API
@@ -9,9 +21,14 @@
 //! When a `StellarNode` has `spec.certManager` set, the operator delegates
 //! certificate issuance to cert-manager by creating a `Certificate` CR.
 //! cert-manager writes the resulting TLS data into the same Secret that the
-//! pod already mounts (`{node-name}-client-cert`). The operator watches that
-//! Secret's `resourceVersion` and bumps a pod-template annotation to trigger
-//! a rolling restart whenever the certificate is rotated.
+//! pod already mounts (`{node-name}-client-cert`). On every reconcile the
+//! operator calls [`check_and_restart_on_cert_rotation`] (invoked from
+//! `reconciler.rs` alongside `ensure_node_cert`/`ensure_cert_manager_certificate`),
+//! which compares that Secret's `resourceVersion` against the value observed
+//! on the previous reconcile and bumps a pod-template annotation to trigger a
+//! rolling restart whenever the certificate has actually rotated. This applies
+//! equally to cert-manager-issued and operator-issued self-signed certs, since
+//! both are rotated in place in the same Secret.
 
 use crate::crd::types::CertManagerConfig;
 use crate::crd::StellarNode;
@@ -27,7 +44,8 @@ use rcgen::{
     CertificateParams, DistinguishedName, ExtendedKeyUsagePurpose, Ia5String, IsCa, KeyPair,
     KeyUsagePurpose, SanType,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tracing::{debug, info, warn};
 use x509_parser::certificate::X509Certificate;
@@ -609,6 +627,63 @@ pub async fn maybe_restart_on_cert_rotation(
     Ok(true)
 }
 
+/// Process-local cache of the last-observed TLS Secret `resourceVersion` per
+/// node, keyed by `"{namespace}/{name}"`.
+///
+/// This is what makes [`maybe_restart_on_cert_rotation`] usable from the
+/// reconcile loop: kube-rs reconciles are stateless between invocations, so
+/// something has to remember what the resourceVersion was "last time" in
+/// order to detect a change. The cache lives only for the lifetime of the
+/// operator process — on restart it starts empty, which is safe because
+/// `maybe_restart_on_cert_rotation` treats a missing previous value as "skip
+/// the restart" (see its doc comment), so a freshly-started operator simply
+/// waits for the *next* rotation rather than restarting pods spuriously.
+static CERT_SECRET_RV_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+fn cert_rv_cache() -> &'static Mutex<HashMap<String, String>> {
+    CERT_SECRET_RV_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Look up the cached resourceVersion for `key`, then overwrite it with
+/// `current_rv` (or remove the entry if the Secret currently doesn't exist).
+/// Returns the value that was cached *before* this call, i.e. the
+/// `last_known_rv` to compare against.
+fn cache_get_and_update(key: &str, current_rv: Option<&str>) -> Option<String> {
+    let mut cache = cert_rv_cache().lock().unwrap_or_else(|e| e.into_inner());
+    let previous = cache.get(key).cloned();
+    match current_rv {
+        Some(rv) => {
+            cache.insert(key.to_string(), rv.to_string());
+        }
+        None => {
+            cache.remove(key);
+        }
+    }
+    previous
+}
+
+/// Reconcile-loop entry point: checks whether the node's TLS Secret has
+/// rotated since the previous reconcile and, if so, triggers a rolling
+/// restart of its workload so pods pick up the new certificate.
+///
+/// This wraps [`maybe_restart_on_cert_rotation`] with the process-local
+/// [`CERT_SECRET_RV_CACHE`] so callers don't need to track resourceVersions
+/// themselves. Safe to call on every reconcile for every node type; it is a
+/// cheap no-op when the Secret hasn't changed.
+pub async fn check_and_restart_on_cert_rotation(
+    client: &Client,
+    node: &StellarNode,
+    dry_run: bool,
+) -> Result<bool> {
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let key = format!("{namespace}/{}", node.name_any());
+
+    let current_rv = cert_secret_resource_version(client, node).await;
+    let last_known_rv = cache_get_and_update(&key, current_rv.as_deref());
+
+    maybe_restart_on_cert_rotation(client, node, last_known_rv.as_deref(), dry_run).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -837,5 +912,71 @@ mod tests {
         let current_rv: Option<&str> = None;
         let should_restart = matches!((last_known_rv, current_rv), (Some(p), Some(c)) if p != c);
         assert!(!should_restart, "no restart when secret does not exist yet");
+    }
+
+    // -----------------------------------------------------------------------
+    // cache_get_and_update / check_and_restart_on_cert_rotation wiring
+    //
+    // These exercise the process-local cache that makes
+    // `maybe_restart_on_cert_rotation` usable from the (stateless-between-calls)
+    // reconcile loop in `reconciler.rs`. Each test uses a cache key unique to
+    // itself so tests running in parallel against the shared static cache
+    // cannot interfere with one another.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cache_first_observation_has_no_previous_rv() {
+        let previous = cache_get_and_update("cache-test-ns-1/node-a", Some("100"));
+        assert!(
+            previous.is_none(),
+            "first time a node's cert Secret is observed there is no previous rv, \
+             so the reconciler must not restart pods on the very first reconcile"
+        );
+    }
+
+    #[test]
+    fn cache_returns_previous_rv_when_unchanged() {
+        let key = "cache-test-ns-2/node-b";
+        cache_get_and_update(key, Some("100"));
+        let previous = cache_get_and_update(key, Some("100"));
+        assert_eq!(
+            previous.as_deref(),
+            Some("100"),
+            "repeated observations of the same rv must report it as unchanged"
+        );
+    }
+
+    #[test]
+    fn cache_detects_rv_change_between_reconciles() {
+        let key = "cache-test-ns-3/node-c";
+        cache_get_and_update(key, Some("100")); // simulates first reconcile
+        let previous = cache_get_and_update(key, Some("200")); // secret rotated
+        assert_eq!(
+            previous.as_deref(),
+            Some("100"),
+            "second reconcile must see the rv from the first reconcile so the \
+             caller (maybe_restart_on_cert_rotation) can detect the rotation"
+        );
+        let previous_after = cache_get_and_update(key, Some("200"));
+        assert_eq!(
+            previous_after.as_deref(),
+            Some("200"),
+            "cache must be updated to the latest rv after each observation"
+        );
+    }
+
+    #[test]
+    fn cache_clears_entry_when_secret_deleted() {
+        let key = "cache-test-ns-4/node-d";
+        cache_get_and_update(key, Some("100"));
+        let previous = cache_get_and_update(key, None);
+        assert_eq!(previous.as_deref(), Some("100"));
+        // Once the Secret is gone the cache should not remember a stale rv;
+        // a subsequent recreation looks like a first observation again.
+        let previous_after_recreate = cache_get_and_update(key, Some("999"));
+        assert!(
+            previous_after_recreate.is_none(),
+            "cache entry must be cleared while the secret is missing"
+        );
     }
 }

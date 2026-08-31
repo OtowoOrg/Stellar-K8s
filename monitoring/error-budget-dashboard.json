@@ -1,0 +1,124 @@
+{
+  "title": "Stellar-K8s Error Budget Dashboard",
+  "uid": "stellar-error-budget",
+  "version": 1,
+  "schemaVersion": 39,
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": { "list": [{ "name": "datasource", "type": "datasource", "query": "prometheus", "current": { "text": "Prometheus", "value": "Prometheus" } }] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "API Availability SLO",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "stellar:slo:api_availability:ratio", "legendFormat": "Availability" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.998 }, { "color": "green", "value": 0.999 }] }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "API Latency SLO",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "targets": [{ "expr": "stellar:slo:api_latency:ratio", "legendFormat": "Latency" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.992 }, { "color": "green", "value": 0.995 }] }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "API Error Budget",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "targets": [{ "expr": "stellar:slo:api_error_rate:ratio", "legendFormat": "Error-rate SLO" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.998 }, { "color": "green", "value": 0.999 }] }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Burn Rate",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "targets": [{ "expr": "(1 - stellar:slo:api_availability:ratio) / 0.001", "legendFormat": "Availability burn" }, { "expr": "(1 - stellar:slo:api_latency:ratio) / 0.005", "legendFormat": "Latency burn" }, { "expr": "(1 - stellar:slo:api_error_rate:ratio) / 0.001", "legendFormat": "Error burn" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 2 }] } } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Availability vs. Budget",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        { "expr": "stellar:slo:api_availability:ratio", "legendFormat": "Availability" },
+        { "expr": "0.999", "legendFormat": "Target" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Latency vs. Budget",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        { "expr": "stellar:slo:api_latency:ratio", "legendFormat": "Latency performance" },
+        { "expr": "0.995", "legendFormat": "Target" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "5xx Error Rate vs. Budget",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        { "expr": "stellar:slo:api_error_rate:ratio", "legendFormat": "Error-rate SLO" },
+        { "expr": "0.999", "legendFormat": "Target" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit" } }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Burn Rate Trend",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        { "expr": "(1 - stellar:slo:api_availability:ratio) / 0.001", "legendFormat": "Availability burn" },
+        { "expr": "(1 - stellar:slo:api_latency:ratio) / 0.005", "legendFormat": "Latency burn" },
+        { "expr": "(1 - stellar:slo:api_error_rate:ratio) / 0.001", "legendFormat": "Error burn" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "liveNow": false,
+  "tags": ["stellar", "slo", "error-budget", "api"],
+  "type": "dashboard"
+}

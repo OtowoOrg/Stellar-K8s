@@ -10,11 +10,12 @@ values-preservation upgrade check.
 make helm-lint
 make helm-unittest
 make helm-upgrade-test
-make yaml-validate
+make yaml-schema-validate
 ```
 
 CI runs the same targets from `.github/workflows/ci.yml` (`helm-lint`,
-`helm-test`, `yaml-validate`). Pin: Helm **3.14.0**, helm-unittest **v0.5.1**.
+`helm-upgrade-test`, `yaml-schema-validate`). Pin: Helm **3.14.0**,
+helm-unittest **v0.5.1**.
 
 ## Edge cases (issue #1289)
 
@@ -25,6 +26,8 @@ CI runs the same targets from `.github/workflows/ci.yml` (`helm-lint`,
 - Affinity absent (default), node affinity, pod affinity, pod anti-affinity
 - REST API / log level / watch namespace
 - OpenTelemetry env injection when `otel.enabled=true`
+- `logShipper` renders nothing when disabled and a full DaemonSet + RBAC +
+  ConfigMap set when enabled (issue #1381)
 
 Invalid values that `values.schema.json` must reject (logLevel, service type,
 image pullPolicy) are asserted in the `helm-lint` CI job via `helm lint -f`.

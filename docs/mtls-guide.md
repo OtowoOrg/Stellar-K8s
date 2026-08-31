@@ -7,8 +7,32 @@ This guide explains how to enable mTLS for the operator, how node certificates a
 This repository currently manages mTLS in two places:
 
 - Operator REST API mTLS (server cert + CA, with automatic server cert rotation)
-- StellarNode workload certs (per-node client cert secret, recreated on reconcile if missing)
+- StellarNode workload certs (per-node client cert secret, recreated on reconcile if missing, and
+  now also automatically rolled when cert-manager rotates the secret — see
+  [How Rotation Works](#how-rotation-works) below)
 - Inter-service mTLS mesh between Stellar Core, Horizon, Soroban RPC, and companion services via cert-manager (issue #1281; see [End-to-End Encryption Architecture](security/e2e-encryption-architecture.md))
+
+### Two mechanisms for inter-service mTLS — which one to use
+
+There are two independent ways a `Certificate` can get created for inter-service mTLS in this
+repo, and they are **not** the same mechanism:
+
+1. **Per-`StellarNode` CR-driven flow (authoritative, this is what the operator actually
+   reconciles)** — implemented in `src/controller/mtls.rs` and driven by
+   `StellarNode.spec.certManager`. When set, the operator creates a cert-manager `Certificate`
+   named `<node-name>-mtls-cert` targeting the Secret `<node-name>-client-cert` — the same Secret
+   the pod already mounts at `/etc/stellar/tls`, and the same Secret the operator watches for
+   rotation on every reconcile (see below). This is the supported, tested path.
+2. **Static Helm chart template** (`charts/stellar-operator/templates/cert-manager-mtls.yaml`,
+   gated by `.Values.mtls.enabled`) — creates a self-signed `Issuer` plus three `Certificate`
+   resources with fixed names (`stellar-core-mtls-cert`, `horizon-mtls-cert`,
+   `soroban-rpc-mtls-cert`) writing to Secrets `stellar-core-mtls-secret`,
+   `horizon-mtls-secret`, `soroban-rpc-mtls-secret`. **No workload in this repository mounts
+   these secret names or references them anywhere** — they are not the secrets StellarNode pods
+   use. Enabling `.Values.mtls.enabled` produces cert-manager `Certificate` objects that nothing
+   currently consumes; treat this template as a starting point for a hand-rolled setup outside
+   the StellarNode CR flow, not as a working feature. If you want mTLS for a node, set
+   `spec.certManager` on that `StellarNode` instead.
 
 ## Certificate and Secret Model
 
@@ -115,8 +139,26 @@ kubectl -n stellar-system set env deployment/stellar-operator CERT_ROTATION_THRE
 ## Node certificate behavior
 
 - Per-node certs are ensured on reconcile.
-- Existing node cert secrets are not proactively rotated by a timer.
-- If a `<node-name>-client-cert` secret is missing, reconcile recreates it.
+- If a `<node-name>-client-cert` secret is missing, reconcile recreates it (self-signed, via
+  `mtls::ensure_node_cert`).
+- The operator itself does not proactively rotate a self-signed `<node-name>-client-cert` on a
+  timer — it only regenerates the secret if it is deleted.
+- If `spec.certManager` is set on the `StellarNode`, cert-manager owns issuance and rotation of
+  `<node-name>-client-cert` instead (via the `Certificate` CR the operator creates). **On every
+  reconcile the operator now checks whether that Secret's `resourceVersion` changed since the
+  previous reconcile** (`mtls::check_and_restart_on_cert_rotation`, called from the reconcile loop
+  right after `ensure_node_cert`/`ensure_cert_manager_certificate`). If it changed — meaning
+  cert-manager rotated the certificate — the operator bumps a `stellar.org/cert-rotated-at`
+  annotation on the workload's pod template (StatefulSet for validators, Deployment for
+  Horizon/Soroban RPC), which Kubernetes uses to trigger a rolling restart so pods pick up the
+  new certificate. This is what makes "certificates rotate without downtime" actually true today:
+  rotation happens through a rolling restart (old pods keep serving on their still-valid
+  certificate until replaced one at a time), not a live in-process reload.
+  - The rotation-detection state (last-seen resourceVersion per node) is kept in the operator
+    process's memory. On operator restart it starts empty, so the very first reconcile after a
+    restart will not trigger a restart even if the cert had rotated earlier — the *next* rotation
+    after that will be caught normally. This is a deliberate, safe default (see the doc comment on
+    `maybe_restart_on_cert_rotation` in `src/controller/mtls.rs`), not a residual bug.
 
 ## Manual Rotation Runbooks
 
@@ -203,6 +245,31 @@ kubectl -n stellar-system logs deploy/stellar-operator --tail=200
 - Verify `ENABLE_MTLS=true`.
 - Verify `CERT_ROTATION_THRESHOLD_DAYS` value.
 - Confirm the running leader instance is healthy (rotation runs on the leader path).
+- For node certs specifically: rotation-triggered restarts only happen for nodes with
+  `spec.certManager` configured (cert-manager owns rotation). Self-signed
+  `<node-name>-client-cert` secrets are not rotated on a timer at all — see
+  [Node certificate behavior](#node-certificate-behavior).
+- If the operator process restarted recently, the first reconcile after restart cannot detect a
+  rotation that happened before the restart (the in-memory "last known resourceVersion" cache is
+  empty). Wait for the next actual rotation, or check `kubectl -n stellar-system get secret
+  <node-name>-client-cert -o jsonpath='{.metadata.resourceVersion}'` before and after a manual
+  `cert-manager` renewal to confirm the Secret itself is changing.
+
+## Known limitation: stellar-core TLS termination is unverified
+
+When mTLS is enabled, the ConfigMap for validator nodes
+(`src/controller/resources.rs`) writes `HTTP_PORT_SECURE=true`, `TLS_CERT_FILE`, and
+`TLS_KEY_FILE` into `stellar-core.cfg`. **These config keys have not been verified against a real
+stellar-core build** — stellar-core's admin/HTTP endpoint does not have documented native HTTPS
+termination in upstream stellar-core releases as of this writing. Treat this configuration as
+best-effort/forward-looking rather than a confirmed working feature: it may be a no-op on your
+stellar-core version, in which case the validator's HTTP endpoint continues to serve plaintext
+even with `MTLS_ENABLED=true` set elsewhere. The `<node-name>-client-cert` material is still
+correctly issued and mounted regardless; only the "does stellar-core itself terminate TLS on its
+HTTP port" behavior is unconfirmed. If you need verified in-transit encryption for traffic to
+stellar-core's HTTP port today, terminate TLS in front of it yourself (e.g. a sidecar or mesh
+proxy) — this repository does not ship one; deliberately out of scope for this pass (see the
+project tracking issue for #1392).
 
 ## Client trust failures after CA changes
 

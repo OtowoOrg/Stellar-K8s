@@ -1,24 +1,159 @@
-# kube-bench config for Stellar-K8s
-# Focuses on Operator + StellarNode CIS compliance
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# kube-bench custom benchmark controls for Stellar-K8s (issue #1380).
+#
+# This file is a kube-bench *control* set (not a Kubernetes manifest). It is
+# mounted into the in-cluster Job at /opt/kube-bench/cfg/stellar-bench.yaml
+# and selected with:  kube-bench run --benchmark stellar-bench --output json
+#
+# It is a curated subset of the CIS Benchmark families plus Stellar-K8s
+# hardening requirements on control-plane components and kubelets that run
+# operator-managed workloads.
 
-version: v1.28.0  # Match K8s version
+controls:
+- id: 1
+  text: "Control Plane Components"
+  type: "controlplane"
+  groups:
+  - id: 1.1
+    text: "Control Plane Node Configuration Files"
+    type: "manual"
+    checks:
+    - id: 1.1.1
+      text: "Ensure that the API server pod specification file permissions are set to 644 or more restrictive"
+      type: "manual"
+      remediation: "chmod 644 /etc/kubernetes/manifests/kube-apiserver.yaml"
+    - id: 1.1.2
+      text: "Ensure that the API server pod specification file ownership is set to root:root"
+      type: "manual"
+      remediation: "chown root:root /etc/kubernetes/manifests/kube-apiserver.yaml"
+  - id: 1.6
+    text: "API Server: authentication and TLS"
+    type: "scored"
+    checks:
+    - id: 1.6.3
+      text: "Ensure that the --anonymous-auth argument is set to false (Automated)"
+      audit: "ps -ef | grep kube-apiserver | grep -v grep"
+      tests:
+        test_items:
+        - flag: "--anonymous-auth"
+          compare:
+            op: eq
+            value: false
+          set: true
+      remediation: "Set --anonymous-auth=false on the API server pod specification."
+      scored: true
+    - id: 1.6.8
+      text: "Ensure that the API server authorization mode does not fall back to AlwaysAllow (Manual)"
+      type: "manual"
+      remediation: "Set --authorization-mode to RBAC or Node,RBAC on the API server."
+  - id: 1.7
+    text: "Scheduler"
+    type: "manual"
+    checks:
+    - id: 1.7.1
+      text: "Ensure that the scheduler health check bind address is 127.0.0.1"
+      type: "manual"
+      remediation: "Set --bind-address=127.0.0.1 on the kube-scheduler."
 
-checks:
-  - control:
-      text: "Stellar-K8s Operator Security Hardening"
-      id: "SEC-hardening"
-    file: "CIS/control-hardening.yaml" # Custom if needed
-  - control:
-      text: "Worker Nodes"
-      id: "4.2"
-  - control:
-      text: "Control Plane"
-      id: "4.1"
-  - audit:
-      id: "1.7.1"
-      text: "Kubelet config validation"
-    check:
-    - value: true
-      path: "/path/to/kubelet-arg"
-      setting: "--anonymous-auth"
+- id: 2
+  text: "Node Components"
+  type: "node"
+  groups:
+  - id: 2.1
+    text: "Kubelet authentication and TLS"
+    type: "scored"
+    checks:
+    - id: 2.1.1
+      text: "Ensure that the kubelet client certificate keys are owned by root:root (Manual)"
+      type: "manual"
+      remediation: "chown root:root on all kubelet client certificate key files."
+    - id: 2.1.2
+      text: "Ensure that the --anonymous-auth argument on the kubelet is set to false (Automated)"
+      audit: "ps -ef | grep kubelet | grep -v grep"
+      tests:
+        test_items:
+        - flag: "--anonymous-auth"
+          compare:
+            op: eq
+            value: false
+          set: true
+      remediation: "Edit /etc/systemd/system/kubelet.service on the node and set --anonymous-auth=false."
+      scored: true
+    - id: 2.1.3
+      text: "Ensure that the kubelet serves only HTTPS (Automated)"
+      audit: "ps -ef | grep kubelet | grep -v grep"
+      tests:
+        test_items:
+        - flag: "--read-only-port"
+          compare:
+            op: eq
+            value: "0"
+          set: true
+      remediation: "Set --read-only-port=0 on all kubelet configs."
+      scored: true
+  - id: 2.2
+    text: "Kubelet configuration files"
+    type: "scored"
+    checks:
+    - id: 2.2.2
+      text: "Ensure that the kubelet configuration file has permissions 644 or more restrictive (Manual)"
+      type: "manual"
+      remediation: "chmod 644 on the kubelet config file."
 
+# ── Stellar-K8s organisational policies (issue #1410) ─────────────────────────
+- id: 3
+  text: "Stellar-K8s Organisational Controls"
+  type: "string"
+  groups:
+  - id: 3.1
+    text: "Operator hardening"
+    type: "scored"
+    checks:
+    - id: 3.1.1
+      text: "Ensure the Stellar operator listens on loopback address (Automated)"
+      type: "automated"
+      audit: "ps -ef | grep stellar-operator | grep -v grep"
+      tests:
+        test_items:
+        - flag: "--metrics-bind"
+          compare:
+            op: eq
+            value: "127.0.0.1"
+          set: true
+      remediation: "Bind the operator metrics server to 127.0.0.1 or an internal-only address."
+      scored: true
+    - id: 3.1.2
+      text: "Ensure the Stellar operator runs as a non-root user (Automated)"
+      type: "automated"
+      audit: "ps -o user= -p $(pgrep -f stellar-operator | head -1)"
+      tests:
+        test_items:
+        - flag: "root"
+          compare:
+            op: noteq
+            value: "root"
+      remediation: "Running the operator as non-root avoids privilege escalation through CR reconciliation."
+      scored: true
+  - id: 3.2
+    text: "Secrets hygiene"
+    type: "scored"
+    checks:
+    - id: 3.2.1
+      text: "Ensure validator seed secrets are not world-readable (Manual)"
+      type: "manual"
+      remediation: "Verify Secret resources holding validator seeds are never mounted world-readable; enforce RBAC on Secret get/list."
+    - id: 3.2.2
+      text: "Ensure no plaintext mnemonic or seed exists in ConfigMaps (Manual)"
+      type: "manual"
+      remediation: "Audit ConfigMaps in stellar-* namespaces — mnemonics/seeds belong in SealedSecrets or the cluster Secret store."

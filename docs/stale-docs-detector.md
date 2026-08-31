@@ -40,7 +40,7 @@ The tool runs:
 make check-stale-docs
 
 # List all tracked doc → source mappings
-make list-doc-coverage
+cargo run --quiet --bin doc-check -- list
 
 # After updating a doc to make it current, record the new baseline
 make update-doc-baseline
@@ -182,10 +182,11 @@ The workflow can be run manually from the GitHub Actions UI with an optional
 |--------|-------------|
 | `make check-stale-docs` | Run the detector (exits non-zero on any stale/missing doc) |
 | `make update-doc-baseline` | Update `.doc-hashes.toml` to current HEAD |
-| `make list-doc-coverage` | Print all doc → source mappings and exit |
+| `cargo run --quiet --bin doc-check -- list` | Print all doc → source mappings and exit |
 
-All three targets are wired into `make ci-local`, so they run as part of the
-standard local CI suite.
+`make check-stale-docs` runs automatically via the `check-stale-docs` pre-commit
+hook and the `Stale Documentation Check` CI workflow
+(`.github/workflows/stale-docs.yml`).
 
 ---
 

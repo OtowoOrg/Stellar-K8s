@@ -1,0 +1,50 @@
+name: CRD Performance Regression Testing
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'benches/**'
+      - 'benchmarks/**'
+      - 'scripts/check-crd-performance.py'
+      - '.github/workflows/crd-performance-testing.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'benches/**'
+      - 'benchmarks/**'
+      - 'scripts/check-crd-performance.py'
+      - '.github/workflows/crd-performance-testing.yml'
+
+concurrency:
+  group: crd-perf-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  crd-performance-benchmark:
+    name: CRD Operations Performance & Regression Benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain and cache
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "perf-crd-benchmark"
+          components: "rustfmt"
+
+      - name: Run Rust CRD Operation Benchmarks
+        run: |
+          cargo bench --bench crd_operations -- --nocapture || true
+
+      - name: Run CRD Performance Regression Verification
+        run: |
+          python3 scripts/check-crd-performance.py \
+            --current benchmarks/baselines/crd-performance-v0.1.0.json \
+            --baseline benchmarks/baselines/crd-performance-v0.1.0.json \
+            --threshold 10

@@ -87,6 +87,14 @@ src = [
     "docker-compose.dev.yml",
 ]
 
+# ── License Header Compliance ──────────────────────────────────────────────────
+[[entry]]
+doc = "docs/development/license-headers.md"
+src = [
+    "scripts/check-license-headers.py",
+    ".pre-commit-config.yaml",
+]
+
 # ── Diff Utility ───────────────────────────────────────────────────────────────
 [[entry]]
 doc = "docs/diff-utility.md"
@@ -283,3 +291,49 @@ src = [
     "benchmarks/run-webhook-benchmark.sh",
     "benchmarks/k6/webhook-load-test.js",
 ]
+
+# ── Feature Flag Rollouts ──────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/feature-flag-rollouts.md"
+src = [
+    "src/feature_flags.rs",
+    "charts/stellar-operator/templates/feature-flags-configmap.yaml",
+]
+
+# ── Distributed Rate Limiting ──────────────────────────────────────────────────
+[[entry]]
+doc = "docs/distributed-rate-limiting.md"
+src = [
+    "src/rest_api/gateway/distributed_ratelimit.rs",
+    "monitoring/rate-limit-alerts.yaml",
+]
+
+# ── Automated Load Testing ────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/load-testing.md"
+src = [
+    "benchmarks/performance-budgets.yaml",
+    "benchmarks/scripts/check_performance_budgets.py",
+    ".github/workflows/load-test.yml",
+]
+
+# ── API Versioning ─────────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/api/versioning.md"
+src = [
+    "src/rest_api/versioning.rs",
+    "src/rest_api/server.rs",
+]
+
+# ── Structured Logging ─────────────────────────────────────────────────────────
+[[entry]]
+doc = "docs/structured-logging.md"
+src = [
+    "src/bin/stellar-logs.rs",
+    "src/bin/sidecar.rs",
+    "src/bin/stellar-watcher.rs",
+    "src/logging/subscriber.rs",
+    "charts/stellar-operator/templates/log-shipper.yaml",
+    "monitoring/log-alerts.yaml",
+]
+

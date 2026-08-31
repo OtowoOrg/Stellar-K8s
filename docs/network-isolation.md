@@ -159,8 +159,35 @@ Both sets allow:
 **Source:** `charts/stellar-operator/templates/networkpolicy.yaml`
 
 To implement zero-trust hardening for the operator's own control-plane infrastructure, default-deny NetworkPolicies are deployed for:
-1. **Operator namespace** (`.Release.Namespace`) — drops all ingress/egress by default. Allows ingress only to the metrics endpoint (port 9090) and the REST API (port 8080).
-2. **Webhook namespace** (`stellar-webhook`) — drops all ingress/egress by default. Allows ingress only for HTTPS webhook calls (port 8443 or 443) and Prometheus metrics (port 9090).
+1. **Operator namespace** (`.Release.Namespace`) — drops all ingress/egress by default. Allows ingress only to the metrics endpoint and the REST API, plus explicit egress to the kube-apiserver and kube-dns.
+2. **Webhook namespace** (`stellar-webhook`) — drops all ingress/egress by default. Allows ingress only for webhook calls from kube-apiserver and metrics scrapes from the monitoring namespace.
+
+#### Network topology and policy rationale
+
+The policy model is intentionally narrow: every pod starts in a deny-by-default state and can only reach a small set of services that the platform actually needs.
+
+```text
++------------------+      443/TCP      +-------------------------+
+| kube-apiserver   | ----------------> | operator / webhook      |
+| (kube-system)    |                    | namespaces              |
++------------------+                    +-----------+-------------+
+                                                                |
+                                                                | 53/UDP,53/TCP
+                                                                v
+                                                    +-------------------+
+                                                    | kube-dns          |
+                                                    | (kube-system)     |
+                                                    +-------------------+
+
+Prometheus / monitoring --> metrics port (9090) --> operator + webhook pods
+```
+
+This means the security boundary is:
+
+- Kubernetes control-plane traffic is explicitly allowed to the API server and DNS service.
+- Monitoring traffic is allowed only to the metrics ports that Prometheus scrapes.
+- Application pods are not permitted to reach arbitrary cluster endpoints unless a separate allow-list is added by the workload policy.
+- No free-form egress is granted, which ensures that a compromised pod cannot silently phone home to unexpected destinations.
 
 ---
 

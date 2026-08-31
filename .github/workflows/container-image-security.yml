@@ -22,9 +22,10 @@ name: Container Image Security
 #   6. verify-signature — Verify the signed image is retrievable.
 #
 # Gate policy:
-#   • CRITICAL vulnerabilities with an available fix → fail (exit-code 1).
-#   • CRITICAL with no fix → reported in SARIF, not gated (ignore-unfixed).
-#   • HIGH vulnerabilities → reported, not gated.
+#   • CRITICAL or HIGH vulnerabilities with an available fix → fail
+#     (exit-code 1) — issue #1367's stated verification criterion.
+#   • CRITICAL/HIGH with no fix → reported in SARIF, not gated
+#     (ignore-unfixed): there's nothing actionable to block on yet.
 #   • Signing only happens after both scanners pass on the main branch.
 
 on:
@@ -182,13 +183,16 @@ jobs:
           sarif_file: trivy-results.sarif
           category: trivy-container
 
-      # Gate pass: CRITICAL with available fix → fail CI.
-      - name: Trivy scan — gate (block on CRITICAL)
+      # Gate pass: CRITICAL or HIGH with available fix → fail CI (issue
+      # #1367's verification criterion: "fail on critical/high
+      # vulnerabilities" — HIGH was previously report-only, see the SARIF
+      # step above, and never actually gated the build).
+      - name: Trivy scan — gate (block on CRITICAL/HIGH)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.resolve.outputs.ref }}
           format: table
-          severity: "CRITICAL"
+          severity: "CRITICAL,HIGH"
           ignore-unfixed: "true"
           exit-code: "1"
 

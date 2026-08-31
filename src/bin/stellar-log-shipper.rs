@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! stellar-log-shipper — durable log-to-S3 sidecar
 //!
 //! Tails `/var/log/stellar/` (or `$LOG_DIR`), batches lines into gzip-compressed
@@ -242,10 +254,20 @@ impl Batch {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::registry()
+    // Same OTel wiring `stellar_k8s::logging::init_binary_subscriber` gives
+    // every other sidecar (issue #1369) — kept inline here to preserve the
+    // existing `EnvFilter::from_default_env()` behavior exactly.
+    let use_otel = env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok();
+    let registry = tracing_subscriber::registry()
         .with(fmt::layer().json())
-        .with(EnvFilter::from_default_env())
-        .init();
+        .with(EnvFilter::from_default_env());
+    if use_otel {
+        let otel_layer = stellar_k8s::telemetry::init_telemetry(&registry);
+        let trace_id_layer = stellar_k8s::telemetry::trace_id_layer();
+        registry.with(otel_layer).with(trace_id_layer).init();
+    } else {
+        registry.init();
+    }
 
     let cfg = Config::from_env()?;
     info!(

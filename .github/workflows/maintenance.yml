@@ -2,8 +2,7 @@ name: Maintenance
 
 # Weekly hygiene that is NOT covered by other workflows:
 #   - security-audit.yml  → scheduled cargo-audit / cargo-deny / scorecard / SBOM
-#   - link-check.yml      → scheduled lychee link rot
-#   - ci.yml              → PR/push gates
+#   - ci.yml              → PR/push gates + link checks (repo-wide-link-check job)
 #
 # Unique value here: stale-artifact cleanup regression coverage.
 

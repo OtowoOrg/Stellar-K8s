@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! `stellar-fork-detector` — Fork Detection Sidecar binary.
 //!
 //! Monitors the local Stellar Core ledger hash and compares it in real-time
@@ -96,10 +108,22 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    tracing_subscriber::registry()
+    // Same OTel wiring `stellar_k8s::logging::init_binary_subscriber` gives
+    // every other sidecar (issue #1369) — kept inline here, rather than
+    // switching to that helper, so the existing `--log-level` filter string
+    // (which may be a full directive like "info,foo=debug", not just a bare
+    // level) keeps working exactly as before.
+    let use_otel = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok();
+    let registry = tracing_subscriber::registry()
         .with(fmt::layer().json())
-        .with(EnvFilter::new(&args.log_level))
-        .init();
+        .with(EnvFilter::new(&args.log_level));
+    if use_otel {
+        let otel_layer = stellar_k8s::telemetry::init_telemetry(&registry);
+        let trace_id_layer = stellar_k8s::telemetry::trace_id_layer();
+        registry.with(otel_layer).with(trace_id_layer).init();
+    } else {
+        registry.init();
+    }
 
     // Use default anchors if none provided.
     let anchor_endpoints = if args.anchors.is_empty() {

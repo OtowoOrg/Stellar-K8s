@@ -1,0 +1,59 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Chaos Experiment 11 — Stellar Core Crash Recovery (issue #1388)
+#
+# Tests that the operator detects a Stellar Core process crash inside a
+# running pod and drives the StellarNode back to a Ready state via the
+# standard Kubernetes container restart mechanism, without corrupting the
+# ledger database or losing peer connections beyond the SLO.
+#
+# Mechanism: Chaos Mesh PodChaos injects a SIGKILL into the `stellar-core`
+# process. The container restarts (restartPolicy=Always), and the operator
+# must observe the pod returning to Ready and update the StellarNode status
+# accordingly within the SLO window.
+#
+# Success criteria (checked by the CI job):
+#   1. stellar-core container restarts at least once
+#   2. Pod returns to Ready within SLO (120s)
+#   3. StellarNode status.conditions[Ready] = True within SLO
+#   4. Ledger sequence advances after recovery (node re-syncs)
+#   5. No duplicate StatefulSets / Services created
+#
+# SLO: 120s recovery
+# Severity: 🔴 Critical
+# Category: pod-failure / crash-recovery
+#
+# Usage:
+#   kubectl apply -f tests/chaos/11-stellar-core-crash-recovery.yaml \
+#     --namespace=chaos-testing
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: stellar-core-crash-recovery
+  namespace: chaos-testing
+  labels:
+    chaos.stellar.org/experiment: "11"
+    chaos.stellar.org/category: crash-recovery
+    chaos.stellar.org/severity: critical
+spec:
+  action: container-kill
+  mode: one
+  selector:
+    namespaces:
+      - stellar-system
+    labelSelectors:
+      app.kubernetes.io/component: validator
+  containerNames:
+    - stellar-core
+  duration: "60s"
+  gracePeriod: 0

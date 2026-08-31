@@ -1,15 +1,27 @@
 #!/bin/bash
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # Chaos Drill Execution Script
 # Runs automated chaos experiments for disaster recovery validation
 
 set -euo pipefail
 
 # Default configuration
-DRILL_TYPE="${1:-node-kill}"
-DURATION="${2:-60}"
-TARGET="${3:-validator}"
-NAMESPACE="${4:-stellar-chaos}"
-RESULTS_DIR="./results/chaos"
+DRILL_TYPE="${DRILL_TYPE:-${1:-node-kill}}"
+DURATION="${DURATION:-${2:-60}}"
+TARGET="${TARGET:-${3:-validator}}"
+NAMESPACE="${NAMESPACE:-${4:-stellar-chaos}}"
+RESULTS_DIR="${RESULTS_DIR:-./results/chaos}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_FILE="${RESULTS_DIR}/drill_${DRILL_TYPE}_${TIMESTAMP}.json"
 
@@ -63,13 +75,13 @@ pre_drill_check() {
     fi
     
     # Check Stellar services
-    if ! kubectl get pods -n stellar -l app=stellar-validator --no-headers 2>/dev/null | grep -q "Running"; then
+    if ! kubectl get pods -n ${NAMESPACE} -l app=${TARGET} --no-headers 2>/dev/null | grep -q "Running"; then
         log_error "Stellar validator pods not running"
         return 1
     fi
     
     # Record baseline metrics
-    BASELINE_BLOCK_HEIGHT=$(kubectl exec -n stellar stellar-validator-0 -- stellar capacity 2>/dev/null | grep -o 'Ledger: [0-9]*' | awk '{print $2}' || echo "0")
+    BASELINE_BLOCK_HEIGHT=$(kubectl exec -n ${NAMESPACE} ${TARGET}-0 -- stellar capacity 2>/dev/null | grep -o 'Ledger: [0-9]*' | awk '{print $2}' || echo "0")
     log_info "Baseline block height: ${BASELINE_BLOCK_HEIGHT}"
     
     return 0
@@ -154,13 +166,13 @@ post_drill_check() {
     fi
     
     # Check Stellar services
-    if ! kubectl get pods -n stellar -l app=stellar-validator --no-headers 2>/dev/null | grep -q "Running"; then
+    if ! kubectl get pods -n ${NAMESPACE} -l app=${TARGET} --no-headers 2>/dev/null | grep -q "Running"; then
         log_error "Stellar validator pods not running after recovery"
         return 1
     fi
     
     # Record recovery metrics
-    RECOVERY_BLOCK_HEIGHT=$(kubectl exec -n stellar stellar-validator-0 -- stellar capacity 2>/dev/null | grep -o 'Ledger: [0-9]*' | awk '{print $2}' || echo "0")
+    RECOVERY_BLOCK_HEIGHT=$(kubectl exec -n ${NAMESPACE} ${TARGET}-0 -- stellar capacity 2>/dev/null | grep -o 'Ledger: [0-9]*' | awk '{print $2}' || echo "0")
     log_info "Recovery block height: ${RECOVERY_BLOCK_HEIGHT}"
     
     return 0
@@ -173,14 +185,18 @@ calculate_results() {
     local rto=$((end_time - start_time))
     
     # Determine pass/fail based on RTO targets
-    local target_rto=300  # 5 minutes default
-    case ${DRILL_TYPE} in
-        node-kill) target_rto=300 ;;
-        network) target_rto=600 ;;
-        disk) target_rto=900 ;;
-        dns) target_rto=300 ;;
-        cpu) target_rto=600 ;;
-    esac
+    # Default RTO target by drill type (seconds); RTO_TARGET_SECONDS env
+    # override wins (used by the scheduled CronJobs in config/chaos-drills/).
+    local target_rto="${RTO_TARGET_SECONDS:-300}"  # 5 minutes default
+    if [[ -z "${RTO_TARGET_SECONDS:-}" ]]; then
+        case ${DRILL_TYPE} in
+            node-kill) target_rto=300 ;;
+            network) target_rto=600 ;;
+            disk) target_rto=900 ;;
+            dns) target_rto=300 ;;
+            cpu) target_rto=600 ;;
+        esac
+    fi
     
     local pass=false
     if [ "${rto}" -le "${target_rto}" ]; then

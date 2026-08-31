@@ -8,6 +8,7 @@ on:
       - 'charts/**'
       - 'examples/**'
       - 'bundle/**'
+      - 'schemas/**'
       - 'scripts/validate-k8s-manifests.py'
       - '.github/workflows/k8s-manifest-validation.yml'
   pull_request:
@@ -17,13 +18,19 @@ on:
       - 'charts/**'
       - 'examples/**'
       - 'bundle/**'
+      - 'schemas/**'
       - 'scripts/validate-k8s-manifests.py'
       - '.github/workflows/k8s-manifest-validation.yml'
+
+concurrency:
+  group: k8s-manifest-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate-manifests:
     name: Kubeconform & CRD Schema Validation
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout Repository
@@ -37,10 +44,15 @@ jobs:
       - name: Install PyYAML
         run: pip install pyyaml
 
-      - name: Setup Kubeconform
-        uses: github/super-linter/providers/kubeconform@v5
-        continue-on-error: true
+      - name: Install kubeconform
+        run: |
+          KUBECONFORM_VERSION="v0.6.4"
+          wget -qO- "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | tar -xz
+          sudo mv kubeconform /usr/local/bin/
+          kubeconform -v
+
+      - name: Check CRD JSON schema drift
+        run: python3 scripts/ci/extract-crd-json-schemas.py --check
 
       - name: Validate Manifests and CRD Schemas
-        run: |
-          python3 scripts/validate-k8s-manifests.py
+        run: python3 scripts/validate-k8s-manifests.py

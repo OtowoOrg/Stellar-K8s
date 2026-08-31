@@ -20,6 +20,10 @@ spec:
         {{- with .Values.extraAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        {{- if .Values.mtls.enabled }}
+        reloader.stakater.com/auto: "true"
+        cert-manager.io/rotation-strategy: "rolling"
+        {{- end }}
       labels:
         {{- include "stellar-operator.selectorLabels" . | nindent 8 }}
     spec:
@@ -34,6 +38,20 @@ spec:
         - name: operator-config
           configMap:
             name: {{ include "stellar-operator.fullname" . }}-defaults
+        {{- if .Values.mtls.enabled }}
+        - name: stellar-tls
+          secret:
+            secretName: stellar-core-mtls-secret
+            optional: true
+        - name: horizon-tls
+          secret:
+            secretName: horizon-mtls-secret
+            optional: true
+        - name: soroban-tls
+          secret:
+            secretName: soroban-rpc-mtls-secret
+            optional: true
+        {{- end }}
         {{- if and .Values.operator.restApiEnabled .Values.operator.profiling.enabled }}
         # Ephemeral writable temp for jemalloc heap profile dumps (NamedTempFile → /tmp).
         # Root filesystem stays read-only; this emptyDir is mounted only when profiling is on.
@@ -83,6 +101,17 @@ spec:
             - name: operator-config
               mountPath: /etc/stellar-operator
               readOnly: true
+            {{- if .Values.mtls.enabled }}
+            - name: stellar-tls
+              mountPath: /etc/stellar/tls
+              readOnly: true
+            - name: horizon-tls
+              mountPath: /etc/horizon/tls
+              readOnly: true
+            - name: soroban-tls
+              mountPath: /etc/soroban/tls
+              readOnly: true
+            {{- end }}
             {{- if and .Values.operator.restApiEnabled .Values.operator.profiling.enabled }}
             - name: profiling-tmp
               mountPath: /tmp

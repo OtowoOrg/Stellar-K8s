@@ -1,3 +1,15 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # =============================================================================
 # Stellar Operator — default Helm values
 # =============================================================================
@@ -94,6 +106,12 @@ securityContext:
   capabilities:
     drop:
       - ALL
+
+# mTLS configuration for inter-service communication.
+# When enabled, creates self-signed CA and certificates for
+# Stellar Core, Horizon, and Soroban RPC services.
+mtls:
+  enabled: false
 
 resources:
   limits:
@@ -297,12 +315,38 @@ monitoring:
     ledgerCloseTimeThresholdSeconds: 10
     # Extra PrometheusRule rules, appended as-is under spec.groups[0].rules.
     additionalRules: []
+    # Certificate expiry alerts (requires cert-manager Prometheus metrics).
+    certAlerts:
+      enabled: false
+      warningDays: 30
+      criticalDays: 7
+    # Cost optimization anomaly alerts (requires cost metrics from the operator).
+    costAlerts:
+      enabled: false
+    # API rate limiting alerts (requires gateway rate limit metrics).
+    rateLimitAlerts:
+      enabled: false
 
   grafanaDashboards:
     enabled: true
     # Standard label used by the Grafana sidecar dashboard-loader to auto-discover ConfigMaps.
     labels:
       grafana_dashboard: "1"
+    # Dashboards to deploy as ConfigMaps (issue #1389).
+    # Each entry becomes a ConfigMap in the release namespace.
+    dashboards:
+      clusterOverview:
+        enabled: true
+        file: "grafana-cluster-overview.json"
+        title: "Stellar Core — Cluster Overview"
+      perNodeStats:
+        enabled: true
+        file: "grafana-per-node-stats.json"
+        title: "Stellar Core — Per-Node Stats"
+      alerting:
+        enabled: true
+        file: "grafana-alerting.json"
+        title: "Stellar Core — Alerting"
 
 # Default resource requests/limits for managed StellarNode pods.
 # Precedence: StellarNode spec.resources > Helm defaults > operator hardcoded fallback.
@@ -394,6 +438,10 @@ certManagement:
   enabled: true
   # Backend to use: "cert-manager" (default), "vault-pki", or "local-ca".
   backend: "cert-manager"
+  # ACME account email for Let's Encrypt registration.
+  acmeEmail: "admin@stellar.org"
+  # Ingress class used by the HTTP-01 ACME solver.
+  ingressClass: "nginx"
   # Vault PKI backend settings (only used when backend == "vault-pki").
   vault:
     addr: "https://vault.stellar-system.svc:8200"
@@ -411,6 +459,92 @@ certManagement:
   defaultTtlHours: 2160
   # Days before expiry at which auto-renewal is triggered. Must be < defaultTtlHours/24.
   renewBeforeDays: 30
+  # TLS certificates to provision via cert-manager. Each entry creates a
+  # Certificate resource in the specified namespace.
+  certificates:
+    - name: horizon-tls
+      namespace: stellar
+      commonName: horizon.stellar.org
+      dnsNames:
+        - horizon.stellar.org
+        - api.stellar.org
+    - name: validator-tls
+      namespace: stellar
+      commonName: validator.stellar.org
+      dnsNames:
+        - validator.stellar.org
+        - stellar-validator-0.stellar.svc.cluster.local
+        - stellar-validator-1.stellar.svc.cluster.local
+        - stellar-validator-2.stellar.svc.cluster.local
+    - name: core-tls
+      namespace: stellar
+      commonName: core.stellar.org
+      dnsNames:
+        - core.stellar.org
+        - stellar-core.stellar.svc.cluster.local
+    - name: soroban-rpc-tls
+      namespace: stellar
+      commonName: soroban.stellar.org
+      dnsNames:
+        - soroban.stellar.org
+        - soroban-rpc.stellar.svc.cluster.local
+
+# =============================================================================
+# API Rate Limiting (issue #1384)
+# =============================================================================
+rateLimiting:
+  # Enable rate limiting middleware in the API gateway.
+  enabled: true
+  # Distributed rate limiting uses a shared Redis store so limits are
+  # enforced across all gateway replicas. When disabled, only process-local
+  # (per-replica) limits apply.
+  distributed:
+    enabled: false
+    # When true, requests proceed if Redis is unreachable (fail-open).
+    # Set to false to reject traffic when the shared store is down.
+    failOpen: true
+  # Redis connection for the distributed rate limiter.
+  redis:
+    address: "redis.stellar-system.svc:6379"
+    poolSize: 8
+    timeoutMs: 50
+    # Password for Redis authentication. Reference a Secret for production use.
+    # passwordSecretName: "redis-rate-limit-password"
+    # passwordSecretKey: "password"
+    # Enable TLS for Redis connections (recommended for production).
+    tls:
+      enabled: false
+  # Per-API-key rate limit tiers. Each tier defines request quotas.
+  tiers:
+    - name: free
+      requestsPerMinute: 60
+      requestsPerHour: 1000
+      requestsPerDay: 10000
+      burst: 10
+    - name: standard
+      requestsPerMinute: 100
+      requestsPerHour: 10000
+      requestsPerDay: 100000
+      burst: 20
+    - name: premium
+      requestsPerMinute: 200
+      requestsPerHour: 20000
+      requestsPerDay: 200000
+      burst: 50
+    - name: admin
+      requestsPerMinute: 500
+      requestsPerHour: 50000
+      requestsPerDay: 500000
+      burst: 100
+  # Endpoint-to-tier mapping. Keys are URL path prefixes.
+  endpointTiers:
+    "/health": "free"
+    "/healthz": "free"
+    "/readyz": "free"
+    "/livez": "free"
+    "/metrics": "free"
+    "/api/v1/nodes": "standard"
+    "/api/v1/debug": "admin"
 
 # Cross-region state synchronization. Only rendered when
 # featureFlags.enableDr is also true (see templates/cross-region-bridge.yaml).
@@ -436,6 +570,13 @@ security:
     enabled: true
     ingress:
       namespaceSelector: true
+    # Blanket default-deny baseline applied to additional namespaces beyond the
+    # release namespace (which always gets a default-deny from networkpolicy.yaml).
+    # Any namespace hosting Stellar nodes or the operator's supporting services
+    # can be enumerated here so that pods in it may only reach explicitly allowed
+    # endpoints (zero-trust, issue #1320). The operator reconciler already emits
+    # per-node allow rules; this list provides the undifferentiated default.
+    defaultDenyNamespaces: []
   admissionWebhook:
     failurePolicy: Fail
   imagePolicy:
@@ -639,6 +780,59 @@ otel:
         enabled: false
         endpoint: "http://elasticsearch:9200"
         index: "stellar-logs"
+
+# --- Log shipper (per-node Fluent Bit DaemonSet) -----------------------------
+logShipper:
+  # Deploys a Fluent Bit DaemonSet that tails container logs on every node and
+  # forwards them to a central log store (Loki or Elasticsearch).
+  # DISABLED by default: the operator always writes structured JSON to stdout,
+  # so any aggregator (Loki + Promtail, Filebeat, ...) can consume it without
+  # this DaemonSet. Keep the rendered output stable by leaving it disabled in
+  # the committed drift goldens (issue #1381).
+  enabled: false
+
+  image:
+    repository: fluent/fluent-bit
+    tag: "3.2.5"
+    pullPolicy: IfNotPresent
+
+  # Attach pod/namespace labels to every forwarded record via the Kubernetes
+  # metadata filter.
+  kubernetesFilter: true
+
+  # Already-JSON logs are merged into structured fields (level, msg, span_id)
+  # by the "render log" processing step.
+  jsonParsing: true
+
+  # Fluent Bit's own log verbosity (info, warn, error, or debug).
+  logLevel: "warn"
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  # Exactly one output backend should be enabled at a time. If none is enabled
+  # the shipper echoes structured JSON to stdout (useful for local testing).
+  loki:
+    enabled: false
+    host: "loki"
+    port: 3100
+    # Optional Loki multi-tenant ingestion ID.
+    tenantId: ""
+
+  elasticsearch:
+    enabled: false
+    host: "elasticsearch"
+    port: 9200
+    index: "stellar-logs"
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
 
 # SCP Analytics Pipeline Configuration
 # Real-time streaming of SCP messages to Kafka for network topology analysis

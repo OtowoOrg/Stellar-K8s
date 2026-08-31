@@ -1,8 +1,9 @@
 extends: default
 
-# Project-specific YAML linting (issue #1291).
-# Helm templates are excluded because they are not valid YAML until rendered;
-# rendered output is validated by kubeconform in scripts/ci/validate-yaml.sh.
+# Project-specific YAML linting configuration (issues #1291, #1401).
+# Enforces formatting, structure, and validity across all repository YAML files.
+# Helm templates are excluded because they contain Go templating directives;
+# rendered chart output is validated via kubeconform in CI scripts.
 
 ignore: |
   target/**
@@ -48,3 +49,4 @@ rules:
   truthy:
     allowed-values: ['true', 'false', 'on', 'off', 'yes', 'no']
     check-keys: false
+

@@ -109,9 +109,8 @@ rendered-manifests.yaml
 # Committed Helm drift goldens — regenerate with: make helm-drift-update
 !charts/stellar-operator/rendered/
 
-# OLM bundle CSV — generated from config/manifests/bases by operator-sdk, regenerate with: make bundle
-# (bundle/metadata/annotations.yaml is hand-written and stays committed)
-bundle/manifests/
+# OLM bundle — fully generated (metadata + manifests) from config/manifests/bases by operator-sdk, regenerate with: make bundle
+bundle/
 
 # Generated shell completions and Helm dependency/package artifacts
 completions/

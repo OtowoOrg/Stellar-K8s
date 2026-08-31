@@ -1,4 +1,9 @@
 {{- if .Values.security.networkPolicy.enabled }}
+{{- $operatorMetricsPort := .Values.operator.metricsPort | default 9090 -}}
+{{- $operatorRestApiPort := .Values.operator.restApiPort | default 8080 -}}
+{{- $webhookPort := .Values.webhook.port | default 8443 -}}
+{{- $webhookMetricsPort := .Values.webhook.metricsPort | default 9090 -}}
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -6,23 +11,107 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "stellar-operator.labels" . | nindent 4 }}
+  annotations:
+    stellar.org/policy-topology: >-
+      default-deny for the operator namespace. Allows only kube-apiserver reachability,
+      cluster DNS, and the operator's metrics/REST API ports.
 spec:
-  podSelector: {} # Selects all pods in this namespace
+  podSelector: {}
   policyTypes:
     - Ingress
     - Egress
   ingress:
-    # Allow ingress on metricsPort and restApiPort
-    - ports:
+    # Enforce explicit allow-lists for the operator's private control plane services.
+    - from:
+        - podSelector: {}
+      ports:
         - protocol: TCP
-          port: {{ .Values.operator.metricsPort | default 9090 }}
-        {{- if .Values.operator.restApiEnabled }}
+          port: {{ $operatorMetricsPort }}
         - protocol: TCP
-          port: {{ .Values.operator.restApiPort | default 8080 }}
-        {{- end }}
+          port: {{ $operatorRestApiPort }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: {{ $operatorMetricsPort }}
   egress:
-    # Allow all egress (outbound communication to API server, DNS, and external endpoints)
-    - {}
+    # Reach the Kubernetes API server in kube-system for reconciliation and status updates.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              component: kube-apiserver
+      ports:
+        - protocol: TCP
+          port: 443
+    # Resolve service names and reach cluster DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- /* Explicit allow rules for required intra-cluster pod-to-pod traffic.
+           The default-deny above already blocks everything else; each endpoint
+           below is enumerated so the operator can reach the services it needs
+           while every other destination stays denied (zero-trust). */}}
+    {{- if and (hasKey .Values "rateLimiting") (hasKey .Values.rateLimiting "distributed") .Values.rateLimiting.distributed.enabled }}
+    # Distributed rate limiting: reach the shared Redis store in this namespace.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+      ports:
+        - protocol: TCP
+          port: 6379
+    {{- end }}
+    {{- if and (hasKey .Values "certManagement") (eq (default "cert-manager" .Values.certManagement.backend) "vault-pki") }}
+    # Certificate management: reach the Vault PKI backend in this namespace.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+      ports:
+        - protocol: TCP
+          port: 8200
+    {{- end }}
+    {{- if and (hasKey .Values "otel") (hasKey .Values.otel "collector") .Values.otel.collector.enabled }}
+    # OpenTelemetry: ship traces to the OTel collector in this namespace.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: otel-collector
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    {{- end }}
+    {{- if and (hasKey .Values "scpAnalytics") .Values.scpAnalytics.enabled }}
+    # SCP analytics: reach the Kafka bootstrap servers for the topology consumer.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9093
+    {{- end }}
 ---
 {{- if .Values.webhook.enabled }}
 apiVersion: networking.k8s.io/v1
@@ -32,24 +121,58 @@ metadata:
   namespace: stellar-webhook
   labels:
     app.kubernetes.io/name: stellar-webhook
+  annotations:
+    stellar.org/policy-topology: >-
+      default-deny for the admission webhook namespace. Allows only kube-apiserver calls
+      to the webhook service, DNS, and monitoring scrapes for the metrics endpoint.
 spec:
-  podSelector: {} # Selects all pods in webhook namespace
+  podSelector: {}
   policyTypes:
     - Ingress
     - Egress
   ingress:
-    # Allow webhook HTTPS requests on webhook port
-    - ports:
+    # The API server calls the admission webhook over HTTPS.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
         - protocol: TCP
-          port: {{ .Values.webhook.port | default 8443 }}
+          port: {{ $webhookPort }}
         - protocol: TCP
           port: 443
-    # Allow metrics scrape
-    - ports:
+    # Prometheus scrapes the webhook metrics endpoint.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
         - protocol: TCP
-          port: {{ .Values.webhook.metricsPort | default 9090 }}
+          port: {{ $webhookMetricsPort }}
   egress:
-    # Allow all egress
-    - {}
+    # Webhook validation reads Kubernetes config, secrets, and status information through the API server.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              component: kube-apiserver
+      ports:
+        - protocol: TCP
+          port: 443
+    # Cluster DNS is required for service discovery and CRD lookups.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
 {{- end }}
 {{- end }}

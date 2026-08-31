@@ -21,7 +21,7 @@ This runs `crd-gen`, `generate-api-docs`, and `bundle` in sequence. See the indi
 |---|---|---|
 | Helm chart templates (`charts/stellar-operator/templates/`) | `src/` Rust types + `config/` manifests | `helm template` or `make crd-gen` |
 | CRD YAML (`config/crd/*.yaml`) | `src/crd/` Rust structs | `make crd-gen` |
-| OLM bundle (`bundle/manifests/`, `bundle/metadata/`) | `config/manifests/bases/` | `make bundle` |
+| OLM bundle (`bundle/`, gitignored) | `config/manifests/bases/` + CRDs | `make bundle` |
 | API reference docs (`docs/api-reference.md`) | `src/crd/` + `scripts/generate-api-docs.py` | `make generate-api-docs` |
 
 ## Prerequisites
@@ -86,23 +86,21 @@ The `make bundle` target performs these steps internally:
 ```
 bundle/
 ├── manifests/
-│   └── stellar-operator.clusterserviceversion.yaml   # ClusterServiceVersion (gitignored, run `make bundle` to produce it)
+│   └── stellar-operator.clusterserviceversion.yaml   # ClusterServiceVersion (generated, run `make bundle` to produce it)
 └── metadata/
-    └── annotations.yaml                               # Bundle annotations (committed, hand-written)
+    └── annotations.yaml                               # Bundle annotations (generated, run `make bundle` to produce it)
 ```
 
-`bundle/manifests/` is gitignored since its only contents are fully generated from
-`config/manifests/bases/`. Run `make bundle` locally any time you need it (e.g. before
-`operator-sdk bundle validate` or `make bundle-build`) — do not commit the output.
+The entire `bundle/` directory is gitignored because it is fully generated from
+`config/manifests/bases/` and the CRDs. Run `make bundle` locally any time you
+need it (e.g. before `operator-sdk bundle validate` or `make bundle-build`) —
+do not commit the output.
 
 ### Customizing bundle metadata
 
-Edit these files directly (they are **not** auto-generated):
-
-| File | Purpose |
-|---|---|
-| `bundle/metadata/annotations.yaml` | Channel, package name, mediatype |
-| `config/manifests/bases/stellar-operator.clusterserviceversion.yaml` | CSV base (descriptor, icon, maintainer) |
+The OLM annotations (`package`, `channels`) are derived from the `make bundle`
+invocation (`--channels $(CHANNELS) --default-channel $(DEFAULT_CHANNEL)` in
+the Makefile). The editable CSV base is:
 
 After editing, run `make bundle` to regenerate the full CSV.
 
@@ -131,6 +129,7 @@ The Helm chart in `charts/stellar-operator/` is **hand-written** for the most pa
 | `byzantine-watcher.yaml` | Byzantine monitoring |
 | `fork-detector.yaml` | Fork detection |
 | `network-isolation.yaml` | Network policies |
+| `network-pod-policy.yaml` | Pod-to-pod default-deny baseline
 
 ### Testing chart changes
 

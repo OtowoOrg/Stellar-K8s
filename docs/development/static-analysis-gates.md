@@ -12,6 +12,7 @@ structurally unable to fail.
 | Helm template drift | `make helm-drift` | #1045 | Replaces `check-chart-diff.sh` |
 | Helm edge-case / upgrade unittest | `make helm-unittest` / `make helm-upgrade-test` | #1289 | Extends helm-unittest |
 | Database migration harness | `make test-db-migrations` | #1317 | sqlx + Postgres |
+| License header enforcement | `make license-headers` | #1286 | New gate |
 
 All three need only Python 3 with `pyyaml` and `jsonschema`:
 
@@ -165,7 +166,7 @@ Zero errors. 233 warnings, all recorded in `known_deviations`:
 
 ---
 
-## Helm template drift detection (#1045)
+## Helm template drift detection (#1045, enhanced #1395)
 
 `scripts/check-helm-drift.sh` renders the chart across five value profiles,
 normalises each render through `scripts/sort-manifests.py`, and diffs the
@@ -181,6 +182,12 @@ the same file.) It has been removed.
 Storing goldens in git means a template change that alters rendered output
 shows up as a concrete manifest diff in the pull request, reviewable like any
 other file.
+
+### Enhanced features (#1395)
+
+- **YAML-aware diffing**: When [dyff](https://github.com/homeport/dyff) is installed, the script uses `dyff between` for diffs that handle key reordering and formatting noise gracefully. Falls back to `diff -u` if dyff is not available.
+- **High-risk field detection**: The `--check-high-risk` flag detects changes to critical fields (image tags, replicas, resources, RBAC, secrets) and emits elevated alerts.
+- **$GITHUB_STEP_SUMMARY**: When running in GitHub Actions, a summary is written to the job summary for better visibility.
 
 ### Profiles
 
@@ -198,6 +205,7 @@ other file.
 make helm-drift                                  # verify
 make helm-drift-update                           # regenerate goldens
 scripts/check-helm-drift.sh --profile production # one profile
+scripts/check-helm-drift.sh --check-high-risk    # detect high-risk field changes
 scripts/check-helm-drift.sh --list
 make test-helm-drift                             # bats tests
 ```
@@ -215,6 +223,34 @@ git add charts/stellar-operator/rendered
 Reviewing that diff is the point: it shows exactly which manifests a template
 edit changes.
 
+### Unintentional drift (issue #1365)
+
+If CI fails here on a PR that didn't knowingly touch chart templates, the
+change usually came from somewhere less obvious than
+`charts/stellar-operator/templates/`:
+
+1. **A values default changed.** `values.yaml`, `examples/values-*.yaml`, or
+   a Helm library dependency version bump can shift rendered output without
+   a single line of template code changing. `git diff charts/stellar-operator/rendered`
+   after `make helm-drift-update` (run it in a scratch branch, don't commit
+   yet) shows exactly which fields moved and from what.
+2. **It's flagged high-risk.** `--check-high-risk` specifically watches RBAC
+   rules, `securityContext`, and resource `limits`/`requests` — fields where
+   an unreviewed change has real blast radius (privilege escalation, pods
+   evicted under memory pressure, etc.). Treat a high-risk hit as needing a
+   second reviewer's sign-off before regenerating goldens, not a rubber-stamp
+   `make helm-drift-update`.
+3. **The PR didn't mean to change the chart at all.** If `git diff` on the
+   rendered goldens shows nothing you can attribute to your own change, check
+   whether `Chart.yaml`'s dependency versions or the pinned Helm version in
+   this workflow (`azure/setup-helm@v4`, currently v3.14.0) moved underneath
+   you — either can shift template function output (e.g. `include`
+   ordering, `lookup` behavior) with no diff in this repo's own files.
+
+Once the cause is understood and the change is confirmed intentional,
+regenerate goldens as in the section above; if it isn't, fix the template
+or values regression instead of updating goldens to match it.
+
 ### What it caught
 
 `charts/stellar-operator/examples/values-production.yaml` did not render at
@@ -226,12 +262,93 @@ carries regression tests for it.
 
 ---
 
+## License header enforcement (#1286)
+
+`scripts/check-license-headers.py` scans every Rust, Shell, and YAML file for
+the repository's canonical Apache-2.0 header and fails CI when one is
+missing or malformed. It runs as a pre-commit hook (`license-headers`, wired
+to `*.rs`/`*.sh`/`*.ya?ml`) and in CI (`wave-security-compliance.yml`).
+
+### Header format
+
+The canonical header (identical in spirit for all three languages, only the
+comment marker changes — `//` for Rust, `#` for Shell/YAML):
+
+```rust
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+```
+
+It must appear within the first 25 lines of the file. A short-form SPDX
+identifier is also accepted as an alternative to the full block, on any
+line within that same window:
+
+```rust
+// SPDX-License-Identifier: Apache-2.0
+```
+
+### Exceptions
+
+Two categories of file are skipped entirely — `should_exclude()` in
+`scripts/check-license-headers.py` is the source of truth; this list exists
+so a reviewer doesn't have to read the script to know why a given file has
+no header:
+
+**By path** — generated, vendored, or non-source content: `target/`,
+`bundle/`, `vendor/`, `.github/`, `docs/`, `config/crd/` (generated by
+`crdgen`), `config/samples/`, `examples/`, `schemas/`, `.kiro/` (AI-generated
+specs), Helm chart `templates/` and `tests/` (Go template syntax, not valid
+Rust/Shell/YAML), `charts/stellar-operator/rendered/` and
+`benchmarks/baselines/` (generated output), `benchmarks/k6/` (JavaScript,
+not one of the three checked languages), security-tool configs
+(`.gitleaks.toml`, `.cargo/audit.toml`, `deny.toml`), and `build.rs` (code
+generator, not itself generated — excluded because it predates the gate and
+regenerating its header isn't worth the diff).
+
+**By filename** — repo-root docs and tool configs where a license header
+would be meaningless or actively wrong (e.g. `LICENSE` itself):
+`README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, and similar
+top-level `*.md` files, plus tool configs like `.editorconfig`,
+`.gitignore`, `.yamllint.yml`, `mkdocs.yml`, `Tiltfile`, and `PROJECT`.
+
+Adding a new exception means adding it to `EXCLUDED_PATHS` or
+`EXCLUDED_FILENAMES` in the script, not special-casing it in CI — the
+pre-commit hook and CI both call the same script, so there is exactly one
+place exceptions are declared.
+
+### Fixing a violation
+
+```bash
+python3 scripts/check-license-headers.py            # check (matches CI)
+python3 scripts/check-license-headers.py --fix      # insert missing headers
+python3 scripts/check-license-headers.py --report   # report-only, exit 0
+make license-headers                                # alias for the check
+```
+
+`--fix` inserts the canonical header for the file's language at the top of
+the file (after a shebang line, if present, for Shell scripts); it does not
+attempt to reformat or replace a malformed header, so a header that's
+present but wrong (wrong year, wrong wording) still needs a manual edit.
+
+---
+
 ## Verification
 
 ```bash
 make shell-safety && make test-shell-safety
 make validate-yaml && make test-yaml-validation
 make helm-drift && make test-helm-drift
+make license-headers
 ```
 
-All three gates should report zero errors on a clean checkout.
+All gates should report zero errors on a clean checkout.

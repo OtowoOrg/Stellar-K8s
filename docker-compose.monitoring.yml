@@ -1,0 +1,107 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Docker Compose Monitoring Stack Overlay
+# Adds Prometheus, Grafana, and AlertManager for local development
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+version: '3.8'
+
+services:
+  # Prometheus - time series database for metrics
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: stellar-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    volumes:
+      - ./config/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/monitoring/prometheus-rules.yaml:/etc/prometheus/rules.yaml:ro
+      - prometheus-storage:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - stellar-dev
+    depends_on:
+      k3s:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Grafana - visualization and dashboards
+  grafana:
+    image: grafana/grafana:10.1.1
+    container_name: stellar-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-clock-panel
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./config/monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./config/monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring:/etc/grafana/dashboards/stellar:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - stellar-dev
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # AlertManager - alert routing and notifications
+  alertmanager:
+    image: prom/alertmanager:v0.25.0
+    container_name: stellar-alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    volumes:
+      - ./config/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-storage:/alertmanager
+    ports:
+      - "9093:9093"
+    networks:
+      - stellar-dev
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  prometheus-storage:
+    driver: local
+  grafana-storage:
+    driver: local
+  alertmanager-storage:
+    driver: local
+
+# Use the same network defined in docker-compose.yml
+networks:
+  stellar-dev:
+    external: true

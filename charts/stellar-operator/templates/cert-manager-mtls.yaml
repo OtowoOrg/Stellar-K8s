@@ -1,3 +1,14 @@
+{{/*
+  NOTE: This template is a separate, standalone mechanism from the per-StellarNode
+  cert-manager flow implemented in src/controller/mtls.rs (StellarNode.spec.certManager),
+  which is what the operator actually reconciles and wires into pod volumes and
+  rotation-triggered restarts. The Secrets this template produces
+  (stellar-core-mtls-secret, horizon-mtls-secret, soroban-rpc-mtls-secret) are not
+  mounted by any StellarNode workload in this repository. Enabling mtls.enabled here
+  creates cert-manager Certificate objects that nothing currently consumes unless you
+  wire them into your own pod specs. See docs/security/e2e-encryption-architecture.md
+  and docs/mtls-guide.md for the authoritative, working per-node flow.
+*/}}
 {{- if .Values.mtls.enabled }}
 apiVersion: cert-manager.io/v1
 kind: Issuer

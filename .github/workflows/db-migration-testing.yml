@@ -1,0 +1,60 @@
+name: Database Migration Testing
+
+on:
+  push:
+    branches: [ main, release-* ]
+    paths:
+      - 'db/migrations/**'
+      - 'src/db_migrations.rs'
+      - 'tests/db_migration_harness.rs'
+      - 'scripts/ci/test-db-migrations.sh'
+      - '.github/workflows/db-migration-testing.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'db/migrations/**'
+      - 'src/db_migrations.rs'
+      - 'tests/db_migration_harness.rs'
+      - 'scripts/ci/test-db-migrations.sh'
+      - '.github/workflows/db-migration-testing.yml'
+
+concurrency:
+  group: db-migration-testing-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-migrations:
+    name: Postgres Migration Forward/Rollback & Data Integrity Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: stellar
+          POSTGRES_PASSWORD: stellar_test
+          POSTGRES_DB: stellar_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain and cache
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-db-migration"
+
+      - name: Run Automated Migration Test Harness
+        env:
+          DATABASE_URL: postgres://stellar:stellar_test@127.0.0.1:5432/stellar_migration_test
+          STELLAR_MIGRATION_TEST: "1"
+        run: |
+          bash scripts/ci/test-db-migrations.sh

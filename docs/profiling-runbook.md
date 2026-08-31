@@ -1,188 +1,232 @@
 # Performance Profiling Runbook
 
-This runbook guides operators through capturing and analysing CPU and memory
-profiles from a live Stellar-K8s deployment.
+**Issue:** #1386 — Add performance profiling integration for Rust services  
+**Audience:** SREs, operators, platform engineers
+
+---
 
 ## Overview
 
-Stellar-K8s exposes pprof-compatible profiling endpoints on a dedicated
-localhost-only server (`127.0.0.1:6060` by default). All endpoints are gated
-behind a `X-Profiling-Token` header that must match a pre-configured secret.
+Stellar-K8s exposes pprof-compatible CPU and heap profiling endpoints
+gated behind a shared secret token. Profiling is **disabled by default**
+and only activates when the `profiling` Helm value is enabled and the
+image is built with `--features profiling`.
+
+---
 
 ## Prerequisites
 
-- `kubectl` configured for your cluster
-- `jq` for JSON pretty-printing
-- `flamegraph` (optional, for flamegraph visualisation)
-- Operator pod name (e.g. `stellar-operator-abc123`)
+| Tool | Version | Purpose |
+|------|---------|---------|
+| `kubectl` | 1.28+ | Port-forwarding |
+| `go tool pprof` | any | Profile analysis |
+| `curl` | any | Capture profiles |
+
+---
 
 ## Enabling Profiling
 
-Profiling is **disabled by default**. Enable it by setting the following in
-your `values.yaml` before deploying:
+### 1 — Generate a token and its SHA-256 hash
 
-```yaml
-profiling:
-  enabled: true
-  # SHA-256 hex digest of your chosen token. Generate with:
-  # echo -n "YOUR-SECRET" | sha256sum
-  tokenSha256: "4a3d0c7f6e9c6d6c2c2bc5ad97e9dbcf1e1b5e0e6c8e8d4e3a3c9b7f2d1e0a5f"
-  bindAddr: "127.0.0.1:6060"
+```bash
+TOKEN=$(openssl rand -hex 32)
+echo "Token: $TOKEN"
+echo -n "$TOKEN" | sha256sum | awk '{print $1}'
+# → store that hex digest in values.yaml
 ```
 
-Store the raw token in a Kubernetes Secret:
+### 2 — Create the Kubernetes Secret
 
 ```bash
 kubectl create secret generic stellar-profiling-token \
-  --from-literal=token=YOUR-SECRET \
+  --from-literal=token="$TOKEN" \
   -n stellar-system
 ```
 
-## Endpoints Reference
+### 3 — Enable profiling in Helm values
 
-| Endpoint | Method | Description |
-|---|---|---|
-| `/debug/pprof/profile?duration=30` | GET | CPU profile (seconds) |
-| `/debug/pprof/heap` | GET | Heap/memory snapshot |
-| `/debug/pprof/goroutine` | GET | Active async task trace |
-| `/debug/pprof/cmdline` | GET | Process command line |
-| `/debug/pprof/analysis` | GET | Automated bottleneck report |
-| `/metrics` | GET | Prometheus profiling metrics |
+```yaml
+# values-production.yaml
+profiling:
+  enabled: true
+  bindAddr: "127.0.0.1:6060"
+  tokenSecretName: "stellar-profiling-token"
+  tokenSha256: "<hex digest from step 1>"
+  defaultCpuDurationSecs: 30
+  maxCpuDurationSecs: 300
+```
 
-All endpoints accept `?format=json` (default).
-
-## Capturing a CPU Profile
-
-### Via kubectl port-forward
+Deploy:
 
 ```bash
-# Step 1: Forward the profiling port
-kubectl port-forward -n stellar-system pod/stellar-operator-abc123 6060:6060 &
+helm upgrade stellar-operator ./charts/stellar-operator \
+  -n stellar-system \
+  -f values-production.yaml
+```
 
-# Step 2: Retrieve token from Secret
-TOKEN=$(kubectl get secret stellar-profiling-token -n stellar-system \
+The operator image must be built with:
+
+```bash
+cargo build --release --features profiling
+```
+
+> **Security note:** The profiling server binds to `127.0.0.1` only and is
+> never reachable via the cluster `Service` or ingress. All access requires
+> `kubectl port-forward`.
+
+---
+
+## Capturing Profiles
+
+### Port-forward the operator pod
+
+```bash
+POD=$(kubectl get pods -n stellar-system \
+  -l app=stellar-operator -o jsonpath='{.items[0].metadata.name}')
+
+kubectl port-forward "$POD" 6060:6060 -n stellar-system &
+```
+
+### Retrieve the token
+
+```bash
+TOKEN=$(kubectl get secret stellar-profiling-token \
+  -n stellar-system \
   -o jsonpath='{.data.token}' | base64 -d)
-
-# Step 3: Capture a 30-second CPU profile
-curl -s -H "X-Profiling-Token: $TOKEN" \
-  "http://localhost:6060/debug/pprof/profile?duration=30" | jq .
-
-# Step 4: Examine top frames
-curl -s -H "X-Profiling-Token: $TOKEN" \
-  "http://localhost:6060/debug/pprof/profile?duration=30" | \
-  jq '.top_frames[] | "\(.pct | floor)% \(.symbol)"'
 ```
 
-Expected output:
-```
-"42% tokio::runtime::park"
-"18% stellar_k8s::controller::reconciler"
-"8% stellar_k8s::rest_api::handlers"
-```
-
-## Capturing a Heap Profile
+### CPU profile (30-second sample)
 
 ```bash
-curl -s -H "X-Profiling-Token: $TOKEN" \
-  "http://localhost:6060/debug/pprof/heap" | jq .
+curl -sSf \
+  -H "X-Profiling-Token: $TOKEN" \
+  "http://localhost:6060/debug/pprof/profile?duration=30" \
+  -o cpu.pb.gz
 
-# Examine top allocation sites
-curl -s -H "X-Profiling-Token: $TOKEN" \
-  "http://localhost:6060/debug/pprof/heap" | \
-  jq '.top_allocations[] | "\(.pct | floor)% \(.site) (\(.bytes / 1048576 | floor) MB)"'
+go tool pprof cpu.pb.gz
 ```
 
-## Automated Bottleneck Analysis
-
-After capturing several profiles, run the automated analyser:
+### Heap profile
 
 ```bash
-curl -s -H "X-Profiling-Token: $TOKEN" \
-  "http://localhost:6060/debug/pprof/analysis" | jq .
+curl -sSf \
+  -H "X-Profiling-Token: $TOKEN" \
+  "http://localhost:6060/debug/pprof/heap" \
+  -o heap.pb.gz
+
+go tool pprof heap.pb.gz
 ```
 
-The response includes:
-- **bottlenecks**: Identified issues ordered by severity (critical → warning → info)
-- **top_symbols**: CPU hotspots ranked by sample count
-- **rss_growing**: Boolean indicating a potential memory leak
-- **summary**: Human-readable summary suitable for incident reports
-
-## Generating a Flamegraph
+### Memory allocation profile
 
 ```bash
-# Capture 60-second profile in JSON
-curl -s -H "X-Profiling-Token: $TOKEN" \
-  "http://localhost:6060/debug/pprof/profile?duration=60" > profile.json
+curl -sSf \
+  -H "X-Profiling-Token: $TOKEN" \
+  "http://localhost:6060/debug/pprof/allocs" \
+  -o allocs.pb.gz
 
-# Convert to folded stack format and render with flamegraph
-cat profile.json | jq -r '.payload.stack_counts | to_entries[] | "\(.key) \(.value)"' \
-  | flamegraph.pl --title "Stellar Operator CPU Profile" > flamegraph.svg
-
-# Open the SVG
-open flamegraph.svg
+go tool pprof allocs.pb.gz
 ```
 
-## Interpreting Results
+### Profile index
 
-### High CPU Wall Time
-
-**Symptom**: `high-cpu-wall-time` bottleneck; wall_time_ms > 1000.
-
-**Likely causes**:
-- Controller reconciliation loops blocked on slow Kubernetes API calls
-- Expensive JSON serialisation under load
-- Lock contention in shared state (RwLock write-heavy paths)
-
-**Actions**:
-1. Increase Kubernetes API client timeout and retry budget
-2. Profile reconciler phases with `stellar-operator diff` to isolate the slow phase
-3. Consider caching expensive list operations with an informer cache
-
-### Memory Leak
-
-**Symptom**: `rss-growth` critical; RSS increasing monotonically across samples.
-
-**Likely causes**:
-- Unbounded caches (LRU cache missing eviction policy)
-- Retained async task handles that never resolve
-- Accumulated Kubernetes watch event backlog
-
-**Actions**:
-1. Capture heap profiles at T+0 and T+30m and compare `allocation_sites`
-2. Search for `Arc::clone` sites that outlive their expected scope
-3. Add bounds to any unbounded `Vec` or `HashMap` accumulating over time
-
-### Hot Function
-
-**Symptom**: `hot-function` critical; single symbol >50% of CPU samples.
-
-**Actions**:
-1. Identify the function from `top_symbols[0].symbol`
-2. Add instrumentation (`tracing::instrument`) to sub-calls
-3. Consider memoisation if the function is pure and called frequently
-
-## Prometheus Alerts for Profiling Health
-
-The profiling subsystem exports these metrics to Prometheus:
-
-```promql
-# Auth failure spike (potential brute-force)
-increase(stellar_profiling_auth_failures_total[5m]) > 10
-
-# RSS growing faster than 50 MB/min
-deriv(stellar_profiling_rss_bytes[5m]) > 50 * 1024 * 1024
+```bash
+curl -sSf -H "X-Profiling-Token: $TOKEN" \
+  http://localhost:6060/debug/pprof/
 ```
 
-## Security Considerations
+---
 
-- The profiling server **must never** be exposed outside the pod/localhost
-  without network-level controls (e.g. Kubernetes NetworkPolicy)
-- Rotate the profiling token quarterly or after any suspected credential exposure
-- Profiling adds ~1-2% CPU overhead; disable between investigations
-- Profile data may contain sensitive information (memory addresses, internal
-  state strings) — treat captures as confidential artefacts
+## Analysing CPU Profiles
+
+```bash
+# Interactive terminal UI
+go tool pprof cpu.pb.gz
+
+# Top 20 functions by cumulative time
+(pprof) top 20 -cum
+
+# Flame graph (requires Graphviz)
+(pprof) web
+
+# Export as SVG
+go tool pprof -svg cpu.pb.gz > flame.svg
+
+# Identify reconciler hot paths
+(pprof) list reconcile
+```
+
+### Common bottleneck patterns
+
+| Symptom | Likely cause | Investigation |
+|---------|-------------|---------------|
+| High `reconcile` CPU | Large StellarNode fleet + short requeue interval | `(pprof) list apply_stellar_node` |
+| High `kube::api` time | Kubernetes API latency / too many LIST calls | Check audit log for LIST frequency |
+| High `serde_json` time | Excess JSON (de)serialization in status patches | Profile `update_status` paths |
+| High `reqwest` time | Slow Horizon / Stellar Core health checks | Increase `healthCheckTimeout` |
+
+---
+
+## Analysing Heap Profiles
+
+```bash
+# Show top memory allocations
+go tool pprof heap.pb.gz
+(pprof) top 20 -cum
+
+# Find memory leaks (compare two snapshots)
+go tool pprof -diff_base heap_before.pb.gz heap_after.pb.gz
+(pprof) top 10 -cum
+```
+
+---
 
 ## Disabling Profiling
 
-Set `profiling.enabled: false` in `values.yaml` and roll out. The
-`127.0.0.1:6060` port will stop listening immediately on pod restart.
+```yaml
+profiling:
+  enabled: false
+```
+
+```bash
+helm upgrade stellar-operator ./charts/stellar-operator \
+  -n stellar-system \
+  -f values-production.yaml
+```
+
+The profiling server stops accepting connections immediately after the
+pod restarts.
+
+---
+
+## Security Considerations
+
+1. **Token rotation** — rotate `stellar-profiling-token` quarterly or
+   after suspected compromise.  Update `tokenSha256` in values and
+   redeploy.
+2. **Never expose port 6060** via a `Service` or ingress — always use
+   `kubectl port-forward`.
+3. **Least-privilege access** — only operators who can `kubectl exec`
+   into the pod should know the token.
+4. **Audit log** — every successful profile capture is logged at `INFO`
+   level with the profile type and duration.
+
+---
+
+## Troubleshooting
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `403 Forbidden` | Wrong or missing token | Verify `X-Profiling-Token` header |
+| `501 Not Implemented` | Image not built with `--features profiling` | Rebuild / use profiling-enabled image |
+| `connection refused` | Port-forward not running | Re-run `kubectl port-forward` |
+| Heap profile empty | `MALLOC_CONF` not set | Ensure jemalloc `prof:true` is configured |
+
+---
+
+## Reference
+
+- [`src/profiling.rs`](../src/profiling.rs) — Core profiling implementation
+- [pprof format spec](https://github.com/google/pprof/blob/main/proto/profile.proto)
+- [jemalloc heap profiling](https://jemalloc.net/jemalloc.3.html#opt.prof)
+- [Helm values reference](../charts/stellar-operator/values.yaml) — `profiling.*`

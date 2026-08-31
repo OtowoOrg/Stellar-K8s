@@ -324,9 +324,9 @@ jobs:
   # DNS that does appear inside examples/ (e.g. stellar-core:11626) is excluded
   # by hostname pattern in `lychee.toml` instead of dropping the whole
   # directory. Excludes and accept-codes live in `lychee.toml`. Runs on every
-  # push/PR and on a weekly schedule (see the standalone
-  # .github/workflows/link-check.yml) to catch link rot.
-  # Local: `python3 scripts/check-links.py` remains available via make health.
+  # push/PR to catch link issues. Scheduled link-rot detection (weekly check) is
+  # not currently covered; local: `python3 scripts/check-links.py` remains
+  # available via make health for local validation.
   repo-wide-link-check:
     name: Repo-Wide Link Check (lychee)
     runs-on: ubuntu-latest
@@ -1139,6 +1139,22 @@ jobs:
 
       - name: Run drift gate unit tests
         run: bats scripts/tests/helm-drift.bats
+
+  # ── 15b. Chart Versioning Unit Tests ──────────────────────────────────────
+  # Bats tests for scripts/bump-chart-version.sh (issue #1319): SemVer bump
+  # rules from conventional commits and the versioning.min-bump floor.
+  chart-versioning-tests:
+    name: Chart Versioning Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install bats
+        run: sudo apt-get update && sudo apt-get install -y bats
+
+      - name: Run chart versioning unit tests
+        run: bats scripts/tests/bump-chart-version.bats
 
   # ── 16. Benchmark Sanity Check ────────────────────────────────────────────────
   # Runs quick benchmark sanity checks in PR pipelines to catch regressions.

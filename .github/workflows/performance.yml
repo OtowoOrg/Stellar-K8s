@@ -8,14 +8,18 @@ on:
     branches: [main]
     paths:
       - "src/**"
+      - "benches/**"
+      - "charts/**"
       - "benchmarks/**"
+      - "scripts/bench-helm-render.sh"
+      - "scripts/collect-criterion-results.py"
       - ".github/workflows/performance.yml"
       - ".github/actions/setup-perf-env/**"
       - ".github/actions/compare-benchmarks/**"
   workflow_dispatch:
     inputs:
       suite:
-        description: "Benchmark suite to run (all, operator, regression, webhook)"
+        description: "Benchmark suite to run (all, operator, regression, webhook, criterion, helm)"
         required: false
         default: all
       baseline_version:
@@ -48,7 +52,9 @@ jobs:
             operator) SUITES='["operator"]' ;;
             regression) SUITES='["regression"]' ;;
             webhook) SUITES='["webhook"]' ;;
-            *) SUITES='["operator","regression","webhook"]' ;;
+            criterion) SUITES='["criterion"]' ;;
+            helm) SUITES='["helm"]' ;;
+            *) SUITES='["operator","regression","webhook","criterion","helm"]' ;;
           esac
           echo "suites=$SUITES" >> "$GITHUB_OUTPUT"
 
@@ -108,19 +114,19 @@ jobs:
           name: perf-artifacts-${{ needs.build.outputs.version }}
 
       - name: Download operator image tarball
-        if: matrix.suite != 'webhook'
+        if: matrix.suite == 'operator' || matrix.suite == 'regression'
         uses: actions/download-artifact@v8
         with:
           name: perf-operator-image-${{ needs.build.outputs.version }}
 
       - name: Load Docker image
-        if: matrix.suite != 'webhook'
+        if: matrix.suite == 'operator' || matrix.suite == 'regression'
         run: |
           gunzip operator-image.tar.gz
           docker load < operator-image.tar
 
       - name: Setup performance environment
-        if: matrix.suite != 'webhook'
+        if: matrix.suite == 'operator' || matrix.suite == 'regression'
         continue-on-error: true
         uses: ./.github/actions/setup-perf-env
         with:
@@ -153,6 +159,51 @@ jobs:
           curl -sf http://localhost:8443/health \
             || { echo "ERROR: Webhook server failed to start"; exit 1; }
 
+      # ── CRD validation benchmarks (criterion, #1390) ─────────────────────────
+      # Self-contained Rust micro-benchmarks (no cluster/API server needed —
+      # see benches/crd_operations.rs), so this suite skips the k6/kind/Docker
+      # setup above entirely and just needs a Rust toolchain.
+      - name: Setup Rust (criterion suite)
+        if: matrix.suite == 'criterion'
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "perf-criterion"
+
+      - name: Run CRD validation benchmark (criterion)
+        if: matrix.suite == 'criterion'
+        continue-on-error: true
+        run: |
+          mkdir -p results
+          cargo bench --bench crd_operations
+          python3 scripts/collect-criterion-results.py \
+            --criterion-dir target/criterion \
+            --output results/crd-benchmark.json
+
+      - name: Upload criterion HTML report
+        if: matrix.suite == 'criterion' && always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: criterion-report-${{ needs.build.outputs.version }}
+          path: target/criterion
+          retention-days: 30
+
+      # ── Helm chart render benchmark (#1390) ──────────────────────────────────
+      # `helm template` timing — see scripts/bench-helm-render.sh. Also a pure
+      # CLI/chart benchmark, no cluster needed.
+      - name: Install Helm (helm suite)
+        if: matrix.suite == 'helm'
+        uses: azure/setup-helm@v5
+        with:
+          version: "3.14.0"
+
+      - name: Run Helm render benchmark
+        if: matrix.suite == 'helm'
+        continue-on-error: true
+        run: |
+          mkdir -p results
+          bash scripts/bench-helm-render.sh --output results/helm-render-benchmark.json
+
       - name: Determine baseline
         id: baseline
         shell: bash
@@ -164,6 +215,16 @@ jobs:
               [[ "$INPUT_BASELINE" != "latest" ]] && BASELINE="benchmarks/baselines/${INPUT_BASELINE}.json" \
                 || BASELINE="benchmarks/baselines/webhook-v0.1.0.json"
               CURRENT="results/webhook-benchmark.json"
+              ;;
+            criterion)
+              [[ "$INPUT_BASELINE" != "latest" ]] && BASELINE="benchmarks/baselines/${INPUT_BASELINE}.json" \
+                || BASELINE="benchmarks/baselines/crd-performance-v0.1.0.json"
+              CURRENT="results/crd-benchmark.json"
+              ;;
+            helm)
+              [[ "$INPUT_BASELINE" != "latest" ]] && BASELINE="benchmarks/baselines/${INPUT_BASELINE}.json" \
+                || BASELINE="benchmarks/baselines/helm-render-v0.1.0.json"
+              CURRENT="results/helm-render-benchmark.json"
               ;;
             *)
               if [[ "$INPUT_BASELINE" == "latest" ]]; then
@@ -262,7 +323,7 @@ jobs:
           fail-on-regression: "false"
 
       - name: Collect logs
-        if: always() && matrix.suite != 'webhook'
+        if: always() && (matrix.suite == 'operator' || matrix.suite == 'regression')
         run: |
           kubectl logs -n stellar-system -l app=stellar-operator \
             --tail=500 > results/operator-logs-${{ matrix.suite }}.txt || true
@@ -324,5 +385,7 @@ jobs:
             **Version:** ${{ needs.build.outputs.version }}
             **Commit:** ${{ github.sha }}
 
-            Unified matrix pipeline completed for operator, regression, and webhook suites.
-            See workflow artifacts for detailed results.
+            Unified matrix pipeline completed for operator, regression, webhook, criterion
+            (CRD validation, benches/crd_operations.rs), and helm (chart render,
+            scripts/bench-helm-render.sh) suites. See workflow artifacts for detailed
+            results and `docs/benchmarking.md` for how to interpret them.

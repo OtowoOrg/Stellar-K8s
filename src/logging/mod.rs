@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Structured Logging and Analytics Module
 //!
 //! This module provides a consistent schema for structured logs, intelligent
@@ -245,6 +257,7 @@ mod tests {
             k8s_node: Some("node-1".to_string()),
             k8s_namespace: Some("default".to_string()),
             reconcile_id: Some("rec-123".to_string()),
+            correlation_id: Some("corr-456".to_string()),
             extras,
         };
 
@@ -278,6 +291,7 @@ mod tests {
             k8s_node: None,
             k8s_namespace: None,
             reconcile_id: None,
+            correlation_id: None,
             extras,
         };
 

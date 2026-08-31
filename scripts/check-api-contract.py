@@ -37,6 +37,7 @@ DEFAULT_SPEC = REPO_ROOT / "docs" / "api" / "openapi.yaml"
 # ── Known API routes from src/rest_api/server.rs ──────────────────────────────
 # This is the canonical set of implemented endpoints.
 IMPLEMENTED_ENDPOINTS = {
+    # Health probes (public)
     "GET /health": {
         "auth": False,
         "description": "Basic health check",
@@ -57,11 +58,19 @@ IMPLEMENTED_ENDPOINTS = {
         "description": "Kubernetes liveness probe",
         "response_schema": "ProbeResponse",
     },
+    # Versioning (public)
+    "GET /api/versions": {
+        "auth": False,
+        "description": "API version catalog",
+        "response_schema": "VersionCatalog",
+    },
+    # Leader
     "GET /leader": {
         "auth": True,
         "description": "Leader election status",
         "response_schema": "LeaderResponse",
     },
+    # Nodes
     "GET /api/v1/nodes": {
         "auth": True,
         "description": "List StellarNodes",
@@ -72,6 +81,7 @@ IMPLEMENTED_ENDPOINTS = {
         "description": "Get StellarNode",
         "response_schema": "NodeDetailResponse",
     },
+    # Health summary (legacy /v1/ prefix)
     "GET /v1/health/summary": {
         "auth": True,
         "description": "Cluster health summary",
@@ -84,6 +94,7 @@ IMPLEMENTED_ENDPOINTS = {
         "auth": True,
         "description": "Active health incidents",
     },
+    # Configuration
     "GET /config/log-level": {
         "auth": True,
         "description": "Get current log level",
@@ -95,6 +106,7 @@ IMPLEMENTED_ENDPOINTS = {
         "request_schema": "LogLevelRequest",
         "response_schema": "LogLevelResponse",
     },
+    # Compliance
     "GET /api/v1/compliance/report": {
         "auth": True,
         "description": "Compliance report",
@@ -103,6 +115,11 @@ IMPLEMENTED_ENDPOINTS = {
         "auth": True,
         "description": "Compliance status snapshot",
     },
+    "GET /api/v1/compliance/regulatory-report": {
+        "auth": True,
+        "description": "Regulatory compliance report",
+    },
+    # Dashboard
     "GET /api/v1/horizon/cache/status": {
         "auth": True,
         "description": "Horizon cache observability",
@@ -110,31 +127,127 @@ IMPLEMENTED_ENDPOINTS = {
     "GET /api/v1/dashboard/overview": {
         "auth": True,
         "description": "Dashboard overview",
+        "response_schema": "DashboardOverview",
     },
     "GET /api/v1/dashboard/metrics": {
         "auth": True,
         "description": "Dashboard metrics bundle",
     },
+    "GET /api/v1/analytics/logs": {
+        "auth": True,
+        "description": "Log analytics summary",
+        "response_schema": "LogAnalyticsResponse",
+    },
+    "POST /api/v1/config/analyze": {
+        "auth": True,
+        "description": "Analyze configuration impact",
+        "request_schema": "StellarNodeSpec",
+        "response_schema": "ConfigImpactResponse",
+    },
+    "GET /api/v1/security/posture": {
+        "auth": True,
+        "description": "Security posture assessment",
+        "response_schema": "SecurityPostureResponse",
+    },
+    "GET /api/v1/capacity/plan": {
+        "auth": True,
+        "description": "Capacity planning recommendations",
+        "response_schema": "CapacityPlanningResponse",
+    },
+    "POST /api/v1/capacity/what-if": {
+        "auth": True,
+        "description": "Run what-if capacity scenario",
+        "request_schema": "WhatIfRequest",
+    },
+    # Optimization
     "GET /api/v1/optimization/recommendations": {
         "auth": True,
         "description": "Resource optimization recommendations",
     },
+    "POST /api/v1/optimization/simulate": {
+        "auth": True,
+        "description": "Simulate optimization changes",
+    },
+    "GET /api/v1/optimization/forecast": {
+        "auth": True,
+        "description": "Resource optimization forecast",
+    },
+    # Traffic
+    "GET /api/v1/traffic/dashboard": {
+        "auth": True,
+        "description": "Traffic dashboard data",
+    },
+    # Dashboard node-specific
+    "GET /api/v1/dashboard/nodes/{namespace}/{name}/logs": {
+        "auth": True,
+        "description": "Get node logs",
+        "response_schema": "NodeLogsResponse",
+    },
+    "GET /api/v1/dashboard/nodes/{namespace}/{name}/conditions": {
+        "auth": True,
+        "description": "Get node conditions",
+        "response_schema": "NodeConditionsResponse",
+    },
+    "GET /api/v1/dashboard/nodes/{namespace}/{name}/dr": {
+        "auth": True,
+        "description": "Get node DR status",
+        "response_schema": "DRStatusResponse",
+    },
+    "GET /api/v1/dashboard/nodes/{namespace}/{name}/metrics": {
+        "auth": True,
+        "description": "Get node metrics",
+        "response_schema": "MetricsSummary",
+    },
+    "POST /api/v1/dashboard/nodes/{namespace}/{name}/actions": {
+        "auth": True,
+        "description": "Execute node action",
+        "request_schema": "NodeActionRequest",
+        "response_schema": "NodeActionResponse",
+    },
+    # Operator logs
+    "GET /api/v1/dashboard/operator/logs": {
+        "auth": True,
+        "description": "Get operator logs",
+        "response_schema": "OperatorLogsResponse",
+    },
+    # Quorum
     "GET /api/v1/quorum/topology": {
         "auth": True,
         "description": "SCP quorum topology snapshot",
     },
+    # Docs
+    "GET /api/v1/docs/search-index": {
+        "auth": False,
+        "description": "Documentation search index",
+    },
+    # Jobs
     "GET /api/v1/jobs": {
         "auth": True,
         "description": "List background jobs",
+        "response_schema": "JobListResponse",
     },
     "GET /api/v1/jobs/stats": {
         "auth": True,
         "description": "Background job statistics",
+        "response_schema": "JobStatsResponse",
     },
+    # Audit
     "GET /api/v1/audit-log": {
         "auth": True,
         "description": "List audit log entries",
+        "response_schema": "AuditLogResponse",
     },
+    "GET /api/v1/audit-log/search": {
+        "auth": True,
+        "description": "Search audit log entries",
+        "response_schema": "AuditLogResponse",
+    },
+    "GET /api/v1/audit-log/anomalies": {
+        "auth": True,
+        "description": "List audit anomalies",
+        "response_schema": "AuditAnomalyResponse",
+    },
+    # Metrics
     "GET /metrics": {
         "auth": False,
         "description": "Prometheus metrics",

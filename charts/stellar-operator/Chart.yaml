@@ -1,9 +1,21 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 apiVersion: v2
 name: stellar-operator
 description: A Helm chart for the Stellar-K8s Kubernetes Operator
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 1.2.0
+appVersion: "1.2.0"
 keywords:
   - stellar
   - kubernetes
@@ -15,3 +27,31 @@ maintainers:
     url: https://github.com/stellar/stellar-k8s
 sources:
   - https://github.com/stellar/stellar-k8s
+
+# OCI / Chart Museum publishing metadata (issue #1375)
+annotations:
+  # Artifact Hub display metadata
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/operator: "true"
+  artifacthub.io/operatorCapabilities: Full Lifecycle
+  artifacthub.io/prerelease: "false"
+  artifacthub.io/category: integration-delivery
+  artifacthub.io/recommendations: |
+    - url: https://artifacthub.io/packages/helm/stellar-k8s/stellar-operator
+
+  # OCI registry metadata — consumed by helm-release.yml
+  # The workflow reads these to construct the push target
+  oci.registry: ghcr.io
+  oci.repository: "{{ .Values.global.ociRepository | default \"otowoorg/helm-charts\" }}"
+
+  # Conventional-commits versioning policy (consumed by bump-chart-version.sh)
+  # Values: major | minor | patch | none (controls minimum bump floor)
+  versioning.min-bump: patch
+
+  # Changelog URL template — populated by the release workflow
+  changelog.url: https://github.com/OtowoOrg/Stellar-K8s/blob/main/CHANGELOG.md
+
+  # Source image that the operator Deployment uses (kept in sync by release workflow)
+  app.kubernetes.io/version: "0.1.0"
+  app.kubernetes.io/managed-by: Helm
+  app.kubernetes.io/part-of: stellar-k8s

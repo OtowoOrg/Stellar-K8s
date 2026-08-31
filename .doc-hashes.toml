@@ -1,99 +1,120 @@
-["docs/FORMAL_VERIFICATION.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
-last_doc_sha = '6fbb14b148149e30ca125c0d7b85c76a635425a9'
-
 ["docs/api-reference.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
-last_doc_sha = '3fec0833b84430d37c65b0cf19b350f2092b4495'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = '0b30290d288970f8d00b0c0acb66e91daa8bdd73'
 
 ["docs/archive-pruning.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
-last_doc_sha = '6fbb14b148149e30ca125c0d7b85c76a635425a9'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = 'c97b1296c233f9b5a96e2a849b515fbd2b7d85cf'
 
 ["docs/benchmarking.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
-last_doc_sha = 'c949efc5800660442d5fcb572c0e3eeff2bc8ad9'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = '45f9f061d1ab7089737d50b2f6fc9ef9b19f6415'
 
 ["docs/cve-auto-patch.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = 'dfaea95232efb5bf9509e24ef411aa2cc9cfe802'
 
+["docs/database/migrations.md"]
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = 'f65a29c4671c28b93045f25a49b003a0a6715317'
+
 ["docs/development.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
-last_doc_sha = 'e9b28a2d78a9623eeca0e354469ef49f137fe27f'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = '706834e99d920538a74f3a94eff4a8a13e2ea043'
+
+["docs/development/license-headers.md"]
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = '9119dcee5505864734ef891340c171da8c048773'
 
 ["docs/diff-utility.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = '6fbb14b148149e30ca125c0d7b85c76a635425a9'
 
 ["docs/dr-failover.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = 'ec58b00916214650e9a1d6b7a8dc7df00b882f32'
 
 ["docs/errors.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
-last_doc_sha = '0f3593f471c1fe554df9f4151037f02b8e6ad2a7'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = '738f9f0e4bb5b039ab9bca0c4ff9878f1293b99e'
+
+["docs/FORMAL_VERIFICATION.md"]
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = '6fbb14b148149e30ca125c0d7b85c76a635425a9'
 
 ["docs/fuzzing.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = 'a0cf8d87c434390b5af6f14982855f0341e6588f'
 
 ["docs/gatekeeper-policies.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = '9ab3dc27f04566ab8839f4fa5036e992edf47c77'
 
 ["docs/health-checks.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = '1c9e30569de976d450416bff2dab095689cbdf46'
 
+["docs/helm-chart-testing.md"]
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = 'f65a29c4671c28b93045f25a49b003a0a6715317'
+
 ["docs/ingress-guide.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = 'ec468ec48233124730561dc1ccae977a40db54dc'
 
 ["docs/kubectl-plugin.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = 'dd78ac7696d4b6ba042e87d5e070b273f1aeea22'
 
 ["docs/metallb-bgp-anycast.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = 'ec58b00916214650e9a1d6b7a8dc7df00b882f32'
 
 ["docs/mtls-guide.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
-last_doc_sha = 'b2301b96746c1c04c9bd1b8d5cc667a52d875633'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = '4e0c4a6d415a075f869857b3b20b4f3783564bb4'
+
+["docs/observability/tracing.md"]
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = 'f65a29c4671c28b93045f25a49b003a0a6715317'
 
 ["docs/peer-discovery.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = 'db624f603668f7cfe2b3bbbf39bafcd73391cd49'
 
 ["docs/pod-disruption-budget.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = 'ec468ec48233124730561dc1ccae977a40db54dc'
 
 ["docs/resource-limits.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = 'ec58b00916214650e9a1d6b7a8dc7df00b882f32'
 
 ["docs/scalability.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = 'd147a440b62013b6698674c10d224bf8aae90ac7'
 
 ["docs/service-mesh.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = '6fbb14b148149e30ca125c0d7b85c76a635425a9'
 
 ["docs/stale-docs-detector.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
-last_doc_sha = '3b92b455052663b8e883028c57fb8eb5271a0909'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = '706834e99d920538a74f3a94eff4a8a13e2ea043'
 
 ["docs/volume-snapshots.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
 last_doc_sha = 'ec58b00916214650e9a1d6b7a8dc7df00b882f32'
 
 ["docs/wasm-webhook.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
-last_doc_sha = '0f3593f471c1fe554df9f4151037f02b8e6ad2a7'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = 'c97b1296c233f9b5a96e2a849b515fbd2b7d85cf'
 
 ["docs/webhook-benchmarking.md"]
-last_src_sha = '61871b1eaf48751c1eaf7dbe76f447cc1b7a9304'
-last_doc_sha = '3fbd3d7d4ac07b2d6abcdd3e3ad1f884dc78ffe0'
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = 'fdd4005394718ebfc3c55e78b39b270ba1c32047'
+
+["docs/yaml-schema-validation.md"]
+last_src_sha = '9119dcee5505864734ef891340c171da8c048773'
+last_doc_sha = 'f65a29c4671c28b93045f25a49b003a0a6715317'
+

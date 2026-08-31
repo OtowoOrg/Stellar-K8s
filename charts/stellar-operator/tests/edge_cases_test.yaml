@@ -250,3 +250,77 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].args
           content: --watch-namespace=stellar-system
+
+  # ── tolerations (issue #1368) ──────────────────────────────────────────
+  # `templates/deployment.yaml` has two independent sources for
+  # `spec.template.spec.tolerations`: `.Values.tolerations` (arbitrary
+  # user-supplied list) and `.Values.arch` (auto-appends a
+  # "kubernetes.io/arch" toleration). `upgrade_preservation_test.yaml`
+  # already covers `.Values.tolerations` alone under production values, but
+  # neither `.Values.arch` alone nor the two combined had a test — the
+  # combined case in particular is the one place the template's two `{{- if
+  # }}` blocks interact (see the template comment above `tolerations:`).
+  - it: tolerations is omitted when neither tolerations nor arch is set
+    asserts:
+      - notExists:
+          path: spec.template.spec.tolerations
+
+  - it: custom tolerations alone are rendered as-is
+    set:
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: stellar
+          effect: NoSchedule
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.tolerations
+          count: 1
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: dedicated
+      - equal:
+          path: spec.template.spec.tolerations[0].effect
+          value: NoSchedule
+
+  - it: arch alone renders only the kubernetes.io/arch toleration
+    set:
+      arch: arm64
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.tolerations
+          count: 1
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: kubernetes.io/arch
+      - equal:
+          path: spec.template.spec.tolerations[0].value
+          value: arm64
+      - equal:
+          path: spec.template.spec.tolerations[0].operator
+          value: Equal
+      - equal:
+          path: spec.template.spec.tolerations[0].effect
+          value: NoSchedule
+
+  - it: custom tolerations and arch together produce both entries without a duplicate key
+    set:
+      arch: arm64
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: stellar
+          effect: NoSchedule
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.tolerations
+          count: 2
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: dedicated
+      - equal:
+          path: spec.template.spec.tolerations[1].key
+          value: kubernetes.io/arch
+      - equal:
+          path: spec.template.spec.tolerations[1].value
+          value: arm64

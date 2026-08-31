@@ -21,6 +21,9 @@ to a healthy state.
 | 08 | `08-validator-pod-kill.yaml` | pod-failure | 🟠 High | 300s |
 | 09 | `09-cascading-failure.yaml` | cascading | 🔴 Critical | 600s |
 | 10 | `10-io-stress.yaml` | storage | 🟡 Medium | 300s |
+| 11 | `11-stellar-core-crash-recovery.yaml` | stellar-core | 🔴 Critical | 60s |
+| 12 | `12-ledger-reconnection.yaml` | stellar-core | 🟠 High | 90s |
+| 13 | `13-resource-exhaustion-recovery.yaml` | resource-exhaustion | 🟠 High | 90s |
 
 ---
 
@@ -74,6 +77,21 @@ to a healthy state.
 - **Verifies:** Operator detects I/O degradation; does NOT delete the PVC;
   StellarNode recovers after stress ends
 
+### 11 — Stellar Core Crash Recovery
+- **Chaos:** Stellar Core process killed inside the validator pod
+- **Verifies:** Core restarts and catches back up to the network without
+  operator intervention or StellarNode status flapping
+
+### 12 — Ledger Reconnection
+- **Chaos:** Validator network access cut, then restored after falling behind
+- **Verifies:** Core reconnects to peers and resyncs the ledger to the
+  current close without manual resets
+
+### 13 — Resource Exhaustion Recovery
+- **Chaos:** Combined CPU/memory exhaustion on a validator pod
+- **Verifies:** Pod recovers once pressure clears; StellarNode returns to
+  Ready without stuck finalizers or duplicate resources
+
 ---
 
 ## Running locally
@@ -90,7 +108,7 @@ The script will:
 1. Check for `docker`, `kubectl`, `helm`, `kind`, `python3`
 2. Create a 3-node kind cluster called `stellar-chaos`
 3. Install Chaos Mesh and deploy the operator
-4. Run all 10 experiments in sequence
+4. Run all 13 experiments in sequence
 5. Generate a resilience report in `tests/chaos/results/<run-id>/`
 
 ### Options

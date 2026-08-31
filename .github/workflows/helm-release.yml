@@ -1,0 +1,292 @@
+# Automated Helm Chart Release Versioning
+#
+# This workflow implements issue #1375:
+#   - Reads conventional commit history since last chart tag
+#   - Bumps Chart.yaml version (major for feat!/breaking, minor for feat, patch for fix)
+#   - Generates a CHANGELOG entry for the chart release
+#   - Packages and pushes the chart to the OCI registry (ghcr.io)
+#   - Creates a git tag for the chart version
+#
+# Trigger: push to main (only when chart files or operator code changes)
+# Manual:  workflow_dispatch with optional override bump type
+
+name: Helm Chart Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "charts/**"
+      - "src/**"
+      - "Cargo.toml"
+      - ".github/workflows/helm-release.yml"
+  workflow_dispatch:
+    inputs:
+      bump_override:
+        description: "Override bump type (major | minor | patch). Leave empty for auto-detect."
+        required: false
+        default: ""
+        type: choice
+        options:
+          - ""
+          - major
+          - minor
+          - patch
+      dry_run:
+        description: "Dry run — print actions but do NOT push or tag"
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: write   # push tag, commit bumped Chart.yaml
+  packages: write   # push OCI chart to ghcr.io
+  pull-requests: write  # optional: open PR with version bump
+
+env:
+  REGISTRY: ghcr.io
+  CHART_NAME: stellar-operator
+  CHART_PATH: charts/stellar-operator
+  OCI_REPO: ghcr.io/${{ github.repository_owner }}/helm-charts
+
+jobs:
+  # ── Determine version bump from conventional commits ─────────────────────
+  version-bump:
+    name: Determine Version Bump
+    runs-on: ubuntu-latest
+    outputs:
+      bump_type: ${{ steps.detect.outputs.bump_type }}
+      current_version: ${{ steps.detect.outputs.current_version }}
+      new_version: ${{ steps.detect.outputs.new_version }}
+      chart_tag: ${{ steps.detect.outputs.chart_tag }}
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+      changelog_entry: ${{ steps.detect.outputs.changelog_entry }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed for commit analysis
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect version bump from conventional commits
+        id: detect
+        env:
+          BUMP_OVERRIDE: ${{ github.event.inputs.bump_override }}
+        run: |
+          bash scripts/bump-chart-version.sh \
+            --chart-path "${{ env.CHART_PATH }}" \
+            --output-env \
+            ${BUMP_OVERRIDE:+--bump-override "$BUMP_OVERRIDE"}
+
+  # ── Skip if no meaningful changes ────────────────────────────────────────
+  check-skip:
+    name: Check if Release Needed
+    runs-on: ubuntu-latest
+    needs: version-bump
+    steps:
+      - name: Summarise decision
+        run: |
+          echo "### Helm Chart Release Decision" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ needs.version-bump.outputs.has_changes }}" != "true" ]; then
+            echo "⏭️ **Skipped** — no releasable commits since last chart tag \`${{ needs.version-bump.outputs.chart_tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ **Proceeding** with \`${{ needs.version-bump.outputs.bump_type }}\` bump" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Current version | \`${{ needs.version-bump.outputs.current_version }}\` |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| New version     | \`${{ needs.version-bump.outputs.new_version }}\` |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Bump type       | \`${{ needs.version-bump.outputs.bump_type }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ── Bump Chart.yaml, generate changelog, commit & tag ────────────────────
+  bump-and-tag:
+    name: Bump Chart Version & Tag
+    runs-on: ubuntu-latest
+    needs: version-bump
+    if: needs.version-bump.outputs.has_changes == 'true'
+    outputs:
+      new_version: ${{ needs.version-bump.outputs.new_version }}
+      chart_tag: ${{ steps.tag.outputs.chart_tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Apply version bump to Chart.yaml
+        env:
+          NEW_VERSION: ${{ needs.version-bump.outputs.new_version }}
+        run: |
+          # Update version and appVersion in Chart.yaml
+          sed -i "s/^version:.*/version: ${NEW_VERSION}/" "${{ env.CHART_PATH }}/Chart.yaml"
+          sed -i "s/^appVersion:.*/appVersion: \"${NEW_VERSION}\"/" "${{ env.CHART_PATH }}/Chart.yaml"
+
+          echo "Updated Chart.yaml:"
+          grep -E "^(version|appVersion):" "${{ env.CHART_PATH }}/Chart.yaml"
+
+      - name: Append changelog entry
+        env:
+          NEW_VERSION: ${{ needs.version-bump.outputs.new_version }}
+          CHANGELOG_ENTRY: ${{ needs.version-bump.outputs.changelog_entry }}
+          BUMP_TYPE: ${{ needs.version-bump.outputs.bump_type }}
+        run: |
+          DATE=$(date -u +"%Y-%m-%d")
+          ENTRY="## Chart v${NEW_VERSION} (${DATE}) [${BUMP_TYPE}]
+
+          ${CHANGELOG_ENTRY}
+
+          "
+          # Prepend to CHANGELOG.md after the first line (title)
+          if [ -f CHANGELOG.md ]; then
+            # Find first ## heading line and insert before it
+            TMPFILE=$(mktemp)
+            awk -v entry="$ENTRY" '
+              /^## / && !done {
+                print entry
+                done=1
+              }
+              { print }
+            ' CHANGELOG.md > "$TMPFILE"
+            mv "$TMPFILE" CHANGELOG.md
+          else
+            printf "# Changelog\n\n%s" "$ENTRY" > CHANGELOG.md
+          fi
+
+          echo "Changelog updated with chart v${NEW_VERSION} entry."
+
+      - name: Commit version bump
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          NEW_VERSION: ${{ needs.version-bump.outputs.new_version }}
+        run: |
+          git add "${{ env.CHART_PATH }}/Chart.yaml" CHANGELOG.md
+          git commit -m "chore(helm): bump chart to v${NEW_VERSION} [skip ci]"
+          git push origin main
+
+      - name: Create and push chart tag
+        id: tag
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          NEW_VERSION: ${{ needs.version-bump.outputs.new_version }}
+        run: |
+          CHART_TAG="chart-v${NEW_VERSION}"
+          git tag -a "$CHART_TAG" -m "Helm chart release v${NEW_VERSION}"
+          git push origin "$CHART_TAG"
+          echo "chart_tag=$CHART_TAG" >> "$GITHUB_OUTPUT"
+          echo "✅ Created tag $CHART_TAG"
+
+      - name: Dry-run summary
+        if: github.event.inputs.dry_run == 'true'
+        env:
+          NEW_VERSION: ${{ needs.version-bump.outputs.new_version }}
+        run: |
+          echo "🔍 **Dry run** — the following changes would be applied:" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Chart.yaml bumped to \`${NEW_VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag \`chart-v${NEW_VERSION}\` would be created" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Chart would be packaged and pushed to OCI registry" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Re-run without dry_run=true to apply." >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Package and publish Helm chart to OCI registry ────────────────────────
+  publish-chart:
+    name: Package & Publish to OCI Registry
+    runs-on: ubuntu-latest
+    needs: [version-bump, bump-and-tag]
+    if: needs.version-bump.outputs.has_changes == 'true' && github.event.inputs.dry_run != 'true'
+
+    steps:
+      - name: Checkout repository (with version-bumped Chart.yaml)
+        uses: actions/checkout@v4
+        with:
+          ref: main   # pick up the commit pushed by bump-and-tag
+          fetch-depth: 1
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.4"
+
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --version v0.5.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lint chart
+        run: helm lint "${{ env.CHART_PATH }}/" --strict
+
+      - name: Run chart unit tests
+        run: helm unittest "${{ env.CHART_PATH }}" --strict --color
+
+      - name: Package chart
+        id: package
+        env:
+          NEW_VERSION: ${{ needs.version-bump.outputs.new_version }}
+        run: |
+          helm package "${{ env.CHART_PATH }}/" \
+            --version "${NEW_VERSION}" \
+            --app-version "${NEW_VERSION}" \
+            --destination /tmp/helm-packages/
+
+          PACKAGE_FILE="/tmp/helm-packages/${{ env.CHART_NAME }}-${NEW_VERSION}.tgz"
+          echo "package_file=${PACKAGE_FILE}" >> "$GITHUB_OUTPUT"
+          echo "✅ Packaged: ${PACKAGE_FILE}"
+          ls -lh /tmp/helm-packages/
+
+      - name: Push chart to OCI registry (ghcr.io)
+        env:
+          NEW_VERSION: ${{ needs.version-bump.outputs.new_version }}
+        run: |
+          OCI_TARGET="oci://${{ env.OCI_REPO }}"
+          echo "Pushing to ${OCI_TARGET} ..."
+          helm push "${{ steps.package.outputs.package_file }}" "${OCI_TARGET}"
+          echo "✅ Chart v${NEW_VERSION} pushed to ${OCI_TARGET}"
+
+      - name: Verify chart is accessible
+        env:
+          NEW_VERSION: ${{ needs.version-bump.outputs.new_version }}
+        run: |
+          echo "Verifying OCI chart availability..."
+          helm show chart "oci://${{ env.OCI_REPO }}/${{ env.CHART_NAME }}" \
+            --version "${NEW_VERSION}" || echo "⚠️ Verification failed (registry propagation delay?)"
+
+      - name: Upload chart artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-chart-${{ needs.version-bump.outputs.new_version }}
+          path: ${{ steps.package.outputs.package_file }}
+          retention-days: 30
+
+      - name: Publish release summary
+        env:
+          NEW_VERSION: ${{ needs.version-bump.outputs.new_version }}
+          CHART_TAG: ${{ needs.bump-and-tag.outputs.chart_tag }}
+        run: |
+          echo "### 🚀 Helm Chart Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field        | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version      | \`${NEW_VERSION}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Git tag      | \`${CHART_TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| OCI registry | \`${{ env.OCI_REPO }}/${{ env.CHART_NAME }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Install:**" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`bash" >> "$GITHUB_STEP_SUMMARY"
+          echo "helm install stellar-operator oci://${{ env.OCI_REPO }}/${{ env.CHART_NAME }} --version ${NEW_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"

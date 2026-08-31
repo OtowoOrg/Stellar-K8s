@@ -154,3 +154,59 @@ teardown() {
   [[ "$output" == *"stellar-bridge-us-west-2"* ]]
   [[ "$output" == *"ExternalName"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# High-risk drift detection (#1395)
+# ---------------------------------------------------------------------------
+
+@test "--check-high-risk flag is accepted" {
+  run bash "${DRIFT}" --check-high-risk --list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"default"* ]]
+}
+
+@test "--check-high-risk detects image tag drift as high-risk" {
+  _require_helm
+  MUTATED="${TEMPLATE_DIR}/deployment.yaml"
+  export MUTATED
+  cp "${MUTATED}" "${BATS_TEST_TMPDIR}/backup"
+
+  # Change image tag to trigger high-risk drift
+  sed -i 's|image: ghcr.io/stellar/stellar-k8s:.*|image: ghcr.io/stellar/stellar-k8s:v99.0.0|' "${MUTATED}"
+
+  run bash "${DRIFT}" --profile default --check-high-risk
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"drifted from the golden file"* ]]
+  [[ "$output" == *"HIGH-RISK FIELD DRIFT"* ]] || [[ "$output" == *"HIGH-RISK"* ]]
+}
+
+@test "--check-high-risk detects replicaCount drift as high-risk" {
+  _require_helm
+  MUTATED="${TEMPLATE_DIR}/deployment.yaml"
+  export MUTATED
+  cp "${MUTATED}" "${BATS_TEST_TMPDIR}/backup"
+
+  # Change replica count
+  sed -i 's/replicaCount: 1/replicaCount: 5/' "${MUTATED}"
+
+  run bash "${DRIFT}" --profile default --check-high-risk
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"drifted from the golden file"* ]]
+  [[ "$output" == *"HIGH-RISK FIELD DRIFT"* ]] || [[ "$output" == *"HIGH-RISK"* ]]
+}
+
+@test "high-risk check reports 0 when drift is non-high-risk" {
+  _require_helm
+  MUTATED="${TEMPLATE_DIR}/deployment.yaml"
+  export MUTATED
+  cp "${MUTATED}" "${BATS_TEST_TMPDIR}/backup"
+
+  # Add a non-high-risk comment
+  printf '\n# cosmetic change\n' >> "${MUTATED}"
+
+  run bash "${DRIFT}" --profile default --check-high-risk
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"drifted from the golden file"* ]]
+  # Should NOT report high-risk drift for a comment-only change
+  [[ "$output" != *"HIGH-RISK FIELD DRIFT"* ]] && [[ "$output" != *"HIGH-RISK"* ]]
+}

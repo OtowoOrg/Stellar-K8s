@@ -2,16 +2,19 @@
 #
 # Automated Chaos Engineering Test Suite for Stellar-K8s
 # ========================================================
-# Runs 10 chaos experiments across 3 parallel job groups, then generates
+# Runs 13 chaos experiments across 4 parallel job groups, then generates
 # a structured resilience report with per-experiment scores.
 #
 # Experiments:
-#   Group A (kill-network):   01 Operator Pod Kill, 02 Network Partition
-#   Group B (latency-disk):   03 API Latency, 04 Validator Peer Partition,
-#                             05 Disk Fill
-#   Group C (resource-chaos): 06 CPU Stress, 07 Memory Pressure,
-#                             08 Validator Pod Kill, 09 Cascading Failure,
-#                             10 I/O Stress
+#   Group A (kill-network):       01 Operator Pod Kill, 02 Network Partition
+#   Group B (latency-disk):       03 API Latency, 04 Validator Peer Partition,
+#                                 05 Disk Fill
+#   Group C (resource-chaos):     06 CPU Stress, 07 Memory Pressure,
+#                                 08 Validator Pod Kill, 09 Cascading Failure,
+#                                 10 I/O Stress
+#   Group D (stellar-core-chaos): 11 Stellar Core Crash Recovery,
+#                                 12 Ledger Reconnection,
+#                                 13 Resource Exhaustion Recovery
 #
 # Triggers:
 #   - Manual (workflow_dispatch) — any branch, optional experiment skip
@@ -605,12 +608,214 @@ jobs:
           artifact-name: chaos-cluster-logs-group-c-${{ github.run_id }}
           extra-namespaces: ${{ env.CHAOS_NS }}
 
+  # ── Group D: Stellar Core Crash Recovery + Ledger Reconnection (issue #1388)
+  chaos-group-d:
+    name: "Group D — Stellar Core Crash & Ledger Reconnection"
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 60
+    env:
+      GROUP: "D"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download operator image
+        uses: actions/download-artifact@v8
+        with:
+          name: chaos-operator-image
+
+      - name: Load Docker image
+        run: gunzip -c operator-image.tar.gz | docker load
+
+      - name: Setup kind cluster
+        uses: ./.github/actions/setup-kind-cluster
+        with:
+          cluster-name: ${{ env.CLUSTER_NAME }}-d
+          image-tag: ${{ env.IMAGE_TAG }}
+          operator-namespace: ${{ env.OPERATOR_NS }}
+          worker-nodes: "2"
+          skip-docker-build: "true"
+
+      - name: Deploy test StellarNode (Validator)
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: stellar.org/v1alpha1
+          kind: StellarNode
+          metadata:
+            name: chaos-test-validator
+            namespace: stellar-system
+          spec:
+            nodeType: Validator
+            network: Testnet
+            version: "v21.0.0"
+            replicas: 1
+            validatorConfig:
+              seedSecretRef: validator-seed-secret
+              enableHistoryArchive: false
+          EOF
+          sleep 30
+
+      - name: Install Chaos Mesh
+        run: |
+          helm repo add chaos-mesh https://charts.chaos-mesh.org --force-update
+          helm repo update
+          kubectl create namespace chaos-mesh
+          helm install chaos-mesh chaos-mesh/chaos-mesh \
+            --namespace chaos-mesh \
+            --version ${{ env.CHAOS_MESH_VERSION }} \
+            --set chaosDaemon.runtime=containerd \
+            --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
+            --wait --timeout=5m
+          kubectl create namespace ${{ env.CHAOS_NS }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f - <<'EOF'
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: chaos-mesh-stellar-system
+            namespace: stellar-system
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: chaos-mesh-chaos-controller-manager-target-namespace
+          subjects:
+            - kind: ServiceAccount
+              name: chaos-controller-manager
+              namespace: chaos-mesh
+          EOF
+
+      - name: "Experiment 11 — Stellar Core Crash Recovery"
+        if: "!contains(github.event.inputs.skip_experiments, '11')"
+        run: |
+          mkdir -p /tmp/chaos-results
+          SLO=120
+          kubectl apply -f tests/chaos/11-stellar-core-crash-recovery.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          sleep 65
+          kubectl delete -f tests/chaos/11-stellar-core-crash-recovery.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          # Wait for pod to be Ready again
+          kubectl wait pod \
+            --for=condition=Ready \
+            --selector=app.kubernetes.io/component=validator \
+            --namespace=${{ env.OPERATOR_NS }} \
+            --timeout=${SLO}s
+          # Wait for StellarNode Ready condition
+          START_NODE_WAIT=$(date +%s)
+          until [[ "$(kubectl get stellarnode chaos-test-validator -n stellar-system \
+            -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" == "True" ]]; do
+            if (( $(date +%s) - START_NODE_WAIT > SLO )); then
+              echo "ERROR: StellarNode did not recover to Ready within ${SLO}s SLO"
+              kubectl get stellarnode chaos-test-validator -n stellar-system -o yaml || true
+              exit 1
+            fi
+            sleep 5
+          done
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp11-operator-logs.txt 2>&1 || true
+          kubectl get stellarnode chaos-test-validator -n stellar-system -o yaml \
+            > /tmp/chaos-results/exp11-stellarnode.yaml 2>&1 || true
+          echo "{\"experiment_id\":\"11\",\"recovery_time_secs\":$RECOVERY,\"slo_secs\":$SLO,\"recovered\":true}" \
+            > /tmp/chaos-results/exp11-meta.json
+          echo "✅ Experiment 11 PASSED (recovery: ${RECOVERY}s / SLO: ${SLO}s)"
+
+      - name: "Experiment 12 — Ledger Reconnection after Partition"
+        if: "!contains(github.event.inputs.skip_experiments, '12')"
+        run: |
+          SLO=180
+          kubectl apply -f tests/chaos/12-ledger-reconnection.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          # During partition: operator should mark node not-ready
+          sleep 30
+          NOT_READY=$(kubectl get stellarnode chaos-test-validator -n stellar-system \
+            -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+          echo "Node ready status during partition: ${NOT_READY}"
+          sleep 65
+          kubectl delete -f tests/chaos/12-ledger-reconnection.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          # Wait for ledger to advance and node to return to Ready
+          START_NODE_WAIT=$(date +%s)
+          until [[ "$(kubectl get stellarnode chaos-test-validator -n stellar-system \
+            -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" == "True" ]]; do
+            if (( $(date +%s) - START_NODE_WAIT > SLO )); then
+              echo "ERROR: StellarNode did not reconnect within ${SLO}s SLO"
+              kubectl get stellarnode chaos-test-validator -n stellar-system -o yaml || true
+              exit 1
+            fi
+            sleep 5
+          done
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp12-operator-logs.txt 2>&1 || true
+          echo "{\"experiment_id\":\"12\",\"recovery_time_secs\":$RECOVERY,\"slo_secs\":$SLO,\"recovered\":true}" \
+            > /tmp/chaos-results/exp12-meta.json
+          echo "✅ Experiment 12 PASSED (recovery: ${RECOVERY}s / SLO: ${SLO}s)"
+
+      - name: "Experiment 13 — Resource Exhaustion Recovery"
+        if: "!contains(github.event.inputs.skip_experiments, '13')"
+        run: |
+          SLO=300
+          kubectl apply -f tests/chaos/13-resource-exhaustion-recovery.yaml \
+            --namespace=${{ env.CHAOS_NS }}
+          sleep 95
+          kubectl delete -f tests/chaos/13-resource-exhaustion-recovery.yaml \
+            --namespace=${{ env.CHAOS_NS }} --ignore-not-found
+          START=$(date +%s)
+          # Verify PVC was NOT deleted during stress
+          PVC_EXISTS=$(kubectl get pvc -n stellar-system \
+            -l app.kubernetes.io/component=validator \
+            --no-headers 2>/dev/null | wc -l)
+          if [[ "$PVC_EXISTS" -eq 0 ]]; then
+            echo "ERROR: PVC was unexpectedly deleted during resource exhaustion experiment"
+            exit 1
+          fi
+          echo "✅ PVC survived resource exhaustion (${PVC_EXISTS} PVC(s) present)"
+          # Wait for node to recover
+          START_NODE_WAIT=$(date +%s)
+          until [[ "$(kubectl get stellarnode chaos-test-validator -n stellar-system \
+            -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" == "True" ]]; do
+            if (( $(date +%s) - START_NODE_WAIT > SLO )); then
+              echo "ERROR: StellarNode did not recover within ${SLO}s SLO after resource exhaustion"
+              kubectl get stellarnode chaos-test-validator -n stellar-system -o yaml || true
+              exit 1
+            fi
+            sleep 5
+          done
+          RECOVERY=$(( $(date +%s) - START ))
+          kubectl logs --selector=app=stellar-operator \
+            --namespace=${{ env.OPERATOR_NS }} --tail=1000 \
+            > /tmp/chaos-results/exp13-operator-logs.txt 2>&1 || true
+          echo "{\"experiment_id\":\"13\",\"recovery_time_secs\":$RECOVERY,\"slo_secs\":$SLO,\"recovered\":true}" \
+            > /tmp/chaos-results/exp13-meta.json
+          echo "✅ Experiment 13 PASSED (recovery: ${RECOVERY}s / SLO: ${SLO}s)"
+
+      - name: Upload Group D results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: chaos-results-group-d-${{ github.run_id }}
+          path: /tmp/chaos-results/
+          retention-days: 7
+
+      - name: Collect cluster logs
+        if: always()
+        uses: ./.github/actions/collect-e2e-logs
+        with:
+          operator-namespace: ${{ env.OPERATOR_NS }}
+          artifact-name: chaos-cluster-logs-group-d-${{ github.run_id }}
+          extra-namespaces: ${{ env.CHAOS_NS }}
+
   # ── Report: merge all results and generate resilience report ─────────────
   report:
     name: Generate Resilience Report
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [chaos-group-a, chaos-group-b, chaos-group-c]
+    needs: [chaos-group-a, chaos-group-b, chaos-group-c, chaos-group-d]
     if: always()
     steps:
       - uses: actions/checkout@v7
@@ -638,6 +843,13 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: chaos-results-group-c-${{ github.run_id }}
+          path: /tmp/chaos-results/
+        continue-on-error: true
+
+      - name: Download Group D results
+        uses: actions/download-artifact@v8
+        with:
+          name: chaos-results-group-d-${{ github.run_id }}
           path: /tmp/chaos-results/
         continue-on-error: true
 
@@ -676,6 +888,7 @@ jobs:
           GA="${{ needs.chaos-group-a.result }}"
           GB="${{ needs.chaos-group-b.result }}"
           GC="${{ needs.chaos-group-c.result }}"
+          GD="${{ needs.chaos-group-d.result }}"
           SCORE="${{ steps.report.outputs.score }}"
           {
             echo ""
@@ -686,6 +899,7 @@ jobs:
             echo "| A — Kill & Network | 01 Pod Kill, 02 Network Partition | \`${GA}\` |"
             echo "| B — Latency & Disk | 03 API Latency, 04 Peer Partition, 05 Disk Fill | \`${GB}\` |"
             echo "| C — Resource & Cascading | 06 CPU Stress, 07 Memory, 08 Validator Kill, 09 Cascading, 10 I/O | \`${GC}\` |"
+            echo "| D — Stellar Core Chaos | 11 Core Crash, 12 Ledger Reconnection, 13 Resource Exhaustion | \`${GD}\` |"
             echo ""
             echo "**Overall Resilience Score:** ${SCORE}/100"
             echo "**Commit:** \`${{ github.sha }}\`"
@@ -696,7 +910,8 @@ jobs:
         if: |
           needs.chaos-group-a.result == 'failure' ||
           needs.chaos-group-b.result == 'failure' ||
-          needs.chaos-group-c.result == 'failure'
+          needs.chaos-group-c.result == 'failure' ||
+          needs.chaos-group-d.result == 'failure'
         run: |
           echo "One or more chaos experiment groups failed."
           exit 1

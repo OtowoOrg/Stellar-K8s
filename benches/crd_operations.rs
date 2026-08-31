@@ -11,242 +11,259 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! CRD operation performance benchmarks — Issue #1287
+//! CRD validation performance benchmarks — Issue #1390.
 //!
-//! Benchmarks CRD create, update, and delete operations against a real
-//! Kubernetes API server using envtest or a kind cluster.
+//! Benchmarks the in-memory `StellarNodeSpec` validation and (de)serialization
+//! paths that back CRD admission — i.e. the CPU-bound work the operator (and
+//! the admission webhook) does on every `kubectl apply` of a `StellarNode`,
+//! independent of the Kubernetes API server itself:
+//!
+//! - `crd_validate` — [`StellarNodeSpec::validate()`] over a range of spec
+//!   complexity levels.
+//! - `crd_serialize` / `crd_deserialize` — JSON (de)serialization cost, which
+//!   mirrors what an admission webhook or the reconciler pays when reading a
+//!   resource off the informer cache or converting a request body.
+//! - `crd_concurrent_validate` — validation throughput under concurrent load
+//!   (multiple worker threads validating specs in parallel), approximating
+//!   burst admission traffic (e.g. a GitOps sync applying many resources at
+//!   once).
+//!
+//! These benchmarks are fully self-contained: no live Kubernetes API server,
+//! kind cluster, or envtest instance is required or used. That intentionally
+//! excludes network/etcd latency — see `docs/benchmarking.md` for how to
+//! interpret the numbers, and `benchmarks/k6/` (via `docs/load-testing.md`)
+//! for end-to-end API throughput benchmarks against a live operator.
 //!
 //! ```bash
-//! cargo bench --bench crd_operations -- --nocapture
+//! cargo bench --bench crd_operations
 //! ```
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use std::time::Duration;
+use std::hint::black_box;
 
-/// StellarNode CRD definition for benchmarking.
-fn stellarnode_crd_yaml() -> &'static str {
-    include_str!("../config/crd/stellarnode-crd.yaml")
+use stellar_k8s::crd::{
+    AutoscalingConfig, HistoryMode, HorizonConfig, NodeType, ResourceRequirements,
+    StellarNetwork, StellarNodeSpec, StorageConfig, ValidatorConfig,
+};
+
+/// The smallest `StellarNodeSpec` that passes validation: a Validator with
+/// only the required `validatorConfig.seedSecretRef` set.
+fn minimal_validator_spec() -> StellarNodeSpec {
+    StellarNodeSpec {
+        node_type: NodeType::Validator,
+        network: StellarNetwork::Testnet,
+        version: "v21.0.0".to_string(),
+        replicas: 1,
+        validator_config: Some(ValidatorConfig {
+            seed_secret_ref: "bench-validator-seed".to_string(),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
 }
 
-/// Create a minimal StellarNode manifest for benchmarking.
-fn make_stellarnode_manifest(name: &str) -> String {
-    format!(
-        r#"
-apiVersion: stellar.org/v1alpha1
-kind: StellarNode
-metadata:
-  name: {name}
-  namespace: benchmark
-  labels:
-    app: stellar-benchmark
-    benchmark: "true"
-spec:
-  nodeType: Validator
-  network: testnet
-  version: v21.0.0
-  replicas: 1
-  validatorConfig:
-    seedSecretRef: validator-seed
-    enableHistoryArchive: false
-    historyArchiveUrls: []
-"#
-    )
+/// A "day-2" Validator spec: history mode, alerting, and a couple of
+/// service-level labels/annotations set explicitly.
+fn standard_validator_spec() -> StellarNodeSpec {
+    let mut labels = std::collections::BTreeMap::new();
+    labels.insert("app".to_string(), "stellar-benchmark".to_string());
+    labels.insert("benchmark".to_string(), "true".to_string());
+
+    StellarNodeSpec {
+        history_mode: HistoryMode::Full,
+        alerting: true,
+        service_labels: Some(labels),
+        ..minimal_validator_spec()
+    }
 }
 
-/// Benchmark: CRD creation latency.
-///
-/// Measures how long it takes to create StellarNode resources
-/// against the Kubernetes API server.
-fn bench_crd_create(c: &mut Criterion) {
-    let mut group = c.benchmark_group("crd_create");
-    group.sample_size(50);
-    group.measurement_time(Duration::from_secs(30));
+/// A Horizon node with HPA-style autoscaling enabled. Autoscaling is only
+/// valid for Horizon/SorobanRpc node types (Validators reject it), so this
+/// tier exercises a different branch of `validate()` than the Validator
+/// fixtures above.
+fn horizon_autoscaling_spec() -> StellarNodeSpec {
+    StellarNodeSpec {
+        node_type: NodeType::Horizon,
+        network: StellarNetwork::Testnet,
+        version: "v21.0.0".to_string(),
+        replicas: 3,
+        horizon_config: Some(HorizonConfig {
+            database_secret_ref: "bench-horizon-db".to_string(),
+            enable_ingest: true,
+            stellar_core_url: "http://stellar-core:11626".to_string(),
+            ..Default::default()
+        }),
+        autoscaling: Some(AutoscalingConfig {
+            min_replicas: 2,
+            max_replicas: 10,
+            target_cpu_utilization_percentage: Some(70),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
 
-    // Benchmark different resource complexity levels
-    let configs = vec![
-        (
-            "minimal",
-            r#"
-apiVersion: stellar.org/v1alpha1
-kind: StellarNode
-metadata:
-  name: bench-minimal
-  namespace: benchmark
-spec:
-  nodeType: Validator
-  network: testnet
-  version: v21.0.0
-  replicas: 1
-"#.to_string(),
-        ),
-        ("standard", make_stellarnode_manifest("bench-standard")),
-        (
-            "with_autoscaling",
-            r#"
-apiVersion: stellar.org/v1alpha1
-kind: StellarNode
-metadata:
-  name: bench-autoscaling
-  namespace: benchmark
-spec:
-  nodeType: Validator
-  network: testnet
-  version: v21.0.0
-  replicas: 3
-  autoscaling:
-    enabled: true
-    minReplicas: 1
-    maxReplicas: 10
-    targetCPUUtilization: 70
-"#.to_string(),
-        ),
-        (
-            "full_config",
-            r#"
-apiVersion: stellar.org/v1alpha1
-kind: StellarNode
-metadata:
-  name: bench-full
-  namespace: benchmark
-  labels:
-    app: stellar-benchmark
-    team: platform
-    environment: ci
-spec:
-  nodeType: Validator
-  network: testnet
-  version: v21.0.0
-  replicas: 5
-  resources:
-    requests:
-      cpu: "500m"
-      memory: "512Mi"
-    limits:
-      cpu: "2"
-      memory: "4Gi"
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 15
-    targetCPUUtilization: 65
-  validatorConfig:
-    seedSecretRef: validator-seed
-    enableHistoryArchive: true
-    historyArchiveUrls:
-      - https://history.stellar.org/prd/core-live/core_live_01
-"#.to_string(),
-        ),
-    ];
+/// The heaviest fixture: a Validator with history archive enabled (and
+/// multiple archive URLs), custom resource requests/limits, custom storage,
+/// and service labels/annotations — representative of a production
+/// configuration, to measure validation cost as the spec grows.
+fn full_config_validator_spec() -> StellarNodeSpec {
+    let mut labels = std::collections::BTreeMap::new();
+    labels.insert("app".to_string(), "stellar-benchmark".to_string());
+    labels.insert("team".to_string(), "platform".to_string());
+    labels.insert("environment".to_string(), "ci".to_string());
 
-    for (name, manifest) in configs {
-        let lines = manifest.lines().count() as u64;
-        group.throughput(Throughput::Bytes(lines * 50)); // approximate bytes
-        group.bench_with_input(
-            BenchmarkId::from_parameter(name),
-            &manifest,
-            |b: &mut criterion::Bencher, _manifest: &String| {
-                b.iter(|| {
-                    // In a real benchmark, this would apply the manifest to a kind cluster:
-                    // kubectl apply -f -
-                    // For now, we benchmark the manifest serialization overhead
-                    let _ = _manifest.len();
-                });
+    let mut annotations = std::collections::BTreeMap::new();
+    annotations.insert("bench.stellar.org/tier".to_string(), "full".to_string());
+
+    StellarNodeSpec {
+        history_mode: HistoryMode::Full,
+        alerting: true,
+        service_labels: Some(labels),
+        service_annotations: Some(annotations),
+        resources: ResourceRequirements {
+            requests: stellar_k8s::crd::ResourceSpec {
+                cpu: "500m".to_string(),
+                memory: "512Mi".to_string(),
             },
+            limits: stellar_k8s::crd::ResourceSpec {
+                cpu: "2".to_string(),
+                memory: "4Gi".to_string(),
+            },
+        },
+        storage: StorageConfig {
+            storage_class: "fast-ssd".to_string(),
+            size: "200Gi".to_string(),
+            ..Default::default()
+        },
+        validator_config: Some(ValidatorConfig {
+            seed_secret_ref: "bench-validator-seed".to_string(),
+            enable_history_archive: true,
+            history_archive_urls: vec![
+                "https://history.stellar.org/prd/core-live/core_live_01".to_string(),
+                "https://history.stellar.org/prd/core-live/core_live_02".to_string(),
+            ],
+            ..Default::default()
+        }),
+        ..minimal_validator_spec()
+    }
+}
+
+/// The four complexity tiers shared across the validate/serialize/deserialize
+/// benchmark groups below, so all three groups measure the same fixtures.
+fn crd_fixtures() -> Vec<(&'static str, StellarNodeSpec)> {
+    vec![
+        ("minimal", minimal_validator_spec()),
+        ("standard", standard_validator_spec()),
+        ("horizon_autoscaling", horizon_autoscaling_spec()),
+        ("full_config", full_config_validator_spec()),
+    ]
+}
+
+/// Benchmark: `StellarNodeSpec::validate()` across complexity tiers.
+///
+/// This is the actual admission-time validation logic used by the operator
+/// (see `src/crd/stellar_node.rs`), not a stand-in — every fixture above is
+/// asserted valid before benchmarking so a future change that breaks
+/// validation fails loudly instead of silently benchmarking an error path.
+fn bench_crd_validate(c: &mut Criterion) {
+    let mut group = c.benchmark_group("crd_validate");
+
+    for (name, spec) in crd_fixtures() {
+        assert!(
+            spec.validate().is_ok(),
+            "benchmark fixture '{name}' must be a valid StellarNodeSpec"
         );
+        group.bench_with_input(BenchmarkId::from_parameter(name), &spec, |b, spec| {
+            b.iter(|| black_box(spec).validate());
+        });
     }
 
     group.finish();
 }
 
-/// Benchmark: CRD update latency.
+/// Benchmark: JSON serialization cost for each complexity tier.
 ///
-/// Measures how long it takes to update existing StellarNode resources.
-fn bench_crd_update(c: &mut Criterion) {
-    let mut group = c.benchmark_group("crd_update");
-    group.sample_size(50);
-    group.measurement_time(Duration::from_secs(30));
+/// Kubernetes controllers and admission webhooks work in JSON over the
+/// wire; this measures the `serde_json` encode cost that sits alongside
+/// validation on every reconcile/admission request.
+fn bench_crd_serialize(c: &mut Criterion) {
+    let mut group = c.benchmark_group("crd_serialize");
 
-    let base = make_stellarnode_manifest("bench-update");
-    let updated_replicas = base.replace("replicas: 1", "replicas: 5");
-
-    group.throughput(Throughput::Bytes(updated_replicas.len() as u64));
-    group.bench_function("replica_scale_up", |b: &mut criterion::Bencher| {
-        b.iter(|| {
-            // In a real benchmark: kubectl apply -f -
-            let _ = updated_replicas.len();
+    for (name, spec) in crd_fixtures() {
+        let json_len = serde_json::to_string(&spec)
+            .expect("fixture must serialize to JSON")
+            .len() as u64;
+        group.throughput(Throughput::Bytes(json_len));
+        group.bench_with_input(BenchmarkId::from_parameter(name), &spec, |b, spec| {
+            b.iter(|| serde_json::to_string(black_box(spec)).expect("spec must serialize"));
         });
-    });
-
-    let updated_labels = format!(
-        "{}\n  labels:\n    updated: \"true\"\n    version: v2",
-        base.replace("  labels:\n    app: stellar-benchmark\n", "")
-    );
-    group.bench_function("label_update", |b: &mut criterion::Bencher| {
-        b.iter(|| {
-            let _ = updated_labels.len();
-        });
-    });
+    }
 
     group.finish();
 }
 
-/// Benchmark: CRD deletion latency.
+/// Benchmark: JSON deserialization cost for each complexity tier.
 ///
-/// Measures how long it takes to delete StellarNode resources.
-fn bench_crd_delete(c: &mut Criterion) {
-    let mut group = c.benchmark_group("crd_delete");
-    group.sample_size(50);
-    group.measurement_time(Duration::from_secs(30));
+/// Mirrors decoding a `StellarNode` admission request body or an informer
+/// cache entry back into a typed `StellarNodeSpec`.
+fn bench_crd_deserialize(c: &mut Criterion) {
+    let mut group = c.benchmark_group("crd_deserialize");
 
-    group.bench_function("single_delete", |b: &mut criterion::Bencher| {
-        b.iter(|| {
-            // In a real benchmark: kubectl delete stellarnode <name> -n benchmark
-            // For now, benchmark the cleanup overhead
+    for (name, spec) in crd_fixtures() {
+        let json = serde_json::to_string(&spec).expect("fixture must serialize to JSON");
+        group.throughput(Throughput::Bytes(json.len() as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(name), &json, |b, json| {
+            b.iter(|| {
+                let spec: StellarNodeSpec =
+                    serde_json::from_str(black_box(json)).expect("fixture JSON must parse");
+                black_box(spec)
+            });
         });
-    });
-
-    group.bench_function("batch_delete_namespace", |b: &mut criterion::Bencher| {
-        b.iter(|| {
-            // In a real benchmark: kubectl delete stellarnodes -n benchmark -l benchmark=true
-        });
-    });
+    }
 
     group.finish();
 }
 
-/// Benchmark: Concurrent CRD operations.
+/// Benchmark: concurrent validation throughput.
 ///
-/// Measures throughput and latency under concurrent load.
-fn bench_crd_concurrent(c: &mut Criterion) {
-    let mut group = c.benchmark_group("crd_concurrent");
-    group.sample_size(10);
-    group.measurement_time(Duration::from_secs(60));
+/// Spawns N worker threads that each construct and validate a spec in
+/// parallel, approximating burst admission traffic (e.g. a GitOps
+/// controller applying many `StellarNode` resources in one sync). Unlike
+/// the original stub, this actually calls `validate()` on every worker and
+/// asserts the result rather than measuring `String::len()`.
+fn bench_crd_concurrent_validate(c: &mut Criterion) {
+    let mut group = c.benchmark_group("crd_concurrent_validate");
+    // Thread spawning dominates at high worker counts; keep the sample size
+    // modest so the group finishes in a reasonable time in CI.
+    group.sample_size(20);
 
-    for concurrency in [1, 5, 10, 25, 50] {
+    for workers in [1usize, 5, 10, 25, 50] {
+        group.throughput(Throughput::Elements(workers as u64));
         group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{}-workers", concurrency)),
-            &concurrency,
-            |b: &mut criterion::Bencher, &conc: &i32| {
+            BenchmarkId::from_parameter(format!("{workers}-workers")),
+            &workers,
+            |b, &workers| {
                 b.iter(|| {
-                    // In a real benchmark:
-                    // 1. Create 'conc' StellarNode resources concurrently
-                    // 2. Measure total time and per-operation latency
-                    // 3. Record failures
-                    let handles: Vec<_> = (0..conc)
+                    let handles: Vec<_> = (0..workers)
                         .map(|i| {
-                            let name = format!("bench-concurrent-{}", i);
-                            let manifest = make_stellarnode_manifest(&name);
                             std::thread::spawn(move || {
-                                // kubectl apply -f -
-                                let _ = manifest.len();
-                                Ok::<(), String>(())
+                                let spec = if i % 2 == 0 {
+                                    minimal_validator_spec()
+                                } else {
+                                    full_config_validator_spec()
+                                };
+                                black_box(&spec).validate().is_ok()
                             })
                         })
                         .collect();
 
-                    let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-                    let failures = results.iter().filter(|r| r.is_err()).count();
-                    let _ = failures;
+                    let successes = handles
+                        .into_iter()
+                        .map(|h| h.join().expect("worker thread panicked"))
+                        .filter(|ok| *ok)
+                        .count();
+                    black_box(successes)
                 });
             },
         );
@@ -257,9 +274,9 @@ fn bench_crd_concurrent(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    bench_crd_create,
-    bench_crd_update,
-    bench_crd_delete,
-    bench_crd_concurrent,
+    bench_crd_validate,
+    bench_crd_serialize,
+    bench_crd_deserialize,
+    bench_crd_concurrent_validate,
 );
 criterion_main!(benches);

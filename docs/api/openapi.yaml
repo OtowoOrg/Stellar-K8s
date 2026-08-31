@@ -302,6 +302,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LogLevelResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Invalid log level
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /api/v1/debug/pprof/profile:
     get:
@@ -550,6 +562,406 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/v1/compliance/regulatory-report:
+    get:
+      tags: [Compliance]
+      summary: Regulatory compliance report
+      operationId: getRegulatoryComplianceReport
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Regulatory compliance report
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/analytics/logs:
+    get:
+      tags: [Dashboard]
+      summary: Log analytics summary
+      operationId: getLogAnalytics
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Log analytics with top patterns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogAnalyticsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/config/analyze:
+    post:
+      tags: [Dashboard]
+      summary: Analyze configuration impact
+      operationId: analyzeConfigImpact
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Configuration impact analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigImpactResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/security/posture:
+    get:
+      tags: [Dashboard]
+      summary: Security posture assessment
+      operationId: getSecurityPosture
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Security posture report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPostureResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/capacity/plan:
+    get:
+      tags: [Dashboard]
+      summary: Capacity planning recommendations
+      operationId: getCapacityPlan
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Capacity planning data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapacityPlanningResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/capacity/what-if:
+    post:
+      tags: [Dashboard]
+      summary: Run what-if capacity scenario
+      operationId: runWhatIf
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WhatIfRequest'
+      responses:
+        '200':
+          description: What-if scenario result
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/optimization/simulate:
+    post:
+      tags: [Optimization]
+      summary: Simulate optimization changes
+      operationId: optimizationSimulate
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Simulation results
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/optimization/forecast:
+    get:
+      tags: [Optimization]
+      summary: Resource optimization forecast
+      operationId: optimizationForecast
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Optimization forecast data
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/traffic/dashboard:
+    get:
+      tags: [Dashboard]
+      summary: Traffic dashboard data
+      operationId: getTrafficDashboard
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Traffic dashboard metrics
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/dashboard/nodes/{namespace}/{name}/logs:
+    get:
+      tags: [Dashboard]
+      summary: Get node logs
+      operationId: getNodeLogs
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/NamespacePath'
+        - $ref: '#/components/parameters/NamePath'
+      responses:
+        '200':
+          description: Node logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeLogsResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/dashboard/nodes/{namespace}/{name}/conditions:
+    get:
+      tags: [Dashboard]
+      summary: Get node conditions
+      operationId: getNodeConditions
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/NamespacePath'
+        - $ref: '#/components/parameters/NamePath'
+      responses:
+        '200':
+          description: Node conditions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeConditionsResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/dashboard/nodes/{namespace}/{name}/dr:
+    get:
+      tags: [Dashboard]
+      summary: Get node DR status
+      operationId: getNodeDrStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/NamespacePath'
+        - $ref: '#/components/parameters/NamePath'
+      responses:
+        '200':
+          description: DR status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DRStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/dashboard/nodes/{namespace}/{name}/metrics:
+    get:
+      tags: [Dashboard]
+      summary: Get node metrics
+      operationId: getNodeMetrics
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/NamespacePath'
+        - $ref: '#/components/parameters/NamePath'
+      responses:
+        '200':
+          description: Node metrics summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/dashboard/nodes/{namespace}/{name}/actions:
+    post:
+      tags: [Dashboard]
+      summary: Execute node action
+      operationId: executeNodeAction
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/NamespacePath'
+        - $ref: '#/components/parameters/NamePath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeActionRequest'
+      responses:
+        '200':
+          description: Action result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeActionResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/dashboard/operator/logs:
+    get:
+      tags: [Dashboard]
+      summary: Get operator logs
+      operationId: getOperatorLogs
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Operator logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorLogsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/quorum/topology/stream:
+    get:
+      tags: [Quorum]
+      summary: WebSocket stream for quorum topology
+      operationId: quorumTopologyStream
+      security:
+        - bearerAuth: []
+      responses:
+        '101':
+          description: WebSocket upgrade
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/docs/search-index:
+    get:
+      tags: [Dashboard]
+      summary: Documentation search index
+      operationId: getSearchIndex
+      responses:
+        '200':
+          description: Search index JSON
+          content:
+            application/json:
+              schema:
+                type: string
+
+  /api/v1/audit-log/search:
+    get:
+      tags: [Audit]
+      summary: Search audit log entries
+      operationId: searchAuditLog
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: namespace
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: resource
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: actor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Filtered audit entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/audit-log/stream:
+    get:
+      tags: [Audit]
+      summary: WebSocket stream for audit log
+      operationId: auditLogStream
+      security:
+        - bearerAuth: []
+      responses:
+        '101':
+          description: WebSocket upgrade
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/audit-log/anomalies:
+    get:
+      tags: [Audit]
+      summary: List audit anomalies
+      operationId: listAuditAnomalies
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Anomaly events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditAnomalyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /metrics:
     get:
       tags: [Metrics]
@@ -750,6 +1162,229 @@ components:
       properties:
         error:
           type: string
+        errorCode:
+          type: string
         message:
           type: string
-      required: [error, message]
+        correlationId:
+          type: string
+          nullable: true
+        details:
+          type: object
+          nullable: true
+        degraded:
+          type: boolean
+        timestamp:
+          type: string
+          format: date-time
+      required: [error, errorCode, message, degraded, timestamp]
+
+    LogAnalyticsResponse:
+      type: object
+      properties:
+        topPatterns:
+          type: array
+          items:
+            $ref: '#/components/schemas/LogPatternDto'
+
+    LogPatternDto:
+      type: object
+      properties:
+        template:
+          type: string
+        count:
+          type: integer
+          format: int64
+        lastSeen:
+          type: string
+
+    ConfigImpactResponse:
+      type: object
+      properties:
+        impact:
+          type: object
+        validationErrors:
+          type: array
+          items:
+            type: string
+
+    SecurityPostureResponse:
+      type: object
+      properties:
+        posture:
+          type: object
+
+    CapacityPlanningResponse:
+      type: object
+      properties:
+        recommendations:
+          type: array
+          items:
+            type: object
+        forecasts:
+          type: array
+          items:
+            type: object
+        bottlenecks:
+          type: array
+          items:
+            type: string
+
+    WhatIfRequest:
+      type: object
+      properties:
+        scenarioName:
+          type: string
+        scaleFactor:
+          type: number
+          format: double
+      required: [scenarioName, scaleFactor]
+
+    NodeLogsResponse:
+      type: object
+      properties:
+        namespace:
+          type: string
+        name:
+          type: string
+        podName:
+          type: string
+        logs:
+          type: string
+        timestamp:
+          type: string
+      required: [namespace, name, podName, logs, timestamp]
+
+    NodeConditionsResponse:
+      type: object
+      properties:
+        namespace:
+          type: string
+        name:
+          type: string
+        conditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConditionDisplay'
+      required: [namespace, name, conditions]
+
+    ConditionDisplay:
+      type: object
+      properties:
+        conditionType:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        lastTransitionTime:
+          type: string
+          nullable: true
+        severity:
+          type: string
+          enum: [success, warning, error, info]
+
+    DRStatusResponse:
+      type: object
+      properties:
+        namespace:
+          type: string
+        name:
+          type: string
+        drEnabled:
+          type: boolean
+        currentRole:
+          type: string
+          nullable: true
+        failoverActive:
+          type: boolean
+        lastFailoverTime:
+          type: string
+          nullable: true
+        syncLag:
+          type: integer
+          format: int64
+          nullable: true
+        complianceStatus:
+          type: string
+          nullable: true
+        lastDrillResult:
+          type: string
+          nullable: true
+      required: [namespace, name, drEnabled, failoverActive]
+
+    MetricsSummary:
+      type: object
+      properties:
+        namespace:
+          type: string
+        name:
+          type: string
+        ledgerSequence:
+          type: integer
+          format: int64
+          nullable: true
+        readyReplicas:
+          type: integer
+        replicas:
+          type: integer
+        quorumFragility:
+          type: number
+          format: double
+          nullable: true
+
+    NodeActionRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [restart, snapshot, suspend, resume, maintenance_mode, prune]
+      required: [action]
+
+    NodeActionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        action:
+          type: string
+      required: [success, message, action]
+
+    OperatorLogsResponse:
+      type: object
+      properties:
+        logs:
+          type: array
+          items:
+            type: string
+        timestamp:
+          type: string
+      required: [logs, timestamp]
+
+    AuditLogResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        total:
+          type: integer
+      required: [items, total]
+
+    AuditAnomalyResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        total:
+          type: integer
+      required: [items, total]

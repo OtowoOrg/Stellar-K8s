@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Kubernetes resource builders for StellarNode
 //!
 //! This module creates and manages the underlying Kubernetes resources
@@ -586,7 +598,15 @@ pub(crate) fn build_config_map(
             }
 
             if enable_mtls {
-                core_cfg.push_str("\n# mTLS Configuration\n");
+                // NOTE: these keys are written best-effort and have not been verified
+                // against a real stellar-core build; stellar-core's admin/HTTP endpoint
+                // does not have documented native HTTPS termination in upstream
+                // releases as of this writing, so this may be a no-op depending on the
+                // stellar-core version in use. The client certificate material is still
+                // correctly issued and mounted at /etc/stellar/tls regardless. See the
+                // "Known Limitation" section in docs/mtls-guide.md and
+                // docs/security/e2e-encryption-architecture.md.
+                core_cfg.push_str("\n# mTLS Configuration (best-effort; see docs/mtls-guide.md)\n");
                 core_cfg.push_str("HTTP_PORT_SECURE=true\n");
                 core_cfg.push_str("TLS_CERT_FILE=\"/etc/stellar/tls/tls.crt\"\n");
                 core_cfg.push_str("TLS_KEY_FILE=\"/etc/stellar/tls/tls.key\"\n");

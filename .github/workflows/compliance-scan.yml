@@ -1,0 +1,108 @@
+name: Compliance Scan
+
+# kube-bench CIS compliance scan (issue #1380).
+# Runs the `stellar-bench` custom benchmark controls against a kind
+# control-plane node, posts a summary to the run, and attaches the raw report.
+# This workflow is intentionally NON-BLOCKING: scan findings never fail the PR,
+# and every scan step is guarded with continue-on-error so kube-bench/kind
+# version drift cannot break CI.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+env:
+  KUBE_BENCH_VERSION: 0.9.5
+  KIND_VERSION: v0.24.0
+  KIND_IMAGE: kindest/node:v1.31.0
+
+concurrency:
+  group: compliance-scan-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compliance-scan:
+    name: Kubernetes CIS compliance scan (kube-bench)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install kind and create a control-plane node
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          curl -fsSLo /usr/local/bin/kind \
+            "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x /usr/local/bin/kind
+          kind create cluster --image "${KIND_IMAGE}"
+
+      - name: Download kube-bench release
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          curl -fsSLO "https://github.com/aquasecurity/kube-bench/releases/download/v${KUBE_BENCH_VERSION}/kube-bench_${KUBE_BENCH_VERSION}_linux_amd64.tar.gz"
+          tar -xzf "kube-bench_${KUBE_BENCH_VERSION}_linux_amd64.tar.gz"
+          cp kube-bench /usr/local/bin/kube-bench
+
+      - name: Stage kube-bench and custom controls on the control-plane node
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          docker cp /usr/local/bin/kube-bench kind-control-plane:/usr/local/bin/kube-bench
+          docker exec kind-control-plane mkdir -p /opt/kube-bench/cfg
+          docker cp config/stellar-bench.yaml kind-control-plane:/opt/kube-bench/cfg/stellar-bench.yaml
+
+      - name: Run kube-bench scan (non-blocking)
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p security/kube-bench/reports
+          docker exec kind-control-plane \
+            /usr/local/bin/kube-bench run --benchmark stellar-bench --output json \
+            > security/kube-bench/reports/kube-bench-report.json 2>&1
+          rc=$?
+          set -e
+          echo "kube-bench exit code: ${rc} (nonzero means checks failed)"
+          if [ ! -s security/kube-bench/reports/kube-bench-report.json ]; then
+            echo "no report produced; writing placeholder" >&2
+            echo '{"Totals":{},"Controls":[]}' > security/kube-bench/reports/kube-bench-report.json
+          fi
+
+      - name: Post job summary
+        if: always()
+        run: |
+          python3 security/kube-bench/report-parser.py \
+            security/kube-bench/reports/kube-bench-report.json \
+            >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Generate standard-format compliance report (CSV)
+        if: always()
+        run: |
+          python3 security/kube-bench/report-parser.py \
+            --format csv \
+            security/kube-bench/reports/kube-bench-report.json \
+            > security/kube-bench/reports/kube-bench-report.csv
+          if [ ! -s security/kube-bench/reports/kube-bench-report.csv ]; then
+            echo "csv report empty; keeping raw json only" >&2
+          else
+            echo "csv compliance report generated ($(wc -l < security/kube-bench/reports/kube-bench-report.csv) lines)"
+          fi
+
+      - name: Upload compliance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kube-bench-report-${{ github.sha }}
+          path: |
+            security/kube-bench/reports/kube-bench-report.json
+            security/kube-bench/reports/kube-bench-report.csv
+          retention-days: 30
+          if-no-files-found: ignore

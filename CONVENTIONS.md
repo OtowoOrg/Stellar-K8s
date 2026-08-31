@@ -71,12 +71,9 @@ entry points only — detailed content belongs in `docs/`.
 
 | Element | Convention | Example |
 |---|---|---|
-| File names | `kebab-case.sh` | `cleanup.sh` |
+| File names | `kebab-case.sh` | `cleanup.sh`, `preflight.sh` |
 | Operational scripts | live in `scripts/` | `scripts/cleanup.sh`, `scripts/repo-health.sh` |
 | One-off / historical | delete or fold into a supported tool | Prefer `scripts/cleanup.sh` over new ad-hoc helpers |
-| File names | `kebab-case.sh` | `setup-mac.sh` |
-| Operational scripts | live in `scripts/` | `scripts/repo-health.sh` |
-| Historical / one-off | do not commit; use issue-specific branches | — |
 
 Every script must pass `shellcheck -S error` before merging.
 

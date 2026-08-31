@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Tenant lifecycle reconciliation with namespace isolation, resource quotas, and network policies.
 //!
 //! This module implements the core multi-tenancy enforcement for Stellar-K8s:
@@ -97,9 +109,7 @@ async fn create_or_update_namespace(tenant_spec: &TenantSpec, client: &Client) -
             info!(namespace = %tenant_spec.namespace, "Updated existing namespace");
         }
         None => {
-            ns_api
-                .create(&PostParams::default(), &namespace)
-                .await?;
+            ns_api.create(&PostParams::default(), &namespace).await?;
             info!(namespace = %tenant_spec.namespace, "Created namespace");
         }
     }
@@ -128,7 +138,10 @@ async fn apply_resource_quota(tenant_spec: &TenantSpec, client: &Client) -> Resu
 
     // Set pod count limit
     hard.insert("pods".to_string(), Quantity("1000".to_string()));
-    hard.insert("requests.storage".to_string(), Quantity("100Gi".to_string()));
+    hard.insert(
+        "requests.storage".to_string(),
+        Quantity("100Gi".to_string()),
+    );
 
     let quota = ResourceQuota {
         metadata: ObjectMeta {
@@ -151,9 +164,7 @@ async fn apply_resource_quota(tenant_spec: &TenantSpec, client: &Client) -> Resu
             info!(quota = %quota_name, namespace = %tenant_spec.namespace, "Updated ResourceQuota");
         }
         None => {
-            quota_api
-                .create(&PostParams::default(), &quota)
-                .await?;
+            quota_api.create(&PostParams::default(), &quota).await?;
             info!(quota = %quota_name, namespace = %tenant_spec.namespace, "Created ResourceQuota");
         }
     }
@@ -212,9 +223,7 @@ async fn apply_network_policies(tenant_spec: &TenantSpec, client: &Client) -> Re
             info!(policy = %policy_name, namespace = %tenant_spec.namespace, "Updated NetworkPolicy");
         }
         None => {
-            policy_api
-                .create(&PostParams::default(), &policy)
-                .await?;
+            policy_api.create(&PostParams::default(), &policy).await?;
             info!(policy = %policy_name, namespace = %tenant_spec.namespace, "Created NetworkPolicy");
         }
     }

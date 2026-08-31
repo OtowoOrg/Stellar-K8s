@@ -1,0 +1,69 @@
+name: Repository-Wide YAML Schema Validation
+
+on:
+  push:
+    branches: [ main, release-* ]
+    paths:
+      - '**/*.yaml'
+      - '**/*.yml'
+      - '.yamllint.yml'
+      - 'config/yaml-validation.yaml'
+      - 'scripts/validate-yaml-manifests.py'
+      - 'scripts/ci/extract-crd-json-schemas.py'
+      - 'scripts/ci/validate-yaml.sh'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**/*.yaml'
+      - '**/*.yml'
+      - '.yamllint.yml'
+      - 'config/yaml-validation.yaml'
+      - 'scripts/validate-yaml-manifests.py'
+      - 'scripts/ci/extract-crd-json-schemas.py'
+      - 'scripts/ci/validate-yaml.sh'
+
+concurrency:
+  group: yaml-schema-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-yaml-schemas:
+    name: Repository YAML Linting & Schema Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --quiet pyyaml jsonschema yamllint==1.35.1
+
+      - name: Run Yamllint across repository
+        run: |
+          yamllint -c .yamllint.yml .
+
+      - name: Verify CRD JSON schema alignment
+        run: |
+          python3 scripts/ci/extract-crd-json-schemas.py --check
+
+      - name: Validate all repository YAML manifests
+        run: |
+          python3 scripts/validate-yaml-manifests.py
+
+      - name: Install kubeconform
+        run: |
+          KUBECONFORM_VERSION="v0.6.4"
+          wget -qO- "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | tar -xz
+          sudo mv kubeconform /usr/local/bin/
+          kubeconform -v
+
+      - name: Run kubeconform schema validation on CRDs and samples
+        run: |
+          kubeconform -strict -summary -kubernetes-version 1.30.0 config/crd/*.yaml

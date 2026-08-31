@@ -156,7 +156,7 @@ The template ensures your change includes:
 
 ### Prerequisites
 
-- Rust stable (1.88+)
+- Rust 1.92+ (CI-enforced minimum — see `scripts/lib/versions.sh`)
 - Kubernetes local cluster (`kind`, `minikube`, etc.)
 - Docker
 - `cargo-audit`
@@ -164,20 +164,21 @@ The template ensures your change includes:
 
 ### Setup
 
-Use the OS setup script to install and pin all required tools, then run `make dev-setup` to install Rust components and pre-commit hooks:
+Docker, kind, kubectl, Helm, and `gh` must currently be installed manually
+for your OS (automated installers for these are tracked separately — see
+[DEVELOPMENT.md § Prerequisites](DEVELOPMENT.md#prerequisites) for the
+per-tool install links). Then run:
 
 ```bash
-# macOS
-bash scripts/setup-mac.sh
-
-# Linux (Ubuntu/Debian/Fedora)
-bash scripts/setup-linux.sh
-
-# Both platforms: install Rust components and pre-commit hooks
 make dev-setup
 ```
 
-Both setup scripts are idempotent and print a summary of installed versions.
+`make dev-setup` installs the Rust toolchain/components, `cargo-audit` and
+`cargo-watch`, and the `pre-commit` hooks, then runs
+`stellar-bootstrap-verify` as a final step and prints a pass/fail report of
+every required tool and version pin — see
+[DEVELOPMENT.md § Troubleshooting](DEVELOPMENT.md#missing-or-outdated-tools)
+if it reports anything missing or outdated.
 
 ### Local checks — Canonical Workflow
 

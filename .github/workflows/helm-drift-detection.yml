@@ -36,6 +36,38 @@ jobs:
       - name: Install PyYAML
         run: pip install pyyaml
 
-      - name: Run Helm Drift Detection
+      - name: Install dyff
         run: |
-          bash scripts/check-helm-drift.sh --max-changed-lines 50
+          curl -sSL https://github.com/homeport/dyff/releases/download/v1.7.0/dyff_1.7.0_linux_amd64.tar.gz \
+            | tar xz -C /usr/local/bin dyff
+          dyff version
+
+      - name: Run Helm Drift Detection
+        id: drift
+        run: |
+          bash scripts/check-helm-drift.sh --max-changed-lines 50 --check-high-risk
+
+      # Issue #1365: a failing check alone is easy to miss in a PR with many
+      # required workflows. This posts the drift straight into the PR
+      # conversation so it can't be scrolled past, with a link to the
+      # remediation steps (docs/development/static-analysis-gates.md).
+      - name: Alert on detected drift
+        if: failure() && github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## ⚠️ Helm chart drift detected
+
+            `scripts/check-helm-drift.sh` found rendered output that no longer
+            matches the committed manifests under
+            `charts/stellar-operator/rendered/`, and/or a high-risk field
+            (RBAC, security context, resource limits, ...) changed between
+            the two.
+
+            **Commit:** ${{ github.sha }}
+
+            See [Helm template drift detection](https://github.com/${{ github.repository }}/blob/main/docs/development/static-analysis-gates.md#helm-template-drift-detection-1045-enhanced-1395)
+            for how to tell intentional changes from unintentional ones, and
+            how to regenerate goldens if the change is expected.

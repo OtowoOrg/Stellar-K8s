@@ -1,6 +1,6 @@
 # Helm Release Drift Detection & Remediation Guide
 
-This document outlines the automated drift detection pipeline, alert threshold configurations, and step-by-step remediation procedures for Helm release template drift in the `Stellar-K8s` project (issue #1284).
+This document outlines the automated drift detection pipeline, alert threshold configurations, and step-by-step remediation procedures for Helm release template drift in the `Stellar-K8s` project (issue #1395).
 
 ---
 
@@ -12,6 +12,8 @@ During CI execution and pre-commit checks:
 1. `scripts/check-helm-drift.sh` renders templates for each profile (`default`, `ha`, `production`, `development`, `dr-cross-region`).
 2. Renders are normalized using `scripts/sort-manifests.py`.
 3. Rendered YAML outputs are diffed against committed golden files in `charts/stellar-operator/rendered/`.
+4. When available, `dyff` provides YAML-aware diffs that avoid false positives from key reordering or formatting noise.
+5. High-risk field changes (image tags, replicas, resources, RBAC, secrets) are flagged separately.
 
 If template changes cause rendered output to drift without updated golden files, the CI pipeline fails with an alert annotation.
 
@@ -19,9 +21,35 @@ If template changes cause rendered output to drift without updated golden files,
 
 ## 2. Drift Thresholds & Alerts
 
-The drift detection tool enforces configurable thresholds:
-- **Default Threshold**: 50 changed lines across all manifests in a profile (`--max-changed-lines 50`).
-- **CI Alert Annotations**: When drift occurs, `::error::` annotations are reported directly on GitHub PRs pointing to the affected profile render.
+The drift detection tool enforces two complementary thresholds:
+
+### 2.1 Line-Count Threshold (`--max-changed-lines`)
+
+- **Default in CI**: 50 changed lines across all manifests in a profile.
+- **Behavior**: When the number of changed lines exceeds the threshold, an additional `ALERT` message is emitted.
+- **CI default**: `--max-changed-lines 50` (set in `.github/workflows/helm-drift-detection.yml`).
+
+### 2.2 High-Risk Field Detection (`--check-high-risk`)
+
+Detects changes to fields that could cause outages or security regressions if modified accidentally:
+
+| Field Category | YAML Paths Monitored | Risk Level |
+|---|---|---|
+| **Image** | `image:`, `image.repository`, `image.tag`, `image.digest` | Critical — wrong image = outage |
+| **Replicas** | `replicaCount:` | Critical — affects availability |
+| **Resources** | `resources:`, `resources.limits`, `resources.requests` | High — OOM kills or throttling |
+| **RBAC** | `rules:`, `rules.verbs`, `rules.resources` | Critical — privilege escalation |
+| **Secrets** | `secrets:`, `secretKeyRef`, `envFrom` | Critical — credential exposure |
+| **ServiceAccount** | `serviceAccount:`, `serviceAccountName` | High — identity/permissions |
+| **Security** | `securityContext:`, `podSecurityContext:` | High — container escape risk |
+
+**Behavior**: When high-risk drift is detected, the CI job emits a `::warning::` annotation in addition to the standard `::error::`, making it visually distinct in the GitHub PR checks UI.
+
+### 2.3 Choice of Threshold
+
+We use **both** line-count and high-risk field detection because:
+- Line-count catches bulk changes that indicate a significant template modification.
+- High-risk field detection catches targeted changes to critical fields even when the overall diff is small (e.g., changing only `image.tag` produces a 2-line diff but is critical).
 
 ---
 
@@ -33,11 +61,24 @@ When drift is detected in CI or locally, follow these steps to review and remedi
 Execute the drift check locally to inspect the exact diffs:
 
 ```bash
+# Full check (all profiles)
 bash scripts/check-helm-drift.sh
+
+# With high-risk detection
+bash scripts/check-helm-drift.sh --check-high-risk
+
+# Single profile
+bash scripts/check-helm-drift.sh --profile production
 ```
 
 ### Step 2: Validate Intentionality
 Review the diff output carefully. Verify whether the template modifications match the intended Helm chart feature or configuration update.
+
+**Key questions to ask:**
+- Is the image tag change intentional? (e.g., version bump vs. accidental commit)
+- Do resource limit changes reflect a deliberate capacity planning decision?
+- Are RBAC rule changes justified by new operator permissions?
+- Are secret references correct and not leaking credentials?
 
 ### Step 3: Regenerate Golden Manifests
 If the drift is expected, regenerate and update the committed golden files using:
@@ -64,5 +105,99 @@ git push origin HEAD
 ## 4. Verification Checklist
 
 - [ ] `bash scripts/check-helm-drift.sh` exits with code 0 locally.
+- [ ] `bash scripts/check-helm-drift.sh --check-high-risk` reports no high-risk drift.
 - [ ] Automated Helm Release Drift Detection CI workflow passes.
 - [ ] No uncommitted changes remain under `charts/stellar-operator/rendered/`.
+
+---
+
+## 5. CI Integration Details
+
+### GitHub Actions Workflow
+
+The drift detection job (`.github/workflows/helm-drift-detection.yml`) runs on:
+- **Push** to `main` or `release-*` branches when `charts/**`, `scripts/check-helm-drift.sh`, or the workflow file changes.
+- **Pull requests** to `main` with the same path triggers.
+
+### Job Configuration
+
+| Setting | Value |
+|---|---|
+| Runner | `ubuntu-latest` |
+| Helm version | `v3.14.0` |
+| Python version | `3.11` |
+| dyff version | `v1.7.0` (installed in CI) |
+| Max changed lines | `50` |
+| High-risk checks | `enabled` |
+
+### Annotations
+
+- **Error**: Emitted for any drift detected (blocks PR merge).
+- **Warning**: Emitted when high-risk field changes are detected (advisory, does not block merge separately from the error).
+
+### Failure Behavior
+
+The job exits with code 1 when:
+- Any profile's rendered output differs from the committed golden file.
+- Any profile fails to render (template syntax error, missing values).
+
+---
+
+## 6. Local Development Workflow
+
+### Before Committing Template Changes
+
+```bash
+# 1. Make your template changes
+vim charts/stellar-operator/templates/deployment.yaml
+
+# 2. Check for drift
+make helm-drift
+
+# 3. If drift is intentional, update goldens
+make helm-drift-update
+
+# 4. Verify clean
+make helm-drift
+
+# 5. Commit everything together
+git add charts/stellar-operator/templates/ charts/stellar-operator/rendered/
+git commit -m "feat(chart): add new feature"
+```
+
+### Using dyff Locally
+
+Install dyff for better diff output:
+
+```bash
+# macOS
+brew install homeport/tap/dyff
+
+# Linux
+curl -sSL https://github.com/homeport/dyff/releases/download/v1.7.0/dyff_1.7.0_linux_amd64.tar.gz \
+  | tar xz -C /usr/local/bin dyff
+
+# Then run drift check (dyff is auto-detected)
+bash scripts/check-helm-drift.sh
+```
+
+---
+
+## 7. Troubleshooting
+
+### "render failed" Error
+
+The Helm template has a syntax error or references an undefined value. Fix the template or values file, then re-run.
+
+### False Positives from dyff
+
+dyff handles YAML key reordering and formatting differences gracefully. If you see unexpected diffs, check whether `sort-manifests.py` is producing consistent output:
+
+```bash
+helm template stellar-operator charts/stellar-operator | python3 scripts/sort-manifests.py > /tmp/render.yaml
+diff /tmp/render.yaml charts/stellar-operator/rendered/default.yaml
+```
+
+### High-Risk False Positives
+
+If a high-risk field change is intentional (e.g., planned image bump), the warning is advisory — it does not block the PR. Review the warning and confirm the change is correct before merging.

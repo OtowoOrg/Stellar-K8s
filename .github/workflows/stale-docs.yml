@@ -72,8 +72,8 @@ jobs:
 
       # ── Build the doc-check binary ──────────────────────────────────────────
       # Uses cargo directly; the binary is an internal tool that does not need
-      # a Makefile wrapper.  The Makefile targets check-stale-docs and
-      # docs-check-strict invoke it via `cargo run` after this build step.
+      # a Makefile wrapper.  The Makefile target check-stale-docs invokes it via
+      # `cargo run --bin doc-check`.
       - name: Build doc-check
         run: |
           set -e

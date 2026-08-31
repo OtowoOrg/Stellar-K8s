@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Immutable audit trail for secret access and mutations.
 
 use chrono::{DateTime, Utc};
@@ -13,6 +25,7 @@ use std::sync::Mutex;
 pub enum SecretAuditAction {
     Encrypt,
     Decrypt,
+    Access,
     Rotate,
     Sync,
     Rollback,
@@ -202,5 +215,32 @@ mod tests {
         }
         let anomalies = log.detect_anomalies(60, 5);
         assert_eq!(anomalies.len(), 1);
+    }
+
+    #[test]
+    fn records_access_and_rotation_events() {
+        let log = SecretAuditLog::new();
+        log.record(
+            SecretAuditAction::Access,
+            "validator-seed",
+            "stellar",
+            "stellar-operator",
+            3,
+            true,
+            Some("read secret for validation".to_string()),
+        );
+        log.record(
+            SecretAuditAction::Rotate,
+            "validator-seed",
+            "stellar",
+            "stellar-operator",
+            4,
+            true,
+            Some("rotation triggered by expiry".to_string()),
+        );
+
+        assert_eq!(log.entries().len(), 2);
+        assert!(log.entries().iter().any(|e| e.action == SecretAuditAction::Access));
+        assert!(log.entries().iter().any(|e| e.action == SecretAuditAction::Rotate));
     }
 }

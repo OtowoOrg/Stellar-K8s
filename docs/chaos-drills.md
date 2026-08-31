@@ -131,6 +131,8 @@ This document outlines the monthly chaos engineering drill schedule, procedures,
 
 ## Results Tracking
 
+Detailed results tracking templates and JSON output format are documented in [dr-results-template.md](dr-results-template.md).
+
 ### Drill Execution Log
 
 | Date | Drill Type | Duration | RTO Actual | Pass/Fail | Notes |
@@ -171,7 +173,26 @@ This document outlines the monthly chaos engineering drill schedule, procedures,
 
 ### Scheduled Execution
 
-Drills are scheduled monthly via Kubernetes CronJobs:
+Drills are scheduled monthly via Kubernetes CronJobs (`config/chaos-drills/cronjobs.yaml`):
+
+- **1st of month (2 AM):** Node failure drill
+- **15th of month (2 AM):** Network partition drill
+- **28th of month (2 AM):** Storage failure drill
+
+### Results Aggregation
+
+After each scheduled window, aggregate the JSON drill artifacts into the tracked
+summary used for the monthly review:
+
+```bash
+./scripts/aggregate-chaos-results.sh        # reads ./results/chaos/*.json
+./scripts/aggregate-chaos-results.sh /data/drills   # or point at a results dir
+```
+
+The aggregator prints a chronological drill log (date, drill, RTO target, actual
+RTO, pass/fail) and rewrites `results/chaos/RESULTS.md`. It exits non-zero when
+any recorded drill missed its RTO target, which lets the monthly review gate on
+a single command.
 
 ```yaml
 apiVersion: batch/v1

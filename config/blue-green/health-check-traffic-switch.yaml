@@ -1,0 +1,133 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Health-check based traffic switching for Blue-Green deployments (issue #1387)
+#
+# This ConfigMap is mounted by the operator and defines the health gate
+# thresholds that must be satisfied before the Service selector is flipped
+# from blue to green (and vice-versa on rollback).
+#
+# The operator polls `GET /info` on both StatefulSet pods and evaluates:
+#   1. Pod Ready condition == True
+#   2. Stellar Core state == "Synced!"
+#   3. Ledger lag (network_latest - local_ledger) <= maxLedgerLag
+#   4. consecutiveHealthyChecks >= postCutoverSuccessThreshold before finalising
+#
+# Automated rollback fires when:
+#   - Green pod not Ready within readyTimeoutSeconds after scaling to 1
+#   - Green ledger lag exceeds maxLedgerLag after first Synced report
+#   - Green fails consecutiveFailureThreshold health checks post-cutover
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stellar-bg-health-config
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-validator
+    app.kubernetes.io/component: blue-green-config
+data:
+  # Maximum ledger lag (ledger count behind network tip) before traffic switches
+  maxLedgerLag: "5"
+  # Seconds to wait for green pod to become Ready before triggering rollback
+  readyTimeoutSeconds: "3600"
+  # Consecutive green health checks required before retiring blue
+  postCutoverSuccessThreshold: "3"
+  # Consecutive failures post-cutover that trigger automatic rollback
+  consecutiveFailureThreshold: "3"
+  # Health check interval (seconds)
+  healthCheckIntervalSeconds: "15"
+  # Retain blue resources for this many seconds after successful cutover (instant rollback window)
+  rollbackWindowSeconds: "3600"
+  # Whether green PVC must be provisioned from a CSI VolumeSnapshot of blue
+  requireVolumeSnapshot: "true"
+---
+# PrometheusRule: Blue-Green deployment state and health metrics
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-blue-green-alerts
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-validator
+    app.kubernetes.io/component: blue-green-alerts
+spec:
+  groups:
+    - name: stellar_blue_green
+      interval: 15s
+      rules:
+        # Track the active deployment color
+        - record: stellar:bg:active_color
+          expr: |
+            label_replace(
+              kube_statefulset_labels{
+                namespace="stellar-system",
+                label_stellar_org_bg_role="active"
+              },
+              "color", "$1", "label_stellar_org_deployment_color", "(.*)"
+            )
+
+        # Alert: Cutover stalled (green not reaching Synced in time)
+        - alert: StellarBluegreenCutoverStalled
+          expr: |
+            stellar_bg_phase{phase="WaitingForGreen"} > 0
+            and
+            (time() - stellar_bg_phase_transition_timestamp) > 3600
+          for: 5m
+          labels:
+            severity: warning
+            component: blue-green
+          annotations:
+            summary: "Blue-green cutover stalled — green not syncing"
+            description: >
+              Green StatefulSet has been waiting to sync for over 1 hour.
+              Check green pod logs and consider triggering a rollback.
+
+        # Alert: Automated rollback fired
+        - alert: StellarBluegreenRollbackTriggered
+          expr: stellar_bg_phase{phase="RollingBack"} > 0
+          for: 0m
+          labels:
+            severity: critical
+            component: blue-green
+          annotations:
+            summary: "Blue-green automatic rollback triggered"
+            description: >
+              Green deployment failed health checks after cutover.
+              The operator has automatically rolled back to the blue slot.
+              Investigate green pod logs before retrying the upgrade.
+
+        # Alert: Both blue and green down simultaneously (split-brain risk)
+        - alert: StellarBluegreenBothDown
+          expr: |
+            (
+              kube_statefulset_status_ready_replicas{
+                namespace="stellar-system",
+                statefulset=~"stellar-validator-blue|stellar-validator-green"
+              } == 0
+            )
+            and
+            count(
+              kube_statefulset_status_ready_replicas{
+                namespace="stellar-system",
+                statefulset=~"stellar-validator-blue|stellar-validator-green"
+              } == 0
+            ) >= 2
+          for: 1m
+          labels:
+            severity: critical
+            component: blue-green
+          annotations:
+            summary: "CRITICAL: Both blue and green validator pods are down"
+            description: >
+              Neither the blue nor green Stellar Core pod is ready.
+              Manual intervention is required immediately.

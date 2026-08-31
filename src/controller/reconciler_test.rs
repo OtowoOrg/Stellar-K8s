@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Tests for the reconciler module
 //!
 //! These tests verify the core reconciliation logic including:
@@ -945,4 +957,120 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             }
         }
     }
+
+    /// Test error_policy for retriable errors (Issue #1404)
+    #[test]
+    fn test_error_policy_retriable_branch() {
+        let node = Arc::new(create_test_validator_node("retriable-node", "default"));
+        let state = Arc::new(ControllerState {
+            client: Client::try_default().unwrap_or_else(|_| {
+                // Dummy client for testing
+                unsafe { std::mem::zeroed() }
+            }),
+            recorder: None,
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_recorder: Arc::new(AuditRecorder::new(Arc::new(AuditLog::new(100)))),
+            anomaly_detector: Arc::new(AnomalyDetector::new()),
+            reload_handle: make_reload_handle(),
+            metrics: None,
+            dry_run: false,
+            metrics_store: None,
+            reconcile_id_counter: std::sync::atomic::AtomicU64::new(1),
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 120,
+        });
+
+        let err = Error::KubeError(kube::Error::Api(kube::error::ErrorResponse {
+            status: "Failure".to_string(),
+            message: "Service Unavailable".to_string(),
+            reason: "ServerTimeout".to_string(),
+            code: 503,
+        }));
+
+        let action = error_policy(node, &err, state);
+        assert_eq!(action, Action::requeue(Duration::from_secs(15)));
+    }
+
+    /// Test error_policy for non-retriable errors (Issue #1404)
+    #[test]
+    fn test_error_policy_nonretriable_branch() {
+        let node = Arc::new(create_test_validator_node("nonretriable-node", "default"));
+        let state = Arc::new(ControllerState {
+            client: Client::try_default().unwrap_or_else(|_| {
+                unsafe { std::mem::zeroed() }
+            }),
+            recorder: None,
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_recorder: Arc::new(AuditRecorder::new(Arc::new(AuditLog::new(100)))),
+            anomaly_detector: Arc::new(AnomalyDetector::new()),
+            reload_handle: make_reload_handle(),
+            metrics: None,
+            dry_run: false,
+            metrics_store: None,
+            reconcile_id_counter: std::sync::atomic::AtomicU64::new(1),
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 120,
+        });
+
+        let err = Error::InvalidSpec("Invalid configuration".to_string());
+        let action = error_policy(node, &err, state);
+        assert_eq!(action, Action::requeue(Duration::from_secs(120)));
+    }
+
+    /// Test ReconcilerStats tracking and summaries (Issue #1404)
+    #[test]
+    fn test_reconciler_stats_tracking() {
+        let mut stats = ReconcilerStats::new(2);
+        assert_eq!(stats.processed, 0);
+        assert_eq!(stats.succeeded, 0);
+        assert_eq!(stats.failed, 0);
+
+        stats.record_success("node-1".to_string());
+        assert_eq!(stats.processed, 1);
+        assert_eq!(stats.succeeded, 1);
+        assert_eq!(stats.failed, 0);
+
+        stats.record_failure("node-2".to_string(), "timeout error".to_string());
+        assert_eq!(stats.processed, 2);
+        assert_eq!(stats.succeeded, 1);
+        assert_eq!(stats.failed, 1);
+        assert_eq!(stats.errors.len(), 1);
+
+        // Verify emit methods run without panic
+        stats.emit_summary();
+        stats.emit_final_summary();
+    }
+
+    /// Test ControllerState reconcile ID counter (Issue #1404)
+    #[test]
+    fn test_controller_state_reconcile_id() {
+        let state = ControllerState {
+            client: Client::try_default().unwrap_or_else(|_| unsafe { std::mem::zeroed() }),
+            recorder: None,
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_recorder: Arc::new(AuditRecorder::new(Arc::new(AuditLog::new(100)))),
+            anomaly_detector: Arc::new(AnomalyDetector::new()),
+            reload_handle: make_reload_handle(),
+            metrics: None,
+            dry_run: false,
+            metrics_store: None,
+            reconcile_id_counter: std::sync::atomic::AtomicU64::new(100),
+            retry_budget_retriable_secs: 30,
+            retry_budget_nonretriable_secs: 300,
+        };
+
+        assert_eq!(state.next_reconcile_id(), 100);
+        assert_eq!(state.next_reconcile_id(), 101);
+        assert_eq!(state.next_reconcile_id(), 102);
+    }
+
+    /// Test duration parsing utility (Issue #1404)
+    #[test]
+    fn test_parse_duration_util() {
+        assert_eq!(parse_duration("10s").unwrap(), Duration::from_secs(10));
+        assert_eq!(parse_duration("5m").unwrap(), Duration::from_secs(300));
+        assert_eq!(parse_duration("2h").unwrap(), Duration::from_secs(7200));
+        assert!(parse_duration("invalid").is_err());
+    }
 }
+

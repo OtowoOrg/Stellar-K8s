@@ -65,6 +65,7 @@ _commit() {
 
 # ---------------------------------------------------------------------------
 # Version bump rules (analyzed from the repo root, no chart tag present)
+# Version bump rules (analyzed with --since against the initial commit)
 # ---------------------------------------------------------------------------
 
 @test "a breaking change (feat!) bumps the MAJOR version" {
@@ -114,6 +115,7 @@ _commit() {
   run_bump --chart-path "${CHART_DIR}" --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" == *"Bump type: none"* ]]
+  [[ "$output" == *"skipping release"* ]]
 }
 
 @test "a feat outranks a fix (minor beats patch)" {

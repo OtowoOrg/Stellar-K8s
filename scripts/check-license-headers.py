@@ -255,7 +255,11 @@ def fix_header(path: Path, expected_header: str) -> bool:
     if lines and lines[0].startswith("#!"):
         insert_at = 1
 
-    new_content = expected_header + "\n".join(lines[insert_at:])
+    new_content = ""
+    if insert_at == 1 and len(lines) > 0:
+        new_content = lines[0] + "\n" + expected_header + "\n".join(lines[1:])
+    else:
+        new_content = expected_header + "\n".join(lines)
     path.write_text(new_content, encoding="utf-8")
     return True
 

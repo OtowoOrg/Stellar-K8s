@@ -3,6 +3,37 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## Chart v1.2.0 (2026-08-31) [minor]
+
+• Merge pull request #1433 from Shindailulu/fix-license-and-security-1397-1400
+• Implement wave issues 1397-1400
+• Merge branch 'main' into fix-license-and-security-1397-1400
+• Merge pull request #1459 from Sulamoney222/8-reentrancy-guard-middleware
+✨ feat(security): Soroban reentrancy guard middleware
+✨ feat(security): add Soroban reentrancy guard middleware
+• Implements a native reentrancy guard sub-contract middleware under
+• wasm-plugins/security/reentrancy/, enforced through the Stellar-K8s custom
+• validation (Wasm) layer (issue #8).
+• - Storage-agnostic write-lock stack core that reverts nested, mutating
+•   cross-contract re-entries of the same state variable while producing zero
+•   false positives on non-mutating read callbacks.
+• - ConfigMap-driven per-namespace / per-contract-ID scoping with a safe
+•   "enabled everywhere" default and explicit opt-outs.
+• - Optional 'soroban' feature binds the core to Soroban host instance storage
+•   and compiles to a no_std (alloc) wasm32-unknown-unknown guest that ships a
+•   minimal global allocator; overhead stays < 500 instructions (MAX_DEPTH=8).
+• - Deliberately vulnerable mock vault plus a 19-unit/7-integration security
+•   suite proving the exploit and its prevention.
+• - ADR 0005 documenting the locking mechanism, plus deployable ConfigMap
+•   example.
+🐛 fix: add missing license headers to new upstream files
+• Merge upstream/main into fix-license-and-security-1397-1400
+🐛 fix: update api openapi spec, add missing license headers, and ignore new rust security advisories
+• Merge upstream/main into fix-license-and-security-1397-1400
+📝 ci: resolve all CI/CD failures and enforce license header compliance
+📝 docs: add license header enforcement guide
+
+
 ## Chart v1.1.1 (2026-08-31) [patch]
 
 • Merge pull request #1460 from olalois/fix-issue-1198-delete-obsolete-CI-cache-keys-and-normalize-cache-usage

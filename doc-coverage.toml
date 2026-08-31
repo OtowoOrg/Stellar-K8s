@@ -87,6 +87,14 @@ src = [
     "docker-compose.dev.yml",
 ]
 
+# ── License Header Compliance ──────────────────────────────────────────────────
+[[entry]]
+doc = "docs/development/license-headers.md"
+src = [
+    "scripts/check-license-headers.py",
+    ".pre-commit-config.yaml",
+]
+
 # ── Diff Utility ───────────────────────────────────────────────────────────────
 [[entry]]
 doc = "docs/diff-utility.md"

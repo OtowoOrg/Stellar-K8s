@@ -147,6 +147,7 @@ nav:
     - Regeneration Guide: development/regeneration-guide.md
     - Repo Health Checklist: development/repo-health-checklist.md
     - Static Analysis Gates: development/static-analysis-gates.md
+    - License Header Compliance: development/license-headers.md
     - Automated Load Testing: load-testing.md
     - YAML Schema Validation: yaml-schema-validation.md
     - Helm Chart Testing: helm-chart-testing.md

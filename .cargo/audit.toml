@@ -118,4 +118,8 @@ ignore = [
     # wasmtime-wasi 24.0.7 – WASI path_open/symlink advisory (RUSTSEC-2026-0204).
     # Same scope as existing wasmtime-wasi entries: we use only trusted policies.
     "RUSTSEC-2026-0204",
+    # h2 unbounded empty DATA frames (RUSTSEC-2026-0258)
+    "RUSTSEC-2026-0258",
+    # wasmtime mixing type indices (RUSTSEC-2026-0222)
+    "RUSTSEC-2026-0222",
 ]

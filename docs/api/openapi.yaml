@@ -302,6 +302,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LogLevelResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '400':
           description: Invalid log level
           content:

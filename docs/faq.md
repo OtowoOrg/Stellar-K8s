@@ -609,6 +609,7 @@ See [Archive Pruning](./archive-pruning.md) and [Proactive Disk Scaling](./proac
 - [API Reference](./api-reference.md)
 - [mTLS Setup and Certificate Rotation](./mtls-guide.md)
 - [Network Isolation Guide](./network-isolation.md)
+- [Pod-to-Pod Network Segmentation](./network-pod-to-pod.md)
 - [Health Checks Documentation](./health-checks.md)
 - [Dynamic Peer Discovery](./peer-discovery.md)
 - [Proactive Disk Scaling](./proactive-disk-scaling.md)

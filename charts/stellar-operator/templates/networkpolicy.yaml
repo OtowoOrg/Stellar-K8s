@@ -61,6 +61,57 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    {{- /* Explicit allow rules for required intra-cluster pod-to-pod traffic.
+           The default-deny above already blocks everything else; each endpoint
+           below is enumerated so the operator can reach the services it needs
+           while every other destination stays denied (zero-trust). */}}
+    {{- if and (hasKey .Values "rateLimiting") (hasKey .Values.rateLimiting "distributed") .Values.rateLimiting.distributed.enabled }}
+    # Distributed rate limiting: reach the shared Redis store in this namespace.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+      ports:
+        - protocol: TCP
+          port: 6379
+    {{- end }}
+    {{- if and (hasKey .Values "certManagement") (eq (default "cert-manager" .Values.certManagement.backend) "vault-pki") }}
+    # Certificate management: reach the Vault PKI backend in this namespace.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+      ports:
+        - protocol: TCP
+          port: 8200
+    {{- end }}
+    {{- if and (hasKey .Values "otel") (hasKey .Values.otel "collector") .Values.otel.collector.enabled }}
+    # OpenTelemetry: ship traces to the OTel collector in this namespace.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: otel-collector
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    {{- end }}
+    {{- if and (hasKey .Values "scpAnalytics") .Values.scpAnalytics.enabled }}
+    # SCP analytics: reach the Kafka bootstrap servers for the topology consumer.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9093
+    {{- end }}
 ---
 {{- if .Values.webhook.enabled }}
 apiVersion: networking.k8s.io/v1

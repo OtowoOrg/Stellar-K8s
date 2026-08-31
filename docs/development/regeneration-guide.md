@@ -129,6 +129,7 @@ The Helm chart in `charts/stellar-operator/` is **hand-written** for the most pa
 | `byzantine-watcher.yaml` | Byzantine monitoring |
 | `fork-detector.yaml` | Fork detection |
 | `network-isolation.yaml` | Network policies |
+| `network-pod-policy.yaml` | Pod-to-pod default-deny baseline
 
 ### Testing chart changes
 

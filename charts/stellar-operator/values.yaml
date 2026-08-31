@@ -558,6 +558,13 @@ security:
     enabled: true
     ingress:
       namespaceSelector: true
+    # Blanket default-deny baseline applied to additional namespaces beyond the
+    # release namespace (which always gets a default-deny from networkpolicy.yaml).
+    # Any namespace hosting Stellar nodes or the operator's supporting services
+    # can be enumerated here so that pods in it may only reach explicitly allowed
+    # endpoints (zero-trust, issue #1320). The operator reconciler already emits
+    # per-node allow rules; this list provides the undifferentiated default.
+    defaultDenyNamespaces: []
   admissionWebhook:
     failurePolicy: Fail
   imagePolicy:

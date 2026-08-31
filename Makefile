@@ -35,7 +35,7 @@
 	health health-fast validate preflight test-shell all \
 	shell-safety test-shell-safety validate-yaml test-yaml-validation \
 	yaml-schema-validate test-db-migrations \
-	helm-drift helm-drift-update test-helm-drift \
+	helm-drift helm-drift-update test-helm-drift test-helm-bump \
 	collect-failure-diagnostics test-failure-diagnostics \
 	check-unreachable-modules \
 	check-pipeline-log-redaction \
@@ -215,6 +215,11 @@ test-helm-drift: ## Bats tests for the Helm drift gate (#1045)
 	@echo "→ Testing Helm drift gate..."
 	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
 	@bats scripts/tests/helm-drift.bats
+
+test-helm-bump: ## Bats tests for bump-chart-version.sh (#1319)
+	@echo "→ Testing chart version bump script..."
+	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
+	@bats scripts/tests/bump-chart-version.bats
 
 # ── Test & Build ──────────────────────────────────────────────────────────────
 

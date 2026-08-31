@@ -1140,6 +1140,22 @@ jobs:
       - name: Run drift gate unit tests
         run: bats scripts/tests/helm-drift.bats
 
+  # ── 15b. Chart Versioning Unit Tests ──────────────────────────────────────
+  # Bats tests for scripts/bump-chart-version.sh (issue #1319): SemVer bump
+  # rules from conventional commits and the versioning.min-bump floor.
+  chart-versioning-tests:
+    name: Chart Versioning Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install bats
+        run: sudo apt-get update && sudo apt-get install -y bats
+
+      - name: Run chart versioning unit tests
+        run: bats scripts/tests/bump-chart-version.bats
+
   # ── 16. Benchmark Sanity Check ────────────────────────────────────────────────
   # Runs quick benchmark sanity checks in PR pipelines to catch regressions.
   # Related: #1144 - Add reproducible benchmark sanity checks in pull request pipelines

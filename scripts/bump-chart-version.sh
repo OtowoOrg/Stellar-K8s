@@ -14,6 +14,12 @@
 #   PATCH  — "fix:", "perf:", "refactor:", "revert:" (without breaking/feat)
 #   NONE   — "docs:", "chore:", "ci:", "test:", "style:", "build:" only
 #
+# Minimum bump floor:
+#   The `versioning.min-bump` annotation in Chart.yaml (major | minor | patch |
+#   none) declares a floor that overrides the conventional-commit result. e.g.
+#   min-bump: patch forces a patch release even when only docs/chore commits
+#   landed. Set to "none" (the default) to disable.
+#
 # Usage:
 #   scripts/bump-chart-version.sh [OPTIONS]
 #
@@ -92,6 +98,25 @@ CURRENT_VERSION="${CURRENT_VERSION//\"/}"   # strip quotes
 [[ -n "$CURRENT_VERSION" ]] || die "Could not parse version from $CHART_YAML"
 log "Current chart version: $CURRENT_VERSION"
 
+# ── Read versioning.min-bump annotation ──────────────────────────────────────
+# The annotation (in Chart.yaml annotations) declares a minimum bump floor:
+#   major | minor | patch | none
+# When the conventionally-derived bump type is below this floor, the bump is
+# promoted to the floor. e.g. min-bump: patch forces a patch release even when
+# only docs/chore commits landed.
+MIN_BUMP="none"
+if [[ -f "$CHART_YAML" ]]; then
+  MIN_BUMP=$(awk '
+    /^  versioning\.min-bump:/ { gsub(/^[[:space:]]*versioning\.min-bump:[[:space:]]*/, ""); gsub(/[[:space:]]+$/, ""); gsub(/["'"'"']/, ""); print; exit }
+  ' "$CHART_YAML")
+  MIN_BUMP="${MIN_BUMP:-none}"
+  case "$MIN_BUMP" in
+    major|minor|patch|none) ;;
+    *) log "Ignoring unknown versioning.min-bump value: $MIN_BUMP"; MIN_BUMP="none" ;;
+  esac
+fi
+log "Minimum bump floor (versioning.min-bump): $MIN_BUMP"
+
 # ── Find the last chart git tag ───────────────────────────────────────────────
 CHART_TAG=""
 if [[ -n "$SINCE_REF" ]]; then
@@ -104,8 +129,10 @@ else
     SINCE="$CHART_TAG"
     log "Last chart tag: $CHART_TAG — analyzing commits since then"
   else
-    # Fallback: use the initial commit
-    SINCE=$(git rev-list --max-parents=0 HEAD 2>/dev/null || echo "")
+    # Fallback: analyze all commits (no ref). Leaving SINCE empty makes the
+    # git log below run without a "ref..HEAD" range, so the very first commit
+    # is not excluded by a root-commit SHA compare.
+    SINCE=""
     log "No chart tag found — analyzing all commits since repo root"
   fi
 fi
@@ -183,6 +210,20 @@ if [[ "$HAS_CHANGES" == "true" ]]; then
   fi
 
   CHANGELOG_ENTRY=$(printf '%s\n' "${CHANGELOG_LINES[@]:-}")
+fi
+
+# ── Apply the minimum bump floor (versioning.min-bump) ───────────────────────
+# Promote a too-small bump type up to the declared floor. Only applied when
+# there were actually commits to release (avoids forcing a release on a repo
+# with no new commits since the last chart tag).
+if [[ -n "$MIN_BUMP" ]] && [[ "$BUMP_TYPE" != "major" ]] && [[ -n "$COMMITS" ]]; then
+  case "$BUMP_TYPE:$MIN_BUMP" in
+    none:patch|none:minor|none:major|patch:minor|patch:major|minor:major)
+      log "Promoting ${BUMP_TYPE} bump to minimum floor: ${MIN_BUMP}"
+      BUMP_TYPE="$MIN_BUMP"
+      HAS_CHANGES="true"
+      ;;
+  esac
 fi
 
 # ── Apply override if provided ────────────────────────────────────────────────

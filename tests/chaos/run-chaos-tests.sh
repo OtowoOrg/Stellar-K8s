@@ -14,7 +14,7 @@
 # tests/chaos/run-chaos-tests.sh
 #
 # End-to-end chaos engineering runner for Stellar-K8s.
-# Runs all 10 experiments against a local kind cluster and generates
+# Runs all 13 experiments against a local kind cluster and generates
 # a resilience report.
 #
 # Usage:
@@ -44,7 +44,7 @@ CHAOS_MESH_VERSION="${CHAOS_MESH_VERSION:-2.6.3}"
 IMAGE_TAG="${IMAGE_TAG:-chaos-test}"
 RECOVERY_TIMEOUT="${RECOVERY_TIMEOUT:-300}"
 SKIP_SETUP="${SKIP_SETUP:-false}"
-ALL_EXPERIMENTS="01 02 03 04 05 06 07 08 09 10"
+ALL_EXPERIMENTS="01 02 03 04 05 06 07 08 09 10 11 12 13"
 EXPERIMENTS="${EXPERIMENTS:-$ALL_EXPERIMENTS}"
 SKIP_EXPERIMENTS="${SKIP_EXPERIMENTS:-}"
 

@@ -176,6 +176,47 @@ pub fn extract_parent_context(headers: &http::HeaderMap) -> opentelemetry::Conte
     global::get_text_map_propagator(|propagator| propagator.extract(&HeaderExtractor(headers)))
 }
 
+// ---------------------------------------------------------------------------
+// Correlation ID (issue #1393)
+// ---------------------------------------------------------------------------
+
+/// Request/response header name used to propagate the per-request
+/// correlation ID across service boundaries (operator REST API and the
+/// `api_gateway` proxy). See `docs/errors.md#correlation-ids`.
+pub const CORRELATION_ID_HEADER: &str = "x-correlation-id";
+
+/// Per-request correlation ID, threaded through `axum` request extensions so
+/// handlers can attach it to `ErrorResponse::correlation_id` without having
+/// to re-parse headers themselves. Set by [`http_trace_middleware`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorrelationId(pub String);
+
+impl CorrelationId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CorrelationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Resolve the correlation ID for an inbound request: reuse the caller's
+/// `X-Correlation-Id` header when present and non-blank, otherwise mint a
+/// new UUID v4. Kept as a free function (independent of `axum`) so it is
+/// unit-testable without spinning up a router.
+pub fn resolve_correlation_id(headers: &http::HeaderMap) -> String {
+    headers
+        .get(CORRELATION_ID_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+}
+
 fn sampler_from_env() -> Sampler {
     let kind =
         env::var("OTEL_TRACES_SAMPLER").unwrap_or_else(|_| "parentbased_traceidratio".into());
@@ -198,9 +239,16 @@ fn service_name_from_env() -> String {
 
 /// HTTP middleware: join or start a trace, record safe span attributes, never
 /// capture Authorization / cookies / bodies.
+///
+/// Also resolves the per-request correlation ID (issue #1393): reuses an
+/// inbound `X-Correlation-Id` header or mints a new UUID, records it as a
+/// `correlation_id` field on the tracing span (picked up automatically by
+/// `logging::build_structured_log`), stores it in request extensions as
+/// [`CorrelationId`] so handlers can populate `ErrorResponse::correlation_id`,
+/// and echoes it back as a response header on both success and error paths.
 #[cfg(any(feature = "rest-api", feature = "admission-webhook"))]
 pub async fn http_trace_middleware(
-    request: axum::extract::Request,
+    mut request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     use tracing::Instrument;
@@ -211,6 +259,11 @@ pub async fn http_trace_middleware(
     let path = request.uri().path().to_owned();
     let service = service_name_from_env();
 
+    let correlation_id = resolve_correlation_id(request.headers());
+    request
+        .extensions_mut()
+        .insert(CorrelationId(correlation_id.clone()));
+
     let span = tracing::info_span!(
         "http.request",
         otel.name = %format!("{method} {path}"),
@@ -219,12 +272,18 @@ pub async fn http_trace_middleware(
         http.route = %path,
         http.status_code = tracing::field::Empty,
         service.name = %service,
+        correlation_id = %correlation_id,
     );
     span.set_parent(parent);
 
     async move {
-        let response = next.run(request).await;
+        let mut response = next.run(request).await;
         tracing::Span::current().record("http.status_code", response.status().as_u16());
+        if let Ok(value) = http::HeaderValue::from_str(&correlation_id) {
+            response
+                .headers_mut()
+                .insert(http::HeaderName::from_static(CORRELATION_ID_HEADER), value);
+        }
         response
     }
     .instrument(span)
@@ -548,5 +607,43 @@ mod tests {
         assert!(headers.get("authorization").is_none());
         let extracted = extract_parent_context(&headers);
         assert_eq!(extracted.span().span_context().trace_id(), trace_id);
+    }
+
+    #[test]
+    fn resolve_correlation_id_reuses_inbound_header() {
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            CORRELATION_ID_HEADER,
+            http::HeaderValue::from_static("client-supplied-id"),
+        );
+        assert_eq!(resolve_correlation_id(&headers), "client-supplied-id");
+    }
+
+    #[test]
+    fn resolve_correlation_id_mints_uuid_when_absent() {
+        let headers = http::HeaderMap::new();
+        let id = resolve_correlation_id(&headers);
+        assert!(
+            uuid::Uuid::parse_str(&id).is_ok(),
+            "expected a UUID, got {id}"
+        );
+    }
+
+    #[test]
+    fn resolve_correlation_id_mints_uuid_when_header_is_blank() {
+        let mut headers = http::HeaderMap::new();
+        headers.insert(CORRELATION_ID_HEADER, http::HeaderValue::from_static("  "));
+        let id = resolve_correlation_id(&headers);
+        assert!(
+            uuid::Uuid::parse_str(&id).is_ok(),
+            "expected a UUID for a blank header, got {id}"
+        );
+    }
+
+    #[test]
+    fn correlation_id_display_and_as_str() {
+        let id = CorrelationId("abc-123".to_string());
+        assert_eq!(id.as_str(), "abc-123");
+        assert_eq!(id.to_string(), "abc-123");
     }
 }

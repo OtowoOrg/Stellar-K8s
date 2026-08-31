@@ -171,21 +171,6 @@ pub async fn run_backup(args: BackupArgs) -> Result<()> {
     println!("Backup completed in {:?}", start.elapsed());
 
     if args.verify {
-        println!("Verifying backup...");
-        // Verify the most recent backup in destination (file or directory)
-        let dest = PathBuf::from(&args.destination);
-        let verify_target = if dest.is_dir() {
-            // Find latest tar.gz in destination
-            let mut archives: Vec<PathBuf> = fs::read_dir(&dest)
-                .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().map(|e| e=="gz").unwrap_or(false)).collect())
-                .unwrap_or_default();
-            archives.sort();
-            archives.last().cloned().unwrap_or(dest)
-        } else {
-            dest
-        };
-        verify_backup_integrity(&verify_target.to_string_lossy()).await?;
-        println!("✓ Backup verification passed");
         if args.backend == "file" {
             println!("Verifying backup...");
             verify_backup_integrity(&backup_path.to_string_lossy()).await?;

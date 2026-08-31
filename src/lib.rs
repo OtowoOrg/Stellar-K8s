@@ -147,8 +147,6 @@ pub mod rest_api;
 #[cfg(feature = "admission-webhook")]
 pub mod webhook;
 
-pub mod middleware;
-
 pub use crate::error::{Error, Result};
 
 /// Configuration for mutual TLS (mTLS) between operator and REST API clients.

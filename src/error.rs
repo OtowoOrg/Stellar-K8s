@@ -14,7 +14,17 @@
 //!
 //! Uses `thiserror` for ergonomic, type-safe error handling with
 //! automatic `Display` and `Error` trait implementations.
+//!
+//! # HTTP error mapping (issue #1393)
+//!
+//! [`Error::status_code`] and [`Error::api_error_code`] map every `Error`
+//! variant to an HTTP status and a stable [`ApiErrorCode`] so that all REST
+//! surfaces (the operator's `rest_api` module and the `api_gateway` proxy)
+//! render failures through the same [`ErrorResponse`] JSON envelope. See
+//! `docs/errors.md` for the full mapping table and the correlation-ID
+//! mechanism that populates `ErrorResponse::correlation_id`.
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Central error type for the Stellar-K8s operator
@@ -130,6 +140,109 @@ pub enum Error {
 /// Result type alias for operator operations
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// Standardised API Error Codes for REST endpoints (issue #1282, extended by #1393).
+///
+/// Shared by `rest_api` and `api_gateway` so both surfaces report failures
+/// under the same stable, machine-readable vocabulary regardless of which
+/// process produced the response.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ApiErrorCode {
+    ErrNotFound,
+    ErrBadRequest,
+    ErrUnauthorized,
+    ErrForbidden,
+    ErrInternalServerError,
+    ErrServiceUnavailable,
+    ErrPartialDegradation,
+    ErrReconcileStalled,
+    /// Caller exceeded a rate limit or quota (`api_gateway`, issue #1393).
+    ErrRateLimited,
+    /// The requested API version has been sunset and no longer routes
+    /// anywhere (`api_gateway`, issue #1393).
+    ErrGone,
+}
+
+impl ApiErrorCode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ErrNotFound => "ERR_NOT_FOUND",
+            Self::ErrBadRequest => "ERR_BAD_REQUEST",
+            Self::ErrUnauthorized => "ERR_UNAUTHORIZED",
+            Self::ErrForbidden => "ERR_FORBIDDEN",
+            Self::ErrInternalServerError => "ERR_INTERNAL_SERVER_ERROR",
+            Self::ErrServiceUnavailable => "ERR_SERVICE_UNAVAILABLE",
+            Self::ErrPartialDegradation => "ERR_PARTIAL_DEGRADATION",
+            Self::ErrReconcileStalled => "ERR_RECONCILE_STALLED",
+            Self::ErrRateLimited => "ERR_RATE_LIMITED",
+            Self::ErrGone => "ERR_GONE",
+        }
+    }
+}
+
+/// Structured error response for all REST API endpoints (`rest_api` and `api_gateway`).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ErrorResponse {
+    pub error: String,
+    pub error_code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    pub degraded: bool,
+    pub timestamp: String,
+}
+
+impl ErrorResponse {
+    pub fn new(error: &str, message: &str) -> Self {
+        Self {
+            error: error.to_string(),
+            error_code: ApiErrorCode::ErrInternalServerError.as_str().to_string(),
+            message: message.to_string(),
+            correlation_id: None,
+            details: None,
+            degraded: false,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+
+    pub fn structured(code: ApiErrorCode, message: &str, correlation_id: Option<String>) -> Self {
+        Self {
+            error: code.as_str().to_lowercase(),
+            error_code: code.as_str().to_string(),
+            message: message.to_string(),
+            correlation_id,
+            details: None,
+            degraded: false,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+
+    /// Build a response for a partial-failure scenario where a (possibly
+    /// stale) result is still returned alongside the error context, e.g. a
+    /// gateway upstream that failed but a cached/last-known-good body is
+    /// available, or an aggregate endpoint where some sub-queries failed.
+    /// `degraded` is set to `true` so clients can distinguish "the data you
+    /// got back may be incomplete" from a hard failure.
+    pub fn degraded(
+        code: ApiErrorCode,
+        message: &str,
+        details: serde_json::Value,
+        correlation_id: Option<String>,
+    ) -> Self {
+        Self {
+            error: code.as_str().to_lowercase(),
+            error_code: code.as_str().to_string(),
+            message: message.to_string(),
+            correlation_id,
+            details: Some(details),
+            degraded: true,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+}
+
 /// Format a user-facing diagnostic message with an explicit pipeline step.
 ///
 /// Example: `diagnostic("load kubeconfig", "file not found at /etc/kube/config")`
@@ -190,6 +303,76 @@ impl Error {
             Error::ConfigError(_) | Error::MaintenanceError(_) | Error::CertificateError(_) => 4,
             _ => 1,
         }
+    }
+
+    /// Map this error to the [`ApiErrorCode`] reported in a REST API
+    /// [`ErrorResponse`] body (issue #1393). Kept independent of
+    /// [`Error::status_code`] so it works even without the `rest-api` /
+    /// `admission-webhook` features (no `axum` type involved).
+    pub fn api_error_code(&self) -> ApiErrorCode {
+        match self {
+            Error::NotFound { .. } => ApiErrorCode::ErrNotFound,
+            Error::ValidationError(_)
+            | Error::InvalidNodeType(_)
+            | Error::MissingRequiredField { .. }
+            | Error::SerializationError(_) => ApiErrorCode::ErrBadRequest,
+            Error::PhaseTransitionError(_) => ApiErrorCode::ErrReconcileStalled,
+            Error::KubeError(_)
+            | Error::HttpError(_)
+            | Error::NetworkError(_)
+            | Error::KubeconfigError(_) => ApiErrorCode::ErrServiceUnavailable,
+            _ => ApiErrorCode::ErrInternalServerError,
+        }
+    }
+
+    /// Map this error to the HTTP status code a REST handler should return
+    /// (issue #1393). Variants are grouped by whether the failure is caused
+    /// by the caller (4xx) or by the operator / an upstream dependency
+    /// (5xx); see `docs/errors.md` for the rationale behind each mapping.
+    #[cfg(any(feature = "rest-api", feature = "admission-webhook"))]
+    pub fn status_code(&self) -> axum::http::StatusCode {
+        use axum::http::StatusCode;
+        match self {
+            // Caller error: the requested resource does not exist.
+            Error::NotFound { .. } => StatusCode::NOT_FOUND,
+
+            // Caller error: the request itself is malformed or fails
+            // business-logic validation.
+            Error::ValidationError(_)
+            | Error::InvalidNodeType(_)
+            | Error::MissingRequiredField { .. }
+            | Error::SerializationError(_) => StatusCode::BAD_REQUEST,
+
+            // The reconciler's state machine refused a transition; this is
+            // never the caller's fault, but it is also not a transient
+            // upstream failure, so it is reported as a conflict.
+            Error::PhaseTransitionError(_) => StatusCode::CONFLICT,
+
+            // Upstream / dependency unavailable — safe to retry.
+            Error::KubeError(_)
+            | Error::HttpError(_)
+            | Error::NetworkError(_)
+            | Error::KubeconfigError(_) => StatusCode::SERVICE_UNAVAILABLE,
+
+            // Everything else (config errors, certificate/IO/SQL failures,
+            // internal invariants, etc.) is an operator-side fault.
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    /// Build a REST [`ErrorResponse`] body for this error, tagging it with
+    /// the given correlation ID (issue #1393). Pairs with
+    /// [`Error::status_code`] to build the full `(StatusCode, Json<ErrorResponse>)`
+    /// axum response.
+    #[cfg(any(feature = "rest-api", feature = "admission-webhook"))]
+    pub fn to_error_response(&self, correlation_id: Option<String>) -> ErrorResponse {
+        ErrorResponse::structured(self.api_error_code(), &self.to_string(), correlation_id)
+    }
+}
+
+impl From<&Error> for ApiErrorCode {
+    fn from(err: &Error) -> Self {
+        err.api_error_code()
     }
 }
 
@@ -409,5 +592,126 @@ mod tests {
             maintenance_err.status_message(),
             maintenance_err.to_string()
         );
+    }
+
+    #[test]
+    fn test_api_error_code_mapping() {
+        let not_found = Error::NotFound {
+            kind: "Pod".to_string(),
+            name: "p".to_string(),
+            namespace: "ns".to_string(),
+        };
+        assert_eq!(not_found.api_error_code(), ApiErrorCode::ErrNotFound);
+        assert_eq!(ApiErrorCode::from(&not_found), ApiErrorCode::ErrNotFound);
+
+        assert_eq!(
+            Error::ValidationError("bad".into()).api_error_code(),
+            ApiErrorCode::ErrBadRequest
+        );
+        assert_eq!(
+            Error::InvalidNodeType("bad".into()).api_error_code(),
+            ApiErrorCode::ErrBadRequest
+        );
+        assert_eq!(
+            Error::MissingRequiredField {
+                field: "f".into(),
+                node_type: "core".into()
+            }
+            .api_error_code(),
+            ApiErrorCode::ErrBadRequest
+        );
+
+        assert_eq!(
+            Error::PhaseTransitionError("bad transition".into()).api_error_code(),
+            ApiErrorCode::ErrReconcileStalled
+        );
+
+        assert_eq!(
+            Error::NetworkError("offline".into()).api_error_code(),
+            ApiErrorCode::ErrServiceUnavailable
+        );
+
+        assert_eq!(
+            Error::InternalError("boom".into()).api_error_code(),
+            ApiErrorCode::ErrInternalServerError
+        );
+        assert_eq!(
+            Error::CertificateError(rcgen::Error::UnsupportedSignatureAlgorithm).api_error_code(),
+            ApiErrorCode::ErrInternalServerError
+        );
+    }
+
+    #[cfg(any(feature = "rest-api", feature = "admission-webhook"))]
+    #[test]
+    fn test_status_code_mapping() {
+        use axum::http::StatusCode;
+
+        let not_found = Error::NotFound {
+            kind: "Pod".to_string(),
+            name: "p".to_string(),
+            namespace: "ns".to_string(),
+        };
+        assert_eq!(not_found.status_code(), StatusCode::NOT_FOUND);
+
+        assert_eq!(
+            Error::ValidationError("bad".into()).status_code(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            Error::MissingRequiredField {
+                field: "f".into(),
+                node_type: "core".into()
+            }
+            .status_code(),
+            StatusCode::BAD_REQUEST
+        );
+
+        assert_eq!(
+            Error::PhaseTransitionError("bad transition".into()).status_code(),
+            StatusCode::CONFLICT
+        );
+
+        assert_eq!(
+            Error::NetworkError("offline".into()).status_code(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+
+        assert_eq!(
+            Error::InternalError("boom".into()).status_code(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            Error::ConfigError("bad config".into()).status_code(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[cfg(any(feature = "rest-api", feature = "admission-webhook"))]
+    #[test]
+    fn test_to_error_response_carries_correlation_id_and_code() {
+        let err = Error::NotFound {
+            kind: "Pod".to_string(),
+            name: "p".to_string(),
+            namespace: "ns".to_string(),
+        };
+        let resp = err.to_error_response(Some("corr-123".to_string()));
+        assert_eq!(resp.error_code, "ERR_NOT_FOUND");
+        assert_eq!(resp.correlation_id.as_deref(), Some("corr-123"));
+        assert!(!resp.degraded);
+        assert!(resp.message.contains("SK8S-006"));
+    }
+
+    #[test]
+    fn test_error_response_degraded_sets_flag_and_details() {
+        let resp = ErrorResponse::degraded(
+            ApiErrorCode::ErrPartialDegradation,
+            "upstream partially unavailable",
+            serde_json::json!({"stale": true}),
+            Some("corr-456".to_string()),
+        );
+        assert!(resp.degraded);
+        assert_eq!(resp.error_code, "ERR_PARTIAL_DEGRADATION");
+        assert_eq!(resp.correlation_id.as_deref(), Some("corr-456"));
+        assert_eq!(resp.details, Some(serde_json::json!({"stale": true})));
     }
 }

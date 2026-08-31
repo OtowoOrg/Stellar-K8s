@@ -149,6 +149,8 @@ rand = { version = "0.8", features = ["small_rng"] }
 cron = "0.15"
 tar = "0.4"
 flate2 = "1"
+# Used unconditionally by backup-verify's restore integrity check, not just tests
+tempfile = "3"
 async-trait = "0.1"
 sqlx = { version = "0.8.6", default-features = false, features = [
     "runtime-tokio",
@@ -202,7 +204,6 @@ k8s-v1-30 = ["k8s-openapi/v1_30"]
 
 [dev-dependencies]
 tokio-test = "0.4"
-tempfile = "3"
 wiremock = "=0.6.5"
 proptest = "1.5"
 wat = "1.251"

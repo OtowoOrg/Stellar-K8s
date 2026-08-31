@@ -26,6 +26,7 @@ use tracing::{error, instrument};
 use crate::controller::{AdminAction, AuditEntry, ControllerState};
 use crate::crd::StellarNode;
 use crate::rest_api::auth::RequestIdentity;
+use crate::telemetry::CorrelationId;
 
 use super::dto::{
     ApiErrorCode, ErrorResponse, HealthResponse, LeaderResponse, LogLevelRequest, LogLevelResponse,
@@ -74,6 +75,7 @@ pub async fn leader_status(State(state): State<Arc<ControllerState>>) -> Json<Le
 #[allow(deprecated)]
 pub async fn list_nodes(
     State(state): State<Arc<ControllerState>>,
+    Extension(correlation_id): Extension<CorrelationId>,
 ) -> Result<Json<NodeListResponse>, (StatusCode, Json<ErrorResponse>)> {
     let api: Api<StellarNode> = Api::all(state.client.clone());
 
@@ -107,7 +109,7 @@ pub async fn list_nodes(
                 Json(ErrorResponse::structured(
                     ApiErrorCode::ErrInternalServerError,
                     &format!("Failed to list nodes: {e}"),
-                    None,
+                    Some(correlation_id.to_string()),
                 )),
             ))
         }
@@ -118,6 +120,7 @@ pub async fn list_nodes(
 #[instrument(skip(state), fields(node_name = %name, namespace = %namespace, reconcile_id = "-"))]
 pub async fn get_node(
     State(state): State<Arc<ControllerState>>,
+    Extension(correlation_id): Extension<CorrelationId>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<NodeDetailResponse>, (StatusCode, Json<ErrorResponse>)> {
     let api: Api<StellarNode> = Api::namespaced(state.client.clone(), &namespace);
@@ -140,7 +143,7 @@ pub async fn get_node(
             Json(ErrorResponse::structured(
                 ApiErrorCode::ErrNotFound,
                 &format!("Node {namespace}/{name} not found"),
-                None,
+                Some(correlation_id.to_string()),
             )),
         )),
         Err(e) => {
@@ -150,7 +153,7 @@ pub async fn get_node(
                 Json(ErrorResponse::structured(
                     ApiErrorCode::ErrInternalServerError,
                     &format!("Failed to get node {namespace}/{name}: {e}"),
-                    None,
+                    Some(correlation_id.to_string()),
                 )),
             ))
         }
@@ -162,6 +165,7 @@ pub async fn get_node(
 pub async fn set_log_level(
     State(state): State<Arc<ControllerState>>,
     Extension(identity): Extension<RequestIdentity>,
+    Extension(correlation_id): Extension<CorrelationId>,
     Json(req): Json<LogLevelRequest>,
 ) -> Result<Json<LogLevelResponse>, (StatusCode, Json<ErrorResponse>)> {
     let filter = match req.level.parse::<tracing_subscriber::EnvFilter>() {
@@ -172,7 +176,7 @@ pub async fn set_log_level(
                 Json(ErrorResponse::structured(
                     ApiErrorCode::ErrBadRequest,
                     &format!("Invalid log level: {e}"),
-                    None,
+                    Some(correlation_id.to_string()),
                 )),
             ));
         }
@@ -185,7 +189,7 @@ pub async fn set_log_level(
             Json(ErrorResponse::structured(
                 ApiErrorCode::ErrInternalServerError,
                 &format!("Failed to reload log filter: {e}"),
-                None,
+                Some(correlation_id.to_string()),
             )),
         ));
     }
@@ -411,6 +415,7 @@ pub async fn livez(State(state): State<Arc<ControllerState>>) -> (StatusCode, Js
 )]
 pub async fn compliance_report(
     State(state): State<Arc<ControllerState>>,
+    Extension(correlation_id): Extension<CorrelationId>,
 ) -> Result<Json<Vec<crate::controller::ComplianceReportEntry>>, (StatusCode, Json<ErrorResponse>)>
 {
     match crate::controller::compliance_report(state.client.clone()).await {
@@ -422,7 +427,7 @@ pub async fn compliance_report(
                 Json(ErrorResponse::structured(
                     ApiErrorCode::ErrInternalServerError,
                     &format!("Failed to generate compliance report: {e}"),
-                    None,
+                    Some(correlation_id.to_string()),
                 )),
             ))
         }

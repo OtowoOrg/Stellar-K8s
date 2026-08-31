@@ -779,20 +779,18 @@ pub async fn monitoring_status(
             total_nodes = nodes.items.len();
             for node in &nodes.items {
                 if let Some(status) = &node.status {
-                    if let Some(conditions) = &status.conditions {
-                        if let Some(ready) = conditions.iter().find(|c| c.type_ == "Ready") {
-                            if ready.status == "True" {
-                                healthy_nodes += 1;
-                                // Count metrics per healthy node
-                                metrics_by_type.ledger_metrics += 1;
-                                metrics_by_type.transaction_metrics += 1;
-                                metrics_by_type.peer_metrics += 1;
-                                metrics_by_type.archive_metrics += 1;
-                                metrics_by_type.database_metrics += 1;
-                                metrics_by_type.scp_metrics += 1;
-                                metrics_by_type.soroban_metrics += 1;
-                                metrics_by_type.horizon_metrics += 1;
-                            }
+                    if let Some(ready) = status.conditions.iter().find(|c| c.type_ == "Ready") {
+                        if ready.status == "True" {
+                            healthy_nodes += 1;
+                            // Count metrics per healthy node
+                            metrics_by_type.ledger_metrics += 1;
+                            metrics_by_type.transaction_metrics += 1;
+                            metrics_by_type.peer_metrics += 1;
+                            metrics_by_type.archive_metrics += 1;
+                            metrics_by_type.database_metrics += 1;
+                            metrics_by_type.scp_metrics += 1;
+                            metrics_by_type.soroban_metrics += 1;
+                            metrics_by_type.horizon_metrics += 1;
                         }
                     }
                 }

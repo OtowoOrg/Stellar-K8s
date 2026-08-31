@@ -4,6 +4,7 @@ This guide documents all Stellar-specific metrics exported by the stellar-k8s op
 
 ## Table of Contents
 
+- [Metric Naming Conventions](#metric-naming-conventions)
 - [Ledger Metrics](#ledger-metrics)
 - [Transaction Throughput Metrics](#transaction-throughput-metrics)
 - [Peer Connection Quality Metrics](#peer-connection-quality-metrics)
@@ -13,6 +14,29 @@ This guide documents all Stellar-specific metrics exported by the stellar-k8s op
 - [Soroban Metrics](#soroban-metrics)
 - [Horizon Metrics](#horizon-metrics)
 - [Example Prometheus Queries](#example-prometheus-queries)
+
+## Metric Naming Conventions
+
+All metrics in this guide follow the Prometheus naming convention
+`<namespace>_<subsystem>_<name>_<unit>`:
+
+- **Namespace**: `stellar_` for Stellar Core/network metrics (ledger,
+  transaction, SCP, peer, history archive), `soroban_` for Soroban
+  RPC-specific metrics (e.g. `soroban_rpc_ingest_ledger_lag`).
+- **Subsystem**: the functional area, e.g. `ledger`, `transaction`, `scp`,
+  `peer`, `db`.
+- **Unit suffix**: metrics carry an explicit unit where applicable —
+  `_seconds` for durations (e.g. `stellar_ledger_close_time_seconds`),
+  `_total` for monotonic counters (e.g. `stellar_ledger_transactions_total`),
+  `_tps`/`_ops` for throughput rates, and bare gauges for unitless counts
+  (e.g. queue sizes, connection counts).
+- **Percentile variants**: latency metrics that expose percentiles suffix
+  the base name with `_p50`, `_p95`, `_p99` (e.g.
+  `stellar_ledger_close_time_p99`) rather than using a `quantile` label.
+
+Use the standard [Metric Labels](#metric-labels) below to filter/aggregate
+by node, node type, namespace, and network rather than encoding that
+information into the metric name itself.
 
 ## Metric Labels
 

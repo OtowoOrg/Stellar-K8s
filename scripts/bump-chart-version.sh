@@ -104,8 +104,10 @@ else
     SINCE="$CHART_TAG"
     log "Last chart tag: $CHART_TAG — analyzing commits since then"
   else
-    # Fallback: use the initial commit
-    SINCE=$(git rev-list --max-parents=0 HEAD 2>/dev/null || echo "")
+    # Fallback: analyze all commits (no ref). Leaving SINCE empty makes the
+    # git log below run without a "ref..HEAD" range, so the very first commit
+    # is not excluded by a root-commit SHA compare.
+    SINCE=""
     log "No chart tag found — analyzing all commits since repo root"
   fi
 fi

@@ -80,7 +80,7 @@ jobs:
       - name: Add PR comment with format guide
         if: failure()
         continue-on-error: true
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             github.rest.issues.createComment({

@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Rust toolchain and cache
         uses: ./.github/actions/setup-rust

@@ -3,6 +3,402 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## Chart v1.3.1 (2026-09-01) [patch]
+
+• Merge pull request #1472 from OtowoOrg/dependabot/github_actions/github-actions-813fcdc74f
+📝 ci(deps): bump the github-actions group with 15 updates
+• Merge pull request #1468 from OtowoOrg/dependabot/docker/lukemathwalker/cargo-chef-latest-rust-1.98-slim-bookworm
+📝 build(deps): bump lukemathwalker/cargo-chef from latest-rust-1.95-slim-bookworm to latest-rust-1.98-slim-bookworm
+• Merge pull request #1469 from OtowoOrg/dependabot/cargo/production-dependencies-ad20fc3b21
+• deps(deps): bump the production-dependencies group with 20 updates
+• Merge pull request #1470 from OtowoOrg/dependabot/cargo/kubernetes-client-4125ce749a
+• deps(deps): bump k8s-openapi from 0.22.0 to 0.26.1 in the kubernetes-client group
+• Merge pull request #1471 from OtowoOrg/dependabot/cargo/security-105db6feec
+• deps(deps): bump rcgen from 0.13.2 to 0.14.10 in the security group
+📝 ci(deps): bump the github-actions group with 15 updates
+• Bumps the github-actions group with 15 updates:
+• | Package | From | To |
+• | --- | --- | --- |
+• | [actions/checkout](https://github.com/actions/checkout) | `4` | `7` |
+• | [actions/setup-python](https://github.com/actions/setup-python) | `5` | `7` |
+• | [actions/upload-artifact](https://github.com/actions/upload-artifact) | `4` | `7` |
+• | [actions/download-artifact](https://github.com/actions/download-artifact) | `4` | `8` |
+• | [azure/setup-helm](https://github.com/azure/setup-helm) | `4` | `5` |
+• | [helm/kind-action](https://github.com/helm/kind-action) | `1.10.0` | `1.14.0` |
+• | [docker/setup-buildx-action](https://github.com/docker/setup-buildx-action) | `3` | `4` |
+• | [docker/build-push-action](https://github.com/docker/build-push-action) | `6` | `7` |
+• | [docker/metadata-action](https://github.com/docker/metadata-action) | `5` | `6` |
+• | [docker/login-action](https://github.com/docker/login-action) | `3` | `4` |
+• | [github/codeql-action](https://github.com/github/codeql-action) | `3` | `4` |
+• | [actions/github-script](https://github.com/actions/github-script) | `7` | `9` |
+• | [dependabot/fetch-metadata](https://github.com/dependabot/fetch-metadata) | `2` | `3` |
+• | [google-github-actions/setup-gcloud](https://github.com/google-github-actions/setup-gcloud) | `1` | `3` |
+• | [ossf/scorecard-action](https://github.com/ossf/scorecard-action) | `2.4.0` | `2.4.4` |
+• Updates `actions/checkout` from 4 to 7
+• - [Release notes](https://github.com/actions/checkout/releases)
+• - [Changelog](https://github.com/actions/checkout/blob/main/CHANGELOG.md)
+• - [Commits](https://github.com/actions/checkout/compare/v4...v7)
+• Updates `actions/setup-python` from 5 to 7
+• - [Release notes](https://github.com/actions/setup-python/releases)
+• - [Commits](https://github.com/actions/setup-python/compare/v5...v7)
+• Updates `actions/upload-artifact` from 4 to 7
+• - [Release notes](https://github.com/actions/upload-artifact/releases)
+• - [Commits](https://github.com/actions/upload-artifact/compare/v4...v7)
+• Updates `actions/download-artifact` from 4 to 8
+• - [Release notes](https://github.com/actions/download-artifact/releases)
+• - [Commits](https://github.com/actions/download-artifact/compare/v4...v8)
+• Updates `azure/setup-helm` from 4 to 5
+• - [Release notes](https://github.com/azure/setup-helm/releases)
+• - [Changelog](https://github.com/Azure/setup-helm/blob/main/CHANGELOG.md)
+• - [Commits](https://github.com/azure/setup-helm/compare/v4...v5)
+• Updates `helm/kind-action` from 1.10.0 to 1.14.0
+• - [Release notes](https://github.com/helm/kind-action/releases)
+• - [Commits](https://github.com/helm/kind-action/compare/v1.10.0...v1.14.0)
+• Updates `docker/setup-buildx-action` from 3 to 4
+• - [Release notes](https://github.com/docker/setup-buildx-action/releases)
+• - [Commits](https://github.com/docker/setup-buildx-action/compare/v3...v4)
+• Updates `docker/build-push-action` from 6 to 7
+• - [Release notes](https://github.com/docker/build-push-action/releases)
+• - [Commits](https://github.com/docker/build-push-action/compare/v6...v7)
+• Updates `docker/metadata-action` from 5 to 6
+• - [Release notes](https://github.com/docker/metadata-action/releases)
+• - [Commits](https://github.com/docker/metadata-action/compare/v5...v6)
+• Updates `docker/login-action` from 3 to 4
+• - [Release notes](https://github.com/docker/login-action/releases)
+• - [Commits](https://github.com/docker/login-action/compare/v3...v4)
+• Updates `github/codeql-action` from 3 to 4
+• - [Release notes](https://github.com/github/codeql-action/releases)
+• - [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)
+• - [Commits](https://github.com/github/codeql-action/compare/v3...v4)
+• Updates `actions/github-script` from 7 to 9
+• - [Release notes](https://github.com/actions/github-script/releases)
+• - [Commits](https://github.com/actions/github-script/compare/v7...v9)
+• Updates `dependabot/fetch-metadata` from 2 to 3
+• - [Release notes](https://github.com/dependabot/fetch-metadata/releases)
+• - [Commits](https://github.com/dependabot/fetch-metadata/compare/v2...v3)
+• Updates `google-github-actions/setup-gcloud` from 1 to 3
+• - [Release notes](https://github.com/google-github-actions/setup-gcloud/releases)
+• - [Changelog](https://github.com/google-github-actions/setup-gcloud/blob/main/CHANGELOG.md)
+• - [Commits](https://github.com/google-github-actions/setup-gcloud/compare/v1...v3)
+• Updates `ossf/scorecard-action` from 2.4.0 to 2.4.4
+• - [Release notes](https://github.com/ossf/scorecard-action/releases)
+• - [Changelog](https://github.com/ossf/scorecard-action/blob/main/RELEASE.md)
+• - [Commits](https://github.com/ossf/scorecard-action/compare/v2.4.0...v2.4.4)
+• ---
+• updated-dependencies:
+• - dependency-name: actions/checkout
+•   dependency-version: '7'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: actions/setup-python
+•   dependency-version: '7'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: actions/upload-artifact
+•   dependency-version: '7'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: actions/download-artifact
+•   dependency-version: '8'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: azure/setup-helm
+•   dependency-version: '5'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: helm/kind-action
+•   dependency-version: 1.14.0
+•   dependency-type: direct:production
+•   update-type: version-update:semver-minor
+•   dependency-group: github-actions
+• - dependency-name: docker/setup-buildx-action
+•   dependency-version: '4'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: docker/build-push-action
+•   dependency-version: '7'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: docker/metadata-action
+•   dependency-version: '6'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: docker/login-action
+•   dependency-version: '4'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: github/codeql-action
+•   dependency-version: '4'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: actions/github-script
+•   dependency-version: '9'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: dependabot/fetch-metadata
+•   dependency-version: '3'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: google-github-actions/setup-gcloud
+•   dependency-version: '3'
+•   dependency-type: direct:production
+•   update-type: version-update:semver-major
+•   dependency-group: github-actions
+• - dependency-name: ossf/scorecard-action
+•   dependency-version: 2.4.4
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: github-actions
+• ...
+• Signed-off-by: dependabot[bot] <support@github.com>
+• deps(deps): bump rcgen from 0.13.2 to 0.14.10 in the security group
+• Bumps the security group with 1 update: [rcgen](https://github.com/rustls/rcgen).
+• Updates `rcgen` from 0.13.2 to 0.14.10
+• - [Release notes](https://github.com/rustls/rcgen/releases)
+• - [Commits](https://github.com/rustls/rcgen/compare/v0.13.2...v0.14.10)
+• ---
+• updated-dependencies:
+• - dependency-name: rcgen
+•   dependency-version: 0.14.10
+•   dependency-type: direct:production
+•   update-type: version-update:semver-minor
+•   dependency-group: security
+• ...
+• Signed-off-by: dependabot[bot] <support@github.com>
+• deps(deps): bump k8s-openapi in the kubernetes-client group
+• Bumps the kubernetes-client group with 1 update: [k8s-openapi](https://github.com/Arnavion/k8s-openapi).
+• Updates `k8s-openapi` from 0.22.0 to 0.26.1
+• - [Release notes](https://github.com/Arnavion/k8s-openapi/releases)
+• - [Changelog](https://github.com/Arnavion/k8s-openapi/blob/master/CHANGELOG.md)
+• - [Commits](https://github.com/Arnavion/k8s-openapi/compare/v0.22.0...v0.26.1)
+• ---
+• updated-dependencies:
+• - dependency-name: k8s-openapi
+•   dependency-version: 0.26.1
+•   dependency-type: direct:production
+•   update-type: version-update:semver-minor
+•   dependency-group: kubernetes-client
+• ...
+• Signed-off-by: dependabot[bot] <support@github.com>
+• deps(deps): bump the production-dependencies group with 20 updates
+• Bumps the production-dependencies group with 20 updates:
+• | Package | From | To |
+• | --- | --- | --- |
+• | [glob](https://github.com/rust-lang/glob) | `0.3.3` | `0.3.4` |
+• | [tokio](https://github.com/tokio-rs/tokio) | `1.52.3` | `1.53.1` |
+• | [tokio-util](https://github.com/tokio-rs/tokio) | `0.7.18` | `0.7.19` |
+• | [futures](https://github.com/rust-lang/futures-rs) | `0.3.32` | `0.3.34` |
+• | [serde](https://github.com/serde-rs/serde) | `1.0.228` | `1.0.229` |
+• | [serde_json](https://github.com/serde-rs/json) | `1.0.150` | `1.0.151` |
+• | [regex](https://github.com/rust-lang/regex) | `1.12.3` | `1.13.1` |
+• | [http](https://github.com/hyperium/http) | `1.4.0` | `1.5.0` |
+• | [anyhow](https://github.com/dtolnay/anyhow) | `1.0.103` | `1.0.104` |
+• | [clap](https://github.com/clap-rs/clap) | `4.6.1` | `4.6.6` |
+• | [clap_complete](https://github.com/clap-rs/clap) | `4.6.5` | `4.6.9` |
+• | [chrono](https://github.com/chronotope/chrono) | `0.4.44` | `0.4.45` |
+• | [bytes](https://github.com/tokio-rs/bytes) | `1.11.1` | `1.12.1` |
+• | [rustls](https://github.com/rustls/rustls) | `0.23.40` | `0.23.43` |
+• | [rustls-pki-types](https://github.com/rustls/pki-types) | `1.14.1` | `1.15.1` |
+• | [flate2](https://github.com/rust-lang/flate2-rs) | `1.1.9` | `1.1.10` |
+• | [async-trait](https://github.com/dtolnay/async-trait) | `0.1.89` | `0.1.92` |
+• | [aws-sdk-s3](https://github.com/awslabs/aws-sdk-rust) | `1.132.0` | `1.134.0` |
+• | [md5](https://github.com/stainless-steel/md5) | `0.8.0` | `0.8.1` |
+• | [wat](https://github.com/bytecodealliance/wasm-tools) | `1.251.0` | `1.258.0` |
+• Updates `glob` from 0.3.3 to 0.3.4
+• - [Release notes](https://github.com/rust-lang/glob/releases)
+• - [Changelog](https://github.com/rust-lang/glob/blob/master/CHANGELOG.md)
+• - [Commits](https://github.com/rust-lang/glob/compare/v0.3.3...v0.3.4)
+• Updates `tokio` from 1.52.3 to 1.53.1
+• - [Release notes](https://github.com/tokio-rs/tokio/releases)
+• - [Commits](https://github.com/tokio-rs/tokio/compare/tokio-1.52.3...tokio-1.53.1)
+• Updates `tokio-util` from 0.7.18 to 0.7.19
+• - [Release notes](https://github.com/tokio-rs/tokio/releases)
+• - [Commits](https://github.com/tokio-rs/tokio/compare/tokio-util-0.7.18...tokio-util-0.7.19)
+• Updates `futures` from 0.3.32 to 0.3.34
+• - [Release notes](https://github.com/rust-lang/futures-rs/releases)
+• - [Changelog](https://github.com/rust-lang/futures-rs/blob/main/CHANGELOG.md)
+• - [Commits](https://github.com/rust-lang/futures-rs/compare/0.3.32...0.3.34)
+• Updates `serde` from 1.0.228 to 1.0.229
+• - [Release notes](https://github.com/serde-rs/serde/releases)
+• - [Commits](https://github.com/serde-rs/serde/compare/v1.0.228...v1.0.229)
+• Updates `serde_json` from 1.0.150 to 1.0.151
+• - [Release notes](https://github.com/serde-rs/json/releases)
+• - [Commits](https://github.com/serde-rs/json/compare/v1.0.150...v1.0.151)
+• Updates `regex` from 1.12.3 to 1.13.1
+• - [Release notes](https://github.com/rust-lang/regex/releases)
+• - [Changelog](https://github.com/rust-lang/regex/blob/master/CHANGELOG.md)
+• - [Commits](https://github.com/rust-lang/regex/compare/1.12.3...1.13.1)
+• Updates `http` from 1.4.0 to 1.5.0
+• - [Release notes](https://github.com/hyperium/http/releases)
+• - [Changelog](https://github.com/hyperium/http/blob/master/CHANGELOG.md)
+• - [Commits](https://github.com/hyperium/http/compare/v1.4.0...v1.5.0)
+• Updates `anyhow` from 1.0.103 to 1.0.104
+• - [Release notes](https://github.com/dtolnay/anyhow/releases)
+• - [Commits](https://github.com/dtolnay/anyhow/compare/1.0.103...1.0.104)
+• Updates `clap` from 4.6.1 to 4.6.6
+• - [Release notes](https://github.com/clap-rs/clap/releases)
+• - [Changelog](https://github.com/clap-rs/clap/blob/master/CHANGELOG.md)
+• - [Commits](https://github.com/clap-rs/clap/compare/clap_complete-v4.6.1...clap_complete-v4.6.6)
+• Updates `clap_complete` from 4.6.5 to 4.6.9
+• - [Release notes](https://github.com/clap-rs/clap/releases)
+• - [Changelog](https://github.com/clap-rs/clap/blob/master/CHANGELOG.md)
+• - [Commits](https://github.com/clap-rs/clap/compare/clap_complete-v4.6.5...clap_complete-v4.6.9)
+• Updates `chrono` from 0.4.44 to 0.4.45
+• - [Release notes](https://github.com/chronotope/chrono/releases)
+• - [Changelog](https://github.com/chronotope/chrono/blob/main/CHANGELOG.md)
+• - [Commits](https://github.com/chronotope/chrono/compare/v0.4.44...v0.4.45)
+• Updates `bytes` from 1.11.1 to 1.12.1
+• - [Release notes](https://github.com/tokio-rs/bytes/releases)
+• - [Changelog](https://github.com/tokio-rs/bytes/blob/master/CHANGELOG.md)
+• - [Commits](https://github.com/tokio-rs/bytes/compare/v1.11.1...v1.12.1)
+• Updates `rustls` from 0.23.40 to 0.23.43
+• - [Release notes](https://github.com/rustls/rustls/releases)
+• - [Changelog](https://github.com/rustls/rustls/blob/main/CHANGELOG.md)
+• - [Commits](https://github.com/rustls/rustls/compare/v/0.23.40...v/0.23.43)
+• Updates `rustls-pki-types` from 1.14.1 to 1.15.1
+• - [Release notes](https://github.com/rustls/pki-types/releases)
+• - [Commits](https://github.com/rustls/pki-types/compare/v/1.14.1...v/1.15.1)
+• Updates `flate2` from 1.1.9 to 1.1.10
+• - [Release notes](https://github.com/rust-lang/flate2-rs/releases)
+• - [Commits](https://github.com/rust-lang/flate2-rs/compare/1.1.9...1.1.10)
+• Updates `async-trait` from 0.1.89 to 0.1.92
+• - [Release notes](https://github.com/dtolnay/async-trait/releases)
+• - [Commits](https://github.com/dtolnay/async-trait/compare/0.1.89...0.1.92)
+• Updates `aws-sdk-s3` from 1.132.0 to 1.134.0
+• - [Release notes](https://github.com/awslabs/aws-sdk-rust/releases)
+• - [Commits](https://github.com/awslabs/aws-sdk-rust/commits)
+• Updates `md5` from 0.8.0 to 0.8.1
+• - [Commits](https://github.com/stainless-steel/md5/commits)
+• Updates `wat` from 1.251.0 to 1.258.0
+• - [Release notes](https://github.com/bytecodealliance/wasm-tools/releases)
+• - [Commits](https://github.com/bytecodealliance/wasm-tools/compare/v1.251.0...v1.258.0)
+• ---
+• updated-dependencies:
+• - dependency-name: glob
+•   dependency-version: 0.3.4
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: tokio
+•   dependency-version: 1.53.1
+•   dependency-type: direct:production
+•   update-type: version-update:semver-minor
+•   dependency-group: production-dependencies
+• - dependency-name: tokio-util
+•   dependency-version: 0.7.19
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: futures
+•   dependency-version: 0.3.34
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: serde
+•   dependency-version: 1.0.229
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: serde_json
+•   dependency-version: 1.0.151
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: regex
+•   dependency-version: 1.13.1
+•   dependency-type: direct:production
+•   update-type: version-update:semver-minor
+•   dependency-group: production-dependencies
+• - dependency-name: http
+•   dependency-version: 1.5.0
+•   dependency-type: direct:production
+•   update-type: version-update:semver-minor
+•   dependency-group: production-dependencies
+• - dependency-name: anyhow
+•   dependency-version: 1.0.104
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: clap
+•   dependency-version: 4.6.6
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: clap_complete
+•   dependency-version: 4.6.9
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: chrono
+•   dependency-version: 0.4.45
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: bytes
+•   dependency-version: 1.12.1
+•   dependency-type: direct:production
+•   update-type: version-update:semver-minor
+•   dependency-group: production-dependencies
+• - dependency-name: rustls
+•   dependency-version: 0.23.43
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: rustls-pki-types
+•   dependency-version: 1.15.1
+•   dependency-type: direct:production
+•   update-type: version-update:semver-minor
+•   dependency-group: production-dependencies
+• - dependency-name: flate2
+•   dependency-version: 1.1.10
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: async-trait
+•   dependency-version: 0.1.92
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: aws-sdk-s3
+•   dependency-version: 1.134.0
+•   dependency-type: direct:production
+•   update-type: version-update:semver-minor
+•   dependency-group: production-dependencies
+• - dependency-name: md5
+•   dependency-version: 0.8.1
+•   dependency-type: direct:production
+•   update-type: version-update:semver-patch
+•   dependency-group: production-dependencies
+• - dependency-name: wat
+•   dependency-version: 1.258.0
+•   dependency-type: direct:production
+•   update-type: version-update:semver-minor
+•   dependency-group: production-dependencies
+• ...
+• Signed-off-by: dependabot[bot] <support@github.com>
+📝 build(deps): bump lukemathwalker/cargo-chef
+• Bumps lukemathwalker/cargo-chef from latest-rust-1.95-slim-bookworm to latest-rust-1.98-slim-bookworm.
+• ---
+• updated-dependencies:
+• - dependency-name: lukemathwalker/cargo-chef
+•   dependency-version: latest-rust-1.98-slim-bookworm
+•   dependency-type: direct:production
+• ...
+• Signed-off-by: dependabot[bot] <support@github.com>
+
+
 ## Chart v1.3.0 (2026-08-31) [minor]
 
 • Merge pull request #1447 from otsimaofficial/feat/issue-1393-structured-error-handling

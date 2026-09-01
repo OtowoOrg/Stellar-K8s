@@ -65,7 +65,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0   # full history needed for commit analysis
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -114,7 +114,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -208,13 +208,13 @@ jobs:
 
     steps:
       - name: Checkout repository (with version-bumped Chart.yaml)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main   # pick up the commit pushed by bump-and-tag
           fetch-depth: 1
 
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: "v3.16.4"
 
@@ -222,7 +222,7 @@ jobs:
         run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --version v0.5.1
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -267,7 +267,7 @@ jobs:
             --version "${NEW_VERSION}" || echo "⚠️ Verification failed (registry propagation delay?)"
 
       - name: Upload chart artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: helm-chart-${{ needs.version-bump.outputs.new_version }}
           path: ${{ steps.package.outputs.package_file }}

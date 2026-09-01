@@ -54,7 +54,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v1
+        uses: google-github-actions/setup-gcloud@v3
         with:
           project_id: ${{ secrets.GCP_PROJECT }}
 
@@ -105,7 +105,7 @@ jobs:
           k8s-version: v1.30.0
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v1
+        uses: google-github-actions/setup-gcloud@v3
 
       - name: Download latest backup
         run: |
@@ -192,7 +192,7 @@ jobs:
 
       - name: Upload DR report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dr-report
           path: /tmp/dr-report.md

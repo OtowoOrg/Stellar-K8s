@@ -4,7 +4,7 @@ ARG SOURCE_DATE_EPOCH=0
 # Stage 1: Chef - Dependency Caching Layer
 # (linux/amd64 only)
 # ==============================================================================
-FROM lukemathwalker/cargo-chef:latest-rust-1.95-slim-bookworm AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.98-slim-bookworm AS chef
 WORKDIR /app
 
 # ==============================================================================

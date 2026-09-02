@@ -61,10 +61,21 @@ fn get_response_schema(method: &str, path: &str, status: &str) -> Option<Value> 
     let path_item = OPENAPI_SPEC["paths"].get(path)?;
     let operation = path_item.get(method.to_lowercase())?;
     let response = operation["responses"].get(status)?;
+    // Resolve $ref for responses (e.g. 404 → NotFound)
+    let response = resolve_response(response);
     let content = response.get("content")?;
     let json_content = content.get("application/json")?;
     let schema = json_content.get("schema")?;
     Some(resolve_schema(schema))
+}
+
+fn resolve_response(response: &Value) -> Value {
+    if let Some(ref_str) = response.get("$ref").and_then(|v| v.as_str()) {
+        let path = ref_str.trim_start_matches("#/");
+        OPENAPI_SPEC.pointer(&format!("/{}", path)).cloned().unwrap_or_else(|| response.clone())
+    } else {
+        response.clone()
+    }
 }
 
 /// Basic JSON Schema validation using serde_json.
@@ -76,6 +87,16 @@ fn get_response_schema(method: &str, path: &str, status: &str) -> Option<Value> 
 fn validate_response(json: &Value, schema: &Value) -> Result<(), String> {
     // Resolve $ref if present
     let schema = resolve_schema(schema);
+
+    // Handle nullable: null values pass when nullable is true
+    if json.is_null()
+        && schema
+            .get("nullable")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    {
+        return Ok(());
+    }
 
     match schema.get("type").and_then(|t| t.as_str()) {
         Some("object") => validate_object(json, &schema),
@@ -253,13 +274,13 @@ fn mock_probe() -> Value {
 
 fn mock_version_catalog() -> Value {
     json!({
-        "canonicalScheme": "url_path",
+        "canonical_scheme": "url_path",
         "current": "v1",
         "versions": [
             {
                 "id": "v1",
                 "status": "current",
-                "basePath": "/api/v1",
+                "base_path": "/api/v1",
                 "sunset": null
             }
         ]

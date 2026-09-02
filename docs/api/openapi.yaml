@@ -1039,6 +1039,7 @@ components:
         reason:
           type: string
           nullable: true
+      required: [status]
 
     VersionCatalog:
       type: object

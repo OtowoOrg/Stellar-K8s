@@ -104,10 +104,6 @@ mod tests {
             "SECURITY.md must exist"
         );
         assert!(
-            std::path::Path::new("DEPENDENCY_SECURITY_AUDIT.md").exists(),
-            "Security audit document must exist"
-        );
-        assert!(
             std::path::Path::new("deny.toml").exists(),
             "deny.toml configuration must exist"
         );

@@ -12,8 +12,8 @@
   <a href="https://codecov.io/gh/OtowoOrg/Stellar-K8s">
     <img src="https://img.shields.io/codecov/c/github/OtowoOrg/Stellar-K8s/main?style=for-the-badge&logo=codecov" alt="Coverage" />
   </a>
-  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/security-scan.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/security-scan.yml?branch=main&style=for-the-badge&label=Security&logo=trivy" alt="Security Scan" />
+  <a href="https://github.com/OtowoOrg/Stellar-K8s/actions/workflows/container-image-security.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/OtowoOrg/Stellar-K8s/container-image-security.yml?branch=main&style=for-the-badge&label=Security&logo=trivy" alt="Security Scan" />
   </a>
 </p>
 

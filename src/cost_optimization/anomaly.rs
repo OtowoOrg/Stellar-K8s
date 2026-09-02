@@ -102,6 +102,32 @@ impl AnomalyDetector {
                 } else {
                     None
                 }
+            } else if (record.cost_usd - mean).abs() > f64::EPSILON {
+                // All historical values are identical (stddev == 0).
+                // Any non-trivial deviation is an infinite z-score anomaly.
+                let deviation_pct = ((record.cost_usd - mean) / mean * 100.0).abs();
+                let severity = if deviation_pct >= self.high_pct {
+                    AnomalySeverity::High
+                } else if deviation_pct >= self.medium_pct {
+                    AnomalySeverity::Medium
+                } else {
+                    AnomalySeverity::Low
+                };
+                warn!(
+                    resource = %record.resource_id,
+                    expected = mean,
+                    actual = record.cost_usd,
+                    z_score = f64::INFINITY,
+                    "Cost anomaly detected"
+                );
+                Some(CostAnomaly {
+                    resource_id: record.resource_id.clone(),
+                    expected_cost: mean,
+                    actual_cost: record.cost_usd,
+                    deviation_pct,
+                    severity,
+                    detected_at: Utc::now(),
+                })
             } else {
                 None
             }

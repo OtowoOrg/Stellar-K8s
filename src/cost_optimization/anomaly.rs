@@ -103,7 +103,35 @@ impl AnomalyDetector {
                     None
                 }
             } else {
-                None
+                // All historical values are identical (stddev == 0).
+                // Only flag if deviation exceeds the low threshold.
+                let deviation_pct = ((record.cost_usd - mean) / mean * 100.0).abs();
+                if deviation_pct > self.low_pct {
+                    let severity = if deviation_pct >= self.high_pct {
+                        AnomalySeverity::High
+                    } else if deviation_pct >= self.medium_pct {
+                        AnomalySeverity::Medium
+                    } else {
+                        AnomalySeverity::Low
+                    };
+                    warn!(
+                        resource = %record.resource_id,
+                        expected = mean,
+                        actual = record.cost_usd,
+                        z_score = f64::INFINITY,
+                        "Cost anomaly detected"
+                    );
+                    Some(CostAnomaly {
+                        resource_id: record.resource_id.clone(),
+                        expected_cost: mean,
+                        actual_cost: record.cost_usd,
+                        deviation_pct,
+                        severity,
+                        detected_at: Utc::now(),
+                    })
+                } else {
+                    None
+                }
             }
         } else {
             None

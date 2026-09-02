@@ -78,8 +78,8 @@ impl OpenApiSpec {
     /// Resolve a $ref pointer to the actual schema.
     fn resolve_schema(&self, schema: &Value) -> Option<Value> {
         if let Some(ref_str) = schema.get("$ref").and_then(|v| v.as_str()) {
-            let ref_path = ref_str.trim_start_matches("#/");
-            self.spec.pointer(ref_path).cloned()
+            let ref_path = format!("/{}", ref_str.trim_start_matches("#/"));
+            self.spec.pointer(&ref_path).cloned()
         } else {
             Some(schema.clone())
         }
@@ -124,9 +124,9 @@ fn validate_value(json: &Value, schema: &Value) -> Result<(), String> {
     // Resolve $ref if present
     let schema = if let Some(ref_str) = schema.get("$ref").and_then(|v| v.as_str()) {
         let spec = OpenApiSpec::load().map_err(|e| format!("Failed to load spec: {e}"))?;
-        let ref_path = ref_str.trim_start_matches("#/");
+        let ref_path = format!("/{}", ref_str.trim_start_matches("#/"));
         spec.spec
-            .pointer(ref_path)
+            .pointer(&ref_path)
             .cloned()
             .unwrap_or_else(|| schema.clone())
     } else {

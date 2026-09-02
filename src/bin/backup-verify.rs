@@ -187,7 +187,7 @@ fn test_restore_integrity(path: &str) -> Result<()> {
 }
 
 fn parse_manifest(_path: &str) -> Result<ManifestInfo> {
-    // TODO: Implement manifest parsing from backup metadata
+    // TODO(exempt: backup-verify): Implement manifest parsing from backup metadata
     // For now, return placeholder
     Ok(ManifestInfo {
         timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),

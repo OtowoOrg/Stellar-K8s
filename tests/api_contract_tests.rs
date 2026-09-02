@@ -41,8 +41,11 @@ static OPENAPI_SPEC: LazyLock<Value> = LazyLock::new(|| {
 
 fn get_schema(schema_ref: &str) -> Value {
     let ref_path = schema_ref.trim_start_matches("#/components/schemas/");
-    OPENAPI_SPEC["components"]["schemas"][ref_path]
-        .clone()
+    OPENAPI_SPEC
+        .get("components")
+        .and_then(|c| c.get("schemas"))
+        .and_then(|s| s.get(ref_path))
+        .cloned()
         .unwrap_or_else(|| panic!("Schema not found: {schema_ref}"))
 }
 

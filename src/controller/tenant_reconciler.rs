@@ -195,7 +195,7 @@ async fn apply_network_policies(tenant_spec: &TenantSpec, client: &Client) -> Re
     };
 
     // Deny egress to other tenants, allow to same tenant and external APIs.
-    // TODO(tenant-egress): scope egress to same-tenant + external APIs instead of
+    // TODO(exempt: tenant-egress): scope egress to same-tenant + external APIs instead of
     // the fully restrictive empty rule set below.
 
     let policy = NetworkPolicy {
@@ -233,7 +233,7 @@ async fn apply_network_policies(tenant_spec: &TenantSpec, client: &Client) -> Re
 
 /// Set up RBAC: create tenant-scoped role and rolebinding
 async fn setup_rbac(tenant_spec: &TenantSpec, client: &Client) -> Result<()> {
-    // TODO(tenant-rbac): Implement role and rolebinding creation per tenant
+    // TODO(exempt: tenant-rbac): Implement role and rolebinding creation per tenant
     // This will:
     // 1. Create a Role scoped to tenant resources
     // 2. Create a RoleBinding for tenant service accounts

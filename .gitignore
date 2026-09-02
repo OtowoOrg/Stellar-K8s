@@ -50,6 +50,7 @@ kind-*.yaml
 .agents/
 .cursor/
 .gemini/
+.kiro/
 .windsurf/
 task_plan.md
 findings.md
@@ -69,6 +70,7 @@ CI_CD_REVIEW.md
 Thumbs.db
 
 issue.md
+issues.md
 COMMIT_MESSAGE_TEMPLATE.md
 # Python bytecode cache
 __pycache__/

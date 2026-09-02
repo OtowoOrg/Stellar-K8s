@@ -3,6 +3,35 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## Chart v1.3.2 (2026-09-02) [patch]
+
+🐛 fix(ci): clean up redundant workflows, fix build, and resolve dependency issues
+• - Delete 5 redundant workflows (wave-security-compliance, yaml-schema-validation,
+•   k8s-manifest-validation, helm-drift-detection, db-migration-testing) as they
+•   were duplicating functionality already covered by existing jobs
+• - Fix Dockerfile stage numbering and comments for clarity
+• - Fix bundle.Dockerfile metadata (Go -> Rust project layout)
+• - Remove deprecated 'version' field from all 4 docker-compose files
+• - Simplify ci.yml: remove duplicate clippy run, consolidate image security scanning
+•   into container-image-security.yml, streamline test/coverage job dependencies
+• - Fix ci-reliability-test.yml dead code (duplicate find call)
+• - Fix dr-drill.yml broken Prometheus query job (prometheus unreachable at
+•   http://prometheus:9090)
+• - Fix README.md Rust version (1.95 -> 1.98 to match toolchain)
+• - Fix .dockerignore blocking docs/api/openapi.yaml needed by include_bytes!
+• - Downgrade k8s-openapi from 0.26 to 0.22 to match kube 0.94 dependency
+• - Fix rcgen API changes: Ia5String moved to rcgen::string::Ia5String,
+•   signed_by() now takes (public_key, &Issuer) instead of (key_pair, ca_cert, ca_key_pair)
+• Build verified on AWS EC2 VM (t3.xlarge, Ubuntu 22.04):
+• - cargo build passes (dev profile)
+• - Docker image builds successfully (74.6MB runtime image)
+• - Helm chart lints clean, templates render correctly (1571 lines)
+• Note: 30 pre-existing test compilation errors remain where test structs
+• (ControllerState, AuditRecorder, AuditLog, AnomalyDetector) are out of
+• sync with the actual code. These were never caught because the project
+• could not build before the k8s-openapi fix.
+
+
 ## Chart v1.3.1 (2026-09-01) [patch]
 
 • Merge pull request #1472 from OtowoOrg/dependabot/github_actions/github-actions-813fcdc74f

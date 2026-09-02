@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## Chart v1.3.5 (2026-09-02) [patch]
+
+🐛 fix(tests): resolve 7 pre-existing test failures
+• - schema_validation.rs: fix $ref resolution in resolve_schema() and
+•   validate_value() — trim_start_matches('#/') strips the leading slash
+•   required by serde_json::Value::pointer(); prepend '/' after trimming
+• - anomaly.rs: handle zero-stddev case in observe() — when all historical
+•   values are identical, any non-trivial deviation is an infinite z-score
+•   anomaly; use deviation percentage against high/medium thresholds
+
+
 ## Chart v1.3.4 (2026-09-02) [patch]
 
 🐛 fix(ci): resolve stale TODOs and test compilation error

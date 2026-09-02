@@ -6,6 +6,8 @@
 # Documentation
 *.md
 docs/
+!docs/api/
+!docs/api/openapi.yaml
 README.md
 LICENSE
 SECURITY.md

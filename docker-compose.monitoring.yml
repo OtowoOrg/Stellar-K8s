@@ -13,8 +13,6 @@
 # Docker Compose Monitoring Stack Overlay
 # Adds Prometheus, Grafana, and AlertManager for local development
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
-version: '3.8'
-
 services:
   # Prometheus - time series database for metrics
   prometheus:

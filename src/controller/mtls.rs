@@ -41,9 +41,10 @@ use kube::{
     Client, Resource, ResourceExt,
 };
 use rcgen::{
-    CertificateParams, DistinguishedName, ExtendedKeyUsagePurpose, Ia5String, IsCa, KeyPair,
+    CertificateParams, DistinguishedName, ExtendedKeyUsagePurpose, IsCa, KeyPair,
     KeyUsagePurpose, SanType,
 };
+use rcgen::string::Ia5String;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -273,8 +274,9 @@ async fn generate_and_patch_server_cert_inner(
         .push(ExtendedKeyUsagePurpose::ClientAuth);
 
     let key_pair = KeyPair::generate().map_err(|e| Error::ConfigError(e.to_string()))?;
+    let issuer = rcgen::Issuer::from_params(&ca_params, &ca_key_pair);
     let cert = params
-        .signed_by(&key_pair, &ca_cert, &ca_key_pair)
+        .signed_by(&key_pair, &issuer)
         .map_err(|e| Error::ConfigError(e.to_string()))?;
 
     let mut data = BTreeMap::new();
@@ -389,8 +391,9 @@ pub async fn ensure_node_cert(client: &Client, node: &StellarNode) -> Result<()>
         .push(ExtendedKeyUsagePurpose::ServerAuth);
 
     let key_pair = KeyPair::generate().map_err(|e| Error::ConfigError(e.to_string()))?;
+    let issuer = rcgen::Issuer::from_params(&ca_params, &ca_key_pair);
     let cert = params
-        .signed_by(&key_pair, &ca_cert, &ca_key_pair)
+        .signed_by(&key_pair, &issuer)
         .map_err(|e| Error::ConfigError(e.to_string()))?;
 
     let mut data = BTreeMap::new();

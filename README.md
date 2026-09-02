@@ -90,7 +90,7 @@ Stellar-K8s follows the **Operator Pattern**, extending Kubernetes with a `Stell
 - **Rust 1.92+** (minimum enforced by CI's `preflight`/`lint` jobs and
   `scripts/lib/versions.sh` — run `make dev-setup` or
   `cargo run --bin stellar-bootstrap-verify` to check your local version)
-  - Docker builds (`Dockerfile`, `Dockerfile.dev`) currently use Rust 1.95
+  - Docker builds (`Dockerfile`, `Dockerfile.dev`) currently use Rust 1.98
 
 > **New to Stellar-K8s?** See the [Glossary](docs/glossary.md) for definitions of common terms like [Validator](docs/glossary.md#validator), [Horizon](docs/glossary.md#horizon), [SCP](docs/glossary.md#scp-stellar-consensus-protocol), and [Reconciliation](docs/glossary.md#reconciliation).
 >

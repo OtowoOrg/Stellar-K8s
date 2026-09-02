@@ -198,31 +198,10 @@ jobs:
           path: /tmp/dr-report.md
           retention-days: 30
 
-  monitor-backup-metrics:
-    name: Monitor Backup Metrics
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Prometheus scrape
-        run: |
-          # Query Prometheus for backup metrics
-          echo "→ Collecting backup metrics..."
-          
-          BACKUP_AGE=$(curl -s 'http://prometheus:9090/api/v1/query?query=stellar_backup_age_seconds' | jq '.data.result[0].value[1]')
-          RESTORE_TIME=$(curl -s 'http://prometheus:9090/api/v1/query?query=stellar_backup_restore_time_ms' | jq '.data.result[0].value[1]')
-          STORAGE_USED=$(curl -s 'http://prometheus:9090/api/v1/query?query=stellar_backup_storage_used_bytes' | jq '.data.result[0].value[1]')
-          
-          echo "stellar_backup_age_seconds $BACKUP_AGE"
-          echo "stellar_backup_restore_time_ms $RESTORE_TIME"
-          echo "stellar_backup_storage_used_bytes $STORAGE_USED"
-
-      - name: Alert on backup failures
-        if: failure()
-        run: |
-          echo "::error::DR drill failed - backup/restore may be compromised"
-          # TODO: Send alert to Slack/PagerDuty
+  # ── Backup metrics collection ────────────────────────────────────────────────
+  # Note: Prometheus metrics collection is not available in GHA runners.
+  # Backup/restore metrics are validated during the backup-validation job above.
+  # For full metrics monitoring, deploy to a cluster with Prometheus.
 
   cleanup-test-cluster:
     name: Cleanup Test Resources

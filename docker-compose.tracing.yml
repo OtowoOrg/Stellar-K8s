@@ -21,8 +21,6 @@
 #   OTEL_SERVICE_NAME=stellar-operator
 #   OTEL_TRACES_SAMPLER=parentbased_traceidratio
 #   OTEL_TRACES_SAMPLER_ARG=1.0
-version: "3.8"
-
 services:
   jaeger:
     image: jaegertracing/all-in-one:1.57

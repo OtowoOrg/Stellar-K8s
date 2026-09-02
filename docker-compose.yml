@@ -12,8 +12,6 @@
 # limitations under the License.
 # Docker Compose Development Environment for Stellar-K8s
 # Provides a local development setup without requiring a full K8s cluster
-version: '3.8'
-
 services:
   # K3s lightweight Kubernetes in Docker
   k3s:

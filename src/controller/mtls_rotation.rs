@@ -29,9 +29,10 @@ use kube::{
     Client, ResourceExt,
 };
 use rcgen::{
-    CertificateParams, DistinguishedName, ExtendedKeyUsagePurpose, Ia5String, IsCa, KeyPair,
+    CertificateParams, DistinguishedName, ExtendedKeyUsagePurpose, IsCa, KeyPair,
     KeyUsagePurpose, SanType,
 };
+use rcgen::string::Ia5String;
 use std::collections::BTreeMap;
 use tracing::{debug, info, warn};
 use x509_parser::certificate::X509Certificate;
@@ -158,8 +159,9 @@ pub async fn start_dual_key_rotation(
         .push(ExtendedKeyUsagePurpose::ClientAuth);
 
     let key_pair = KeyPair::generate().map_err(|e| Error::ConfigError(e.to_string()))?;
+    let issuer = rcgen::Issuer::from_params(&ca_params, &ca_key_pair);
     let cert = params
-        .signed_by(&key_pair, &ca_cert, &ca_key_pair)
+        .signed_by(&key_pair, &issuer)
         .map_err(|e| Error::ConfigError(e.to_string()))?;
 
     let new_cert_pem = cert.pem().into_bytes();

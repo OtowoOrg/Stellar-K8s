@@ -126,10 +126,6 @@ jobs:
             local action=$1
             echo "Checking $action versions..."
             
-            # Find all uses of this action
-            VERSIONS=$(find .github \( -name "*.yml" -o -name "*.yaml" \) -exec grep -h "uses: $action@" {} \; \
-              | sed 's/^[[:space:]]*//' | sort -u)
-            VERSION_COUNT=$(echo "$VERSIONS" | wc -l)
             # Find all uses of this action (normalize indentation so whitespace ≠ version)
             VERSIONS=$(find .github -name "*.yml" -exec grep -h "uses: $action@" {} \; | sed 's/^[[:space:]]*//' | sort -u)
             VERSION_COUNT=$(echo "$VERSIONS" | grep -c . || true)

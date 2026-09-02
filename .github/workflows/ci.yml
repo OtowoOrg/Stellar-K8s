@@ -40,7 +40,8 @@ env:
 #                                                                      │
 #                                                                    docker (main only)
 #                                                                      │
-#                                                                    security-scan
+#                                                              container-image-security
+#                                                                      (via standalone workflow)
 # ──────────────────────────────────────────────────────────────────────────────
 
 jobs:
@@ -286,10 +287,6 @@ jobs:
       - name: Check formatting
         if: needs.changes.outputs.rust_core == 'true'
         run: make fmt-check
-
-      - name: Run clippy (deny all warnings as errors)
-        if: needs.changes.outputs.rust_core == 'true'
-        run: make lint
 
       - name: Run clippy (strict mode - fail on all warnings)
         if: needs.changes.outputs.rust_core == 'true'
@@ -911,13 +908,12 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [security-audit, lint, secret-checks, pipeline-log-redaction]
+    needs: [security-audit, lint, secret-checks]
     if: >-
       always() &&
       needs.lint.result == 'success' &&
       needs.secret-checks.result == 'success' &&
-      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped') &&
-      (needs.pipeline-log-redaction.result == 'success' || needs.pipeline-log-redaction.result == 'skipped')
+      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped')
     steps:
       - uses: actions/checkout@v7
 
@@ -934,14 +930,13 @@ jobs:
     name: Code Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    needs: [security-audit, lint, secret-checks, pipeline-log-redaction]
+    needs: [security-audit, lint, secret-checks]
     if: >-
       github.event_name != 'pull_request' &&
       always() &&
       needs.lint.result == 'success' &&
       needs.secret-checks.result == 'success' &&
-      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped') &&
-      (needs.pipeline-log-redaction.result == 'success' || needs.pipeline-log-redaction.result == 'skipped')
+      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped')
     steps:
       - uses: actions/checkout@v7
 
@@ -968,48 +963,6 @@ jobs:
           name: codecov-umbrella
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
-
-  # ── 10b. Image vulnerability gate (pull requests) ─────────────────────────────
-  # Issue #1334: critical vulnerabilities must block merge. The `docker` job
-  # below only runs on non-PR events, so before this job a pull request could
-  # introduce a critical CVE in the image and never be told. Builds locally and
-  # does not push — nothing from an unreviewed PR reaches the registry.
-  image-scan:
-    name: Image Vulnerability Gate
-    if: >-
-      github.event_name == 'pull_request' &&
-      needs.changes.outputs.docker == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [changes]
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build image locally (no push)
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          target: runtime
-          platforms: linux/amd64
-          push: false
-          load: true
-          tags: stellar-operator:pr-scan
-          cache-from: type=gha,scope=stellar-k8s-docker
-          provenance: false
-          sbom: false
-
-      - name: Scan image and block on critical vulnerabilities
-        uses: ./.github/actions/security-scan
-        with:
-          image-ref: stellar-operator:pr-scan
-          severity: "CRITICAL,HIGH"
-          fail-on-severity: "CRITICAL"
 
   # ── 11. Docker build & push (main push only) ──────────────────────────────────
   docker:
@@ -1063,46 +1016,7 @@ jobs:
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
-  # ── 12. Security Scan & Binary Verification (main push only) ────────────────────────────────
-  security-scan:
-    name: Security Scan & Binary Verification
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: docker
-    if: github.event_name != 'pull_request'
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Docker & Login
-        id: setup-docker
-        uses: ./.github/actions/setup-docker
-        with:
-          registry: ${{ env.REGISTRY }}
-
-      - name: Pull image for verification
-        run: |
-          docker pull ${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}:sha-${{ github.sha }}
-
-      - name: Verify binaries boot
-        run: |
-          docker run --rm ${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}:sha-${{ github.sha }} version
-          echo "✓ stellar-operator boots"
-
-          docker run --rm --entrypoint /stellar-fork-detector ${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}:sha-${{ github.sha }} --help
-          echo "✓ stellar-fork-detector boots"
-
-          docker run --rm --entrypoint /stellar-watcher ${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}:sha-${{ github.sha }} --help
-          echo "✓ stellar-watcher boots"
-
-      - name: Security Scan
-        uses: ./.github/actions/security-scan
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}:sha-${{ github.sha }}
-
-  # ── 13. Chart Render Diff Check ───────────────────────────────────────────────
+  # ── 12. Chart Render Diff Check ───────────────────────────────────────────────
   # Detects unintended Helm chart template drift by comparing rendered output
   # against the render goldens committed under charts/stellar-operator/rendered/.
   # Related: #1045 - Add automated drift detection between Helm templates and

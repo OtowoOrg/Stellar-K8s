@@ -12,8 +12,6 @@
 # limitations under the License.
 # Docker Compose Development Overlay
 # Extends docker-compose.yml with hot-reloading for active development
-version: '3.8'
-
 services:
   # Override stellar-operator with development build and hot-reload
   stellar-operator-dev:

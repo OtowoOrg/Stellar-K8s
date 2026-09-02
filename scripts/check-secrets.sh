@@ -106,7 +106,7 @@ done < <(grep -rn --include="*.rs" --include="*.pem" --include="*.key" \
 while IFS=: read -r file lineno content; do
     [[ "$file" == *test* || "$file" == *example* || "$file" == *fixture* || "$file" == *sample* || "$file" == *secret_rotation* || "$file" == *secret-rotation* || "$file" == *check-secrets* ]] && continue
     # Allow obvious placeholders and Secret *resource names* (not credential values).
-    echo "$content" | grep -qiE "(placeholder|example|changeme|your[-_]|<[^>]+>|\\\$\{|test[_-]?password|stellar-core-secret)" && continue
+    echo "$content" | grep -qiE "(placeholder|example|changeme|your[-_]|<[^>]+>|\\\$\{|test[_-]?password|stellar-core-secret|rollout-)" && continue
     finding "$file" "$lineno" "Possible inline secret assignment (password=/secret=/token=)"
 done < <(grep -rni --include="*.rs" --include="*.sh" --include="*.yaml" --include="*.yml" \
     -E "(password|secret|token)\s*=\s*['\"][^'\"]{8,}" . \

@@ -32,7 +32,7 @@ detect_os() {
 install_rust() {
   if command -v cargo >/dev/null 2>&1; then info "Rust already installed: $(cargo --version)"; return; fi
   info "Installing Rust via rustup..."
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable  # shell-safety: allow SH005 -- official signed rustup installer
   # shellcheck source=/dev/null
   source "$HOME/.cargo/env" || true
   rustup component add clippy rustfmt || true

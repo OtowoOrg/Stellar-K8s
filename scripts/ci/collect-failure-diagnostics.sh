@@ -42,7 +42,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-BUNDLE_DIR="${BUNDLE_DIR:-/tmp/ci-diagnostics}"
+BUNDLE_DIR="${BUNDLE_DIR:-/tmp/ci-diagnostics}"  # shell-safety: allow SH008 -- overridable via env; /tmp default is intentional for CI
 OPERATOR_NAMESPACE="${OPERATOR_NAMESPACE:-stellar-system}"
 EXTRA_NS="${EXTRA_NS:-}"
 INCLUDE_CLUSTER=true

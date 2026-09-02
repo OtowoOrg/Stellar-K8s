@@ -55,6 +55,7 @@ spec:
     retentionPolicy: Retain
   horizonConfig:
     databaseSecretRef: "horizon-db-secret"
+    stellarCoreUrl: "http://stellar-core:11626"
     ingestRemoteMedianLedgerLoadPercent: 200
 
 ---

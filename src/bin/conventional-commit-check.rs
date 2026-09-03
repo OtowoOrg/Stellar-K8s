@@ -14,9 +14,9 @@
 //! Conventional Commit validation tool
 //!
 //! This utility validates that commit messages follow the Conventional Commits spec
-//! (https://www.conventionalcommits.org/):
+//! (<https://www.conventionalcommits.org/>):
 //!
-//! Format: <type>[optional scope]: <description>
+//! Format: `<type>`[optional scope]: `<description>`
 //! Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert
 //!
 //! Usage:

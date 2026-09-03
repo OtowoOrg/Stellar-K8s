@@ -138,6 +138,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: build-image
+    if: needs.build-image.outputs.digest != ''
     steps:
       - uses: actions/checkout@v7
 
@@ -200,6 +201,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: build-image
+    if: needs.build-image.outputs.digest != ''
     # Grype scan is advisory: findings surface in SARIF but do not gate CI.
     # Any Grype-only critical finding should trigger a Trivy DB sync and be
     # escalated to a security issue if Trivy does not catch it within 48h.
@@ -255,6 +257,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: build-image
+    if: needs.build-image.outputs.digest != ''
     steps:
       - uses: actions/checkout@v7
 

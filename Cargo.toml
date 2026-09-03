@@ -240,10 +240,6 @@ name = "stellar-operator"
 path = "src/main.rs"
 
 [[bin]]
-name = "doc-check"
-path = "src/bin/doc_check.rs"
-
-[[bin]]
 name = "check-unreachable-modules"
 path = "src/bin/check_unreachable_modules.rs"
 

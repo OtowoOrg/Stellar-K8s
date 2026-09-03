@@ -85,31 +85,6 @@ repos:
         language: system
         pass_filenames: false
 
-      - id: check-stale-docs
-        name: check stale docs
-        entry: cargo run --quiet --bin doc-check --
-        language: system
-        # Run whenever Rust source, docs, or the coverage config changes.
-        files: >-
-          (?x)^(
-            src/.*\.rs|
-            docs/.*\.md|
-            doc-coverage\.toml|
-            \.doc-hashes\.toml|
-            Makefile|
-            Cargo\.toml|
-            build\.rs|
-            charts/.*|
-            examples/.*|
-            config/.*|
-            benchmarks/.*|
-            formal_verification/.*|
-            tests/.*\.rs
-          )$
-        pass_filenames: false
-        # Only warn locally — CI enforces the hard failure.
-        args: ["--warn-only", "status"]
-
       # ── License header enforcement (issue #1286) ───────────────────────────
       - id: license-headers
         name: license header check

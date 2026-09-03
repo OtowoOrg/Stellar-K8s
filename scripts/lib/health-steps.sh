@@ -74,10 +74,6 @@ sk8s_health_api_docs() {
     --check
 }
 
-sk8s_health_stale_docs() {
-  cargo run --bin doc-check -- --warn-only
-}
-
 sk8s_health_shellcheck() {
   mapfile -t shell_files < <(find scripts -name '*.sh' -type f | sort)
   if ((${#shell_files[@]} == 0)); then

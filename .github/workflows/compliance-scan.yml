@@ -67,12 +67,12 @@ jobs:
           mkdir -p security/kube-bench/reports
           docker exec kind-control-plane \
             /usr/local/bin/kube-bench run --benchmark stellar-bench --output json \
-            > security/kube-bench/reports/kube-bench-report.json 2>&1
+            > security/kube-bench/reports/kube-bench-report.json
           rc=$?
           set -e
           echo "kube-bench exit code: ${rc} (nonzero means checks failed)"
-          if [ ! -s security/kube-bench/reports/kube-bench-report.json ]; then
-            echo "no report produced; writing placeholder" >&2
+          if ! python3 -c "import json; json.load(open('security/kube-bench/reports/kube-bench-report.json'))" 2>/dev/null; then
+            echo "report missing or invalid JSON; writing placeholder" >&2
             echo '{"Totals":{},"Controls":[]}' > security/kube-bench/reports/kube-bench-report.json
           fi
 

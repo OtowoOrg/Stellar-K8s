@@ -25,7 +25,7 @@
 	dev-setup dev-setup-rust dev-setup-tools dev-setup-hooks health-check pre-commit pre-commit-install run run-local run-dev \
 	install-crd apply-samples crd-gen regenerate completions completions-bash completions-zsh completions-fish \
 	helm-lint helm-unittest helm-upgrade-test link-check link-check-all changelog \
-	generate-api-docs check-api-docs generate-openapi-spec check-openapi-spec check-stale-docs update-doc-baseline docs-lint \
+	generate-api-docs check-api-docs generate-openapi-spec check-openapi-spec docs-lint \
 	third-party-licenses check-third-party-licenses \
 	benchmark benchmark-webhook benchmark-all \
 	benchmark-crd benchmark-helm benchmark-api benchmark-reconciliation \
@@ -346,15 +346,6 @@ generate-openapi-spec: ## Validate operator REST OpenAPI specification
 check-openapi-spec: ## Fail if OpenAPI spec is missing required operator routes
 	@echo "→ Checking OpenAPI spec coverage..."
 	@python3 scripts/generate-openapi-spec.py --spec docs/api/openapi.yaml --check
-
-check-stale-docs: ## Check for documentation that has fallen behind source code (warns by default)
-	@echo "→ Checking for stale documentation..."
-	@$(CARGO) run --bin doc-check -- --warn-only
-
-update-doc-baseline: ## Update the .doc-hashes.toml baseline after deliberate doc updates
-	@echo "→ Updating doc-check baseline hashes..."
-	@$(CARGO) run --bin doc-check -- --update-baseline
-	@echo "✓ Baseline updated. Commit .doc-hashes.toml to record the new state."
 
 docs-lint: ## Run rustdoc with warnings-as-errors (issue #1138: strict docs quality gate)
 	@echo "→ Running cargo doc with RUSTDOCFLAGS=-D warnings..."

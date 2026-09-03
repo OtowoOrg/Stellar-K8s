@@ -35,8 +35,6 @@ on:
         description: "Chaos Mesh Helm chart version"
         required: false
         default: "2.6.3"
-  schedule:
-    - cron: "0 2 * * *"   # 02:00 UTC nightly
 
 env:
   CARGO_TERM_COLOR: always

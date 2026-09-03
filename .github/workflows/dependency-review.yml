@@ -22,9 +22,6 @@ on:
       - "Cargo.lock"
       - "deny.toml"
       - ".cargo/audit.toml"
-  schedule:
-    # Run weekly on Mondays at 08:00 UTC for stale-deps + license inventory.
-    - cron: "0 8 * * 1"
   workflow_dispatch:
     inputs:
       full_check:

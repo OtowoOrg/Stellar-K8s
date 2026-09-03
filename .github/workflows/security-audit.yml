@@ -5,9 +5,6 @@ name: Security Audit
 # cargo-deny, SBOM upload, and supply-chain/scorecard checks.
 
 on:
-  schedule:
-    # Run security audit daily at 02:00 UTC
-    - cron: '0 2 * * *'
   workflow_dispatch:
 
 env:

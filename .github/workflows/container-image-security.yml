@@ -48,8 +48,6 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "src/**"
-  schedule:
-    - cron: "0 4 * * *"  # 04:00 UTC daily
   workflow_dispatch:
     inputs:
       image_ref:

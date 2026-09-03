@@ -9,10 +9,6 @@ name: Load Test & Performance Budgets
 # each run against benchmarks/performance-budgets.yaml.
 
 on:
-  schedule:
-    # 04:00 UTC daily, after the nightly security scan at 03:00 so the two do
-    # not contend for runners.
-    - cron: "0 4 * * *"
   workflow_dispatch:
     inputs:
       suite:

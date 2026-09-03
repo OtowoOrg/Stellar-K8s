@@ -26,8 +26,6 @@ on:
         description: "Cleanup wait timeout in seconds (default: 120)"
         required: false
         default: "120"
-  schedule:
-    - cron: "0 2 * * 6"
 
 env:
   CARGO_TERM_COLOR: always

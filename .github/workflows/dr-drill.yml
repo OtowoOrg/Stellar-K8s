@@ -17,8 +17,6 @@ name: Disaster Recovery Drill
 #   - After major deployments (to validate backup still works)
 
 on:
-  schedule:
-    - cron: "0 2 * * 0"  # Weekly Sunday 02:00 UTC
   workflow_dispatch:
     inputs:
       cluster:

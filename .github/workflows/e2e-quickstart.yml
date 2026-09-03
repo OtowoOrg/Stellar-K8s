@@ -38,9 +38,6 @@ on:
       - "Cargo.lock"
       - "README.md"
       - "scripts/quickstart-verify.sh"
-  schedule:
-    # Weekly Sunday at 06:00 UTC — catches environmental drift
-    - cron: "0 6 * * 0"
   workflow_dispatch:
     inputs:
       skip_cleanup:

@@ -7,8 +7,6 @@ name: Maintenance
 # Unique value here: stale-artifact cleanup regression coverage.
 
 on:
-  schedule:
-    - cron: '0 9 * * 1' # Every Monday at 09:00 UTC
   workflow_dispatch: # Allow manual trigger
 
 jobs:

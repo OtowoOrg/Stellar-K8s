@@ -3,6 +3,29 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## Chart v1.3.7 (2026-09-03) [patch]
+
+🐛 fix(ci): fix failing badge workflows
+• - container-image-security: skip Trivy/Grype/SBOM scans when image
+•   wasn't pushed to GHCR (digest output empty)
+• - conventional-commit-check.rs: fix rustdoc errors (bare URL, unclosed
+•   HTML tags) that broke docs-deploy workflow
+📝 chore(ci): remove all scheduled pipeline runs
+• Removed cron/schedule triggers from 11 workflows:
+• - compliance-scan (weekly Monday)
+• - dependency-review (weekly Monday)
+• - dr-drill (weekly Sunday)
+• - e2e-quickstart (weekly Sunday)
+• - soak-test (weekly Saturday)
+• - load-test (daily)
+• - security-audit (daily)
+• - container-image-security (daily)
+• - maintenance (weekly Monday)
+• - dead-code-report (weekly Monday)
+• - chaos-tests (daily)
+• All workflows retained for manual dispatch and push/PR triggers.
+
+
 ## Chart v1.3.6 (2026-09-03) [patch]
 
 📝 chore: remove stale-docs detector and fix kube-bench CI failures

@@ -3,6 +3,37 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## Chart v1.3.6 (2026-09-03) [patch]
+
+📝 chore: remove stale-docs detector and fix kube-bench CI failures
+• - Remove stale-docs workflow, doc-check binary, doc-coverage.toml,
+•   .doc-hashes.toml, and stale-docs-detector.md doc
+• - Remove check-stale-docs/update-doc-baseline Makefile targets
+• - Remove check-stale-docs pre-commit hook
+• - Remove stale-docs step from repo-health.sh and health-steps.sh
+• - Fix compliance-scan.yml: remove 2>&1 redirect that corrupted
+•   kube-bench JSON output, improve fallback to validate JSON parsing
+🐛 fix(tests): fix pre-existing integration test failures
+• - dashboard_integration_test: fix buggy field name assertion that fails
+•   on camelCase (syncingNodes.contains('nodes') is false due to capital N)
+• - security_integration_test: remove DEPENDENCY_SECURITY_AUDIT.md check
+•   (file was deleted in earlier cleanup)
+📝 chore(ci): trigger fresh CI build to clear stale cache
+🐛 fix(tests): fix 8 api_contract_tests integration test failures
+• - validate_response: handle nullable fields - null passes when nullable:true
+• - get_response_schema: resolve $ref for response objects (404 NotFound)
+• - mock_version_catalog: fix canonicalScheme → canonical_scheme to match spec
+• - ProbeResponse: add required: [status] to OpenAPI spec
+📝 chore(helm): bump chart to v1.3.5 [skip ci]
+🐛 fix(tests): resolve 7 pre-existing test failures
+• - schema_validation.rs: fix $ref resolution in resolve_schema() and
+•   validate_value() — trim_start_matches('#/') strips the leading slash
+•   required by serde_json::Value::pointer(); prepend '/' after trimming
+• - anomaly.rs: handle zero-stddev case in observe() — when all historical
+•   values are identical, any non-trivial deviation is an infinite z-score
+•   anomaly; use deviation percentage against high/medium thresholds
+
+
 ## Chart v1.3.5 (2026-09-02) [patch]
 
 🐛 fix(tests): resolve 7 pre-existing test failures

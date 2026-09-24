@@ -116,6 +116,7 @@ pub mod deployment_strategy;
 pub mod error;
 pub mod error_budget;
 pub mod event_processing;
+pub mod fair_share_rate_limiter;
 pub mod feature_flags;
 pub mod federation;
 pub mod fork_detector;

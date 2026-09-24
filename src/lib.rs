@@ -128,6 +128,7 @@ pub mod log_scrub;
 pub mod logging;
 pub mod message_queue;
 pub mod network_observability;
+pub mod node_boot_verification;
 pub mod plugin_sdk;
 pub mod preflight;
 pub mod profiling;

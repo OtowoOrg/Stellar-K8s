@@ -144,6 +144,7 @@ pub mod preflight;
 pub mod profiling;
 pub mod runbook;
 pub mod scheduler;
+pub mod schema_evolution;
 pub mod schema_registry;
 pub mod sdk;
 pub mod search;

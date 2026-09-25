@@ -103,6 +103,7 @@ pub mod benchmark_compare;
 pub mod bootstrap_verify;
 pub mod byzantine;
 pub mod canary_deployment;
+pub mod canary_promotion_controller;
 pub mod capacity_planning;
 pub mod carbon_aware;
 pub mod cli;

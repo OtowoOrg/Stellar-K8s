@@ -126,6 +126,7 @@ pub mod error_budget;
 pub mod event_processing;
 pub mod feature_flags;
 pub mod federation;
+pub mod federation_consistency;
 pub mod flag_bundle;
 pub mod fork_detector;
 pub mod incident;

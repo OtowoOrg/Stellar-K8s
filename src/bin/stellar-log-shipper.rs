@@ -42,9 +42,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use stellar_k8s::error::{Error, Result};
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::time::sleep;
@@ -67,11 +67,14 @@ struct Config {
 
 impl Config {
     fn from_env() -> Result<Self> {
+        let s3_bucket = env::var("S3_BUCKET")
+            .map_err(|_| Error::config_step("load S3_BUCKET", "env var required"))?;
+
         Ok(Self {
             log_dir: PathBuf::from(
                 env::var("LOG_DIR").unwrap_or_else(|_| "/var/log/stellar".to_string()),
             ),
-            s3_bucket: env::var("S3_BUCKET").context("S3_BUCKET env var required")?,
+            s3_bucket,
             s3_prefix: env::var("S3_PREFIX").unwrap_or_else(|_| "stellar-logs".to_string()),
             s3_region: env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
             node_name: env::var("NODE_NAME").unwrap_or_else(|_| "unknown".to_string()),
@@ -202,11 +205,17 @@ async fn upload_to_s3(
         req = req.header("x-amz-security-token", tok);
     }
 
-    let resp = req.send().await.context("S3 PUT request failed")?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| Error::internal_step("s3 upload", format!("PUT request failed: {e}")))?;
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        anyhow::bail!("S3 PUT failed: HTTP {status}: {body}");
+        return Err(Error::internal_step(
+            "s3 upload",
+            format!("HTTP {status}: {body}"),
+        ));
     }
 
     Ok(())
@@ -241,10 +250,13 @@ impl Batch {
     fn compress(&self) -> Result<Vec<u8>> {
         let mut enc = GzEncoder::new(Vec::new(), Compression::default());
         for line in &self.lines {
-            enc.write_all(line.as_bytes())?;
-            enc.write_all(b"\n")?;
+            enc.write_all(line.as_bytes())
+                .map_err(|e| Error::internal_step("gzip write", e.to_string()))?;
+            enc.write_all(b"\n")
+                .map_err(|e| Error::internal_step("gzip write", e.to_string()))?;
         }
-        Ok(enc.finish()?)
+        enc.finish()
+            .map_err(|e| Error::internal_step("gzip finish", e.to_string()))
     }
 }
 
@@ -339,7 +351,9 @@ async fn tail_and_ship(
 
     let file = File::open(log_file)
         .await
-        .with_context(|| format!("Cannot open {}", log_file.display()))?;
+        .map_err(|e| {
+            Error::internal_step("file io", format!("Cannot open {}: {e}", log_file.display()))
+        })?;
 
     let mut reader = BufReader::new(file).lines();
     let mut batch = Batch::new();

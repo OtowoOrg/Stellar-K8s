@@ -3,6 +3,52 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## Chart v2.6.0 (2026-09-26) [minor]
+
+• Merge pull request #1546 from kingksjo/feat/epics-1495-1498-platform-frameworks
+• Platform frameworks: hot-reload, secrets broker, rollback engine, data residency
+• Merge pull request #1547 from De-hunterJS/feat/k8s-compat-dataplane-snapshot-cert-automation-api-deprecation
+✨ feat: implement k8s-compat-matrix, dataplane-snapshots, cert-automati…
+✨ feat: implement k8s-compat-matrix, dataplane-snapshots, cert-automation, deprecated-api-detection
+• Adds four major automation features:
+• 1. Kubernetes Compatibility Matrix
+•    - Tests operator against 6 K8s versions (1.27-1.32, covering N and N-1)
+•    - Detects upstream pre-releases within 24h
+•    - Publishes matrix results as badge + JSON artifact
+•    - Completes full matrix in <60 minutes
+• 2. Dataplane Configuration Snapshots
+•    - New StellarConfigSnapshot CRD for versioned configs
+•    - Content-addressed by Merkle root (SHA-256)
+•    - Delta snapshots reduce bandwidth by >=80% for large configs
+•    - Agents perform atomic verify + swap (no partial state)
+• 3. Certificate Automation
+•    - Short-lived certs (<=24h) issued automatically
+•    - Hot-reload without process restart (inotify + atomic writes)
+•    - Revocation detection propagates in <60s cluster-wide
+•    - Certificate inventory visible as queryable CRs
+• 4. Deprecated API Usage Detection
+•    - End-to-end detection via audit logs + metrics
+•    - Attribution to owning team via namespace labels
+•    - Weekly migration reports (CSV, HTML, JSON)
+•    - Phase-based enforcement: warn -> deny without webhook restart
+• Acceptance Criteria Met:
+• ✓ K8s matrix covers N and N-1 minors (1.31, 1.32)
+• ✓ Snapshot generation <2s for 10k objects
+• ✓ Delta compression >= 80% bandwidth reduction
+• ✓ Cert rotation without request drops
+• ✓ API deprecation detection >= 99% accuracy
+• Files Added:
+• - tests/compat_matrix.rs (extended with 6 versions)
+• - .github/workflows/k8s-compat-matrix-advanced.yml
+• - config/crd/stellar_config_snapshot_crd.yaml
+• - src/crd/config_snapshot.rs
+• - src/controller/cert_automation.rs
+• - src/controller/api_deprecation_detector.rs
+• - docs/AUTOMATION_FEATURES.md
+• - scripts/ci/generate-badge.sh
+✨ feat: shared platform frameworks for #1498 hot-reload, #1497 secrets broker, #1496 rollback engine, #1495 data residency
+
+
 ## Chart v2.5.0 (2026-09-26) [minor]
 
 • Merge pull request #1538 from broda-spendy/epic-1509-dynamic-rate-limiting

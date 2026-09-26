@@ -1,0 +1,48 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Chaos Experiment 14 — Cluster DNS Outage, 15 min (issue #1494)
+#
+# Part of the control-plane component-kill matrix (etcd, DNS, webhook,
+# scheduler), each isolated for 15 minutes with workload traffic held flat.
+#
+# Scenario: every CoreDNS pod fails for 15 minutes.
+#
+# Success criteria:
+#   1. ControlPlaneHealth/cluster reaches level Degraded within 30s
+#   2. Webhook component stays Healthy (probe uses its cached address)
+#   3. No StellarNode pod is restarted by the operator during the outage
+#   4. Workload traffic (held flat) sees no errors on existing connections
+#   5. Level returns to Normal without intervention; status.incidents[0]
+#      reports components [Dns] and peakLevel Degraded
+#
+# SLO: automatic recovery within 60s of DNS returning
+# Severity: 🔴 Critical
+# Category: control-plane
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: control-plane-dns-outage
+  namespace: chaos-testing
+  labels:
+    chaos.stellar.org/experiment: "14"
+    chaos.stellar.org/category: control-plane
+    chaos.stellar.org/severity: critical
+spec:
+  action: pod-failure
+  mode: all
+  selector:
+    namespaces:
+      - kube-system
+    labelSelectors:
+      k8s-app: kube-dns
+  duration: "15m"

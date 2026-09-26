@@ -63,6 +63,7 @@
 mod blue_green_schema_test;
 pub mod capacity_forecast;
 mod cnpg;
+pub mod control_plane_health;
 pub mod dr_policy;
 pub mod federation;
 pub mod multi_region;
@@ -108,6 +109,11 @@ pub use capacity_forecast::{
     ScalingRecommendation, SeriesBacktest, TimeToExhaustion,
 };
 pub use cnpg::*;
+pub use control_plane_health::{
+    ComponentState, ComponentStatus, ControlPlaneComponent, ControlPlaneHealth,
+    ControlPlaneHealthSpec, ControlPlaneHealthStatus, DegradationLevel, IncidentReport,
+    LevelTransition, PermittedActions, WebhookMode,
+};
 pub use dr_policy::{
     ComplianceStatus, DisasterRecoveryPolicy, DisasterRecoveryPolicySpec,
     DisasterRecoveryPolicyStatus,

@@ -198,7 +198,8 @@ webhooks:
     admissionReviewVersions: ["v1", "v1beta1"]
     sideEffects: None
     timeoutSeconds: {{ .Values.webhook.timeoutSeconds | default 10 }}
-    failurePolicy: {{ .Values.webhook.failurePolicy | default "Fail" }}
+    {{- /* Permissive mode (#1494): a webhook outage never blocks admission. */}}
+    failurePolicy: {{ if eq (.Values.webhook.mode | default "strict") "permissive" }}Ignore{{ else }}{{ .Values.webhook.failurePolicy | default "Fail" }}{{ end }}
     matchPolicy: Equivalent
     namespaceSelector:
       matchExpressions:

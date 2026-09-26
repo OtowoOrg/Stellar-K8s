@@ -173,3 +173,47 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "stellar-operator.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+
+---
+# Control-plane health ClusterRole (graceful degradation, #1494) — lets the
+# operator probe etcd via the API server's /readyz/etcd check, read the
+# scheduler leader lease, publish the cluster-scoped ControlPlaneHealth status
+# and, in Permissive webhook mode, keep webhook failurePolicy at Ignore.
+# Separate from the main role so it also works with watchNamespace set.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-control-plane-health
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+rules:
+  - nonResourceURLs: ["/readyz", "/readyz/etcd"]
+    verbs: ["get"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get"]
+  - apiGroups: ["stellar.org"]
+    resources: ["controlplanehealths"]
+    verbs: ["get", "list", "watch", "create"]
+  - apiGroups: ["stellar.org"]
+    resources: ["controlplanehealths/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+    verbs: ["get", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-control-plane-health
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "stellar-operator.fullname" . }}-control-plane-health
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "stellar-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}

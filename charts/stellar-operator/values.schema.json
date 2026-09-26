@@ -286,6 +286,11 @@
           "enum": ["Fail", "Ignore"],
           "description": "Action when webhook is unreachable: Fail blocks admission, Ignore allows it"
         },
+        "mode": {
+          "type": "string",
+          "enum": ["strict", "permissive"],
+          "description": "Degradation mode for a webhook outage: permissive forces failurePolicy Ignore so admission is never blocked"
+        },
         "resources": {
           "type": "object",
           "description": "Resource requests and limits for the webhook server container"

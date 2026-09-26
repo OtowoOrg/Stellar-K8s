@@ -171,7 +171,6 @@ jobs:
 
       - name: Run CRD validation benchmark (criterion)
         if: matrix.suite == 'criterion'
-        continue-on-error: true
         run: |
           mkdir -p results
           cargo bench --bench crd_operations
@@ -237,8 +236,14 @@ jobs:
           esac
           echo "baseline_file=$BASELINE" >> "$GITHUB_OUTPUT"
           echo "current_file=$CURRENT" >> "$GITHUB_OUTPUT"
-          [[ -f "$BASELINE" ]] && echo "has_baseline=true" >> "$GITHUB_OUTPUT" \
-            || echo "has_baseline=false" >> "$GITHUB_OUTPUT"
+          if [[ "${{ matrix.suite }}" == "criterion" ]]; then
+            echo "has_baseline=false" >> "$GITHUB_OUTPUT"
+            echo "Criterion results are published for artifact review; no calibrated baseline is configured."
+          elif [[ -f "$BASELINE" ]]; then
+            echo "has_baseline=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_baseline=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run operator benchmark (k6)
         if: matrix.suite == 'operator'
@@ -312,7 +317,7 @@ jobs:
         run: '[[ -n "${WEBHOOK_PID:-}" ]] && kill "$WEBHOOK_PID" || true'
 
       - name: Compare with baseline
-        if: steps.baseline.outputs.has_baseline == 'true' && matrix.suite != 'webhook'
+        if: steps.baseline.outputs.has_baseline == 'true' && matrix.suite != 'webhook' && matrix.suite != 'criterion'
         continue-on-error: true
         uses: ./.github/actions/compare-benchmarks
         with:

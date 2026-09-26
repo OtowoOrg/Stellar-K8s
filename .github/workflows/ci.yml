@@ -109,7 +109,7 @@ jobs:
             '^(examples/|config/crd/|config/samples/)')" \
             >> "$GITHUB_OUTPUT"
           echo "yaml_schema=$(_match \
-            '^(\.yamllint\.yml|schemas/|config/crd/|config/yaml-validation\.yaml|charts/|examples/|scripts/ci/validate-yaml\.sh|scripts/ci/extract-crd-json-schemas\.py|scripts/validate-yaml-manifests\.py)')" \
+            '^(\.yamllint\.yml|schemas/|config/crd/|config/yaml-validation\.yaml|charts/|examples/|requirements\.txt|\.github/workflows/ci\.yml|scripts/ci/validate-yaml\.sh|scripts/ci/extract-crd-json-schemas\.py|scripts/validate-yaml-manifests\.py|scripts/tests/test_validate_yaml_manifests\.py)')" \
             >> "$GITHUB_OUTPUT"
           echo "db_migrations=$(_match \
             '^(db/|src/db_migrations\.rs|tests/db_migration_harness\.rs|scripts/ci/test-db-migrations\.sh)')" \

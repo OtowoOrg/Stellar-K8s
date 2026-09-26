@@ -107,9 +107,8 @@ securityContext:
     drop:
       - ALL
 
-# mTLS configuration for inter-service communication.
-# When enabled, creates self-signed CA and certificates for
-# Stellar Core, Horizon, and Soroban RPC services.
+# Enforce inter-service mTLS through Istio sidecars. Requires Istio with
+# automatic sidecar injection enabled in the cluster.
 mtls:
   enabled: false
 

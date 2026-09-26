@@ -73,7 +73,12 @@ unsound = "workspace"
 
 # Ignored advisories — all entries MUST have a documented reason and a
 # re-evaluation target date or upstream issue link.
-# Keep this list in sync with .cargo/audit.toml.
+#
+# KNOWN DIVERGENCE (issue #936): this list is NOT actually in sync with
+# `.cargo/audit.toml`, despite the note below. It is missing 6 entries present
+# there: RUSTSEC-2026-0049, -0149, -0182, -0185, -0188, -0192.
+# Reconciling the four ignore lists (this file, .cargo/audit.toml, ci.yml,
+# dependency-review.yml) into one generated source of truth is outstanding.
 ignore = [
     # backoff 0.4.0 — unmaintained, transitive via kube-runtime 0.94.x
     # Re-evaluate when kube-rs upgrades its backoff dependency.
@@ -109,10 +114,15 @@ ignore = [
     { id = "RUSTSEC-2026-0089", reason = "Winch backend only; we use Cranelift" },
 
     # pqcrypto — experimental KMS path only, behind a feature flag
+    # NOTE (issue #936): the justification below references an "experimental
+    # pqcrypto KMS path", but no `pqcrypto` package exists in Cargo.toml or
+    # Cargo.lock. These ignores are inert; correct or remove them.
     { id = "RUSTSEC-2024-0380", reason = "experimental pqcrypto KMS path, not in production" },
     { id = "RUSTSEC-2024-0381", reason = "experimental pqcrypto KMS path, not in production" },
 
-    # Keep in sync with .github/workflows cargo-audit --ignore lists
+    # DIVERGENT: ci.yml and dependency-review.yml additionally ignore
+    # RUSTSEC-2020-0071 and RUSTSEC-2026-0085/-0087/-0091/-0204, which are in
+    # neither this file nor .cargo/audit.toml. See issue #936.
     { id = "RUSTSEC-2026-0098", reason = "rustls-webpki name constraints; awaiting coordinated upgrade" },
     { id = "RUSTSEC-2026-0099", reason = "rustls-webpki wildcard name constraints; awaiting coordinated upgrade" },
     { id = "RUSTSEC-2026-0104", reason = "rustls-webpki CRL parsing panic; awaiting coordinated upgrade" },

@@ -64,6 +64,7 @@ mod blue_green_schema_test;
 mod cnpg;
 pub mod dr_policy;
 pub mod federation;
+pub mod internal_api_schema;
 pub mod multi_region;
 pub mod read_replica;
 pub mod schema_utils;
@@ -88,11 +89,11 @@ pub use tenant::{
 };
 
 // New Epic CRDs (Wave 5)
+pub mod service_ownership;
 pub mod stellar_aiops;
 pub mod stellar_database;
 pub mod stellar_disaster_recovery;
 pub mod stellar_gitops;
-pub mod service_ownership;
 pub mod stellar_registry;
 pub mod stellar_security;
 
@@ -107,6 +108,10 @@ pub use dr_policy::{
 pub use federation::{
     ClusterRegistry, ClusterRegistrySpec, ConflictResolutionStrategy, FederatedCluster,
     FederatedPlacement, FederatedStellarNode, FederatedStellarNodeSpec,
+};
+pub use internal_api_schema::{
+    ConsumerDeploymentPolicy, InternalApiSchema, InternalApiSchemaSpec, InternalApiSchemaStatus,
+    SchemaDeploymentPhase,
 };
 pub use multi_region::{
     ClusterConfig, ClusterHealthStatus, FailoverPolicy, MultiRegionConfig, MultiRegionHealthCheck,

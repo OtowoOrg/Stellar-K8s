@@ -25,5 +25,6 @@ pub mod health_check;
 pub mod info;
 pub mod operator;
 pub mod runbook;
+pub mod schema_compat;
 pub mod simulator;
 pub mod webhook;

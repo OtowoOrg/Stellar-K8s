@@ -22,6 +22,7 @@ use stellar_k8s::commands::health_check::run_health_check;
 use stellar_k8s::commands::info::run_info;
 use stellar_k8s::commands::operator::run_operator;
 use stellar_k8s::commands::runbook::run_generate_runbook;
+use stellar_k8s::commands::schema_compat::run_schema_compat;
 use stellar_k8s::commands::simulator::run_simulator;
 use stellar_k8s::commands::webhook::run_webhook;
 
@@ -133,6 +134,7 @@ async fn run() -> Result<(), Error> {
         }
         Commands::Webhook(webhook_args) => return run_webhook(webhook_args).await,
         Commands::Doctor(doctor_args) => return run_doctor(doctor_args).await,
+        Commands::SchemaCompat(args) => return run_schema_compat(args),
         Commands::HealthCheck(hc_args) => return run_health_check(hc_args),
         Commands::Benchmark(benchmark_args) => {
             return run_benchmark_controller_cmd(benchmark_args).await

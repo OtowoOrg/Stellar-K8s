@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## Chart v2.4.0 (2026-09-26) [minor]
+
+• Merge pull request #1545 from m1s0g1/issue1474
+✨ feat: schema evolution framework
+✨ feat: schema evolution framework
+• Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
+✨ feat: federation consistency protocol
+• Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
+✨ feat: progressive delivery controller
+• Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
+🐛 refactor: structured error handling
+• Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
+
+
 ## Chart v2.3.0 (2026-09-26) [minor]
 
 • Merge pull request #1535 from broda-spendy/epic-1512-index-sharding

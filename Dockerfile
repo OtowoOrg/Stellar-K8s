@@ -48,7 +48,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --bin stellar-hooks \
     --bin stellar-watcher \
     --bin stellar-fork-detector \
-    --bin stellar-health-sidecar && \
+    --bin stellar-health-sidecar \
+    --bin stellar-cert-health && \
   mkdir -p /app/bin && \
   cp /app/target/release/stellar-operator /app/bin/ && \
   cp /app/target/release/kubectl-stellar /app/bin/ && \
@@ -57,13 +58,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
   cp /app/target/release/stellar-watcher /app/bin/ && \
   cp /app/target/release/stellar-fork-detector /app/bin/ && \
   cp /app/target/release/stellar-health-sidecar /app/bin/ && \
+  cp /app/target/release/stellar-cert-health /app/bin/ && \
   strip /app/bin/stellar-operator \
     /app/bin/kubectl-stellar \
     /app/bin/stellar-sidecar \
     /app/bin/stellar-hooks \
     /app/bin/stellar-watcher \
     /app/bin/stellar-fork-detector \
-    /app/bin/stellar-health-sidecar
+    /app/bin/stellar-health-sidecar \
+    /app/bin/stellar-cert-health
 
 # ==============================================================================
 # Stage 4: Local Binaries - Fast local packaging from host build artifacts
@@ -139,5 +142,6 @@ COPY --from=builder /app/bin/stellar-hooks /stellar-hooks
 COPY --from=builder /app/bin/stellar-watcher /stellar-watcher
 COPY --from=builder /app/bin/stellar-fork-detector /stellar-fork-detector
 COPY --from=builder /app/bin/stellar-health-sidecar /stellar-health-sidecar
+COPY --from=builder /app/bin/stellar-cert-health /stellar-cert-health
 
 ENTRYPOINT ["/stellar-operator"]

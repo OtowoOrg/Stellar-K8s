@@ -63,6 +63,33 @@ spec:
   groups:
     - name: certificate-expiry
       rules:
+        - alert: WebhookCertificateExpiring25Percent
+          expr: stellar_webhook_certificate_remaining_ratio > 0 and stellar_webhook_certificate_remaining_ratio <= 0.25
+          for: 1m
+          labels:
+            severity: warning
+            component: admission-webhook
+          annotations:
+            summary: "Admission webhook certificate has 25% or less lifetime remaining"
+            description: "The cert-health sidecar is validating rotation and trust-bundle propagation; investigate if the alert persists."
+        - alert: WebhookCertificateExpiring10Percent
+          expr: stellar_webhook_certificate_remaining_ratio > 0 and stellar_webhook_certificate_remaining_ratio <= 0.10
+          for: 1m
+          labels:
+            severity: critical
+            component: admission-webhook
+          annotations:
+            summary: "Admission webhook certificate has 10% or less lifetime remaining"
+            description: "Renewal is approaching expiry. Check cert-manager and cainjector immediately."
+        - alert: WebhookCertificateVerificationFailed
+          expr: stellar_webhook_certificate_valid == 0
+          for: 30s
+          labels:
+            severity: critical
+            component: admission-webhook
+          annotations:
+            summary: "Admission webhook serving certificate failed verification"
+            description: "The pod is failing readiness closed until certificate, key, CA, validity, and DNS identity agree."
         - alert: CertificateExpiringSoon
           expr: (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < {{ .Values.monitoring.prometheusRule.certAlerts.warningDays | default 30 }}
           for: 1h

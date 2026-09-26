@@ -292,12 +292,39 @@
         },
         "certManager": {
           "type": "object",
-          "description": "Optional cert-manager Certificate/ClusterIssuer rendering for webhook TLS",
+          "description": "Declarative cert-manager webhook TLS: CA, serving certificate, trust-bundle injection and continuous renewal",
           "additionalProperties": false,
           "properties": {
             "enabled": {
               "type": "boolean",
-              "description": "When true, render cert-manager Certificate and ClusterIssuer resources"
+              "description": "When true, render the cert-manager Issuer/Certificate chain and the certificate-health sidecar"
+            },
+            "duration": {
+              "type": "string",
+              "description": "Serving certificate lifetime as a Kubernetes duration (e.g. 2160h)"
+            },
+            "renewBefore": {
+              "type": "string",
+              "description": "How long before expiry the serving certificate is renewed (e.g. 720h)"
+            },
+            "caDuration": {
+              "type": "string",
+              "description": "Webhook CA lifetime as a Kubernetes duration (e.g. 8760h)"
+            },
+            "caRenewBefore": {
+              "type": "string",
+              "description": "How long before expiry the webhook CA is renewed (e.g. 2160h)"
+            },
+            "certHealth": {
+              "type": "object",
+              "description": "Certificate-health sidecar configuration",
+              "additionalProperties": false,
+              "properties": {
+                "resources": {
+                  "type": "object",
+                  "description": "Resource requests and limits for the certificate-health sidecar"
+                }
+              }
             }
           }
         }

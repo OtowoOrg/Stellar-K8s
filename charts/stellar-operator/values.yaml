@@ -945,9 +945,8 @@ webhook:
   # Admission review timeout in seconds. Kubernetes maximum is 30.
   timeoutSeconds: 10
 
-  # Action when the webhook is unreachable: Fail (safe default) or Ignore.
-  # Fail: admission is blocked if the webhook cannot be reached.
-  # Ignore: admission proceeds without the webhook response.
+  # Deprecated: webhook failure is always Fail so TLS/trust verification errors
+  # cannot bypass admission policy.
   failurePolicy: Fail
 
   # Resource requests and limits for the webhook server container.
@@ -959,11 +958,27 @@ webhook:
       cpu: 500m
       memory: 512Mi
 
-  # When true, render cert-manager Certificate + ClusterIssuer for webhook TLS.
-  # Default false so installs work without the cert-manager CRDs (e.g. kind
-  # quickstart). Enable in environments that have cert-manager installed.
+  # Declarative cert-manager lifecycle. Enabled by default whenever the
+  # admission webhook is enabled, providing issuance, CA distribution, and
+  # continuous renewal without generated or manually rotated files.
+  # Requires cert-manager.io/v1 and cainjector in the cluster.
   certManager:
-    enabled: false
+    enabled: true
+    # Serving certificate lifetime and renewal lead time. Renewal begins with
+    # one third of the lifetime remaining, leaving cainjector and pod reloads
+    # ample overlap before expiry.
+    duration: 2160h
+    renewBefore: 720h
+    caDuration: 8760h
+    caRenewBefore: 2160h
+    certHealth:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 64Mi
 
 # --- Helm lifecycle hooks ----------------------------------------------------
 hooks:

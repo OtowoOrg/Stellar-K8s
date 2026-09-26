@@ -26,6 +26,35 @@ data:
     groups:
     - name: certificate-expiry
       rules:
+      # Admission webhook lifetime horizons (cert-manager rotates before these)
+      - alert: WebhookCertificateExpiring25Percent
+        expr: stellar_webhook_certificate_remaining_ratio > 0 and stellar_webhook_certificate_remaining_ratio <= 0.25
+        for: 1m
+        labels:
+          severity: warning
+          component: admission-webhook
+        annotations:
+          summary: "Admission webhook certificate has 25% or less lifetime remaining"
+          description: "The cert-health sidecar is validating renewal and trust-bundle propagation."
+      - alert: WebhookCertificateExpiring10Percent
+        expr: stellar_webhook_certificate_remaining_ratio > 0 and stellar_webhook_certificate_remaining_ratio <= 0.10
+        for: 1m
+        labels:
+          severity: critical
+          component: admission-webhook
+        annotations:
+          summary: "Admission webhook certificate has 10% or less lifetime remaining"
+          description: "Check cert-manager and cainjector immediately."
+      - alert: WebhookCertificateVerificationFailed
+        expr: stellar_webhook_certificate_valid == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: admission-webhook
+        annotations:
+          summary: "Admission webhook serving certificate failed verification"
+          description: "The pod is failing readiness closed until all certificate checks pass."
+
       # Certificate expiring in 30 days
       - alert: CertificateExpiringSoon
         expr: |

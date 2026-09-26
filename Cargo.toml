@@ -125,7 +125,9 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rcgen = { version = "0.14", features = ["pem", "x509-parser"] }
 axum-server = { version = "0.7.0", features = ["tls-rustls"] }
 rustls-pki-types = "1.14.1"
-x509-parser = "0.16"
+# `verify` enables the cryptographic chain check used by the webhook
+# certificate-health verifier (src/webhook/cert_health.rs).
+x509-parser = { version = "0.16", features = ["verify"] }
 
 # Wasm runtime for custom validation plugins
 wasmtime = { version = "24.0.11", optional = true }
@@ -299,6 +301,13 @@ required-features = ["rest-api", "metrics"]
 name = "stellar-health-sidecar"
 path = "src/bin/stellar-health-sidecar.rs"
 required-features = ["rest-api"]
+
+# Admission webhook certificate-health sidecar. It performs local, offline
+# chain/identity/validity checks and gates pod readiness fail-closed.
+[[bin]]
+name = "stellar-cert-health"
+path = "src/bin/stellar-cert-health.rs"
+required-features = ["admission-webhook"]
 
 [[bench]]
 name = "crd_operations"

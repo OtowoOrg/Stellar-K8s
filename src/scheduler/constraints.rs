@@ -40,6 +40,15 @@ pub enum SchedulingConstraint {
         value: String,
         effect: String,
     },
+    /// Data-residency constraint (#1495): node region must be in
+    /// `allowed_regions` (matched against `label_key`, default
+    /// `topology.kubernetes.io/region`). Produced from
+    /// `crate::data_residency::ResidencyRule` so existing scheduling
+    /// machinery enforces it with no scheduler fork.
+    DataResidency {
+        allowed_regions: Vec<String>,
+        label_key: String,
+    },
 }
 
 /// Weights for multi-objective scoring (must sum to ~1.0).

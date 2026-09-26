@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## Chart v2.3.0 (2026-09-26) [minor]
+
+• Merge pull request #1535 from broda-spendy/epic-1512-index-sharding
+✨ feat(controller): add declarative index sharding for CRD informer caches (#1512)
+✨ feat(index-sharding): add declarative index sharding for CRD informer caches (#1512)
+• - New index_sharding module with consistent-hash based ShardRing
+• - ShardedIndex for partitioned informer cache with memory tracking
+• - Configurable shard count, shard key, and virtual nodes
+• - Rebalance operation moves O(1/N) keys on shard count change
+• - Unit tests for distribution, insertion, and rebalance
+• Partially addresses #1512 acceptance criteria:
+• - [ ] Cache memory under budget at 500k objects
+• - [ ] Rebalance causes no watch disconnects
+• - [ ] Lookup latency flat at 10x scale
+• - [ ] Shard strategy visible in CRD status
+
+
 ## Chart v2.2.0 (2026-09-25) [minor]
 
 • Merge pull request #1536 from broda-spendy/epic-1511-cross-signal-anomaly

@@ -118,6 +118,21 @@ impl MultiObjectiveOptimizer {
                 } if node.hourly_cost_usd > *max_hourly_cost_usd => {
                     return false;
                 }
+                SchedulingConstraint::DataResidency {
+                    allowed_regions,
+                    label_key,
+                } => {
+                    // Prefer the explicit label, fall back to the node's
+                    // known region field (populated from the same label).
+                    let region = node
+                        .labels
+                        .get(label_key)
+                        .cloned()
+                        .unwrap_or_else(|| node.region.clone());
+                    if !allowed_regions.contains(&region) {
+                        return false;
+                    }
+                }
                 _ => {}
             }
         }

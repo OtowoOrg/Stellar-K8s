@@ -588,12 +588,41 @@ pub(crate) fn build_config_map(
 
     match &node.spec.node_type {
         NodeType::Validator => {
-            let mut core_cfg = String::new();
+            let mut user_cfg = String::new();
             if let Some(config) = &node.spec.validator_config {
                 if let Some(qs) = quorum_override {
-                    core_cfg.push_str(&qs.to_stellar_core_toml());
+                    user_cfg.push_str(&qs.to_stellar_core_toml());
                 } else if let Some(q) = &config.quorum_set {
-                    core_cfg.push_str(q);
+                    user_cfg.push_str(q);
+                }
+            }
+
+            // Operator-managed top-level keys MUST be written before any
+            // [[TABLE]] sections from the user's quorum config — once a
+            // [[VALIDATORS]]/[[HOME_DOMAINS]] section is opened, every later
+            // KEY=VALUE line is scoped into that table instead of the root.
+            let mut core_cfg = String::new();
+
+            // stellar-core >= 21 refuses to start when neither
+            // DEPRECATED_SQL_LEDGER_STATE nor EXPERIMENTAL_BUCKETLIST_DB is
+            // present at the top level, even though FALSE is the documented
+            // default. Set it explicitly so generated configs always parse.
+            if !user_cfg.contains("DEPRECATED_SQL_LEDGER_STATE")
+                && !user_cfg.contains("EXPERIMENTAL_BUCKETLIST_DB")
+            {
+                core_cfg.push_str("# Required by stellar-core >= 21\n");
+                core_cfg.push_str("DEPRECATED_SQL_LEDGER_STATE=false\n\n");
+            }
+
+            match node.spec.history_mode {
+                HistoryMode::Full => {
+                    core_cfg.push_str("# Full History Mode\n");
+                    core_cfg.push_str("CATCHUP_COMPLETE=true\n\n");
+                }
+                HistoryMode::Recent => {
+                    core_cfg.push_str("# Recent History Mode\n");
+                    core_cfg.push_str("CATCHUP_COMPLETE=false\n");
+                    core_cfg.push_str("CATCHUP_RECENT=60480\n\n");
                 }
             }
 
@@ -606,23 +635,13 @@ pub(crate) fn build_config_map(
                 // correctly issued and mounted at /etc/stellar/tls regardless. See the
                 // "Known Limitation" section in docs/mtls-guide.md and
                 // docs/security/e2e-encryption-architecture.md.
-                core_cfg.push_str("\n# mTLS Configuration (best-effort; see docs/mtls-guide.md)\n");
+                core_cfg.push_str("# mTLS Configuration (best-effort; see docs/mtls-guide.md)\n");
                 core_cfg.push_str("HTTP_PORT_SECURE=true\n");
                 core_cfg.push_str("TLS_CERT_FILE=\"/etc/stellar/tls/tls.crt\"\n");
-                core_cfg.push_str("TLS_KEY_FILE=\"/etc/stellar/tls/tls.key\"\n");
+                core_cfg.push_str("TLS_KEY_FILE=\"/etc/stellar/tls/tls.key\"\n\n");
             }
 
-            match node.spec.history_mode {
-                HistoryMode::Full => {
-                    core_cfg.push_str("\n# Full History Mode\n");
-                    core_cfg.push_str("CATCHUP_COMPLETE=true\n");
-                }
-                HistoryMode::Recent => {
-                    core_cfg.push_str("\n# Recent History Mode\n");
-                    core_cfg.push_str("CATCHUP_COMPLETE=false\n");
-                    core_cfg.push_str("CATCHUP_RECENT=60480\n");
-                }
-            }
+            core_cfg.push_str(&user_cfg);
 
             if !core_cfg.is_empty() {
                 data.insert("stellar-core.cfg".to_string(), core_cfg);
@@ -2433,6 +2452,14 @@ fn build_pod_template(
         if let Some(ref mut vols) = pod_spec.volumes {
             vols.extend(inj.volumes());
         }
+        // Dedupe env vars: legacy seed_secret_ref injection and seed_injection
+        // can both add STELLAR_CORE_SEED, which the API server rejects.
+        if let Some(container) = pod_spec.containers.first_mut() {
+            if let Some(ref mut env) = container.env {
+                let mut seen = std::collections::HashSet::new();
+                env.retain(|e| seen.insert(e.name.clone()));
+            }
+        }
     }
     // ==========================================================================
 
@@ -2645,9 +2672,26 @@ fn build_pod_template(
     }
     // ==========================================================================
 
+    // Kubelet rejects the whole pod when AppArmor annotations are present but
+    // the host cannot enforce them (e.g. kind nodes on Amazon Linux, which uses
+    // SELinux). Make the annotations opt-in via STELLAR_APPARMOR_ENABLED=true.
+    let apparmor_enabled = std::env::var("STELLAR_APPARMOR_ENABLED")
+        .map(|v| v == "true" || v == "1" || v.eq_ignore_ascii_case("yes"))
+        .unwrap_or(false);
     let mut apparmor_annotations = BTreeMap::new();
-    if let Some(containers) = &pod_spec.init_containers {
-        for container in containers {
+    if apparmor_enabled {
+        if let Some(containers) = &pod_spec.init_containers {
+            for container in containers {
+                apparmor_annotations.insert(
+                    format!(
+                        "container.apparmor.security.beta.kubernetes.io/{}",
+                        container.name
+                    ),
+                    "runtime/default".to_string(),
+                );
+            }
+        }
+        for container in &pod_spec.containers {
             apparmor_annotations.insert(
                 format!(
                     "container.apparmor.security.beta.kubernetes.io/{}",
@@ -2656,15 +2700,6 @@ fn build_pod_template(
                 "runtime/default".to_string(),
             );
         }
-    }
-    for container in &pod_spec.containers {
-        apparmor_annotations.insert(
-            format!(
-                "container.apparmor.security.beta.kubernetes.io/{}",
-                container.name
-            ),
-            "runtime/default".to_string(),
-        );
     }
 
     let mut pod_object_meta = ObjectMeta {
@@ -3257,9 +3292,22 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
         NodeType::SorobanRpc => {}
     }
 
+    // Official stellar/stellar-core images declare an empty Cmd, so without an
+    // explicit command the container exits immediately printing usage text.
+    let command = match node.spec.node_type {
+        NodeType::Validator => Some(vec![
+            "/usr/bin/stellar-core".to_string(),
+            "run".to_string(),
+            "--conf".to_string(),
+            "/config/stellar-core.cfg".to_string(),
+        ]),
+        _ => None,
+    };
+
     Container {
         name: "stellar-node".to_string(),
         image: Some(node.spec.container_image()),
+        command,
         ports: Some(vec![ContainerPort {
             container_port,
             ..Default::default()

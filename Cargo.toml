@@ -56,7 +56,7 @@ schemars = { version = "0.8", features = ["chrono"] }
 
 # Error handling
 thiserror = "1"
-anyhow = "1.0.108" # Latest patch with security fixes
+anyhow = "1.0.104" # Pinned to the latest published patch release
 
 # CLI argument parsing
 clap = { version = "4.5", features = ["derive", "env"] }
@@ -64,8 +64,8 @@ clap_complete = "4.6"
 
 # Date/time handling
 chrono = { version = "0.4", features = ["serde"] }
-# Pinned to latest patch for security fixes; used transitively by many HTTP/async crates.
-bytes = "1.14.0"
+# Used transitively by many HTTP/async crates; keep the floor in step with Cargo.lock.
+bytes = "1.11"
 
 # Zip compression for incident reports
 zip = "2"

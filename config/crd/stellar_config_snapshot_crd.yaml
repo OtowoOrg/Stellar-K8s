@@ -1,0 +1,188 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stellarconfigsnapshots.stellar.io
+  labels:
+    app: stellar-operator
+    version: v1alpha1
+spec:
+  names:
+    kind: StellarConfigSnapshot
+    plural: stellarconfigsnapshots
+    shortNames:
+      - scs
+      - snapshot
+  scope: Namespaced
+  group: stellar.io
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: Specification for a dataplane configuration snapshot
+              type: object
+              required:
+                - targetNodeSelector
+                - dataplaneConfig
+              properties:
+                targetNodeSelector:
+                  description: >
+                    Label selector identifying StellarNode instances to snapshot.
+                    If empty, captures all nodes.
+                  type: object
+                  additionalProperties:
+                    type: string
+                  example:
+                    stellar.io/network: mainnet
+                dataplaneConfig:
+                  description: >
+                    Complete bundled dataplane configuration (ConfigMap data, secrets, 
+                    routing tables, peer list, etc.). Content-addressed by Merkle root.
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                merkleRoot:
+                  description: >
+                    SHA-256 hash of (dataplaneConfig | sorted). Serves as content 
+                    address for caching and verification.
+                  type: string
+                  minLength: 64
+                  maxLength: 64
+                  pattern: '^[a-f0-9]{64}$'
+                deltaFrom:
+                  description: >
+                    Optional reference to a prior snapshot. If set, dataplaneConfig
+                    contains only changed fields (delta). Reduces bandwidth for 
+                    large configs (e.g., 10k+ objects).
+                  type: object
+                  properties:
+                    name:
+                      description: Name of the prior StellarConfigSnapshot
+                      type: string
+                    merkleRoot:
+                      description: Expected Merkle root of prior snapshot (verification)
+                      type: string
+                      minLength: 64
+                      maxLength: 64
+                      pattern: '^[a-f0-9]{64}$'
+                    snapshotTime:
+                      description: Timestamp of prior snapshot
+                      type: string
+                      format: date-time
+                signature:
+                  description: >
+                    ECDSA signature (base64-encoded) over (merkleRoot). 
+                    Agents verify this signature before atomic swap.
+                  type: string
+                  pattern: '^[A-Za-z0-9+/=]+$'
+                generationTime:
+                  description: Timestamp when snapshot was generated
+                  type: string
+                  format: date-time
+                configSize:
+                  description: Byte size of serialized dataplaneConfig
+                  type: integer
+                  format: int64
+                  minimum: 0
+                metadata:
+                  description: Optional user-defined metadata (e.g., change reason)
+                  type: object
+                  additionalProperties:
+                    type: string
+            status:
+              description: Status of the configuration snapshot
+              type: object
+              properties:
+                phase:
+                  description: Current phase of snapshot lifecycle
+                  type: string
+                  enum:
+                    - Pending
+                    - Generated
+                    - Signed
+                    - Applied
+                    - Failed
+                appliedBy:
+                  description: List of agent names that have applied this snapshot
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      agentName:
+                        type: string
+                      nodeName:
+                        type: string
+                      appliedTime:
+                        type: string
+                        format: date-time
+                      status:
+                        type: string
+                        enum: [Success, Failed]
+                verificationStatus:
+                  description: Signature and content verification results
+                  type: object
+                  properties:
+                    signatureValid:
+                      type: boolean
+                    merkleRootVerified:
+                      type: boolean
+                    lastVerifiedTime:
+                      type: string
+                      format: date-time
+                observedGeneration:
+                  description: Latest generation of spec that controller has observed
+                  type: integer
+                conditions:
+                  description: Array of condition objects
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - type
+                      - status
+                      - lastTransitionTime
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: [True, False, Unknown]
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      observedGeneration:
+                        type: integer
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          description: Snapshot phase (Pending, Generated, Signed, Applied, Failed)
+          jsonPath: .status.phase
+        - name: MerkleRoot
+          type: string
+          description: Content-address hash
+          jsonPath: .spec.merkleRoot
+          priority: 1
+        - name: Size (bytes)
+          type: integer
+          description: Configuration size in bytes
+          jsonPath: .spec.configSize
+          priority: 1
+        - name: Age
+          type: date
+          description: Age of snapshot
+          jsonPath: .metadata.creationTimestamp

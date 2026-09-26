@@ -46,8 +46,41 @@ fn main() {
         .unwrap_or_else(|| "unknown".to_string());
     println!("cargo:rustc-env=RUST_VERSION={rust_version}");
 
+    // Fail the build if the central registry does not cover every internal API.
+    verify_schema_registry();
     // Index documentation
     index_docs();
+}
+
+fn verify_schema_registry() {
+    const INTERNAL_SUBJECTS: &[&str] = &["stellar.ledger.events", "stellar.scp.message"];
+    let registry: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string("schemas/registry.json").expect("schemas/registry.json is readable"),
+    )
+    .expect("schemas/registry.json is valid JSON");
+    let subjects = registry
+        .get("subjects")
+        .and_then(serde_json::Value::as_object)
+        .expect("schema registry has a subjects map");
+    let missing: Vec<_> = INTERNAL_SUBJECTS
+        .iter()
+        .copied()
+        .filter(|subject| {
+            match subjects
+                .get(*subject)
+                .and_then(|s| s.get("versions"))
+                .and_then(serde_json::Value::as_array)
+            {
+                Some(versions) => versions.is_empty(),
+                None => true,
+            }
+        })
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "internal API schemas missing from registry: {missing:?}"
+    );
+    println!("cargo:rerun-if-changed=schemas/registry.json");
 }
 
 fn index_docs() {

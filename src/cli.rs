@@ -77,6 +77,8 @@ pub enum Commands {
     CheckCrd,
     /// Verify local CLI tooling, Kubernetes context, and operator permissions
     Doctor(DoctorArgs),
+    /// Gate a proposed schema against every pinned consumer
+    SchemaCompat(crate::commands::schema_compat::SchemaCompatArgs),
     /// Run offline repository validation checks
     HealthCheck(crate::commands::health_check::HealthCheckArgs),
     /// Prune old history archive checkpoints
@@ -633,6 +635,26 @@ mod cli_tests {
         let parsed = Args::try_parse_from(["stellar-operator", "doctor"])
             .expect("doctor subcommand should parse");
         assert!(matches!(parsed.command, Commands::Doctor(_)));
+    }
+
+    #[test]
+    fn schema_compat_subcommand_parses() {
+        let parsed = Args::try_parse_from([
+            "stellar-operator",
+            "schema-compat",
+            "--subject",
+            "stellar.ledger.events",
+            "--schema",
+            "candidate.json",
+        ])
+        .expect("schema-compat subcommand should parse");
+        match parsed.command {
+            Commands::SchemaCompat(args) => {
+                assert_eq!(args.registry, "schemas/registry.json");
+                assert_eq!(args.subject, "stellar.ledger.events");
+            }
+            _ => panic!("expected SchemaCompat subcommand"),
+        }
     }
 
     fn parse_simulator_up(args: &[&str]) -> Result<SimulatorUpArgs, clap::Error> {

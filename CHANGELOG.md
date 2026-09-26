@@ -3,6 +3,41 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## Chart v2.5.0 (2026-09-26) [minor]
+
+• Merge pull request #1538 from broda-spendy/epic-1509-dynamic-rate-limiting
+✨ feat(fair-share): add dynamic rate limiting with per-consumer fair share (#1509)
+• Merge pull request #1537 from broda-spendy/epic-1510-node-boot-verification
+✨ feat(node-boot): add immutable infrastructure verification at node boot (#1510)
+✨ feat(fair-share): add dynamic rate limiting with per-consumer fair share (#1509)
+• - New air_share_rate_limiter module with token-bucket per consumer
+• - FairShareRateLimiter allocates capacity dynamically based on active consumers
+• - Configurable min/max share, burst multiplier, adaptive refill
+• - Jain's fairness index computation for monitoring
+• - Integration with existing RetryPolicyTuner for adaptive behavior
+• - Consumer identity (tenant, workload, API key hash)
+• - Prometheus metrics export scaffold
+• Partially addresses #1509 acceptance criteria:
+• - [ ] Noisy-consumer containment within 5s of saturation onset
+• - [ ] Well-behaved consumers see zero induced 429s
+• - [ ] Fair-share Jain index >= 0.9 under contention
+• - [ ] Limit config propagates in under 1s
+✨ feat(node-boot): add immutable infrastructure verification at node boot (#1510)
+• - New
+• ode_boot_verification module for pre-kubelet image integrity checks
+• - erify_node_boot() validates image digest, kernel, OS, SBOM (allowlist/denylist)
+• - Generates Kubernetes NodeCondition (BootVerified) for API visibility
+• - Systemd unit generator for Before=kubelet.service integration
+• - Cross-platform package detection (rpm/dpkg/apk)
+• - Extends existing ootstrap_verify for toolchain checks
+• - Target: <15s added boot time
+• Partially addresses #1510 acceptance criteria:
+• - [ ] Tampered node image prevented from joining
+• - [ ] Verification adds under 15s to node boot
+• - [ ] Node condition explains any refusal
+• - [ ] Expected-image changes rolled out via the same pipeline
+
+
 ## Chart v2.4.0 (2026-09-26) [minor]
 
 • Merge pull request #1545 from m1s0g1/issue1474

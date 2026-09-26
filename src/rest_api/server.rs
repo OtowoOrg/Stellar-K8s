@@ -203,6 +203,10 @@ pub fn build_router(state: Arc<ControllerState>) -> Router {
         // Dashboard routes
         .route("/", get(dashboard_ui))
         .route(
+            "/api/v1/validators/leaderboard",
+            get(dashboard_handlers::get_validator_leaderboard),
+        )
+        .route(
             "/api/v1/dashboard/overview",
             get(dashboard_handlers::dashboard_overview),
         )

@@ -1,6 +1,6 @@
 mod common;
 
-use common::skip_if_tools_missing;
+use common::{skip_if_tools_missing, ClusterGuard};
 use std::error::Error;
 use std::process::{Command, Stdio};
 use std::thread::sleep;
@@ -23,6 +23,11 @@ fn e2e_dr_failover() -> Result<(), Box<dyn std::error::Error>> {
 
     let cluster_name = std::env::var("KIND_CLUSTER_NAME").unwrap_or_else(|_| "stellar-e2e".into());
     ensure_kind_cluster(&cluster_name)?;
+    // Register cluster teardown immediately after creation so the KinD cluster
+    // is removed even if a later step returns Err or panics. Declared before
+    // `_cleanup`, so reverse drop order runs `_cleanup` (namespaces/CRs) first
+    // and the cluster delete last. Set SKIP_TEARDOWN=1 to keep it for debugging.
+    let _cluster = ClusterGuard::new(cluster_name.as_str());
 
     // ── Install the CRD ──────────────────────────────────────────────────────
     run_cmd(

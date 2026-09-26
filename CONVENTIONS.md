@@ -70,7 +70,7 @@ entry points only — detailed content belongs in `docs/`.
 | Element | Convention | Example |
 |---|---|---|
 | File names | `kebab-case.sh` | `setup-mac.sh` |
-| Operational scripts | live in `scripts/` | `scripts/validate.sh` |
+| Operational scripts | live in `scripts/` | `scripts/repo-health.sh` |
 | Historical / one-off | move to `scripts/archive/` | `scripts/archive/create_batch_2_issues.sh` |
 
 Every script must pass `shellcheck -S error` before merging.
@@ -141,12 +141,48 @@ All structured log field names must use the field name constants defined in `src
 
 All integration and E2E tests that allocate Kubernetes resources or temporary state MUST use the RAII guards defined in `tests/common/mod.rs`:
 
+- `ClusterGuard`: Deletes the KinD cluster on `Drop`. **Any test that calls `ensure_kind_cluster` must own one**, created immediately after the cluster so an early return or panic cannot leak a Docker-backed cluster. Honours `SKIP_TEARDOWN=1` for debugging.
 - `NamespaceGuard`: Automatically deletes temporary test namespaces on `Drop`.
 - `StellarNodeGuard`: Automatically deletes temporary `StellarNode` CRs on `Drop`.
 - `ManifestGuard`: Automatically deletes applied YAML manifests on `Drop`.
 - `E2eTestGuard`: Composite teardown guard managing nodes, operator manifests, and namespaces in proper dependency order.
 
 Using `Drop` guards ensures resource cleanup happens deterministically even if a test panics or returns early.
+
+Bind guards to the **test function's** scope, not to an inner block:
+
+```rust
+// ✅ correct — guard lives until the test returns or unwinds
+let _cluster = if !skip_cluster_setup() {
+    create_kind_cluster(&cluster);
+    Some(ClusterGuard::new(cluster.as_str()))
+} else {
+    None
+};
+
+// ❌ wrong — dropped at the end of the `if` block, deleting the cluster at once
+if !skip_cluster_setup() {
+    create_kind_cluster(&cluster);
+    let _cluster = ClusterGuard::new(cluster.as_str());
+}
+```
+
+Do not perform teardown inline at the end of a test body; an `assert!` that
+panics before that line leaks every resource the test created.
+
+### Unit-testing the guards
+
+Guards delete cluster state in `Drop`, so a unit test that only wants to assert
+on a guard's fields must suppress the destructor, otherwise `cargo test` issues
+destructive `kubectl delete` commands against the developer's ambient cluster:
+
+```rust
+let guard = NamespaceGuard {
+    name: "test-ns".to_string(),
+};
+assert_eq!(guard.name, "test-ns");
+std::mem::forget(guard); // no kubectl call
+```
 
 ---
 

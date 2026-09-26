@@ -8,20 +8,6 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::fs;
-use std::path::PathBuf;
-use tempfile::TempDir;
-
-/// Helper to build the CLI command
-fn stellar_operator() -> Command {
-    Command::cargo_bin("stellar-operator").expect("Binary should exist after cargo build")
-// tests/backup_restore_smoke_test.rs
-// Command-level smoke tests for backup and restore CLI commands.
-// These tests validate end-to-end behavior using assert-cmd.
-// Related: #1149 - Add command-level smoke tests for backup and restore workflows
-
-use assert_cmd::Command;
-use predicates::prelude::*;
 
 #[test]
 fn test_backup_help_exits_successfully() {

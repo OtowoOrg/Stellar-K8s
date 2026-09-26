@@ -374,6 +374,56 @@ pub fn ensure_kind_cluster(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Delete a KinD cluster, ignoring any error (including a missing `kind`
+/// binary).  Private on purpose: teardown should go through [`ClusterGuard`]
+/// so it also runs on panic, rather than being done inline at the end of a
+/// test body.
+fn delete_kind_cluster(name: &str) {
+    let _ = run_cmd_quiet("kind", &["delete", "cluster", "--name", name]);
+}
+
+/// RAII guard that deletes a KinD cluster when dropped.
+///
+/// Every test that calls [`ensure_kind_cluster`] should own a `ClusterGuard`
+/// created *before* any cluster or namespace resources, so that an early `?`
+/// return or a panic cannot leave a Docker-backed cluster running on the
+/// host.  `kind` clusters hold a container, a network, and mounted volumes, so
+/// leaking one per test exhausts disk and can make later `kind` runs fail.
+///
+/// Set `SKIP_TEARDOWN=1` to keep the cluster after the test (useful when
+/// debugging a failed E2E run); teardown is otherwise always performed.
+pub struct ClusterGuard {
+    name: String,
+}
+
+impl ClusterGuard {
+    /// Record that `name` should be deleted when this guard is dropped.
+    ///
+    /// Prefer calling this immediately after [`ensure_kind_cluster`] succeeds.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
+
+    /// The cluster name this guard owns.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Drop for ClusterGuard {
+    fn drop(&mut self) {
+        if env_true("SKIP_TEARDOWN", false) {
+            eprintln!(
+                "[ClusterGuard] SKIP_TEARDOWN set — leaving kind cluster {:?} running; \
+                 delete it with: kind delete cluster --name {}",
+                self.name, self.name
+            );
+            return;
+        }
+        delete_kind_cluster(&self.name);
+    }
+}
+
 /// Parse a boolean-ish environment variable.  Recognises `"1"`, `"true"`,
 /// `"yes"`, `"on"` (case-insensitive) as true; everything else falls back to
 /// `default`.
@@ -650,12 +700,22 @@ pub fn skip_if_tools_missing(tools: &[&str]) -> bool {
 mod tests {
     use super::*;
 
+    // These tests only exercise the guards' field accessors and builder logic.
+    // Every guard implements `Drop` by shelling out to `kubectl delete`, so
+    // letting one fall out of scope here would issue destructive commands
+    // against whatever cluster the developer's kubeconfig points at. Each test
+    // therefore ends with `std::mem::forget`, which suppresses the destructor
+    // and keeps ordinary `cargo test` free of cluster side effects.
+    //
+    // See issue #934.
+
     #[test]
     fn test_namespace_guard_struct_creation() {
         let guard = NamespaceGuard {
             name: "test-ns-guard".to_string(),
         };
         assert_eq!(guard.name, "test-ns-guard");
+        std::mem::forget(guard);
     }
 
     #[test]
@@ -663,6 +723,7 @@ mod tests {
         let guard = StellarNodeGuard::new("node-1", "stellar-test");
         assert_eq!(guard.name, "node-1");
         assert_eq!(guard.namespace, "stellar-test");
+        std::mem::forget(guard);
     }
 
     #[test]
@@ -670,6 +731,7 @@ mod tests {
         let guard =
             ManifestGuard::new("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: test-cm");
         assert!(guard.manifest.contains("test-cm"));
+        std::mem::forget(guard);
     }
 
     #[test]
@@ -686,6 +748,27 @@ mod tests {
         );
         assert_eq!(guard.operator_manifest.as_deref(), Some("kind: Deployment"));
         assert_eq!(guard.namespaces, vec!["test-namespace".to_string()]);
+        std::mem::forget(guard);
+    }
+
+    #[test]
+    fn test_cluster_guard_records_name() {
+        let guard = ClusterGuard::new("unit-test-cluster-does-not-exist");
+        assert_eq!(guard.name(), "unit-test-cluster-does-not-exist");
+        // Suppress Drop so the unit test never shells out to `kind`.
+        std::mem::forget(guard);
+    }
+
+    #[test]
+    fn test_cluster_guard_accepts_str_and_string() {
+        let from_str = ClusterGuard::new("abc");
+        assert_eq!(from_str.name(), "abc");
+        std::mem::forget(from_str);
+
+        let owned = String::from("def");
+        let from_string = ClusterGuard::new(owned);
+        assert_eq!(from_string.name(), "def");
+        std::mem::forget(from_string);
     }
 
     #[test]

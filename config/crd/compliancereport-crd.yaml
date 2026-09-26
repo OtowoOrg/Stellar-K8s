@@ -1,0 +1,182 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: compliancereports.compliance.stellar.org
+spec:
+  group: compliance.stellar.org
+  names:
+    kind: ComplianceReport
+    plural: compliancereports
+    singular: compliancereport
+    shortNames:
+      - compreport
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Validator
+          type: string
+          jsonPath: .spec.validatorRef
+        - name: Schedule
+          type: string
+          jsonPath: .spec.schedule
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Verdict
+          type: string
+          jsonPath: .status.regulatoryVerdict
+        - name: Uptime
+          type: string
+          jsonPath: .status.uptimeEvidence.uptimePercentage
+        - name: LastGenerated
+          type: date
+          jsonPath: .status.lastGeneratedAt
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - validatorRef
+              properties:
+                validatorRef:
+                  type: string
+                schedule:
+                  type: string
+                  default: Weekly
+                periodDays:
+                  type: integer
+                  default: 7
+                includeUptimeEvidence:
+                  type: boolean
+                  default: true
+                includeKeyCustody:
+                  type: boolean
+                  default: true
+                includeTxProcessing:
+                  type: boolean
+                  default: true
+                formats:
+                  type: array
+                  items:
+                    type: string
+                    enum: [Json, Pdf, Csv]
+                destination:
+                  type: object
+                  properties:
+                    saveConfigMap:
+                      type: boolean
+                      default: true
+                    configMapPrefix:
+                      type: string
+                    objectStorageBucket:
+                      type: string
+                    objectStoragePrefix:
+                      type: string
+                hsmKmsVerification:
+                  type: object
+                  properties:
+                    expectedProvider:
+                      type: string
+                    expectedKeyId:
+                      type: string
+                    enforceFipsLevel3:
+                      type: boolean
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                regulatoryVerdict:
+                  type: string
+                lastGeneratedAt:
+                  type: string
+                  format: date-time
+                nextScheduledAt:
+                  type: string
+                  format: date-time
+                periodStart:
+                  type: string
+                  format: date-time
+                periodEnd:
+                  type: string
+                  format: date-time
+                uptimeEvidence:
+                  type: object
+                  properties:
+                    uptimePercentage:
+                      type: number
+                    totalSeconds:
+                      type: integer
+                    downtimeSeconds:
+                      type: integer
+                    monitoredSamples:
+                      type: integer
+                    metSla:
+                      type: boolean
+                    longestStreakHours:
+                      type: number
+                keyCustodyAttestation:
+                  type: object
+                  properties:
+                    provider:
+                      type: string
+                    keyId:
+                      type: string
+                    hsmBacked:
+                      type: boolean
+                    algorithm:
+                      type: string
+                    multiPartyAuthorized:
+                      type: boolean
+                    attestationDigest:
+                      type: string
+                    attestedAt:
+                      type: string
+                      format: date-time
+                txProcessingEvidence:
+                  type: object
+                  properties:
+                    ledgersClosed:
+                      type: integer
+                    txCountProcessed:
+                      type: integer
+                    avgLedgerCloseTimeMs:
+                      type: number
+                    consensusParticipationRate:
+                      type: number
+                artifacts:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      format:
+                        type: string
+                      storageType:
+                        type: string
+                      locationRef:
+                        type: string
+                      sha256Checksum:
+                        type: string
+                      sizeBytes:
+                        type: integer
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time

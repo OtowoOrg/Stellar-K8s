@@ -93,6 +93,10 @@ pub mod stellar_aiops;
 pub mod stellar_database;
 pub mod stellar_disaster_recovery;
 pub mod stellar_gitops;
+pub mod compliance_report;
+pub mod incident;
+pub mod multisig_operation;
+pub mod validator_score;
 pub mod service_ownership;
 pub mod stellar_registry;
 pub mod stellar_security;
@@ -199,7 +203,7 @@ pub use stellar_gitops::{
     StellarGitOpsConfig, StellarGitOpsConfigSpec, StellarGitOpsConfigStatus, SyncStatus,
 };
 pub use stellar_registry::{
-    AdmissionPolicy, AutoPatchConfig, ComplianceReport, GarbageCollectionConfig, MirrorStatus,
+    AdmissionPolicy, AutoPatchConfig, ComplianceReport as RegistryComplianceReport, GarbageCollectionConfig, MirrorStatus,
     RegistryMirror, RegistryPhase, RegistryProxyConfig, ScannerBackend, ScanningConfig,
     SigningConfig, StellarRegistry, StellarRegistrySpec, StellarRegistryStatus,
     VulnerabilitySummary,
@@ -210,3 +214,25 @@ pub use stellar_security::{
     SecretManagementConfig, SecretProvider, SecurityMonitoringConfig, StellarSecurityPolicy,
     StellarSecurityPolicySpec, StellarSecurityPolicyStatus,
 };
+
+pub use compliance_report::{
+    ComplianceCondition, ComplianceReport, ComplianceReportFormat, ComplianceReportPhase,
+    ComplianceReportSpec, ComplianceReportStatus, GeneratedArtifactRef, HsmKmsVerificationSpec,
+    KeyCustodyAttestation, ReportDestinationConfig, TxProcessingEvidence, ValidatorUptimeEvidence,
+};
+pub use incident::{
+    AlertChannelConfig, AlertChannelType, AlertDispatchResult, Incident, IncidentPhase,
+    IncidentSeverity as NetworkIncidentSeverity, IncidentSpec, IncidentStatus as NetworkIncidentStatus,
+    IncidentTimelineEntry, IncidentType, PartitionDetails, QuorumAdjustmentRecommendation,
+};
+pub use multisig_operation::{
+    AdminOperationType, CollectedSignature, MultiSigAuditEntry, MultiSigCondition,
+    MultiSigOperation, MultiSigOperationSpec, MultiSigOperationStatus, MultiSigPhase,
+    SignerEndpointSpec, SubmissionResult,
+};
+pub use validator_score::{
+    ComponentScore, HourlyScoreSample, LeaderboardEntry, PerformanceGrade, ScoringWeights,
+    ValidatorLeaderboard, ValidatorLeaderboardSpec, ValidatorLeaderboardStatus, ValidatorScore,
+    ValidatorScoreSpec, ValidatorScoreStatus,
+};
+

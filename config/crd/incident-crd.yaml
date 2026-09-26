@@ -1,0 +1,155 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: incidents.incident.stellar.org
+spec:
+  group: incident.stellar.org
+  names:
+    kind: Incident
+    plural: incidents
+    singular: incident
+    shortNames:
+      - inc
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Title
+          type: string
+          jsonPath: .spec.title
+        - name: Type
+          type: string
+          jsonPath: .spec.incidentType
+        - name: Severity
+          type: string
+          jsonPath: .spec.severity
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: MissedCloses
+          type: integer
+          jsonPath: .status.partitionDetails.missedLedgerCloses
+        - name: DetectedAt
+          type: date
+          jsonPath: .status.detectedAt
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - title
+                - incidentType
+                - severity
+              properties:
+                title:
+                  type: string
+                incidentType:
+                  type: string
+                  enum: [NetworkPartition, LedgerStall, QuorumDegradation, ByzantineFault]
+                severity:
+                  type: string
+                  enum: [Critical, High, Medium, Low]
+                affectedNodes:
+                  type: array
+                  items:
+                    type: string
+                alertChannels:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      channelType:
+                        type: string
+                        enum: [Webhook, Slack, PagerDuty, OpsGenie]
+                      endpointUrl:
+                        type: string
+                      routingKey:
+                        type: string
+                autoRemediationEnabled:
+                  type: boolean
+                  default: false
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Detected, Escalated, Mitigating, Resolved, PostMortem]
+                detectedAt:
+                  type: string
+                  format: date-time
+                resolvedAt:
+                  type: string
+                  format: date-time
+                partitionDetails:
+                  type: object
+                  properties:
+                    missedLedgerCloses:
+                      type: integer
+                    expectedCloseTimeSecs:
+                      type: integer
+                    lastClosedLedger:
+                      type: integer
+                    stallDurationSecs:
+                      type: integer
+                    unreachablePeers:
+                      type: array
+                      items:
+                        type: string
+                    reachablePeers:
+                      type: array
+                      items:
+                        type: string
+                    quorumHealthPct:
+                      type: number
+                quorumAdjustmentRecommendation:
+                  type: object
+                  properties:
+                    suggestedQuorumSet:
+                      type: array
+                      items:
+                        type: string
+                    newThreshold:
+                      type: integer
+                    rationale:
+                      type: string
+                    actionPlan:
+                      type: array
+                      items:
+                        type: string
+                timeline:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      timestamp:
+                        type: string
+                        format: date-time
+                      stage:
+                        type: string
+                      message:
+                        type: string
+                      metadata:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                alertDispatches:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      channelName:
+                        type: string
+                      dispatchedAt:
+                        type: string
+                        format: date-time
+                      success:
+                        type: boolean
+                      latencyMs:
+                        type: integer
+                      responseMessage:
+                        type: string

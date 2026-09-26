@@ -1,0 +1,176 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: multisigoperations.stellar.org
+spec:
+  group: stellar.org
+  names:
+    kind: MultiSigOperation
+    plural: multisigoperations
+    singular: multisigoperation
+    shortNames:
+      - msig
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Operation
+          type: string
+          jsonPath: .spec.operationType
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Quorum
+          type: string
+          jsonPath: .status.quorumProgress
+        - name: Signatures
+          type: integer
+          jsonPath: .status.signaturesCollected
+        - name: Threshold
+          type: integer
+          jsonPath: .status.signaturesRequired
+        - name: ExpiresAt
+          type: date
+          jsonPath: .status.expiresAt
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - operationType
+                - transactionXdrPayload
+                - transactionHash
+                - thresholdM
+                - totalSignersN
+                - signers
+              properties:
+                operationType:
+                  type: string
+                  enum: [SettingsUpgrade, SignerUpdate, ProtocolUpgrade, FeePoolChange, AnchorTrustline, Custom]
+                description:
+                  type: string
+                targetNetwork:
+                  type: string
+                  default: Testnet
+                transactionXdrPayload:
+                  type: string
+                transactionHash:
+                  type: string
+                thresholdM:
+                  type: integer
+                totalSignersN:
+                  type: integer
+                signers:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - signerId
+                      - publicKey
+                    properties:
+                      signerId:
+                        type: string
+                      publicKey:
+                        type: string
+                      sidecarEndpoint:
+                        type: string
+                      secretRef:
+                        type: string
+                      weight:
+                        type: integer
+                        default: 1
+                timeoutSeconds:
+                  type: integer
+                  default: 7200
+                autoSubmitOnQuorum:
+                  type: boolean
+                  default: true
+                submissionEndpoint:
+                  type: string
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Collecting, QuorumReached, Submitting, Submitted, Expired, Failed]
+                quorumProgress:
+                  type: string
+                signaturesCollected:
+                  type: integer
+                signaturesRequired:
+                  type: integer
+                quorumReached:
+                  type: boolean
+                collectedSignatures:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      signerId:
+                        type: string
+                      publicKey:
+                        type: string
+                      signature:
+                        type: string
+                      signedAt:
+                        type: string
+                        format: date-time
+                      source:
+                        type: string
+                missingSigners:
+                  type: array
+                  items:
+                    type: string
+                expiresAt:
+                  type: string
+                  format: date-time
+                submissionResult:
+                  type: object
+                  properties:
+                    submittedAt:
+                      type: string
+                      format: date-time
+                    transactionHash:
+                      type: string
+                    ledgerSequence:
+                      type: integer
+                    success:
+                      type: boolean
+                    responseCode:
+                      type: string
+                    errorMessage:
+                      type: string
+                auditTrail:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      timestamp:
+                        type: string
+                        format: date-time
+                      actor:
+                        type: string
+                      action:
+                        type: string
+                      details:
+                        type: string
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time

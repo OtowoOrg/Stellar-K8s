@@ -70,14 +70,16 @@ This project implements comprehensive dependency security monitoring:
 
 ```bash
 # Run security audit
-cargo deny check
-cargo audit
+make audit
 
 # Check for outdated dependencies
-cargo outdated
+make security-scan
 
 # Generate security report
-./scripts/security-check.sh
+make security-report
+
+# Run the standalone audit script (adds SBOM + older checks)
+make security-check
 ```
 
 ### Manual Security Reviews
@@ -127,7 +129,7 @@ securityContext:
 ### Documentation
 
 - [Dependency Security Audit](./DEPENDENCY_SECURITY_AUDIT.md)
-- [Security Check Script](./scripts/security-check.sh)
+- [Security Check Script](./scripts/security-check.sh) (also available as `make security-check`)
 - [Deny Configuration](./deny.toml)
 
 ### Tools

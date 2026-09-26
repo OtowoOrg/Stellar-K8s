@@ -154,13 +154,23 @@ All original targets remain functional:
 
 ## CI/CD Impact
 
-No changes required to CI workflows. All targets used in `.github/workflows/ci.yml` are preserved:
+No changes required to CI workflows. The targets actually invoked from
+`.github/workflows/*.yml` are:
+
+- `make preflight`
 - `make fmt-check`
 - `make lint`
 - `make lint-strict`
+- `make check-third-party-licenses`
+- `make check-api-docs`
+- `make check-stale-docs`
+- `make update-doc-baseline`
+- `make crd-gen`
 - `make helm-lint`
 - `make test`
-- `make build`
+
+Note: CI does **not** call `make build`; releases and CI builds go through the
+`build-operator` composite action. The target remains available locally.
 
 ## Migration Guide
 

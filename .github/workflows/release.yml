@@ -1,10 +1,12 @@
 name: Release
 
 # Streamlined release workflow.
-# The container job now reuses the multi-arch image already built and pushed
-# by multiarch-build.yml (via the `edge` / `sha-*` tags on main) rather than
-# rebuilding from scratch.  Binary artifacts are still built here because they
-# target multiple OS/arch combinations that the Docker image does not cover.
+# This workflow also publishes the multi-arch container image. The container
+# job first attempts to re-tag the existing `sha-<sha>` image (via buildx
+# imagetools) rather than rebuilding from scratch, and falls back to a fresh
+# multi-arch build when the sha image is not available.  Binary artifacts are
+# still built here because they target multiple OS/arch combinations that the
+# Docker image does not cover.
 #
 # Fail-safes:
 #   - validate job checks semver format and Cargo.toml version match before
@@ -155,10 +157,9 @@ jobs:
             target/${{ matrix.target }}/release/${{ matrix.name }}.tar.gz.sha256
 
   # ── Publish multi-arch container image ────────────────────────────────────
-  # Re-tags the sha-* image already pushed by multiarch-build.yml so we never
-  # rebuild from scratch for a release.  Falls back to a fresh build only when
-  # the sha image is not available (e.g. manual tag on a commit that predates
-  # the multiarch workflow).
+  # Re-tags the existing sha-* image when one is already published, so we avoid
+  # rebuilding from scratch for a release.  Falls back to a fresh multi-arch
+  # build only when the sha image is not available.
   container:
     name: Container
     runs-on: ubuntu-latest

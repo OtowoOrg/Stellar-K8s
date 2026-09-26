@@ -41,7 +41,7 @@ Stellar-K8s is a Kubernetes operator for managing Stellar Core infrastructure us
 1. Clone the repo.
 2. Run `cargo build`.
 3. Start a local Kubernetes cluster with `kind create cluster`.
-4. Deploy the operator using `make deploy` or `helm install`.
+4. Deploy the operator using `make quickstart-deploy` or `helm install`.
 5. Apply an example `StellarNode` manifest from `examples/`.
 
 ### Tutorial 2: Add a New Feature

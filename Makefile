@@ -18,20 +18,20 @@
 # =============================================================================
 
 .PHONY: help \
-	fmt fmt-check lint lint-strict shellcheck audit security-scan security-all security-fix security-report \
+	fmt fmt-check lint lint-strict shellcheck audit security-scan security-all security-fix security-report security-check \
 	build test ci-local quick watch \
 	docker-build docker-build-ci docker-multiarch \
 	dev-setup dev-setup-rust dev-setup-tools dev-setup-hooks pre-commit pre-commit-install run run-local run-dev \
 	install-crd apply-samples crd-gen regenerate completions completions-bash completions-zsh completions-fish \
 	helm-lint link-check link-check-all changelog \
-	generate-api-docs check-api-docs check-stale-docs update-doc-baseline docs-check-strict docs-lint \
+	generate-api-docs check-api-docs check-stale-docs update-doc-baseline list-doc-coverage docs-check-strict docs-lint \
 	third-party-licenses check-third-party-licenses sort-manifests \
 	benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health \
 	benchmark-webhook-compare benchmark-webhook-save benchmark-all \
 	compose-up compose-dev compose-down compose-logs \
 	bundle bundle-render bundle-generate bundle-validate bundle-build \
 	quickstart quickstart-setup quickstart-build quickstart-deploy \
-	health health-fast validate preflight test-preflight test-shell all \
+	health health-fast validate preflight test-preflight test-shell test-repo-health all \
 	clean
 
 .DEFAULT_GOAL := help
@@ -97,7 +97,7 @@ help: ## Show this help and the canonical command flow
 	@echo '  make all                         CI checks + build + Docker image'
 	@echo ''
 	@echo 'All available targets:'
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_][a-zA-Z0-9_-]+:.*?## / {printf "  %-28s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_][a-zA-Z0-9_-]+:.*## / {printf "  %-28s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # ── Formatting & Linting ──────────────────────────────────────────────────────
 
@@ -151,11 +151,10 @@ security-all: ## Run all security checks (audit + policy + scan + SBOM)
 	@$(CARGO) deny list --format json > security/sbom/licenses.json 2>/dev/null || true
 	@echo "  ✅ Security audit complete - SBOM available in security/sbom/"
 
-security-fix: ## Apply automated security fixes where possible
-	@echo "→ Applying security fixes..."
-	@echo "  Updating dependencies..."
+security-fix: ## Report available dependency updates (dry run; applies no changes)
+	@echo "→ Checking for available dependency updates (dry run)..."
 	@$(CARGO) update --dry-run
-	@echo "  ⚠️  Manual review recommended after running 'cargo update'"
+	@echo "  ⚠️  Nothing was changed. Review the output above, then run 'cargo update' manually."
 
 security-report: ## Generate comprehensive security report  
 	@echo "→ Generating security report..."
@@ -175,6 +174,9 @@ security-report: ## Generate comprehensive security report
 shellcheck: ## Run shellcheck on all shell scripts
 	@echo "→ Running shellcheck..."
 	@find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error || true
+
+security-check: ## Run the standalone security-check.sh audit script
+	@bash scripts/security-check.sh
 
 # ── Test & Build ──────────────────────────────────────────────────────────────
 
@@ -202,22 +204,28 @@ docker-build-ci: ## Reproducible CI Docker build (builds binaries in container)
 	@echo "→ Building Docker image (CI mode)..."
 	DOCKER_BUILDKIT=1 $(DOCKER) build --target runtime -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
-docker-multiarch: ## Trigger multi-arch build via the CI workflow (dispatches workflow_dispatch)
-	@echo "→ Triggering multi-arch build pipeline..."
-	@command -v gh >/dev/null 2>&1 || { echo "✗ gh CLI not found. Install: https://cli.github.com/"; exit 1; }
-	gh workflow run multiarch-build.yml
-	@echo "✓ Multi-arch build dispatched. Monitor at: https://github.com/OtowoOrg/Stellar-K8s/actions"
+docker-multiarch: ## Build the multi-arch (linux/amd64 + linux/arm64) image locally via buildx
+	@echo "→ Building multi-arch image for linux/amd64,linux/arm64..."
+	@$(DOCKER) buildx version >/dev/null 2>&1 || { \
+		echo "✗ docker buildx not available. Install the buildx builder plugin."; \
+		exit 1; \
+	}
+	DOCKER_BUILDKIT=1 $(DOCKER) buildx build \
+		--platform linux/amd64,linux/arm64 \
+		--target runtime-local \
+		-t $(IMAGE_NAME):$(IMAGE_TAG) .
 
-# Multi-arch builds are handled by CI: .github/workflows/multiarch-build.yml
-# To trigger a multi-arch build, push a tag or run: make docker-multiarch
+# CI publishes the multi-arch image from the `container` job in
+# .github/workflows/release.yml (QEMU + buildx). The `make docker-multiarch`
+# target above is the local equivalent.
+
 health: ## Run common repository health checks (format, lint, test, docs, links)
 	@bash scripts/repo-health.sh
 
 health-fast: ## Fast health gate (format, lint, compile only)
 	@bash scripts/repo-health.sh --fast
 
-validate: ## Fast validation (alias for health-fast)
-	@bash scripts/repo-health.sh --fast
+validate: health-fast ## Fast validation (alias for health-fast)
 
 # ── Quality & Health ───────────────────────────────────────────────────────────
 
@@ -259,10 +267,8 @@ pre-commit: ## Run pre-commit hooks manually
 	@command -v pre-commit >/dev/null 2>&1 || (echo "✗ pre-commit not installed. Run: make dev-setup" && exit 1)
 	@pre-commit run --all-files
 
-pre-commit-install: ## Install pre-commit hooks
-	@command -v pre-commit >/dev/null 2>&1 || pip install pre-commit
-	pre-commit install
-	pre-commit install --hook-type pre-push
+pre-commit-install: dev-setup-hooks ## Install pre-commit hooks (alias for dev-setup-hooks)
+	@echo "✓ pre-commit hooks installed"
 
 clean: ## Clean build artifacts
 	$(CARGO) clean
@@ -292,16 +298,12 @@ update-doc-baseline: ## Update the .doc-hashes.toml baseline after deliberate do
 	@$(CARGO) run --bin doc-check -- --update-baseline
 	@echo "✓ Baseline updated. Commit .doc-hashes.toml to record the new state."
 
+list-doc-coverage: ## Print all doc → source coverage mappings from doc-coverage.toml
+	@$(CARGO) run --bin doc-check -- list
+
 docs-check-strict: ## Fail CI if any doc is stale (no --warn-only; used in strict CI stages)
 	@echo "→ Running strict documentation staleness check..."
 	@$(CARGO) run --bin doc-check -- status
-
-docs-lint: ## Run rustdoc with warnings-as-errors (issue #1138: strict docs quality gate)
-	@echo "→ Running cargo doc with RUSTDOCFLAGS=-D warnings..."
-	@RUSTDOCFLAGS="-D warnings" K8S_OPENAPI_ENABLED_VERSION=1.30 \
-		$(CARGO) doc --no-deps --workspace \
-		--features "rest-api,metrics,admission-webhook,k8s-v1-30"
-	@echo "✓ rustdoc passed — no documentation warnings"
 
 docs-lint: ## Run rustdoc with warnings-as-errors (issue #1138: strict docs quality gate)
 	@echo "→ Running cargo doc with RUSTDOCFLAGS=-D warnings..."
@@ -339,6 +341,11 @@ test-shell: ## Run bats unit tests for shared shell helpers
 	@echo "→ Running shell helper bats tests..."
 	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
 	@bats scripts/tests/common.bats
+
+test-repo-health: ## Run bats unit tests for scripts/repo-health.sh
+	@echo "→ Running repo-health bats tests..."
+	@command -v bats >/dev/null 2>&1 || (echo "✗ bats not installed. See https://github.com/bats-core/bats-core" && exit 1)
+	@bats scripts/tests/repo-health.bats
 
 # ── Completions ────────────────────────────────────────────────────────────────
 
@@ -426,11 +433,10 @@ benchmark-upgrade: ## Run upgrade load test with k6
 
 # ── Running the Operator ──────────────────────────────────────────────────────
 
-run: build ## Run the operator (alias for run-local; matches README and CI references)
+run-local: build ## Run operator locally from built release binary
 	RUST_LOG=info ./target/release/stellar-operator run
 
-run-local: build ## Run operator locally from built release binary
-	RUST_LOG=info ./target/release/stellar-operator
+run: run-local ## Run the operator (alias for run-local; matches README and CI references)
 
 run-dev: ## Run operator in dev mode with hot reload
 	RUST_LOG=debug cargo watch -x run

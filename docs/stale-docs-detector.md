@@ -26,8 +26,8 @@ The tool runs:
 | `git push` (pre-commit hook) | warn-only | prints a warning, does **not** block the push |
 | Pull-request (GitHub Actions) | scoped to changed files | **blocks merge** |
 | Push to `main` (GitHub Actions) | full repo scan | **blocks merge** |
-| `make ci-local` | full repo scan | **exits non-zero** |
-| `make check-stale-docs` | full repo scan | **exits non-zero** |
+| `make check-stale-docs` | full repo scan | prints a warning, **exits 0** |
+| `make docs-check-strict` | full repo scan | **exits non-zero** |
 
 ---
 
@@ -178,12 +178,14 @@ The workflow can be run manually from the GitHub Actions UI with an optional
 
 | Target | Description |
 |--------|-------------|
-| `make check-stale-docs` | Run the detector (exits non-zero on any stale/missing doc) |
+| `make check-stale-docs` | Run the detector in `--warn-only` mode (prints warnings, exits 0) |
+| `make docs-check-strict` | Run the detector in strict mode (exits non-zero on any stale/missing doc) |
 | `make update-doc-baseline` | Update `.doc-hashes.toml` to current HEAD |
 | `make list-doc-coverage` | Print all doc → source mappings and exit |
 
-All three targets are wired into `make ci-local`, so they run as part of the
-standard local CI suite.
+None of these are wired into `make ci-local`; the strict check runs as its own
+CI job (`.github/workflows/stale-docs.yml`). Run `make docs-check-strict`
+locally to reproduce that gate.
 
 ---
 

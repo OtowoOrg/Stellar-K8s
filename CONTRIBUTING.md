@@ -194,7 +194,7 @@ with the workspace's feature flags so the results match CI exactly:
 ```bash
 make dev-setup     # One-time: install Rust toolchain, tools, and pre-commit hooks
 make quick         # Fast pre-commit check (fmt-check + cargo check)
-make ci-local      # Full CI pipeline (fmt-check + lint + audit + test + build + link-check)
+make ci-local      # Full CI pipeline (fmt-check + lint + docs-lint + audit + test + build + link-check)
 make health        # Full contributor health gate
 ```
 
@@ -292,7 +292,7 @@ Refer to [README.md](README.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for additio
 - **Problem**: Operator pod is crashlooping.
   - **Solution**: Check the operator logs using `kubectl logs -n stellar-system -l app.kubernetes.io/name=stellar-operator`. Often, this is due to invalid RBAC permissions or missing secrets.
 - **Problem**: Custom Resource Definitions (CRDs) not applying.
-  - **Solution**: Ensure your KUBECONFIG points to the correct cluster. Run `make install` to manually install the CRDs into your cluster.
+  - **Solution**: Ensure your KUBECONFIG points to the correct cluster. Run `make install-crd` to manually install the CRDs into your cluster.
 
 ### CI Failures
 - **Problem**: GitHub Actions workflow fails on linting.

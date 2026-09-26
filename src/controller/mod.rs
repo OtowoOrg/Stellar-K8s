@@ -257,6 +257,7 @@ pub use webhook_delivery::{
 };
 pub mod cross_signal_anomaly;
 pub mod health_check_sidecar;
+pub mod index_sharding;
 pub mod ml_pipeline;
 pub mod observability_dashboard;
 pub mod observability_pipeline;

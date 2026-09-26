@@ -54,11 +54,19 @@ pub async fn run_webhook(args: WebhookArgs) -> Result<(), Error> {
 
     let mut server = WebhookServer::new(runtime);
 
-    if let (Some(cert_path), Some(key_path)) = (args.cert_path, args.key_path) {
-        info!("Configuring TLS with cert: {cert_path}, key: {key_path}");
-        server = server.with_tls(cert_path, key_path);
-    } else {
-        warn!("Running webhook server without TLS (not recommended for production)");
+    match (args.cert_path, args.key_path) {
+        (Some(cert_path), Some(key_path)) => {
+            info!("Configuring TLS with cert: {cert_path}, key: {key_path}");
+            server = server.with_tls(cert_path, key_path);
+        }
+        (None, None) => {
+            warn!("Running webhook server without TLS (local development only)");
+        }
+        _ => {
+            return Err(Error::ConfigError(
+                "--cert-path and --key-path must be provided together".to_string(),
+            ));
+        }
     }
 
     info!("Webhook server listening on {addr}");

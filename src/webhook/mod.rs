@@ -67,6 +67,7 @@
 //! server.start("0.0.0.0:8443".parse()?).await?;
 //! ```
 
+pub mod cert_health;
 pub mod config_guardrails;
 pub mod mutation;
 pub mod org_validator;

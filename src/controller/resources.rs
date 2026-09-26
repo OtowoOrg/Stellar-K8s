@@ -1098,7 +1098,7 @@ pub async fn ensure_canary_service(
     Ok(())
 }
 
-pub(crate) fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
+pub(crate) fn build_service(node: &StellarNode, _enable_mtls: bool) -> Service {
     let mut labels = standard_labels(node);
     merge_service_metadata_labels(&mut labels, node);
     let name = node.name_any();
@@ -1175,7 +1175,7 @@ pub(crate) fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
 
     merge_service_annotations(&mut annotations, node);
 
-    let http_port_name = if enable_mtls { "https" } else { "http" }.to_string();
+    let http_port_name = "http".to_string();
 
     let ports = match node.spec.node_type {
         NodeType::Validator => vec![
@@ -2732,12 +2732,77 @@ fn build_pod_template(
         }
     }
 
+    let mut pod_object_meta = merge_resource_meta(pod_object_meta, &node.spec.resource_meta);
+    if enable_mtls {
+        pod_object_meta
+            .annotations
+            .get_or_insert_with(BTreeMap::new)
+            .insert("sidecar.istio.io/inject".to_string(), "true".to_string());
+        pod_object_meta
+            .labels
+            .get_or_insert_with(BTreeMap::new)
+            .insert("stellar.org/mtls-mode".to_string(), "strict".to_string());
+    }
+
     PodTemplateSpec {
-        metadata: Some(merge_resource_meta(
-            pod_object_meta,
-            &node.spec.resource_meta,
-        )),
+        metadata: Some(pod_object_meta),
         spec: Some(pod_spec),
+    }
+}
+
+#[cfg(test)]
+mod istio_mtls_tests {
+    use super::{build_deployment, build_service};
+    use crate::crd::{NodeType, StellarNetwork, StellarNode, StellarNodeSpec};
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+    use std::collections::BTreeMap;
+
+    fn horizon_node() -> StellarNode {
+        StellarNode {
+            metadata: ObjectMeta {
+                name: Some("horizon-test".to_string()),
+                namespace: Some("stellar-system".to_string()),
+                ..Default::default()
+            },
+            spec: StellarNodeSpec {
+                node_type: NodeType::Horizon,
+                network: StellarNetwork::Testnet,
+                version: "v21.0.0".to_string(),
+                ..Default::default()
+            },
+            status: None,
+        }
+    }
+
+    #[test]
+    fn mtls_injects_istio_and_preserves_http_service_protocol() {
+        let mut node = horizon_node();
+        node.spec.resource_meta = Some(ObjectMeta {
+            annotations: Some(BTreeMap::from([(
+                "sidecar.istio.io/inject".to_string(),
+                "false".to_string(),
+            )])),
+            labels: Some(BTreeMap::from([(
+                "stellar.org/mtls-mode".to_string(),
+                "disabled".to_string(),
+            )])),
+            ..Default::default()
+        });
+        let deployment = build_deployment(&node, true);
+        let pod_template = deployment.spec.unwrap().template;
+        let metadata = pod_template.metadata.unwrap();
+        assert_eq!(
+            metadata.annotations.unwrap().get("sidecar.istio.io/inject"),
+            Some(&"true".to_string())
+        );
+        assert_eq!(
+            metadata.labels.unwrap().get("stellar.org/mtls-mode"),
+            Some(&"strict".to_string())
+        );
+
+        let service = build_service(&node, true);
+        let port = &service.spec.unwrap().ports.unwrap()[0];
+        assert_eq!(port.name.as_deref(), Some("http"));
     }
 }
 

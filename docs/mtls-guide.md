@@ -4,35 +4,33 @@ This guide explains how to enable mTLS for the operator, how node certificates a
 
 ## Scope
 
-This repository currently manages mTLS in two places:
+This repository supports Istio mesh mTLS and a separate application-certificate workflow:
 
-- Operator REST API mTLS (server cert + CA, with automatic server cert rotation)
-- StellarNode workload certs (per-node client cert secret, recreated on reconcile if missing, and
-  now also automatically rolled when cert-manager rotates the secret — see
-  [How Rotation Works](#how-rotation-works) below)
-- Inter-service mTLS mesh between Stellar Core, Horizon, Soroban RPC, and companion services via cert-manager (issue #1281; see [End-to-End Encryption Architecture](security/e2e-encryption-architecture.md))
+- Inter-service pod-to-pod mTLS through Istio sidecars, enabled with Helm `mtls.enabled=true`.
+- Operator and per-node application certificates, optionally rotated by cert-manager; these are
+  independent of Istio proxy identities and do not themselves encrypt traffic.
 
-### Two mechanisms for inter-service mTLS — which one to use
+### Enable Istio mesh mTLS
 
-There are two independent ways a `Certificate` can get created for inter-service mTLS in this
-repo, and they are **not** the same mechanism:
+Prerequisite: Istio must be installed and its sidecar injection webhook available. Enable mesh
+encryption with:
 
-1. **Per-`StellarNode` CR-driven flow (authoritative, this is what the operator actually
-   reconciles)** — implemented in `src/controller/mtls.rs` and driven by
-   `StellarNode.spec.certManager`. When set, the operator creates a cert-manager `Certificate`
-   named `<node-name>-mtls-cert` targeting the Secret `<node-name>-client-cert` — the same Secret
-   the pod already mounts at `/etc/stellar/tls`, and the same Secret the operator watches for
-   rotation on every reconcile (see below). This is the supported, tested path.
-2. **Static Helm chart template** (`charts/stellar-operator/templates/cert-manager-mtls.yaml`,
-   gated by `.Values.mtls.enabled`) — creates a self-signed `Issuer` plus three `Certificate`
-   resources with fixed names (`stellar-core-mtls-cert`, `horizon-mtls-cert`,
-   `soroban-rpc-mtls-cert`) writing to Secrets `stellar-core-mtls-secret`,
-   `horizon-mtls-secret`, `soroban-rpc-mtls-secret`. **No workload in this repository mounts
-   these secret names or references them anywhere** — they are not the secrets StellarNode pods
-   use. Enabling `.Values.mtls.enabled` produces cert-manager `Certificate` objects that nothing
-   currently consumes; treat this template as a starting point for a hand-rolled setup outside
-   the StellarNode CR flow, not as a working feature. If you want mTLS for a node, set
-   `spec.certManager` on that `StellarNode` instead.
+```bash
+helm upgrade --install stellar-operator charts/stellar-operator \
+  --namespace stellar-system --create-namespace --set mtls.enabled=true
+```
+
+This enables injection for the operator and managed StellarNode/read-pool pods, and applies a
+STRICT `PeerAuthentication` only to resources managed by this operator. Do not enable the option
+before Istio is ready: selected pods without sidecars will fail to communicate under STRICT mode.
+See [End-to-End Encryption Architecture](security/e2e-encryption-architecture.md) for scope and
+verification commands.
+
+### Optional application-level certificates
+
+Set `spec.certManager` on a `StellarNode` to delegate its optional application certificate to
+cert-manager. The operator creates `<node-name>-mtls-cert` targeting `<node-name>-client-cert`,
+which is mounted at `/etc/stellar/tls`. This certificate is not the identity used by Istio.
 
 ## Certificate and Secret Model
 
@@ -255,21 +253,13 @@ kubectl -n stellar-system logs deploy/stellar-operator --tail=200
   <node-name>-client-cert -o jsonpath='{.metadata.resourceVersion}'` before and after a manual
   `cert-manager` renewal to confirm the Secret itself is changing.
 
-## Known limitation: stellar-core TLS termination is unverified
+## Mesh mTLS and application certificates
 
-When mTLS is enabled, the ConfigMap for validator nodes
-(`src/controller/resources.rs`) writes `HTTP_PORT_SECURE=true`, `TLS_CERT_FILE`, and
-`TLS_KEY_FILE` into `stellar-core.cfg`. **These config keys have not been verified against a real
-stellar-core build** — stellar-core's admin/HTTP endpoint does not have documented native HTTPS
-termination in upstream stellar-core releases as of this writing. Treat this configuration as
-best-effort/forward-looking rather than a confirmed working feature: it may be a no-op on your
-stellar-core version, in which case the validator's HTTP endpoint continues to serve plaintext
-even with `MTLS_ENABLED=true` set elsewhere. The `<node-name>-client-cert` material is still
-correctly issued and mounted regardless; only the "does stellar-core itself terminate TLS on its
-HTTP port" behavior is unconfirmed. If you need verified in-transit encryption for traffic to
-stellar-core's HTTP port today, terminate TLS in front of it yourself (e.g. a sidecar or mesh
-proxy) — this repository does not ship one; deliberately out of scope for this pass (see the
-project tracking issue for #1392).
+Istio encrypts traffic between injected pod proxies and manages their identities. The
+`<node-name>-client-cert` and `stellar-operator-server-cert` are separate application-level
+certificates. Stellar Core's native HTTPS settings remain version-dependent; do not rely on them
+for pod-to-pod encryption. Mesh mode covers selected in-cluster workload traffic, not loopback
+traffic or external endpoints.
 
 ## Client trust failures after CA changes
 

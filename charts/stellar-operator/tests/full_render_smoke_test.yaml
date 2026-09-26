@@ -11,6 +11,7 @@ templates:
   - templates/operator-config.yaml
   - templates/feature-flags-configmap.yaml
   - templates/secret.yaml
+  - templates/mtls-peer-authentication.yaml
 
 tests:
   - it: deployment renders without errors with default values
@@ -28,6 +29,41 @@ tests:
           path: spec.template.spec.containers[0].readinessProbe
       - isNotNull:
           path: spec.template.spec.securityContext
+
+  - it: mTLS enables Istio injection and operator certificate setup
+    template: templates/deployment.yaml
+    set:
+      mtls.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["sidecar.istio.io/inject"]
+          value: "true"
+      - equal:
+          path: spec.template.metadata.labels["stellar.org/mtls-mode"]
+          value: strict
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --enable-mtls
+
+  - it: mTLS enforces strict Istio peer authentication for StellarNode workloads
+    template: templates/mtls-peer-authentication.yaml
+    set:
+      mtls.enabled: true
+    asserts:
+      - isKind:
+          of: PeerAuthentication
+      - equal:
+          path: spec.selector.matchLabels["stellar.org/mtls-mode"]
+          value: strict
+      - equal:
+          path: spec.mtls.mode
+          value: STRICT
+
+  - it: peer authentication is absent when mTLS is disabled
+    template: templates/mtls-peer-authentication.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
 
   - it: service renders without errors with default values
     template: templates/service.yaml

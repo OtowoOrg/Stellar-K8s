@@ -455,7 +455,7 @@ fn build_read_pod_template(
     node: &StellarNode,
     config: &ReadReplicaConfig,
     labels: &BTreeMap<String, String>,
-    _enable_mtls: bool,
+    enable_mtls: bool,
 ) -> PodTemplateSpec {
     let image = node.spec.container_image();
     let cm_name = configmap_name(node);
@@ -480,9 +480,21 @@ fn build_read_pod_template(
         Quantity(config.resources.limits.memory.clone()),
     );
 
+    let mut annotations = BTreeMap::new();
+    let mut pod_labels = labels.clone();
+    if enable_mtls {
+        annotations.insert("sidecar.istio.io/inject".to_string(), "true".to_string());
+        pod_labels.insert("stellar.org/mtls-mode".to_string(), "strict".to_string());
+    }
+
     PodTemplateSpec {
         metadata: Some(ObjectMeta {
-            labels: Some(labels.clone()),
+            labels: Some(pod_labels),
+            annotations: if annotations.is_empty() {
+                None
+            } else {
+                Some(annotations)
+            },
             ..Default::default()
         }),
         spec: Some(PodSpec {

@@ -408,7 +408,7 @@ check-license-headers: license-headers ## Alias for license-headers
 
 crd-benchmark: ## Build CRD operation benchmarks (#1287)
 	@echo "→ Building CRD benchmarks..."
-	@$(CARGO) bench --bench crd_operations --no-run 2>&1 | tail -5
+	@$(CARGO) bench --bench crd_operations --no-run
 	@echo "✓ CRD benchmarks compiled (run with: cargo bench --bench crd_operations)"
 
 # ── Issue #1288: API contract testing ─────────────────────────────────────────

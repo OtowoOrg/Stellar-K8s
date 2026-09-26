@@ -65,6 +65,7 @@ mod cnpg;
 pub mod dr_policy;
 pub mod federation;
 pub mod multi_region;
+pub mod progressive_delivery;
 pub mod read_replica;
 pub mod schema_utils;
 pub mod secret_policy;
@@ -168,6 +169,10 @@ pub use stellar_upgrade::{
 pub use traffic_policy::{
     AdaptiveRateLimitPolicy, CircuitBreakerPolicy, LeakyBucketPolicy, PriorityRule, QosClassPolicy,
     TokenBucketPolicy, TrafficPolicy, TrafficPolicySpec, TrafficPolicyStatus, TrafficPriorityClass,
+};
+pub use progressive_delivery::{
+    GateResult, ProgressiveDelivery, ProgressiveDeliverySpec, ProgressiveDeliveryStatus,
+    PromotionPhase, SloGate, TrafficSplit, WeightProgression,
 };
 pub use types::*;
 

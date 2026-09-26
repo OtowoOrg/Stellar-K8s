@@ -10,7 +10,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use anyhow::{Context, Result};
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::{Event, ObjectReference, Pod};
 use kube::{
@@ -20,6 +19,7 @@ use kube::{
 use serde_json::json;
 use std::env;
 use std::time::Duration;
+use stellar_k8s::error::{Error, Result};
 use stellar_k8s::logging::{init_binary_subscriber, LogOutputFormat};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn, Level};
@@ -30,8 +30,10 @@ async fn main() -> Result<()> {
 
     info!("Starting Stellar-K8s Crash Loop Analysis sidecar");
 
-    let namespace = env::var("NAMESPACE").context("NAMESPACE env var not set")?;
-    let pod_name = env::var("POD_NAME").context("POD_NAME env var not set")?;
+    let namespace = env::var("NAMESPACE")
+        .map_err(|_| Error::config_step("load NAMESPACE", "env var not set"))?;
+    let pod_name = env::var("POD_NAME")
+        .map_err(|_| Error::config_step("load POD_NAME", "env var not set"))?;
     let container_name =
         env::var("CONTAINER_NAME").unwrap_or_else(|_| "stellar-operator".to_string());
 

@@ -304,3 +304,170 @@ Five-layer check:
 
 Wired into `.github/workflows/ci.yml` as the `secret-checks` job (runs on
 every push/PR) and gates the `test` and `coverage` jobs on its success.
+
+### Issue #935 — Normalize Makefile Targets and Remove Deprecated Ones
+
+**Fixed:**
+- `docs-lint` was defined **twice** with byte-identical recipes (`Makefile:299`
+  and `:306`). GNU make silently overrode the first and emitted an
+  "overriding recipe" warning on every invocation, and `make help` listed the
+  target twice. Removed the duplicate.
+- `make help` used a **non-portable awk** field separator (`FS = ":.*?## "`).
+  The lazy quantifier `?` is a GNU extension; under `mawk` (the default on
+  Debian/Ubuntu) and BSD awk it is a literal `?`, so the separator never matched
+  and the entire "All available targets" list silently vanished. Switched to the
+  portable `FS = ":.*## "`. Verified no help text contains a second `## `, so
+  greedy-vs-lazy splitting is equivalent.
+- `make docker-multiarch` dispatched `gh workflow run multiarch-build.yml`, but
+  **that workflow does not exist** in `.github/workflows/` — the target could
+  never succeed. Replaced with a real local multi-arch build
+  (`docker buildx build --platform linux/amd64,linux/arm64`), which also matches
+  what `DEVELOPMENT.md` claimed the target did. The phantom workflow reference
+  was corrected in `.github/CI_COMMANDS.md` and `.github/workflows/release.yml`
+  (the `container` job in `release.yml` is the real multi-arch publisher).
+- `make run-local` ran bare `./target/release/stellar-operator`, but
+  `Args.command` is a **required** clap subcommand, so the binary exited with a
+  usage error. `run-local` now passes `run`; `make run` is now a true alias of
+  it, matching its own help text.
+- `make security-fix` was documented as "Apply automated security fixes where
+  possible" but only ran `cargo update --dry-run` and changed nothing. Help text
+  and output corrected to say it is a report, not a fixer.
+- Removed three duplicated recipe bodies: `pre-commit-install` and
+  `dev-setup-hooks` were byte-identical; `validate` duplicated `health-fast`.
+  Both are now declared as prerequisite-based aliases.
+
+**Added:**
+- `make list-doc-coverage` — documented in `docs/stale-docs-detector.md` but the
+  target did not exist, so the documented command failed. Wired to the existing
+  `doc-check list` subcommand.
+- `make security-check` — gives the previously orphaned
+  `scripts/security-check.sh` a first-class entry point (referenced by
+  `SECURITY.md` with no way to run it through make).
+
+**Fixed live CI break:**
+- `.github/workflows/soak-test.yml:78` ran `bash scripts/soak-test.sh`, but that
+  file only existed at `scripts/archive/soak-test.sh` (it is an operational
+  script, not a one-off bootstrap script, so the archive was the wrong home).
+  Restored with `git mv`; the script has no self-relative path references, so
+  the move is safe.
+
+**Docs synced:**
+- `CONTRIBUTING.md` — `make install` → `make install-crd` (no `install` target
+  exists); `ci-local` description now includes `docs-lint`.
+- `docs/developer-onboarding/index.md` — `make deploy` → `make quickstart-deploy`
+  (no `deploy` target exists).
+- `docs/stale-docs-detector.md` — `check-stale-docs` is `--warn-only` and exits
+  0 (it does **not** exit non-zero); the strict gate is `docs-check-strict`;
+  removed the false claim that these targets are wired into `ci-local`.
+- `DEVELOPMENT.md` — documented `health-fast`; corrected `ci-local`.
+- `SECURITY.md` — replaced raw `cargo deny`/`cargo audit`/`cargo outdated` and
+  the bare script path with the canonical make targets.
+- `docs/development/makefile-refactoring.md` — updated the CI target list to the
+  targets actually invoked by `.github/workflows/*.yml`.
+
+**Verified:** all 80 `.PHONY` entries have a target definition, a recipe, and
+`## ` help text; zero duplicate target definitions; no space-indented recipe
+lines.
+
+### Issue #936 — Audit and Update Third-Party License References
+
+Scoped to non-breaking corrections. `THIRD_PARTY_LICENSES.md` is gated in CI by
+a byte-exact diff (`make check-third-party-licenses`), and the generator
+requires `cargo-license`, so the generator was deliberately **not** modified —
+doing so without regenerating the file would turn the gate red.
+
+**Corrected factual errors in `DEPENDENCY_SECURITY_AUDIT.md`:**
+- The "23 known advisories" figure was wrong in three places. There is no single
+  list; the four ignore lists hold 20 (`deny.toml`), 26 (`.cargo/audit.toml`),
+  18 (`ci.yml`) and 15 (`dependency-review.yml`) entries. Replaced with the
+  measured table.
+- `anyhow 1.0.103` / `bytes 1.11.1` as "version pinning for security fixes" —
+  `anyhow` was in fact pinned to a non-existent `1.0.108` that broke resolution
+  outright (see the `Cargo.toml` fix above); now documented as `1.0.104`.
+- `rustls-webpki` was listed as two versions; the lock contains three
+  (`0.101.7`, `0.102.8`, `0.103.13`), and the target `>=0.103.12` is already met
+  by one of them.
+- `rand 0.9.2` — the lock has `0.8.6` and `0.9.4`.
+- "✅ Explicit handling of copyleft licenses" was not substantiated; replaced
+  with an accurate note that `ittapi`/`r-efi` copyleft options are permitted only
+  because a permissive `OR` branch is allowlisted.
+
+**`deny.toml` — removed two false claims:**
+- It asserted it was "in sync with `.cargo/audit.toml`" (it is missing 6 entries)
+  and "in sync with the workflow `cargo-audit --ignore` lists" (13 entries are
+  missing, and 5 appear only in CI). Replaced with the measured divergence.
+- Flagged the `pqcrypto` ignores (`RUSTSEC-2024-0380/-0381`) as dead: no
+  `pqcrypto` package exists in `Cargo.toml` or `Cargo.lock`, so their
+  "experimental pqcrypto KMS path" justification describes a component that is
+  not present.
+
+**New "Open Gaps" section** documenting, with evidence, seven unresolved items —
+the most significant being that `rdkafka`, `sasl2-sys` and `async-nats` are
+compiled by CI (`.pre-commit-config.yaml` runs `cargo clippy`/`cargo test
+--workspace --all-features`) but are **absent from the license file**, because
+the generator pins a narrower feature set than what is actually built.
+
+**Noted but not changed:** no `deny.toml` license exceptions were added. None are
+needed — cargo-deny satisfies an expression when any branch of an `OR` is
+allowlisted, so `MIT OR Unlicense`, `BSD-3-Clause OR GPL-2.0` and
+`Apache-2.0 OR BSL-1.0` already pass. Adding exceptions would have been
+incorrect.
+
+### Issue #934 — Add Integration Test Teardown to Avoid Resource Leaks
+
+**Fixed two test files that could not compile.** Both had content appended
+*inside* an unclosed function body, with a duplicated file header — `use`
+statements are not legal inside a function:
+- `tests/backup_restore_smoke_test.rs` — `fn stellar_operator()` was never
+  closed and a second copy of the file header (lines 18-24) sat inside its body.
+  Removed the dead helper, the duplicated header, and three unused imports
+  (`std::fs`, `PathBuf`, `TempDir`). This target is invoked by `ci.yml`, so it
+  was a hard failure.
+- `tests/cli_examples_test.rs` — `fn invalid_command_fails()` was never closed and
+  `use assert_cmd::Command;` was stranded at column 0 inside its body. Closed
+  the function and moved the import to the top import block.
+
+**Removed destructive side effects from ordinary `cargo test`.** Four unit tests
+in `tests/common/mod.rs` built RAII guards to assert their fields and then let
+them `Drop`. Because every guard's `Drop` shells out to `kubectl delete`, plain
+`cargo test` was deleting namespaces, `StellarNode` CRs and ConfigMaps from
+whatever cluster the developer's kubeconfig pointed at. Each test now ends with
+`std::mem::forget`, which suppresses the destructor. No guard API changed, so the
+E2E tests that depend on them are unaffected.
+
+**Added the missing teardown primitive.** `ensure_kind_cluster` existed with no
+counterpart, so every KinD-backed test leaked a Docker container, network and
+volumes. Added to `tests/common/mod.rs`:
+- `delete_kind_cluster(name)` — error-tolerant cluster deletion.
+- `ClusterGuard` — RAII guard owning a cluster for the life of a test, honouring
+  `SKIP_TEARDOWN=1` (which previously only suppressed inline teardown in one
+  file, leaving `NamespaceGuard` drops active — an inconsistent contract).
+
+**Wired `ClusterGuard` in:**
+- `tests/quickstart_smoke_test.rs` — all three tests previously called
+  `delete_kind_cluster` inline at the end of the body, so any failing
+  `assert!`/`wait_for_*` leaked the cluster. Replaced with a function-scoped
+  guard and removed the now-unused local `delete_kind_cluster` and
+  `skip_teardown` helpers.
+- `tests/dr_failover_e2e.rs` — guard registered immediately after cluster
+  creation so `DrCleanup` (namespaces/CRs) drops first and the cluster last.
+
+**`CONVENTIONS.md`** now documents `ClusterGuard` as mandatory, with the
+correct/incorrect guard-scoping patterns and the `mem::forget` rule for
+unit-testing guards.
+
+**Known remaining leaks (not addressed here):**
+- `tests/e2e_kind.rs` (9 tests) still uses five copy-pasted local guard types
+  instead of the shared helpers, and no test deletes its KinD cluster. These
+  tests share a cluster name, so a correct fix needs the per-test cluster
+  ownership modelled before swapping in `ClusterGuard`.
+- `tests/e2e_kind.rs` — `e2e_namespace_scoped_reconciliation` has no guard at
+  all; the `kubectl port-forward` child at ~line 1488 is not process-guarded;
+  `UpgradeCleanup` tracks only the old operator manifest.
+- `tests/common/mod.rs::E2eTestGuard` remains unused outside its own unit test.
+- `tests/chaos/run-chaos-tests.sh` and the `chaos-tests`, `soak-test`,
+  `setup-kind-cluster` and `setup-perf-env` workflows create KinD clusters with
+  no teardown step (only `verify-operator-boot.yml` and
+  `scripts/quickstart-verify.sh` delete theirs).
+- `dry_run_test.rs:180-187` sets and removes `TEST_DRY_RUN` without restoring it
+  on panic.

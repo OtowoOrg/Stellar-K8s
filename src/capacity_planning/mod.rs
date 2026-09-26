@@ -16,6 +16,7 @@
 //! growth forecasting, and what-if scenario modeling.
 
 pub mod analysis;
+pub mod exhaustion;
 pub mod forecasting;
 pub mod metrics;
 pub mod recommendation;

@@ -73,6 +73,15 @@ tests:
           path: webhooks[0].failurePolicy
           value: Fail
 
+  - it: permissive mode never blocks admission on webhook outage
+    documentIndex: 6
+    set:
+      webhook.mode: permissive
+    asserts:
+      - equal:
+          path: webhooks[0].failurePolicy
+          value: Ignore
+
   - it: ValidatingWebhookConfiguration has sideEffects None
     documentIndex: 6
     asserts:

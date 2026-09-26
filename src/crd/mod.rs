@@ -61,6 +61,7 @@
 
 #[cfg(test)]
 mod blue_green_schema_test;
+pub mod capacity_forecast;
 mod cnpg;
 pub mod dr_policy;
 pub mod federation;
@@ -100,6 +101,12 @@ pub mod stellar_security;
 #[cfg(test)]
 mod tests;
 
+pub use capacity_forecast::{
+    BacktestReport, CapacityDimension, CapacityForecastSummary, CapacityRecommendationReport,
+    CapacityRecommendationReportSpec, CapacityRecommendationReportStatus, ForecastInterval,
+    ForecastModelKind, IncidentBacktest, RecommendationPhase, RecommendationPriority,
+    ScalingRecommendation, SeriesBacktest, TimeToExhaustion,
+};
 pub use cnpg::*;
 pub use dr_policy::{
     ComplianceStatus, DisasterRecoveryPolicy, DisasterRecoveryPolicySpec,

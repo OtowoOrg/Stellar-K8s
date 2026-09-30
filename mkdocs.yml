@@ -119,6 +119,7 @@ nav:
     - SCP Consensus Topology and Monitoring: scp-consensus-topology-and-monitoring.md
     - Production Profiling Runbook: operations/profiling-runbook.md
     - Core Blue/Green Runbook: operations/core-blue-green-runbook.md
+    - Database Schema Initialization: operations/db-schema-init.md
     - OpenTelemetry Tracing: observability/tracing.md
     - Distributed Rate Limiting: distributed-rate-limiting.md
     - Feature Flag Rollouts: feature-flag-rollouts.md

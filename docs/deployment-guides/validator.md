@@ -418,6 +418,12 @@ kubectl logs -n stellar-prod prod-validator-0 -f
 
 See the [Troubleshooting Guide](../troubleshooting/common-issues.md) for solutions to common validator problems.
 
+!!! warning "First deployment on a new volume"
+    Fresh persistent volumes must be initialized with `stellar-core new-db`
+    before the validator will boot — otherwise it crashloops with
+    `No DB schema version found`. See [Database Schema Initialization](../operations/db-schema-init.md)
+    for the one-off pod / init container procedure.
+
 ## Next Steps
 
 - [Configure Horizon API](horizon.md) to query validator data

@@ -343,6 +343,31 @@ See Disk Scaling Guide for PVC expansion procedures.
 
 ---
 
+### Issue 15: Validator CrashLoops with "No DB schema version found" on a Fresh Volume
+
+**Symptoms:**
+```
+error: No DB schema version found, try stellar-core new-db
+```
+Pod enters `CrashLoopBackOff` right after (re)deploying a validator onto a
+freshly provisioned data volume.
+
+**Root Cause:** Stellar Core stores its schema in an embedded SQLite database
+on the data volume. A new PVC is empty, so the schema does not exist yet; core
+exits on boot until the database is initialized with `stellar-core new-db`.
+
+**Solution:**
+Run the one-time schema initialization procedure (one-off pod or
+`spec.initContainers`) documented in
+[Database Schema Initialization](../operations/db-schema-init.md).
+
+Do **not** run `stellar-core new-db` against a volume that previously held
+ledger state — that resets local state. If a previously-synced validator shows
+this error, treat it as storage damage instead: see the
+[PVC corruption playbook](../operations/pvc-troubleshooting.md).
+
+---
+
 ## Additional Resources
 
 - Disk Scaling Troubleshooting

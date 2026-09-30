@@ -245,6 +245,8 @@ Use this path when the validator uses SQLite, usually visible as
 
 `stellar-core new-db` initializes or resets the local database and bucket state.
 Use it only after the pre-recovery snapshot and evidence capture are complete.
+For the difference between initializing a fresh volume and resetting a damaged
+one, see [Database Schema Initialization](./db-schema-init.md).
 `stellar-core catchup` runs archive catchup without joining the peer network.
 `stellar-core offline-info` confirms the local database can be opened offline.
 

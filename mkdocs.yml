@@ -109,6 +109,7 @@ nav:
     - CRD Reference: configuration/crd-reference.md
     - Operators: configuration/operators.md
     - Storage: configuration/storage.md
+    - Validator Container Command: configuration/validator-command.md
     - Database Optimization: database/optimization-guide.md
   - Tutorials:
     - tutorials/index.md

@@ -12,6 +12,7 @@ ignore: |
   charts/**/templates/**
   charts/**/charts/**
   **/node_modules/**
+  mkdocs.yml
 
 rules:
   braces:

@@ -166,6 +166,30 @@ kubectl apply --dry-run=server -f validator-production.yaml
 kubectl apply -f validator-production.yaml
 ```
 
+## Container Command
+
+The operator injects `["/usr/bin/stellar-core", "run", "--conf", "/config/stellar-core.cfg"]`
+as the explicit container command for every validator pod. The official image ships
+with an empty `Cmd`, so this injection is required — the container would exit
+immediately without it.
+
+The config file at `/config/stellar-core.cfg` is served from a generated `ConfigMap`
+mounted at `/config/`.
+
+To use a custom image path or add flags, set `spec.command`:
+
+```yaml
+spec:
+  command:
+    - /custom/stellar-core
+    - run
+    - --conf
+    - /config/stellar-core.cfg
+```
+
+See [Validator Container Command Override](../configuration/validator-command.md) for full
+details, including customisation guidance and troubleshooting an immediately-exiting container.
+
 ## Configuration Options
 
 ### Node Identity
@@ -417,6 +441,9 @@ kubectl logs -n stellar-prod prod-validator-0 -f
 ### Common Issues
 
 See the [Troubleshooting Guide](../troubleshooting/common-issues.md) for solutions to common validator problems.
+
+For issues specific to the container command or config file path, see the
+[Validator Container Command Override](../configuration/validator-command.md) reference.
 
 ## Next Steps
 

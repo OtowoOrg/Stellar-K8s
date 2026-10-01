@@ -68,7 +68,7 @@ jobs:
       # ── Create kind cluster (AC #2) ───────────────────────────────────────
       - name: Install kind
         if: steps.scope.outputs.run == 'true'
-        uses: helm/kind-action@v1.14.0
+        uses: helm/kind-action@v1.15.0
         with:
           install_only: true
 

@@ -1,4 +1,4 @@
-﻿name: Supply-Chain Provenance Attestation
+name: Supply-Chain Provenance Attestation
 
 # Epic #1477 - End-to-End Supply-Chain Provenance Attestation Pipeline
 #
@@ -74,7 +74,7 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v6

@@ -3,7 +3,7 @@
 # Stage 1: Chef - Dependency Caching Layer
 # Multi-arch: supports linux/amd64 and linux/arm64 (Graviton, Apple Silicon)
 # ==============================================================================
-FROM --platform=$BUILDPLATFORM lukemathwalker/cargo-chef:latest-rust-1.93 AS chef
+FROM --platform=$BUILDPLATFORM lukemathwalker/cargo-chef:latest-rust-1.98 AS chef
 FROM lukemathwalker/cargo-chef:latest-rust-1.98-slim-bookworm AS chef
 WORKDIR /app
 

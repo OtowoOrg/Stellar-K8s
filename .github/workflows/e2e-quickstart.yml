@@ -72,7 +72,7 @@ jobs:
 
       # ── Tool installs ────────────────────────────────────────────────────
       - name: Install kind
-        uses: helm/kind-action@v1.14.0
+        uses: helm/kind-action@v1.15.0
         with:
           install_only: true
           version: "v0.23.0"

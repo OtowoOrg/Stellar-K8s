@@ -104,7 +104,7 @@ jobs:
           cache: true
 
       - name: Setup Kind cluster (K8s ${{ matrix.k8s_version }})
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.15.0
         with:
           version: "v0.22.0"
           config: |
@@ -143,7 +143,7 @@ jobs:
 
       - name: Upload conformance results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         with:
           name: conformance-results-k8s-${{ matrix.k8s_version }}
           path: conformance-results/
@@ -168,7 +168,7 @@ jobs:
           cache: true
 
       - name: Download all conformance results
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v8
         with:
           path: all-conformance-results/
 
@@ -239,7 +239,7 @@ jobs:
           EOF
 
       - name: Upload badges and reports
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         with:
           name: compatibility-matrix-artifacts
           path: |
@@ -251,7 +251,7 @@ jobs:
 
       - name: Comment PR with compatibility matrix
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -303,7 +303,7 @@ jobs:
 
       - name: Create issue if new pre-release detected
         if: steps.upstream.outputs.prerelease_found == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const releases = `${{ steps.upstream.outputs.prerelease }}`.split('\n').filter(r => r);
@@ -329,7 +329,7 @@ summary:
   if: always()
   steps:
     - name: Download compatibility results
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v8
       with:
         name: compatibility-matrix-artifacts
 

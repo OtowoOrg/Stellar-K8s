@@ -26,6 +26,7 @@
 //! tokio::spawn(run_pvc_autoscaler(client.clone(), config));
 //! ```
 
+use crate::controller::storage::autoresize;
 use crate::controller::volume_resizer::{
     ExpansionOutcome, VolumeResizerConfig, VolumeResizerController,
 };
@@ -80,6 +81,14 @@ async fn reconcile_all_pvcs(client: &Client, controller: &VolumeResizerControlle
     for node in &node_list.items {
         let name = node.name_any();
         let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+
+        // Reflect the PVC's current size onto the parent CR. This runs on every
+        // pass, not only after an expansion, so the parent also reports storage
+        // that was resized out of band, and settles once an in-flight expansion
+        // is acknowledged by the storage provider.
+        if let Err(e) = autoresize::reconcile_observed_storage(client, node).await {
+            error!("Error reflecting storage onto {}/{}: {e}", namespace, name);
+        }
 
         match controller.reconcile_node_pvc(node).await {
             Ok(ExpansionOutcome::Expanded { new_size_gi }) => {

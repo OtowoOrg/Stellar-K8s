@@ -1,0 +1,44 @@
+# futurenet-app.yaml — ArgoCD Application for the Futurenet environment.
+#
+# Futurenet tracks protocol preview builds and resets periodically.
+# Automated sync is enabled. All storage uses retentionPolicy: Delete because
+# Futurenet data is ephemeral and expected to be discarded on network resets.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: stellar-futurenet
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: stellar-k8s
+    app.kubernetes.io/component: futurenet-workloads
+    stellar.org/network: futurenet
+    stellar.org/gitops-version: v1
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/agnesnaomiolim-cloud/Stellar-K8s.git
+    targetRevision: main
+    path: examples/gitops/overlays/futurenet
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: stellar-futurenet
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - PruneLast=true
+      - PrunePropagationPolicy=foreground
+  ignoreDifferences:
+    - group: stellar.org
+      kind: StellarNode
+      jsonPointers:
+        - /status
+        - /metadata/resourceVersion
+        - /metadata/generation

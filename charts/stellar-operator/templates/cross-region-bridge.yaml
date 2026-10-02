@@ -9,6 +9,12 @@
     3. A NetworkPolicy that allows the state-sync sidecar to reach the Stellar
        Core HTTP port (11626) within the pod.
 
+  Additionally, when failover is enabled, this template provisions the
+  global-operator failover controller: a ConfigMap carrying the anti-flapping
+  and health-probe tuning, plus a Deployment running the global-operator
+  binary that polls the primary cluster's health endpoints and orchestrates
+  DNS remapping and Patroni replica promotion.
+
   Enabled when featureFlags.enableDr == "true" AND crossRegion.enabled == true.
 */ -}}
 
@@ -121,5 +127,110 @@ spec:
           protocol: TCP
     {{- end }}
     {{- end }}
+
+{{- if $crossRegion.failover }}
+{{- $failover := $crossRegion.failover }}
+---
+# ─── ConfigMap: failover controller tuning ───────────────────────────────────
+# Holds the health-probe cadence, anti-flapping thresholds, DNS provider
+# credentials reference, and Patroni promotion command used by the
+# global-operator failover controller.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-failover
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    stellar.org/component: failover
+data:
+  # Poll the primary cluster's health endpoints every 500ms.
+  healthPollInterval: {{ $failover.healthPollInterval | default "500ms" | quote }}
+  # Anti-flapping: require N consecutive failures before failing over and
+  # N consecutive successes before failing back, plus a cooldown window.
+  failureThreshold: {{ $failover.failureThreshold | default 6 | quote }}
+  recoveryThreshold: {{ $failover.recoveryThreshold | default 12 | quote }}
+  flapCooldown: {{ $failover.flapCooldown | default "5m" | quote }}
+  # Global DNS record to remap on failover.
+  dnsRecordName: {{ $failover.dnsRecordName | default "rpc.stellar.org" | quote }}
+  dnsProvider: {{ $failover.dnsProvider | default "route53" | quote }}
+  dnsTtl: {{ $failover.dnsTtl | default 30 | quote }}
+  # Patroni endpoint used to promote the standby PostgreSQL replica.
+  patroniEndpoint: {{ $failover.patroniEndpoint | default "http://patroni:8008" | quote }}
+  patroniPromotePath: {{ $failover.patroniPromotePath | default "/switchover" | quote }}
+  # Primary health endpoints polled by the global watcher.
+  primaryHealthEndpoints: {{ $failover.primaryHealthEndpoints | default (list "http://stellar-core-primary:11626/health" "http://horizon-primary:8000/health") | toJson | quote }}
+  # Peer clusters eligible to become the new primary.
+  peerClusters: {{ $crossRegion.peerClusters | toJson | quote }}
+---
+# ─── Deployment: global-operator failover controller ─────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-failover
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    stellar.org/component: failover
+spec:
+  replicas: {{ $failover.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "stellar-operator.selectorLabels" . | nindent 6 }}
+      stellar.org/component: failover
+  template:
+    metadata:
+      labels:
+        {{- include "stellar-operator.selectorLabels" . | nindent 8 }}
+        stellar.org/component: failover
+      annotations:
+        # Force a rolling restart when failover tuning changes.
+        checksum/failover-config: {{ include (print $.Template.BasePath "/cross-region-bridge.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "stellar-operator.serviceAccountName" . }}
+      containers:
+        - name: global-operator
+          image: "{{ $failover.image.repository | default .Values.image.repository }}:{{ $failover.image.tag | default .Values.image.tag }}"
+          imagePullPolicy: {{ $failover.image.pullPolicy | default .Values.image.pullPolicy }}
+          args:
+            - "failover"
+            - "--config=/etc/global-operator/failover.yaml"
+          env:
+            - name: RUST_LOG
+              value: {{ $failover.logLevel | default "info" | quote }}
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- if $failover.dnsProviderCredentialsSecret }}
+            - name: DNS_PROVIDER_CREDENTIALS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $failover.dnsProviderCredentialsSecret }}
+                  key: {{ $failover.dnsProviderCredentialsKey | default "credentials" }}
+            {{- end }}
+          volumeMounts:
+            - name: failover-config
+              mountPath: /etc/global-operator
+              readOnly: true
+          resources:
+            {{- toYaml ($failover.resources | default dict) | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: failover-config
+          configMap:
+            name: {{ include "stellar-operator.fullname" . }}-failover
+{{- end }}
 
 {{- end }}

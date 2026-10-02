@@ -3,1739 +3,1745 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-## Chart v4.0.0 (2026-09-30) [major]
-
-## Unreleased
-
-### Fixed
-
-• Deduplicate operator environment variables.
-• Prevent command injection in validator commands.
-• Scope config table lookups to the intended table.
-• Gate generated AppArmor annotations behind `STELLAR_APPARMOR_ENABLED`.
 
 
+## Chart v2.19.0 (2026-10-02) [minor]
 
-## Chart v3.3.0 (2026-09-28) [minor]
-
-• Merge pull request #1638 from Goodnessukaigwe/fix/1484-cost-aware-workload-placement-across-spot-and-on-demand-capacity
-• [1484] [EPIC] Cost-Aware Workload Placement Across Spot and On-Demand Capacity
-✨ feat(scheduler): cost-aware spot placement with preemptive migration
-• Prefer best-effort workloads onto spot capacity, keep critical workloads
-• on on-demand, migrate ahead of scheduled interruptions, and export
-• hourly realized savings through the existing cost dashboard.
-• Co-authored-by: Cursor <cursoragent@cursor.com>
+• Merge pull request #350 from moveeswift-uncap/fix/issue-245-enhancement-zero-downtime-egress-traffic
+✨ feat: zero-downtime egress traffic shaping controller
+🐛 fix: ## [Enhancement] Zero-Downtime Egress Traffic Shaping Contro (#245)
 
 
-## Chart v3.2.0 (2026-09-28) [minor]
+## Chart v2.18.0 (2026-10-02) [minor]
 
-• Merge pull request #1601 from itsnotOJ/fix/1504-epic-multi-region-failover-orchestration-with-health-gated-traffic-shift
-• [#1504] [EPIC] Multi-Region Failover Orchestration with Health-Gated Traffic Shift
-• Merge branch 'main' into fix/1504-epic-multi-region-failover-orchestration-with-health-gated-traffic-shift
-• Merge pull request #1600 from itsnotOJ/fix/1503-epic-job-and-cronjob-orphan-detection-with-ownership-reconciliation
-• [#1503] [EPIC] Job and CronJob Orphan Detection with Ownership Reconciliation
-• Merge pull request #1599 from Dantama022/main
-✨ feat(platform): end-to-end supply-chain provenance, immutable audit chain, adaptive HPA on custom SLIs, and multi-tenant fair-share scheduler (#1477 #1478 #1479 #1480)
+• Merge pull request #368 from Viccodes11/enhancement/leader-election-metrics
+• [Enhancement] Automated Leader Election Failover for Operator High Availability
+• Merge pull request #359 from Charity5654/feat/331-wasm-upgrade-proxy
+✨ feat(contracts): decentralized WebAssembly upgrade proxy with 7-day timelock (#331)
+• Merge pull request #357 from soladayo21963-coder/feat/215-multisig-wallet-factory
+✨ feat(contracts): implement multi-signature wallet factory on Soroban
+• Merge pull request #398 from Senatormike001/fix/issue-227-enhancement-horizon-db-ha-replication-monitor
+✨ feat: Horizon DB replication monitor with lag alerts
+• Merge pull request #356 from oycodes/fix/issue-130-documentation-disaster-recovery-failover
+📝 docs: add DR failover and snapshot restoration runbook
+• Merge pull request #358 from devogechukwu/docs/pvc-optimization
+📝 docs: Optimize PVCs for Captive Core sync
+• Merge pull request #361 from Rayhab2000/feat/296-yield-bearing-stablecoin
+✨ feat(contracts): add programmable yield-bearing stablecoin (#296)
+• Merge pull request #364 from Isihaq123/docs/319-gitops-argocd
+📝 docs(#319): GitOps deployment architecture via ArgoCD
+• Merge pull request #365 from danielchukuma-dev/feat/333-cross-shard-liquidity-state-verifier
+✨ feat(contract): cross-shard liquidity state verifier (Closes #333)
+• Merge pull request #367 from Viccodes11/dr-datacenter-recovery
+📝 docs: add disaster recovery runbook for datacenter loss and vault recovery script
+• Merge pull request #363 from Adjutant500/feature/289-soroban-gas-metering-calibrator
+✨ feat(tools): Automated Soroban Gas Metering Calibrator
+• Merge pull request #370 from AGWAM001/docs/issue-295-chaos-mesh-strategy
+📝 docs(chaos): Chaos Mesh chaos engineering strategy for the operator (issue #295)
+• Merge pull request #374 from Nuruddeen61/main
+📝 docs: zero-downtime protocol upgrade runbook (#293)
+• Merge pull request #371 from Chummy-debug/security/issue-309-enhancement-kubectl-stellar-cli-extension-for
+✨ feat: kubectl-stellar CLI for validator health diagnostics
+🐛 fix: ## [Enhancement] Horizon DB HA Replication Monitor (Frontend (#227)
+• Fix formatting issues in operations documentation
+• security: ## [Enhancement] `kubectl-stellar` CLI Extension for Validat (#309)
+📝 docs(chaos): add Chaos Mesh chaos engineering strategy and example experiments
+• Add leader status Prometheus gauge and metric updates for HA leader election
+📝 docs: add disaster recovery runbook for datacenter loss and vault recovery script
+✨ feat(contract): cross-shard liquidity state verifier (#333)
+• Implements issue #333 — Cross-Shard Liquidity State Verifier (200-point
+• epic).  A new Soroban coordinating contract that enables atomic multi-AMM
+• arbitrage trades across any number of independent pool contracts with
+• absolute cryptographic guarantees against partial execution.
+• ## New contract: contracts/cross-shard/
+• ### src/coordinator.rs
+• Core orchestration logic:
+• - initialize(): one-time setup with admin address
+• - execute_atomic_swap(initiator, transitions): ordered Vec<ShardTransition>
+•   execution with all-or-nothing atomicity
+•   * Validates inputs: MIN_TRANSITIONS=2, MAX_TRANSITIONS=16, deadline, amount
+•   * Acquires advisory locks on all target pools atomically via acquire_all()
+•   * Sets InFlight reentrancy guard before any cross-contract invocation
+•   * Invokes each AMM leg via env.invoke_contract()
+•   * Verifies min_out slippage bound after each leg
+•   * On any failure: calls env.panic_with_error() to force a complete
+•     transaction rollback — all state changes from all preceding legs revert
+•   * On success: persists SwapSnapshot(Committed), releases locks, clears guard
+•   * Emits structured events at every stage (swap_ok, swap_fail, leg_exec,
+•     leg_ok)
+• - set_paused(), transfer_admin(), get_admin(), is_paused(), is_inflight(),
+•   last_swap_id(), get_swap_snapshot()
+• - Zero multi-threading: no Mutex/RwLock, no async, fully compatible with
+•   Stellar Core's single-threaded sequential scheduler
+• ### src/locks.rs
+• Advisory pool-lock state machine:
+• - acquire(pool, swap_id, ttl): writes PoolLock to persistent storage;
+•   rejects if a non-expired lock already exists
+• - release(pool): removes lock; rejects if held by a different coordinator
+• - force_release(pool): any caller may clear an expired lock (anti-DoS)
+• - acquire_all(pools, swap_id): two-phase check-then-write to prevent partial
+•   acquisition and deadlocks
+• - release_all(pools): bulk release tolerating already-gone entries
+• - is_locked(pool), read_lock(pool): non-mutating inspection
+• - LOCK_TTL_LEDGERS=60 (~5 min at 5 s/ledger)
+• - Concurrency safety note: all locking is persistent-storage writes committed
+•   atomically with the rest of the transaction; no OS primitives needed
+• ### src/types.rs
+• XDR-serialisable (#[contracttype]) domain types:
+• - DataKey enum: Admin, Paused, SwapCounter, PoolLock(Address),
+•   SwapSnapshot(u64), InFlight
+• - ShardTransition: pool, function, amount_in, min_out, token_in, token_out,
+•   deadline
+• - TransitionResult: pool, amount_out, succeeded
+• - SwapSnapshot: id, initiator, legs, start_ledger, status
+• - SwapStatus: InFlight / Committed / Reverted
+• - PoolLock: pool, held_by, acquired_at, expires_at, swap_id
+• ### src/errors.rs
+• CrossShardError (#[contracterror], #[repr(u32)]):
+• - AlreadyInitialized(1), NotInitialized(2)
+• - Unauthorized(20), NotSwapInitiator(21)
+• - TooFewTransitions(30), TooManyTransitions(31), InvalidAmount(32),
+•   DeadlineExpired(33), SlippageExceeded(34), LegInvocationFailed(35),
+•   Overflow(36)
+• - PoolAlreadyLocked(40), LockNotOwned(41), LockExpired(42), LockStillValid(43)
+• - ReentrantCall(50), ContractPaused(51)
+• ### src/lib.rs
+• #[contract] CrossShardCoordinator with full #[contractimpl]:
+• - Thin wrappers delegating to coordinator:: and locks:: modules
+• - Re-exports all public types for external consumers
+• ### src/test.rs
+• 9 integration tests using soroban-sdk testutils:
+• - MockAmm: #[contract] stub with configurable rate and deliberate-fail mode
+• - three_pool_swap_all_succeed: happy path, verifies output amounts and
+•   snapshot
+• - three_pool_swap_third_fails_all_revert: the required issue #333 validation
+•   — induces failure in AMM C, asserts AMM A and AMM B swap_count=0, locks
+•   released, InFlight cleared, SwapCounter reverted
+• - slippage_on_second_leg_reverts_all: min_out guard triggers full revert
+• - expired_deadline_rejected_before_execution: deadline check before any AMM
+•   call
+• - too_few_transitions_rejected, swap_rejected_when_paused,
+•   double_initialize_rejected, force_release_unexpired_lock_rejected,
+•   concurrent_swap_rejected_if_pool_locked
+• ### Cargo.toml
+• soroban-sdk 22.0.0 with features=["alloc"]; standalone [workspace];
+• crate-type = ["cdylib", "rlib"]; release profile: opt-level=z, lto=true,
+• panic=abort, overflow-checks=true
+• Closes #333
+📝 docs(#319): GitOps deployment architecture via ArgoCD
+• - Add docs/operations/gitops-argocd.md with complete ArgoCD integration
+•   guide covering architecture overview, Kustomize overlay structure,
+•   Captive Core upgrade verification gates (schema, compat-check,
+•   OPA/conftest, smoke test), pull-request workflow, sync wave ordering,
+•   secret management patterns, drift detection, and end-to-end
+•   validation procedure (sub-3-minute convergence check).
+• - Add examples/gitops/base/ with StellarNode skeletons for Validator,
+•   SorobanRpc, and Horizon node types and a shared kustomization.yaml.
+• - Add examples/gitops/overlays/{testnet,futurenet,mainnet}/ with
+•   environment-specific Kustomize patches. Mainnet overlay enforces
+•   retentionPolicy: Retain on all storage. Futurenet uses Delete given
+•   periodic network resets.
+• - Add examples/gitops/argocd/ with app-of-apps.yaml (bootstrap entry
+•   point), testnet-app.yaml and futurenet-app.yaml (automated sync),
+•   mainnet-app.yaml (manual sync only, requires ≥2 reviewer approvals),
+•   and a README with bootstrap and promotion commands.
+• Enforces: manual kubectl edits are forbidden; GitHub is the single
+• immutable source of truth for all node infrastructure.
+• Closes #319
+✨ feat(tools): add automated Soroban gas metering calibrator (#289)
+• Implements a standalone Rust binary at tools/gas-calibrator/ that
+• benchmarks host hardware with WASM micro-benchmarks and generates
+• dynamically-tuned Soroban gas configuration profiles.
+• Key modules:
+• - src/benchmarks.rs  – six WASM micro-benchmarks (SHA-256 hash loop,
+•   Blake3 hash loop, memory allocation, arithmetic loop, branch-heavy,
+•   memory copy) executed inside wasmtime for realistic Soroban-style
+•   overhead measurement.
+• - src/profiler.rs    – CPU affinity pinning via taskset(1), process
+•   priority tuning via renice, hardware detection (cpu count/brand/freq,
+•   RAM, OS), and a warm-up phase to prime the JIT before timing.
+• - src/main.rs        – clap CLI with --iterations, --output, --format
+•   (json|yaml), --cpu, --warmup-ms, --no-pin flags; derives Soroban CPU
+•   instruction pricing tiers from benchmark means scaled to the measured
+•   CPU frequency; emits a variance report flagging benchmarks with
+•   coefficient of variation > 5 %.
+• Output (JSON or YAML) includes:
+•   - hardware profile (CPU brand, cores, freq, RAM, OS, pinned core)
+•   - raw per-benchmark statistics (mean, stddev, p50/p95/p99)
+•   - gas_tiers mapped to Soroban host function names
+•   - variance_report with confidence levels and recommendations
+• The crate is a standalone workspace (tools/gas-calibrator/Cargo.toml)
+• following the same pattern as tools/manifest-validator.
+• Closes #289
+✨ feat(contracts): add programmable yield-bearing stablecoin (#296)
+• Implements a SEP-41-compatible Soroban stablecoin with:
+• - Programmable compliance hooks (mint/burn gate)
+•   - On-chain sanctions blacklist: permanently blocks an address from all
+•     inbound/outbound flows; removal requires a stricter multi-sig quorum
+•   - Account freeze: reversible halt on all flows for a specific address;
+•     enforced before every transfer, mint, burn, and approve
+• - Multi-sig yield distribution (distribute_yield)
+•   - Proportional allocation: balance_i * yield / total_supply_snapshot
+•   - Requires configurable k-of-n threshold from a registered signer set
+•   - Duplicate-signer detection (O(n^2) over small signer sets, no std needed)
+•   - Blacklisted/frozen recipients silently skipped to prevent a single
+•     non-compliant address from blocking an entire distribution epoch
+•   - Floor-division dust stays unminted to keep total_supply exact
+• - Storage segregation
+•   - Instance storage: admin config + multi-sig thresholds (kept small)
+•   - Persistent storage: per-address balances, allowances, flags
+•   - Thresholds live exclusively in instance storage, segregated from user data
+• - 32 tests all green (cargo test --lib)
+•   - Happy-path: mint, burn, transfer, approve/transfer_from
+•   - Compliance: blacklist and freeze block all flows end-to-end
+•   - Yield: proportional math, dust, skip restricted recipients
+•   - Multi-sig: quorum enforcement, duplicate signer rejection
+•   - Fuzz-style: 20-signer / 50-holder distribution, mass mint supply
+•     integrity, 30-holder blacklist cryptographic block verification
+• Key modules:
+•   contracts/yield-stablecoin/src/lib.rs    - contract + yield distribution
+•   contracts/yield-stablecoin/src/hooks.rs  - compliance gate
+•   contracts/yield-stablecoin/src/storage.rs - shared DataKey definitions
+•   contracts/yield-stablecoin/src/test.rs   - full test suite
+• Closes #296
+• Create arm-upgrade.sh
+✨ feat(contracts): add decentralized WebAssembly upgrade proxy (#331)
+• Implements the 7-day timelocked WASM upgrade proxy for Soroban smart
+• contracts as specified in issue #331.
+• What was implemented:
+• - contracts/upgrade-proxy/Cargo.toml
+•   Standalone Soroban workspace (separate from the root Kubernetes
+•   operator workspace), release profile set to wasm32 optimisations.
+• - upgrade_proxy/src/storage.rs
+•   UpgradeProxy-prefixed storage keys (Admin, DaoCouncil, Pending) that
+•   cannot collide with any future implementation contract's own keys.
+• - upgrade_proxy/src/error.rs
+•   Fixed-discriminant #[contracterror] enum covering all failure modes:
+•   AlreadyInitialized, NotInitialized, Unauthorized, UpgradeAlreadyPending,
+•   NoPendingUpgrade, TimelockNotElapsed, ArithmeticOverflow.
+• - upgrade_proxy/src/timelock.rs
+•   TIMELOCK_SECONDS = 604 800 (7 days). PendingUpgrade struct records
+•   wasm_hash, proposed_at, execute_after. assert_elapsed() enforces the
+•   gate using env.ledger().timestamp() (Unix seconds, robust to ledger
+•   velocity changes).
+• - upgrade_proxy/src/lib.rs
+•   UpgradeProxyContract with five public entry points:
+•   * initialize(admin, dao_council) — one-time setup.
+•   * propose_upgrade(new_wasm)      — admin uploads WASM, starts countdown.
+•   * abort_upgrade(caller)          — admin OR dao_council emergency cancel.
+•   * execute_upgrade()              — admin applies swap after 7-day window.
+•   * pending_upgrade() / admin() / dao_council() / timelock_remaining()
+•     — read-only queries for off-chain tooling and frontends.
+• All auth checks use require_auth(); at most one pending upgrade at a
+• time; storage cleared before deployer.update_current_contract_wasm() to
+• prevent re-entrancy edge-cases.
+• Closes #331
+• Create protocol-upgrades.md
+📝 docs: Optimize PVCs for Captive Core sync
+• - Add documentation analyzing stateless vs stateful pods for blockchain.
+• - Provide configurations for high IOPS StorageClasses.
+• - Delineate requirements for Horizon archival vs Active validators.
+• - Add manifest examples for high IOPS StorageClasses.
+🐛 fix: ## [Documentation] Disaster Recovery Failover & Snapshot Res (#130)
+✨ feat(contracts): implement multi-signature wallet factory on Soroban
+• - Add contracts/multisig-factory/Cargo.toml: standalone Soroban
+•   workspace using soroban-sdk =27.0.6, matching governance-vote
+•   convention.
+• - Add contracts/multisig-factory/src/lib.rs (MultisigFactory contract):
+•   * Admin-controlled WASM registration via register_wallet_wasm().
+•   * deploy_wallet() uses env.deployer().with_current_contract(salt)
+•     .deploy_v2() to instantiate independent wallet instances.
+•   * Salt-based idempotency guard (AlreadyDeployed) prevents overwriting.
+•   * Registry of deployed wallets queryable via get_wallet(salt).
+•   * wallet_count() tracks total deployments.
+•   * rotate_admin() for factory admin rotation.
+• - Add contracts/multisig-factory/src/wallet.rs (MultisigWallet contract):
+•   * Proposal queue with five kinds: Transfer, ContractCall,
+•     ThresholdChange, AddSigner, RemoveSigner.
+•   * propose_transfer / propose_contract_call / propose_threshold_change
+•     / propose_add_signer / propose_remove_signer entry points.
+•   * vote() enforces: signer-only, active proposal, no duplicate votes,
+•     expiry check. Transitions to Approved once normal threshold met.
+•   * execute() enforces: Approved state, expiry, and — for governance
+•     proposals — super-majority ⌈n×2/3⌉. Marks Executed on success,
+•     preventing replay.
+•   * cancel() restricted to original proposer; prevents execution of
+•     Cancelled proposals.
+•   * Expired proposals auto-detected on next vote/execute call.
+•   * super_majority_threshold(n) = (n*2 + 2) / 3 (integer ceiling).
+• - Add contracts/multisig-factory/src/test.rs (31 unit tests):
+•   * Factory: initialize, double-init guard, WASM registration, deploy
+•     multiple independent wallets, duplicate-salt guard, wallet_count.
+•   * Wallet: threshold-approved transfer, sub-threshold rejection,
+•     duplicate vote, non-signer vote, proposal expiry, proposer cancel,
+•     non-proposer cancel rejection, re-execution prevention.
+•   * Governance: threshold change requires super-majority (5-signer
+•     example), sub-super-majority rejection, AddSigner, RemoveSigner.
+•   * Security boundaries: Wallet A signer cannot vote on Wallet B
+•     proposals; Wallet B signer cannot propose on Wallet A.
+•   * Formula correctness: n=3→2, n=5→4, n=7→5 super-majority.
+•   * Invalid amount (≤0) and invalid threshold (0, >n) on deploy.
+• Closes #215
+
+
+## Chart v2.17.0 (2026-10-01) [minor]
+
+• Merge pull request #373 from Seeyerh/security/issue-327-enhancement-gitops-driven-immutable-secret
+✨ feat: GitOps-driven immutable secret injection for validator keys
+• Merge pull request #376 from olakunleakinyele4-max/feat/issue-291-enhancement-multi-cluster-active-passive
+✨ feat: multi-cluster active-passive failover operator
+• Merge pull request #392 from Ukorstack/feat/dao-treasury-multisig-302
+✨ feat(contracts): DAO Treasury Multi-Sig Soroban contract
+• Merge pull request #390 from Okorie2000-code/feat/htlc-cross-chain-atomic-swap-300
+✨ feat(contracts/htlc): implement cross-chain HTLC for trustless atomic…
+• Merge pull request #396 from KingYuss/feat/issue-239-contract-decentralized-on-chain-escrow-with
+✨ feat: add on-chain escrow with multi-party arbitration
+• Merge pull request #403 from Chidi-Dev1/feat/ephemeral-oracle-297
+✨ feat(contracts): Temporary Storage Oracle for Ephemeral Price Feeds
+• Merge pull request #422 from dynamicwearsng-debug/feat/issue-225-geo-quorum-map
+✨ feat(frontend): add 3D geospatial quorum & latency map (#225)
+• Merge pull request #405 from Vivian-04/docs/issue-129-gas-oracle-spec
+📝 docs: add gas fee oracle architecture specification
+• Merge pull request #375 from paulolubanwo391-cloud/feat/326-mpt-state-proof-verifier
+✨ feat(contracts): MPT state proof validator for EVM bridge deposits
+✨ feat(frontend): add 3D geospatial quorum & latency map (#225)
+• Implements issue #225 - 3D Geospatial Quorum & Latency Map:
+• - frontend/components/webgl_globe.tsx
+•   Plain Three.js WebGL globe component with:
+•   * SphereGeometry earth with PhongMaterial
+•   * Graticule wireframe grid (lat/lng every 30°)
+•   * Host-node gold marker and instanced grey peer dots
+•   * Pre-allocated quadratic-Bézier arc geometry (MAX_ARCS=256,
+•     DynamicDrawUsage) targeting ≥60 FPS with 50+ simultaneous arcs
+•   * Vertex-coloured arcs driven by per-arc latencyMs
+• - frontend/analytics/geo_map/types.js
+•   Type definitions, latency thresholds (50ms / 200ms), and colour
+•   constants (green 0x39d98a / yellow 0xf5b942 / red 0xf05d5e)
+• - frontend/analytics/geo_map/geoip.js
+•   GeoIP resolution utilities:
+•   * Static database covering Tokyo, Frankfurt, Virginia, Singapore,
+•     London, Sydney and other common Stellar validator regions
+•   * resolveCoords() with runtime cache and /api/geoip fallback
+•   * resolveAllPeers() for concurrent batch resolution
+•   * latencyBand() / latencyColor() helpers
+•   * coordToVec3() lat/lng → Three.js Vector3 conversion
+•   * buildArcPositions() Bézier arc geometry builder
+• - frontend/analytics/geo_map/QuorumMap.jsx
+•   Top-level React component wiring GeoIP → arcs → WebGLGlobe with
+•   loading overlay, error banner, latency legend, and ARIA attributes
+• - frontend/analytics/geo_map/geoip.test.js
+•   28 passing tests (node:test) covering Tokyo/Frankfurt/Virginia
+•   canonical peers, latency band classification, colour coding,
+•   coordToVec3 geometry, and the full pipeline integration smoke test
+📝 docs: add gas fee oracle architecture specification
+• Specify the dynamic gas fee oracle: fixed-point EMA math with
+• step-by-step evaluation and range, overflow, truncation-error and
+• steady-state proofs; the contract ABI, authorization rules and error
+• codes; and the node reporter integration pattern.
+• Add Rust and TypeScript clients under examples/contracts/oracle-client.
+• The Rust crate carries the reference EMA implementation and tests the
+• typed client against a spec-conformant mock in the Soroban host.
+• Closes #129
+✨ feat(contracts): add ephemeral oracle for temporary price feeds
+• Implements a Soroban smart contract that stores signed off-chain price
+• data exclusively in Temporary Storage with configurable TTL (default 50
+• ledgers ≈ 5 minutes), achieving zero long-term ledger state growth.
+• ## Key modules
+• - contracts/ephemeral-oracle/src/lib.rs        — contract entry points
+• - contracts/ephemeral-oracle/src/storage.rs    — Temporary-only storage layer
+• - contracts/ephemeral-oracle/src/types.rs      — PriceEntry, OracleConfig, etc.
+• - contracts/ephemeral-oracle/src/error.rs      — OracleError enum (11 codes)
+• - contracts/ephemeral-oracle/src/test.rs       — 30+ integration tests
+• - contracts/ephemeral-oracle/BENCHMARKS.md     — storage rent comparison
+• ## Design highlights
+• - All price entries written to env.storage().temporary() only; Persistent
+•   Storage is never called (enforced by code structure and documented via
+•   PersistentStorageForbidden error code).
+• - get_price_checked() reverts with PriceFeedExpired when TTL ≤ 1 ledger,
+•   preventing DeFi contracts from acting on prices about to be evicted.
+• - batch_update() processes up to 500 assets per transaction, supporting
+•   ≥ 10,000 updates/day with minimal fee overhead.
+• - Entries are evicted automatically by the protocol — no delete transaction
+•   required; zero ledger state growth at any update frequency.
+• ## Benchmark summary
+• At 10,000 updates/day across 50 assets over 90 days:
+•   Persistent oracle: ~2,700 XLM rent + 108,000 renewal transactions + 7.2 MB state growth
+•   Ephemeral oracle:   ~576 XLM rent + 0 renewal transactions + 0 bytes state growth
+• Closes #297
+✨ feat: ## [Contract] Decentralized On-Chain Escrow with Multi-Party (#239)
+✨ feat(contracts): add DAO Treasury Multi-Sig Soroban contract
+• Implements contracts/dao-treasury as a standalone Soroban workspace
+• following the same conventions as governance-vote, escrow-vault, and
+• the other contracts in this repository.
+• ## What was built
+• ### contracts/dao-treasury/src/lib.rs  — DaoTreasury contract
+• - Instance storage anchors core config: committee, threshold, timelock
+•   delay, nonce, admin, token address, proposal count.
+• - Proposal execution engine with Pending → Executed / Cancelled
+•   lifecycle.  Assets only move via execute_proposal; no admin bypass.
+• - BFT quorum enforced via aggregate_signatures_with_auth, which calls
+•   require_auth() on every unique in-committee signer before counting
+•   the vote (Soroban auth framework validates key ownership).
+• - Nonce committed to storage before the token transfer to guard
+•   against replay attacks.
+• - Timelock-protected config changes: queue_config_change stores a
+•   PendingChange with an unlock_ledger; apply_config_change reverts
+•   if current_ledger < unlock_ledger (prevents flash-governance).
+• - deposit() entry-point for anyone to fund the treasury.
+• - Full query surface: admin, token, committee, threshold,
+•   timelock_delay, nonce, proposal_count, get_proposal,
+•   pending_change, balance, bft_min_threshold.
+• - 19 unit tests embedded in #[cfg(test)] covering: constructor,
+•   3-of-3 full-quorum execution, duplicate-sig deduplication,
+•   below-threshold revert, double-execute revert, cancel by admin
+•   and proposer, outsider cancel revert, timelock queue/apply/cancel,
+•   set_admin authorization.
+• ### contracts/dao-treasury/src/governance.rs  — BFT + timelock engine
+• - bft_threshold(n): computes ⌊2n/3⌋+1 (BFT quorum minimum).
+• - aggregate_signatures(): pure dedup-only variant (testable outside
+•   contract context); aggregate_signatures_with_auth(): contract-
+•   context variant that also calls require_auth() on each signer.
+• - ProposalDigest::compute(): SHA-256 over proposal_id ‖ amount ‖
+•   nonce, binding signers to an exact transfer.
+• - committee_contains(), threshold_met(), timelock_elapsed(),
+•   compute_unlock_ledger() with saturation semantics.
+• - 15 pure unit tests covering bft_threshold invariants, threshold_met
+•   monotonicity, timelock math, and corner cases.
+• ### contracts/dao-treasury/tests/fuzz_sig_aggregation.rs  — fuzz suite
+• 28 adversarial tests:
+• - BFT threshold always > 2n/3, never exceeds n, non-decreasing.
+• - threshold_met monotone in sig_count.
+• - Duplicate signers collapse to count=1.
+• - Non-committee signers contribute 0.
+• - Mixed duplicate+outsider batches: only unique in-committee counted.
+• - Empty sig list / empty committee / zero-committee always return 0.
+• - 200-repetition duplicate-signer stress test.
+• - Partial quorum (4 of 7) does not meet BFT threshold (5).
+• - Full quorum (7 of 7) meets BFT threshold.
+• - Timelock math: unlock_ledger >= current, saturates at u32::MAX.
+• - ProposalDigest: different ids/amounts/nonces → different hashes;
+•   identical inputs → identical hash.
+• ### contracts/dao-treasury/Cargo.toml
+• Standalone [workspace] identical in structure to governance-vote and
+• escrow-vault.  soroban-sdk pinned to =27.0.6.  profile.release with
+• overflow-checks = true, opt-level = z, lto = true.
+• ## Test results
+•   cargo test -p dao-treasury
+•   34 unit tests (lib.rs + governance.rs): ok
+•   28 fuzz tests (tests/fuzz_sig_aggregation.rs): ok
+•   Total: 62/62 pass, 0 warnings
+• Closes #302
+✨ feat(contracts/htlc): implement cross-chain HTLC for trustless atomic swaps (#300)
+• Adds a production-ready Hash Time-Locked Contract (HTLC) as a standalone
+• Soroban/Stellar contract under contracts/htlc/.  The contract enables
+• trustless atomic swaps between Stellar-native assets (XLM + SAC tokens)
+• and external blockchain networks (Bitcoin, Ethereum, etc.).
+• ## Contract architecture
+• ### contracts/htlc/Cargo.toml
+• - Standalone [workspace] root, intentionally excluded from the top-level
+•   Stellar-K8s operator workspace (mirrors contracts/governance-vote pattern).
+• - crate-type = ["cdylib", "rlib"]: cdylib for on-chain Wasm deployment,
+•   rlib for test harness linkage.
+• - Pins soroban-sdk = "=27.0.6" for reproducible builds; dev-dependencies
+•   enable testutils (mock_all_auths, ledger sequence control, SAC minting).
+• - Release profile: opt-level=z, LTO, codegen-units=1, strip=symbols to
+•   minimise Wasm artifact size and fees.
+• ### contracts/htlc/src/crypto.rs
+• - verify_preimage(): single env.crypto().sha256() host-function call,
+•   10-50x cheaper than a pure-Wasm SHA-256 implementation.
+• - Comparison via BytesN<32>::eq — constant-byte-count with no early-exit
+•   branch, ruling out timing-oracle side channels.
+• - sha256_of() helper for off-chain tooling and test setup.
+• - Full module-level security analysis:
+•   - Pre-image attack: ~2^256 work
+•   - Second-preimage attack: ~2^256 work
+•   - Birthday collision bound: ~2^128 — computationally infeasible
+•   - Full 32-byte digest always stored; no truncation used
+• ### contracts/htlc/src/lib.rs — public API
+• lock(sender, receiver, token, amount, hashlock, expiry_ledger)
+• - Validates amount > 0 (InvalidAmount) and expiry_ledger > current
+•   ledger sequence (InvalidExpiry).
+• - Rejects duplicate hashlocks (HashlockAlreadyExists) to prevent replay.
+• - Transfers tokens from sender into contract via token::Client::transfer.
+• - Persists EscrowEntry {sender, receiver, token, amount, hashlock,
+•   expiry_ledger, status=Active} keyed on DataKey::Htlc(hashlock).
+• - Emits htlc_lock event with (sender, receiver, amount, expiry_ledger).
+• claim(receiver, hashlock, preimage)
+• - Guards: EscrowNotFound, AlreadySettled, UnauthorizedReceiver,
+•   TimelockExpired, InvalidPreimage — checked in that order.
+• - Reentrancy safety: entry.status = Claimed and storage.persistent().set()
+•   are called BEFORE tok.transfer() to the receiver.
+• - Emits htlc_clm event with (receiver, amount).
+• refund(sender, hashlock)
+• - Guards: EscrowNotFound, AlreadySettled, UnauthorizedSender,
+•   TimelockNotExpired.
+• - Expiry expressed as absolute ledger sequence (not Unix timestamp) to
+•   avoid validator-set clock drift.  Refund succeeds at exactly
+•   expiry_ledger (boundary is inclusive on the sender's side).
+• - Reentrancy safety: status = Refunded written before tok.transfer().
+• - Emits htlc_ref event with (sender, amount).
+• get_htlc(hashlock) -> Option<EscrowEntry>  [view, no state mutation]
+• ## Error catalogue (10 variants)
+• HashlockAlreadyExists=1, EscrowNotFound=2, AlreadySettled=3,
+• UnauthorizedReceiver=4, UnauthorizedSender=5, TimelockExpired=6,
+• TimelockNotExpired=7, InvalidPreimage=8, InvalidAmount=9, InvalidExpiry=10
+• ## Test suite — 27 tests
+• Happy path (claim):
+•   test_happy_path_claim_transfers_funds_to_receiver — full golden-path
+•     lock→claim; verifies sender decreases, contract holds during escrow,
+•     receiver receives exact amount, contract zeroes, status=Claimed.
+•   test_happy_path_exact_amount_received — asserts delta == escrowed amount.
+• Happy path (refund):
+•   test_refund_after_expiry_returns_funds_to_sender — full refund path;
+•     verifies sender recovers exact amount, contract zeroes, receiver
+•     untouched, status=Refunded.
+•   test_refund_at_exact_expiry_boundary — boundary: refund at exactly
+•     expiry_ledger must succeed.
+• Error coverage (every variant tested):
+•   test_error_invalid_amount_zero
+•   test_error_invalid_amount_negative
+•   test_error_expiry_equal_to_current_ledger
+•   test_error_expiry_in_the_past
+•   test_error_duplicate_hashlock_rejected
+•   test_error_claim_unknown_hashlock
+•   test_error_refund_unknown_hashlock
+•   test_error_double_claim_rejected
+•   test_error_refund_after_claim_rejected
+•   test_error_double_refund_rejected
+•   test_error_claim_after_refund_rejected
+•   test_error_wrong_receiver_cannot_claim
+•   test_error_wrong_sender_cannot_refund
+•   test_error_claim_after_expiry_rejected
+•   test_error_claim_one_ledger_past_expiry
+•   test_error_premature_refund_rejected
+•   test_error_wrong_preimage_rejected
+•   test_error_empty_preimage_rejected
+• Asset conservation invariants:
+•   test_asset_conservation_across_full_lifecycle — sum(sender+contract+
+•     receiver) == total_supply at every lifecycle stage (lock and claim).
+•   test_asset_conservation_refund_path — same invariant over refund path;
+•     asserts receiver==0 and sender recovers 100% of initial balance.
+• View helper:
+•   test_get_htlc_returns_correct_entry — all EscrowEntry fields match.
+•   test_get_htlc_returns_none_for_unknown_hashlock
+• Concurrent HTLCs:
+•   test_multiple_independent_htlcs — two simultaneous HTLCs (different
+•     hashlocks) settle independently; HTLC-A claimed, HTLC-B refunded,
+•     contract balance zeroes with no cross-contamination.
+• Closes #300
+✨ feat: ## [Enhancement] Multi-Cluster Active-Passive Failover Opera (#291)
+✨ feat: ## [Enhancement] Multi-Cluster Active-Passive Failover Opera (#291)
+✨ feat(contracts): add MPT state proof validator for EVM bridge deposits
+• Implements a Soroban-native Merkle Patricia Trie verifier so a bridge can
+• validate cross-chain deposits from Ethereum state proofs instead of trusting
+• an off-chain oracle.
+• Scope (issue #326):
+• - RLP decoder/encoder in src/rlp.rs with strict canonical-form enforcement.
+•   Short forms are required when the payload allows and length fields may not
+•   carry leading zeros, since the same node otherwise has several
+•   byte-distinct encodings with different hashes.
+• - MPT traversal in src/trie.rs handling branch, leaf and extension nodes,
+•   32-byte child hashes and short inline children, plus hex-prefix path
+•   decoding and Ethereum non-inclusion proofs.
+• - Account and storage-slot value decoding in src/account.rs.
+• - A generic verify_evm_state contract interface.
+• DoS hardening, as the issue requires strict depth limits: traversal is
+• iterative (no stack overflow) and bounded by max_depth, max_nodes,
+• max_node_bytes and max_total_bytes, with every node decoded under bounded RLP
+• limits. A storage-slot proof is checked against the storageRoot inside the
+• verified account leaf, so the two proofs bind to each other.
+• Validation uses a real Ethereum mainnet state proof captured via eth_getProof
+• and eth_getBlockByNumber (9 account nodes, 9 storage nodes, WETH). Decoded
+• nonce, balance, code hash and slot value all match what the node reported.
+• Tests also assert that flipping any single byte of any node, offering the
+• proof against a different state root, truncating it, or asking for a
+• different address all fail.
+• Keccak-256 is the Ethereum pre-NIST variant, not SHA3-256; tests pin the
+• empty digest, a standard vector and the empty-trie root, and assert the
+• padding variants differ. Digests were additionally reproduced with an
+• independent Keccak-256 implementation written from the specification.
+• Verified with cargo test (70 tests), cargo clippy --all-targets (no lints),
+• cargo fmt --check, and a wasm32v1-none release build of the deployable
+• contract.
+• security: ## [Enhancement] GitOps-Driven Immutable Secret Injection (#327)
+
+
+## Chart v2.16.0 (2026-10-01) [minor]
+
+• Merge pull request #407 from Toyinoje/main
+• updated project flies
+• Merge pull request #421 from dynamicwearsng-debug/docs/issue-252-captive-core-dr-guide
+📝 docs(#252): add Captive Core state corruption DR guide and reset script
+• Merge pull request #423 from akindoyinabraham0-collab/feat/92-dr-command-center
+✨ feat(frontend): DR Command Center & Failover Drill Workbench (#92)
+• Merge branch 'main' into feat/92-dr-command-center
+📝 test(frontend): add DR Command Center test suite (#92)
+✨ feat(frontend): add typed DR API client for trigger/status/reset (#92)
+✨ feat(frontend): implement DR Command Center multi-panel dashboard (#92)
+📝 docs(#252): add Captive Core state corruption DR guide and reset script
+• - Add docs/operations/captive-core-rebuild.md with full disaster recovery
+•   guide covering diagnostic log patterns, kubectl commands to safely halt
+•   Horizon and wipe Captive Core state, expected log sequences confirming
+•   a fresh ledger catchup, and explicit PostgreSQL safety warning.
+• - Add examples/troubleshooting/reset-captive-core.sh — automated reset
+•   script with dry-run support, pre-flight PostgreSQL check, StellarNode
+•   CRD maintenance mode integration, one-shot maintenance pod wipe, and
+•   post-restart verification.
+• Closes #252
+• updated project flies
+• changes made
+
+
+## Chart v2.15.0 (2026-10-01) [minor]
+
+• Merge pull request #379 from big6isaac/feat/pvc-autoresize-observed-storage-220
+✨ feat(storage): reflect auto-expanded PVC capacity on the StellarNode status #220
+• Merge pull request #382 from Seeyerh/feat/issue-236-contract-algorithmic-stablecoin-minting
+✨ feat: algorithmic stablecoin minting & seigniorage controller
+• Merge pull request #383 from Ajibola6921/fix/issue-316-enhancement-distributed-webassembly-wasm
+✨ feat: distributed WASM caching layer for Soroban RPC nodes
+• Merge pull request #388 from Okunolabuilds/fix/issue-235
+✨ feat: add authorized wrapped token contract
+• Merge pull request #387 from Obetaebube3/feature/webgl-mempool-visualizer
+• Add WebGL mempool visualizer and stream parser modules
+• Merge pull request #391 from Emmyhack/docs/adr-rust-vs-go-312
+📝 docs(adr): Rust vs Go architecture and CRD versioning ADRs (#312)
+• Merge pull request #394 from Chris-Alex491/feat/batch-pay-299
+✨ feat(contracts): add sharded batch payments processor
+• Merge pull request #400 from Tobore2000/feat/issue-325-wasm-bytecode-optimizer-sidecar
+• Feat/issue 325 wasm bytecode optimizer sidecar
+• Merge pull request #397 from sunnykid-02/rate-limiter
+• Intelligent Prometheus Metrics Rate-Limiter
+✨ feat(operator): automated WASM bytecode optimizer sidecar (#325)
+• Implements issue #325 - Automated WebAssembly Bytecode Optimizer Sidecar.
+• ## Overview
+• Adds a wasm-opt (Binaryen) sidecar that automatically intercepts StellarNode
+• WASM deployment payloads via a MutatingAdmissionWebhook, optimises the bytecode
+• (dead-code elimination, memory packing), and returns the reduced binary before
+• it is persisted to etcd. This autonomously protects the global Stellar ledger
+• from state bloat by enforcing strict bytecode efficiency on all deployments.
+• ## New files
+• ### controller/src/deployment/optimizer.rs
+• Core WASM optimizer engine:
+• - WasmOptimizer with dual dispatch: remote HTTP sidecar OR local subprocess
+• - OptimizerConfig (reads WASM_OPT_SIDECAR_URL, WASM_OPT_LEVEL, WASM_OPT_BIN)
+• - OptimizationResult with reduction_pct() and bytes_saved() helpers
+• - run_sidecar_server() — axum HTTP server that runs inside the Alpine container
+• - Hard timeout enforcement (default 8s, leaving 2s before K8s 10s deadline)
+• - validate_wasm_magic() validates  asm magic bytes before/after optimization
+• - Passes: -O3 --dce --memory-packing --remove-unused-module-elements
+•          --duplicate-function-elimination
+• ### controller/src/webhook/wasm_mutator.rs
+• MutatingAdmissionWebhook handler (controller crate):
+• - Full AdmissionReview serde types (no kube dependency)
+• - build_patch() generates JSON Patch replacing spec.wasmBinary + injecting
+•   stellar.io/wasm-optimized, stellar.io/wasm-original-size, etc.
+• - Idempotency: skips objects already carrying stellar.io/wasm-optimized=true
+• - Fail-open: any error allows original binary through with warning annotation
+• ### sidecar/wasm-opt.Dockerfile
+• Alpine Linux container for the wasm-opt sidecar:
+• - Base: alpine:3.21 + apk add binaryen tini
+• - Non-root user (sidecar:sidecar)
+• - EXPOSE 9080 with GET /health healthcheck
+• - tini PID-1 for correct signal handling
+• - Target image size < 30 MB
+• ### charts/stellar-operator/templates/wasm-optimizer.yaml
+• Kubernetes manifests:
+• - MutatingWebhookConfiguration (stellar-wasm-optimizer) at /mutate/wasm
+•   - timeoutSeconds: 10 (K8s maximum)
+•   - failurePolicy: Ignore (fail-open — optimizer never blocks deployments)
+•   - Only fires on StellarNode CREATE/UPDATE without stellar.io/wasm-optimized
+•   - Skips kube-system and stellar-webhook namespaces
+• - wasm-opt-sidecar Deployment (2 replicas, rolling update, readOnly fs)
+• - ClusterIP Service on port 9080
+• - PodDisruptionBudget (minAvailable: 1)
+• - ServiceAccount + ConfigMap
+• ## Modified files
+• ### src/webhook/wasm_mutator.rs (new, main crate)
+• Self-contained handler implementation used by stellar-k8s webhook server:
+• - WasmOptimizer + OptimizerConfig + OptimizationResult (no cross-crate deps)
+• - wasm_mutate_handler axum handler with full fail-open logic
+• - 8 unit tests: dry-run, bad base64 (400), no wasmBinary (pass-through),
+•   already-optimised idempotency, fail-open when wasm-opt absent, missing request
+• ### src/webhook/server.rs
+• - Added wasm_mutator field to WebhookServer struct
+• - Registered POST /mutate/wasm -> wasm_mutate_handler on into_router()
+• - WasmMutatorState::from_env() called once at server construction
+• ### src/webhook/mod.rs
+• - Added pub mod wasm_mutator
+• - Re-exports wasm_mutate_handler and WasmMutatorState
+• ### charts/stellar-operator/values.yaml
+• - Added wasmOptimizer: block (enabled: false, optLevel, timeoutSecs,
+•   failurePolicy, sidecar image/pullPolicy, resources)
+• ## Architecture
+•     kubectl apply StellarNode (with wasmBinary)
+•           |
+•           v
+•     K8s API Server
+•           | MutatingWebhookConfiguration matches CREATE/UPDATE
+•           v
+•     stellar-webhook :443 /mutate/wasm  <-- wasm_mutate_handler
+•           | POST /optimize?level=3
+•           v
+•     wasm-opt-sidecar :9080   <-- Alpine + binaryen wasm-opt
+•           | optimised bytes
+•           v
+•     stellar-webhook -- JSON Patch -> K8s API Server -> etcd
+• ## Validation (Definition of Done)
+• - Submit 1 MB bloated WASM -> webhook intercepts -> optimization runs ->
+•   binary reduced ≥40% -> deployed
+• - failurePolicy: Ignore ensures optimizer failures never block deploys
+• - 10s K8s webhook budget enforced: optimizer timeout=8s + 2s headroom
+• - stellar.io/wasm-optimized annotation prevents re-optimization on updates
+• - Compatibility: wasm-opt -O3 preserves deterministic execution logic
+• Intelligent Prometheus Metrics Rate-Limiter
+✨ feat(contracts): add sharded batch payments processor
+📝 docs(adr): add Rust vs Go architecture and CRD versioning ADRs (#312)
+• Add two foundational Architecture Decision Records under docs/adrs/ that
+• document why Stellar-K8s is built in Rust with kube-rs and Tokio, and how
+• the CRD API is allowed to evolve.
+• ADR-001 (Rust operator architecture) covers memory-safety guarantees as
+• they apply to a process holding validator seeds and TLS keys, an objective
+• comparison of Go's garbage collector against Rust's ownership model, the
+• ~15MB distroless footprint budget, the Tokio patterns used by the
+• reconciliation loop, and the dual cleanup strategy of owner references
+• plus the stellarnode.stellar.org/finalizer with ordered, retention-aware
+• teardown.
+• ADR-002 (CRD versioning) records the verified current state (single
+• stellar.org/v1alpha1 served and stored version, no conversion webhook),
+• formalises the additive-only compatibility rules already enforced by
+• scripts/crd_migration_lint.py and the crd-drift CI job, and sets the
+• policy for introducing v1beta1: per-version Rust modules merged with
+• merge_crds, conversion strategy escalation, storage version migration
+• steps, deprecation window, and the finalizer interaction.
+• ADRs 0002-0004 in docs/adr/ described a finalizer name, API group and
+• storage version that never matched the implementation; they are marked
+• Superseded with pointers to the new records, and the ADR index is
+• updated.
+• Closes #312
+• Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+✨ feat: add authorized wrapped token contract
+• Add WebGL mempool visualizer and stream parser modules
+🐛 fix: ## [Enhancement] Distributed WebAssembly (WASM) Caching Laye (#316)
+✨ feat: ## [Contract] Algorithmic Stablecoin Minting & Seigniorage C (#236)
+✨ feat(contracts): add smart-multisig with on-chain ExecutionPolicy (#328)
+• Implements issue #328 - Multi-Sig Wallet with On-Chain State Execution Rules.
+• ## Changes
+• ### contracts/smart-multisig/
+• New Soroban contract (soroban-sdk 27.0.6) providing a programmable
+• M-of-N multi-signature wallet with dynamic execution guards evaluated
+• before any signature validation loop.
+• ### src/policy.rs
+• - ExecutionPolicy struct persisted in Instance Storage with four
+•   fields: max_allowed_fee_stroops, 	wap_oracle, eference_twap_price,
+•   max_price_deviation_bps
+• - DataKey enum covering Admin, Signers, Threshold, Policy, TxCounter,
+•   PendingTx(u64), Signatures(u64)
+• - PolicyError contracterror enum (13 variants, no #[repr(u32)] conflict)
+• - PendingTx struct for in-flight transfer records
+• - Pure guards: ssert_fee_within_policy(submitted_fee, policy) and
+•   ssert_twap_within_policy(policy, live_price) with compute_deviation_bps
+• - Instance storage helpers and TTL refresh (17280*30 ledgers)
+• ### src/execution.rs
+• - ssert_policy_pre_check(env, fee) -- runs fee guard THEN cross-contract
+•   TWAP oracle call BEFORE the signature loop to cheaply revert invalid txs
+• - etch_twap_price -- invoke_contract call to external oracle get_twap()
+• - ssert_threshold_met -- filters approvals against current signer set
+• - dispatch_transfer -- token::Client SEP-41 transfer with CEI pattern
+• - Admin/signer/threshold/tx-counter storage helpers
+• ### src/lib.rs
+• - SmartMultiSig contract with __constructor, propose_transfer,
+•   pprove, execute_transfer(caller, tx_id, current_fee_stroops),
+•   set_policy, otate_admin, and read-only view functions
+• - Three-step execute pipeline: policy pre-check -> threshold -> dispatch
+• - Checks-effects-interactions: tx marked executed before external call
+• - #[contractevent] events for all state transitions
+• - Lockout prevention: admin can always disable guards via u32::MAX sentinels
+• ### src/test.rs
+• 17 passing tests (cargo test --lib):
+• - 7 pure unit tests for deviation math and fee guard in policy::tests
+• - test_valid_transfer_2_of_3: happy-path 2-of-3 with token balance check
+• - test_execute_reverts_on_fee_spike: spiked fee (5000 > 1000) -> FeeTooHigh
+• - test_execute_reverts_on_twap_spike: oracle 10% above ref -> TwapDeviationTooLarge
+• - test_propose_requires_signer, test_approve_once_only, test_threshold_not_met
+• - test_set_policy_unauthorized, test_policy_disable_fee_guard (u32::MAX sentinel)
+• - test_policy_disable_twap_guard (u32::MAX sentinel), test_rotate_admin
+• ## Design notes
+• - Soroban SDK 27 does not expose ledger base_fee inside WASM; the submitting
+•   relayer passes current_fee_stroops as a tx argument, consistent with how
+•   other fee-aware contracts on Stellar handle network fee data
+• - Policy guards run before signature iteration: O(1) revert on bad network
+•   conditions vs O(signers) wasted work
+• - Admin key can never be permanently locked: set_policy always available to
+•   disable guards, rotate_admin always available to transfer keys
+✨ feat(storage): reflect auto-expanded PVC capacity on the StellarNode status
+• The volume resizer grows a PVC when the kubelet reports the volume is
+• filling, but the new size lives only on the PVC. The StellarNode keeps
+• advertising the spec.storage size it was created with, so anything reading
+• the parent CR sees stale capacity indefinitely.
+• Add src/controller/storage with two pieces:
+• - metrics: kubelet volume usage, with PromQL construction and response
+•   parsing separated from the HTTP call so both are testable. Notably
+•   VolumeUsage::from_samples distinguishes a missing series from a genuine
+•   zero, so an unreachable Prometheus no longer reads as "every volume is
+•   empty" and silently suppresses expansion across the cluster.
+• - autoresize: derives ObservedStorageStatus from the live PVC and patches
+•   it onto status.observedStorage. Requested and actual capacity are both
+•   reported, because patching the PVC spec only asks the provider to grow
+•   the volume while status.capacity moves once it has. Reporting the
+•   request as though it were real would hide an expansion that failed, so
+•   expansion_complete is true only when actual >= requested.
+• The autoscaler loop now calls this on every pass rather than only after an
+• expansion, so the parent also reflects out-of-band resizes and settles once
+• an in-flight expansion is acknowledged.
+• NOTE: this does not compile. main is already broken independently of this
+• change: an unclosed delimiter in src/backup/secret_rotation.rs and
+• src/webhook/org_validator.rs, 53 unresolved types in src/crd/stellar_node.rs
+• (NodeType, StellarNetwork and others are used but never imported from
+• crd/types.rs), a broken destructure in src/data_pipeline/pipeline.rs, and
+• references to crate::controller::quorum and crate::compliance, which do not
+• exist. Kept as a separate branch so the build breakage is handled on its
+• own.
+
+
+## Chart v2.14.0 (2026-10-01) [minor]
+
+• Merge pull request #408 from Kingsuite/feat/Telemetry
+✨ feat:implement Lock-Free Ring-Buffer for Real-Time SCP Message Telemetry
+• Merge pull request #426 from akindoyinabraham0-collab/feat/89-promql-alert-builder
+✨ feat(frontend): Visual PromQL Alerting Rule Builder & Test Workbench (#89)
+• Merge pull request #424 from DanProtocol/docs/issue-314-wasm-policy-guide
+📝 docs(wasm): enterprise WASM validation policy authoring guide
+• Merge pull request #425 from akindoyinabraham0-collab/feat/92-dr-command-center-v2
+✨ feat(frontend): DR Command Center & Failover Drill Workbench (#92)
+• Merge pull request #427 from akindoyinabraham0-collab/feat/90-rollout-timeline-visualizer
+✨ feat(frontend): StatefulSet Rolling Update & Ledger Catch-Up Timeline Visualizer (#90)
+📝 test(frontend): PodCard unit tests — 10 describe blocks (#90)
+✨ feat(frontend): PodCard TypeScript component for timeline visualizer (#90)
+📝 docs(frontend): 5 validated PrometheusRule YAML examples (#89)
+📝 test(frontend): PrometheusClient unit tests — 9 cases (#89)
+✨ feat(frontend): Prometheus query service with testAlertExpr (#89)
+✨ feat(frontend): typed DR API client (trigger/status/reset) (#92)
+📝 test(frontend): DR Command Center test suite — 9 describe blocks (#92)
+✨ feat(frontend): DR Command Center multi-panel dashboard (#92)
+📝 docs(wasm): enterprise WASM validation policy authoring guide (#314)
+• Add a step-by-step guide for enterprise node operators writing custom
+• WebAssembly validation policies for the Stellar-K8s operator.
+• New files:
+• - docs/development/wasm-policies.md — 1002-line enterprise guide covering:
+•     host ABI (get_input_len / read_input / write_output / log_message),
+•     input/output JSON schemas, full Rust plugin pattern, fail-open vs
+•     fail-closed configuration, ConfigMap packaging, operator deployment,
+•     end-to-end validation walkthrough, and an enterprise hardening checklist.
+• - examples/wasm-plugins/registry-enforcer/src/lib.rs — complete, compilable
+•     registry allow-list plugin (492 lines) with unit tests, audit annotations,
+•     and structured ValidationError output.
+• - examples/wasm-plugins/registry-enforcer/Cargo.toml — minimal cdylib crate
+•     with size-optimised release profile.
+• - examples/wasm-plugins/registry-enforcer/README.md — quick-start README.
+• Closes #314
+• Merge pull request #410 from Fayvor22/Audit
+• Audit
+✨ feat: [Documentation] Soroban Smart Contract Security Audit Checklist & Framework
+✨ feat: [Documentation] Soroban Smart Contract Security Audit Checklist & Framework
+✨ feat:implement Lock-Free Ring-Buffer for Real-Time SCP Message Telemetry
+✨ feat: [Documentation] Bare-Metal NVMe IOPS Tuning & Deployment Guide
+✨ feat: [Documentation] Bare-Metal NVMe IOPS Tuning & Deployment Guide
+
+
+## Chart v2.13.0 (2026-10-01) [minor]
+
+• Merge pull request #395 from Diamond437rough/anycast
+✨ feat(network): implement BGP Anycast integration and fast route withd…
+• Merge pull request #414 from Fayvor22/core
+✨ feat: Implement [Documentation] Core/Horizon Decoupled Architecture Guide
+✨ feat: Implement [Documentation] Core/Horizon Decoupled Architecture Guide
+✨ feat: Implement [Documentation] Core/Horizon Decoupled Architecture Guide
+✨ feat: Implement [Documentation] Core/Horizon Decoupled Architecture Guide
+✨ feat: Implement [Documentation] Horizon Database High-Availability (HA) Replication Blueprint
+✨ feat: Implement [Documentation] Horizon Database High-Availability (HA) Replication Blueprint 
+• Feat: implement [Documentation] Horizon Database High-Availability (HA) Replication Blueprint
+✨ feat: [Documentation] Soroban Smart Contract Security Audit Checklist & Framework
+✨ feat: [Documentation] Bare-Metal NVMe IOPS Tuning & Deployment Guide
+✨ feat(network): implement BGP Anycast integration and fast route withdrawal for Horizon
+
+
+## Chart v2.12.0 (2026-10-01) [minor]
+
+• Merge pull request #416 from CollinsC1O/basket
+✨ feat: implement [Contract] Token Basket / Index Fund Factory
+• Merge pull request #417 from CollinsC1O/fixer
+🐛 fix: ci failing issue
+• Merge pull request #419 from CollinsC1O/bridge
+✨ feat: Implement Cross-Chain NFT (ERC-721 to Soroban) Bridge Vault
+• Merge pull request #420 from CollinsC1O/market
+✨ feat: [Contract] Concentrated Liquidity Automated Market Maker
+✨ feat: [Contract] Concentrated Liquidity Automated Market Maker
+✨ feat: [Contract] Concentrated Liquidity Automated Market Maker
+✨ feat: Implement Cross-Chain NFT (ERC-721 to Soroban) Bridge Vault
+✨ feat: implement [Contract] Smart Contract State Verification & Snapshot Oracle
+🐛 fix: ci failing issue
+🐛 fix: ci failing issue
+✨ feat: implement [Contract] Token Basket / Index Fund Factory
+• Merge pull request #148 from Fayvor22/heatmap
+✨ feat: implement [Frontend] Real-Time Resource Saturation Heatmap for …
+• Merge branch 'main' into heatmap
+• Merge pull request #150 from miriamisa022-cyber/feature/119-snapshot-sync-reconciler
+✨ feat(#119): implement multi-cluster snapshot synchronization reconciler
+• Merge pull request #153 from CRSabers/docs/issue-62-rbac-hardening
+📝 docs(security): add least-privilege RBAC hardening reference
+• Merge branch 'main' into docs/issue-62-rbac-hardening
+• Merge pull request #147 from acejayl/docs/101-local-dev-kind-guide
+📝 docs: add developer onboarding and local kind integration testing guide
+• Merge pull request #151 from Unclebaffa/feat/ingress-ssl-cert-monitor
+✨ feat(frontend): add public ingress and SSL/TLS certificate expiration…
+• Merge pull request #149 from miriamisa022-cyber/feature/120-dynamic-rate-limiter
+✨ feat(#120): implement dynamic rate-limiter engine for Soroban RPC gat…
+• Merge branch 'main' into feature/120-dynamic-rate-limiter
+• Merge pull request #152 from APKLEO/feat/55-ingress-tls-cert-dashboard
+✨ feat(frontend): add Ingress TLS certificate expiration dashboard (#55)
+• Merge pull request #155 from belloaliyu11/issue-58-pvc-recovery-playbook
+• Add PVC corruption recovery playbook
+• Merge branch 'main' into issue-58-pvc-recovery-playbook
+• Merge pull request #157 from Kingsley4867/feature/captive-core-supervisor-issue-82
+✨ feat: implement Captive Core Process Lifecycle Supervisor with Lock R…
+• Merge pull request #145 from Goodnessukaigwe/fix/104-documentation-custom-resource-definition-crd-architecture-reference-manual
+• [104] [Documentation] Custom Resource Definition (CRD) Architecture Reference Manual
+• Merge branch 'main' into fix/104-documentation-custom-resource-definition-crd-architecture-reference-manual
+• Merge pull request #146 from Goodnessukaigwe/fix/102-documentation-custom-resource-definition-crd-architecture-reference-manual
+• [102] [Documentation] Custom Resource Definition (CRD) Architecture Reference Manual
+• Merge pull request #97 from CollinsC1O/proxy
+✨ feat: Implement Upgradeability Proxy Controller with Delayed Timelock
+• Merge branch 'main' into proxy
+• Merge pull request #144 from Goodnessukaigwe/fix/107-documentation-disaster-recovery-backup-verification-automation-guide
+• [107] [Documentation] Disaster Recovery & Backup Verification Automation Guide
+• Merge branch 'main' into fix/107-documentation-disaster-recovery-backup-verification-automation-guide
+• Merge pull request #143 from akindoyinabraham0-collab/feat/quorum-intersection-matrix
+✨ feat(analytics): add quorum intersection matrix explorer
+• Merge branch 'main' into feat/quorum-intersection-matrix
+• Merge pull request #141 from orunganiekan/docs/131-132-133-109-enterprise-docs-and-operational-frameworks
+📝 docs: add RBAC multi-tenancy guide, telemetry manual, WASM gas tuning, and incident response framework (#131, #132, #133, #109)
+• Merge branch 'main' into docs/131-132-133-109-enterprise-docs-and-operational-frameworks
+• Merge pull request #136 from Praxhant97/main
+•  [Backend] Automated PVC Snapshotting Before Operator Version Upgrades
 • Merge branch 'main' into main
-• merge: resolve upstream main into the job orphan detection branch
-• merge: resolve upstream main into the multi-region failover branch
-✨ feat(failover): health-gated incremental multi-region traffic shift plan
-• - add the TrafficShiftPlan CR: a controller-owned, declarative plan that names
-•   both regions, the weighted routing record, one health gate, the shift shape,
-•   the failback policy and the declared RTO/RPO
-• - health gate scores primary and secondary independently against the same
-•   HealthGateSpec, and failback runs the identical function with the roles
-•   swapped, so returning traffic needs the same evidence as taking it away
-• - incremental shift state machine: drain, publish, soak; never moves weight
-•   with the gate closed, never overshoots the target, and holds the last safe
-•   increment when a soak breaches the error budget
-• - connection draining and DNS TTL handled explicitly: the propagation wait is
-•   max(ttl, soak) so a short soak cannot outrun resolver caches
-• - render the weighted record declaratively as an external-dns DNSEndpoint and
-•   record every step, gate decision, weight and RTO/RPO measurement in the plan
-•   status, mirrored to a stellar.org/applied-traffic-record annotation
-• - RTO measurement reports the overage, RPO evidence raises a Degraded
-•   condition, and drill results render into the DR compliance report
-• - 28 deterministic unit tests for the gate, both directions, the state
-•   machine, drain/TTL math, record rendering and RTO/RPO reporting
-✨ feat(jobs): Job/CronJob orphan detection with ownership reconciliation
-• - add the JobRetentionPolicy CRD so every retention window is declarative
-•   (completed jobs, failed jobs, stuck-job grace, terminal pods, scope label,
-•   grace period, dry-run) instead of a hardcoded TTL
-• - add a namespace-scoped reconciler with a pure planning core: a snapshot of
-•   CronJobs, Jobs and Pods plus the policy yields a deterministic reclaim plan
-• - classify all five orphan classes: deleted CronJob, broken ownerReference,
-•   stuck failed job, completed pod, and namespace-move remnant
-• - repair ownerReferences broken by partial deletions instead of only reporting
-•   them, re-pointing at the live owner UID
-• - never touch Active/Pending jobs or Running/Pending pods, and only reclaim a
-•   terminal pod once its owning job is itself terminal
-• - report reclaimed artifacts per namespace and per orphan class through new
-•   Prometheus metrics, plus status conditions and requeue interval
-• - 44 deterministic unit tests cover every orphan class, the safety properties,
-•   determinism under a mid-cycle spec change, and the kube adapters
-📝 chore(helm): bump chart to v3.1.0 [skip ci]
-• Merge branch 'main' into main
+• Merge pull request #64 from longyi2/security/rbac-network-hardening
+📝 docs: add Kubernetes security hardening manual
+• Merge pull request #156 from Danitello123/feature/htlc-escrow
+✨ feat: Implement Multi-Asset Escrow with Conditional Hash Timelock (HTLC)
+• Merge branch 'main' into security/rbac-network-hardening
+• Merge pull request #60 from abdulwahabmonilola-ctrl/docs/disaster-recovery-runbook
+📝 docs: add disaster recovery & quorum loss runbook
+• Merge branch 'main' into feature/captive-core-supervisor-issue-82
 📝 chore(helm): bump chart to v3.0.0 [skip ci]
-✨ feat(platform): end-to-end supply-chain provenance, immutable audit chain, adaptive HPA on custom SLIs, and multi-tenant fair-share scheduler (#1477 #1478 #1479 #1480)
-
-
-## Chart v3.1.0 (2026-09-28) [minor]
-
 • Merge branch 'main' into main
-📝 chore(helm): bump chart to v2.10.0 [skip ci]
-• Merge pull request #1596 from NanaKhadija1980j/fix/1517-versioned-policy-as-code-promotion-pipeline-from-dev-to-prod
-• [1517] [EPIC] Versioned Policy-as-Code Promotion Pipeline from Dev to Prod
-📝 chore(helm): bump chart to v2.9.0 [skip ci]
-• Merge pull request #1594 from NanaKhadija1980j/fix/1519-progressive-config-rollout-with-canary-evaluation-for-operator-settings
-• [1519] [EPIC] Progressive Config Rollout with Canary Evaluation for Operator Settings
-• Merge pull request #1593 from NanaKhadija1980j/fix/1520-automated-dependency-upgrade-validation-with-contract-tests
-• [1520] [EPIC] Automated Dependency Upgrade Validation with Contract Tests
-✨ feat(policy): versioned policy-as-code promotion pipeline (#1517)
-• Policy changes were applied by editing YAML per environment by hand, so dev,
-• staging and prod drifted and bad rules surfaced only in production. Model
-• promotion as an artifact promotion flow instead.
-• - Immutable, versioned bundles: PolicyBundle is content addressed over its
-•   version and rules; is_intact() detects mutation and promote() refuses a
-•   bundle edited after creation, so what staging validated is what prod gets.
-• - Dry-run impact analysis: analyze_impact() evaluates a bundle against a
-•   PolicyInventory per environment. It is pure and side-effect free, so CI can
-•   run it on every change. An overbroad rule is blocked before enforcement.
-• - Staged enforcement: every environment starts at Audit and advances exactly
-•   one step per call (audit -> warn -> enforce), tracked per environment.
-• - One-command rollback: rollback() restores the previous bundle in all
-•   environments, resets enforcement to Audit, and reports the duration
-•   against ROLLBACK_SLA_MS (60s).
-• Promotion follows the dev -> staging -> production order and refuses to skip
-• a link in the chain.
-✨ feat(config): progressive config rollout with canary evaluation (#1519)
-• Operator configuration used to be applied to every StellarNode at once, so a
-• single bad setting took the whole fleet down. This reuses progressive-delivery
-• machinery for configuration:
-• - Canary first: select_canary() picks a deterministic subset whose size never
-•   exceeds MAX_BLAST_RADIUS (5%) of the target set, spread across namespaces by
-•   an even stride over the sorted target list.
-• - Gates during the canary window: HealthGate/HealthSample evaluate the
-•   canary. Passed promotes to Propagating, Failed or Incomplete never does.
-• - Automatic rollback: gate_or_rollback() restores the previous bundle on gate
-•   failure and records the measured duration against ROLLBACK_SLA_MS (30s).
-• - Queryable versions: every target records the ConfigBundle version and digest
-•   it is running, so 'which config is this node on?' is always answerable.
-• - Stage machine (Idle -> Canary -> Propagating -> Complete, plus RolledBack)
-•   guarantees no config change propagates without a gate pass.
-• Merge origin/main into fix/1520-automated-dependency-upgrade-validation-with-contract-tests
-🐛 fix(license): repair license headers with an import spliced into them
-• Ten source files had use std::collections::BTreeMap; inserted as line 2,
-• inside the Apache-2.0 header block and before the module's inner doc
-• comment, which makes the inner doc comment a syntax error (E0753) and the
-• whole crate fail to build. Move the import into the import block.
-✨ feat(deps): automated dependency upgrade validation with generated contract tests (#1520)
-• Replaces manual dependency upgrade reviews with a mechanical merge gate:
-• - Contract test generation from existing consumer call sites, so the suite
-•   tracks real usage without dedicated authoring effort.
-• - Compatibility matrix auto-constructed from the generated suite.
-• - Incompatible upgrades are blocked with consumer attribution (consumer name
-•   plus the file:line call sites responsible).
-• - Approved upgrades carry a signed validation artifact (suite digest,
-•   matrix digest, SHA-256 signature).
-📝 chore(helm): bump chart to v2.8.0 [skip ci]
-• Merge pull request #1592 from Otaiki1/prmaster/1567-1568-1566-1569-4-issues-1567-1568-1566-1569-85543a
-• 4 issues: #1567, #1568, #1566, #1569
-• Merge pull request #1591 from ReinaMaze/feature/observability-infrastructure-epics
-✨ feat: add observability and infrastructure platform epic specs
-• Merge pull request #1590 from iheomadev/webhook-ledger-close-delivery
-✨ feat(webhook): implement LedgerCloseWebhook CRD and dispatcher (#1577)
-• Merge branch 'main' into webhook-ledger-close-delivery
-• Merge pull request #1589 from mathstickz/feat/Remediation
-• feat :Policy Drift Remediation Loop for Security Baseline Violations
-• Merge pull request #1588 from meetdarc-tech/feature/1574-ledger-migration-1575-asset-monitoring
-✨ feat: add ledger migration and SAC monitoring
-• Merge pull request #1587 from CollinsC1O/modes
-✨ feat: implement Graceful Degradation Modes for Partial Control-Plane Outage
-• Merge branch 'main' into modes
-• Merge pull request #1585 from CollinsC1O/Forecasting
-✨ feat: implement Capacity Forecasting Engine with Quarterly Scaling Re…
-• Merge pull request #1584 from itsnotOJ/fix/1502-epic-real-time-schema-registry-for-all-internal-service-apis
-• [#1502] [EPIC] Real-Time Schema Registry for All Internal Service APIs
-• Merge branch 'main' into fix/1502-epic-real-time-schema-registry-for-all-internal-service-apis
-• Merge pull request #1550 from itsnotOJ/fix/1501-epic-declarative-webhook-certificate-management-with-zero-trust-renewal
-• [#1501] [EPIC] Declarative Webhook Certificate Management with Zero-Trust Renewal
-• Merge pull request #1549 from olalois/feat/interservice-mtls-ci-benchmarks
-• Add inter-service mTLS and harden validation benchmarks
-• Work on #1567: [EPIC] SDF Testnet Compliance Validation
-• Closes #1567
-📝 chore(helm): bump chart to v2.7.0 [skip ci]
-• Merge pull request #1586 from emperorsixpacks/main
-✨ feat: compliance reporting, validator scoring, partition response, an…
-✨ feat: add observability and infrastructure platform epic specs
-• - Epic 1: Alert Correlation & Incident Management
-•   - Deduplicate and correlate alerts from multiple sources
-•   - Root cause analysis with symptom suppression
-•   - Unified incident timelines with auto-lifecycle management
-•   - Target: 60% alert reduction, 40% faster time-to-incident
-• - Epic 2: Distributed Tracing for Async Message Queues
-•   - W3C trace context propagation through Kafka, NATS, webhooks
-•   - Zero-config SDK shims preserving existing APIs
-•   - Broken chain detection and metrics
-•   - Target: 95% trace stitch rate, <200 byte overhead
-• - Epic 3: Declarative Backup Plans with PITR
-•   - BackupPlan CRs with RPO-based scheduling
-•   - Point-in-time recovery for PostgreSQL, MySQL, MongoDB
-•   - Mandatory restore verification before completion
-•   - Cross-region replication with checksum validation
-•   - Target: 100% verification pass rate, RPO achievement for 30 days
-• - Epic 4: GitOps Drift Detection & Auto-Revert
-•   - Three-way diff (base/live/git) with server-side-default filtering
-•   - Classify drift: manual mutations vs. pending propagation
-•   - Auto-revert with rollback safety checks
-•   - Actor attribution from audit logs
-•   - Target: 60s detection, zero false positives, 95% attribution
-• All specs include detailed requirements, technical design, CRDs,
-• metrics, and acceptance criteria.
-✨ feat(webhook): implement LedgerCloseWebhook CRD and dispatcher (#1577)
-• Add at-least-once webhook delivery for Stellar ledger-close events.
-• Changes:
-• - src/crd/ledger_close_webhook.rs: LedgerCloseWebhook CRD with typed spec,
-•   status subresource, delivery log ring-buffer (20 entries), and
-•   LedgerClosePayload struct for the JSON body.
-• - src/controller/ledger_close_dispatcher.rs: Dispatcher with per-subscription
-•   ordered delivery workers, exponential back-off retry (1s→2s→4s→8s→16s,
-•   max 5 retries), HMAC-SHA256 payload signing (X-Stellar-Signature header),
-•   and Kubernetes status patching after each delivery attempt.
-• - config/crd/ledgerclosehook-crd.yaml: OpenAPI v3 schema for the CRD.
-• - config/samples/ledger-close-webhook-example.yaml: Ready-to-use sample.
-• - src/crd/mod.rs, src/controller/mod.rs: Register new modules and re-exports.
-• Acceptance criteria met:
-• - Webhook delivered within 5 s of ledger close (poll loop + immediate dispatch)
-• - Retry with exponential backoff on failure (max 5 attempts)
-• - Delivery order preserved per subscription (per-hook channel worker)
-• - HMAC signature verifiable by consumer (X-Stellar-Signature: sha256=<hex>)
-• Closes #1577
-• feat :Policy Drift Remediation Loop for Security Baseline Violations
-✨ feat: add ledger migration and asset monitoring
-✨ feat: implement Graceful Degradation Modes for Partial Control-Plane Outage
-✨ feat: compliance reporting, validator scoring, partition response, and multisig coordination
-• Implements comprehensive solutions for 4 major operator capabilities:
-• 1. Compliance Reporting for Regulated Validators (#1581)
-• - Added ComplianceReport Custom Resource Definition (compliance.stellar.org/v1alpha1)
-•   supporting automated periodic audits on configurable daily/weekly/cron schedules.
-• - Implemented RegulatoryReportGenerator in src/compliance/regulatory_report.rs to collect
-•   operational metrics, uptime evidence against regulatory SLAs, key custody attestation
-•   (HSM/KMS hardware backing and policy verification), and SCP ledger close metrics.
-• - Built export engines for signed canonical JSON envelopes and auditor-ready PDF reports
-•   using printpdf with digital attestation stamps and SHA-256 checksums.
-• - Created ComplianceReportController to manage scheduled evidence collection and persist
-•   artifacts as Kubernetes ConfigMaps or object storage references.
-• - Closes #1581
-• 2. Validator Performance Scoring and Leaderboard (#1579)
-• - Added ValidatorScore and ValidatorLeaderboard CRDs (stellar.org/v1alpha1) for automated
-•   hourly validator performance grading and multi-cluster federation aggregation.
-• - Implemented ValidatorScoringEngine in src/controller/validator_scoring.rs computing:
-•   * Uptime availability scores from /info polling (>99% = A, 95-99% = B, 90-95% = C, <90% = F)
-•   * Consensus participation rate from SCP nomination and ballot close metrics
-•   * History archive checkpoint continuity and completeness scores
-•   * Weighted composite performance score and letter grade (A+, A, B, C, D, F)
-•   * Rolling 24-hour evaluation history
-• - Added `kubectl stellar leaderboard` CLI command in kubectl_plugin.rs displaying
-•   ranked validator performance tables.
-• - Exposed GET /api/v1/validators/leaderboard in operator REST API.
-• - Closes #1579
-• 3. Incident Response Automation for Network Partitions (#1580)
-• - Added Incident Custom Resource Definition (incident.stellar.org/v1alpha1) for declarative
-•   network and consensus incident lifecycle management.
-• - Implemented PartitionIncidentDetector in src/incident/partition_detector.rs:
-•   * Detects network partitions within 3 consecutive missed ledger closes (~15 seconds)
-•   * Auto-dispatches emergency alerts to Slack, Webhook, and PagerDuty within 30s SLA
-•   * Automatically populates Incident CR status with chronological diagnostic timelines
-•   * Analyzes quorum health and computes safety-verified quorum adjustment recommendations
-•     (adjusted validator sets and new Byzantine fault-tolerant thresholds).
-• - Closes #1580
-• 4. Multi-Signature Coordination for Administrative Operations (#1578)
-• - Added MultiSigOperation Custom Resource Definition (stellar.org/v1alpha1) coordinating
-•   M-of-N signature collection for administrative operations (settings upgrades, signer changes).
-• - Implemented MultiSigController in src/controller/multisig_controller.rs:
-•   * Gathers cryptographic signatures by querying signer sidecars or secret stores
-•   * Enforces timeout deadlines and marks operations expired if threshold is unreached
-•   * Exposes real-time partial signature progress (collected signatures, missing signers)
-•   * Maintains an append-only audit trail recording actors, public keys, and timestamps
-•   * Automatically submits assembled transactions to the Stellar network upon reaching quorum.
-• - Closes #1578
-✨ feat: implement Capacity Forecasting Engine with Quarterly Scaling Recommendations
-✨ feat(schema): consumer-aware versioned schema registry with a PR compatibility gate
-• - central registry snapshot covering every internal API subject, committed as
-•   schemas/registry.json and enforced at build time by build.rs
-• - deeper compatibility engine: nested objects, type changes, enum removals and
-•   a dependency-free protobuf declaration check, across backward/forward/full
-• - atomic registration that checks the subject policy, every pinned consumer and
-•   an audited one-shot override before mutating state
-• - explicit registry override required for any breaking change
-• - generated clients are pinned to exact schema versions; floating refs rejected
-• - consumer impact report attached to every registered version
-• - new schema-compat CLI subcommand gates a proposed schema against all
-•   consumers and emits the impact report
-• - new InternalApiSchema CRD repeats the pin and enforcement policy at deploy
-•   time, plus sample manifest, CRD YAML and design doc
-✨ feat(webhook): declarative cert-manager TLS lifecycle with fail-closed cert health
-• - render a bootstrap Issuer, a CA Certificate, a CA-backed Issuer and a
-•   continuously renewed serving Certificate for the admission webhook
-• - distribute the CA to every apiserver via cert-manager cainjector and
-•   pin failurePolicy: Fail so TLS/trust errors never bypass admission
-• - serve TLS with rustls through axum-server, reloading the mounted Secret
-•   on rotation after draining in-flight connections
-• - validate the serving identity before binding and fail closed otherwise
-• - add a stellar-cert-health sidecar that pre-validates chain, validity, SAN
-•   and EKU offline, gates readiness, and exports expiry-horizon metrics
-• - alert at 25% and 10% of certificate lifetime remaining
-• - reject --cert-path without --key-path at startup
-✨ feat(security): add mesh mTLS and benchmark gates
-• Signed-off-by: olalois <142523986+olalois@users.noreply.github.com>
-
-
-## Chart v3.0.0 (2026-09-28) [major]
-
-## Chart v2.12.0 (2026-09-28) [minor]
-
-• Merge pull request #1598 from ibrahimbabatundeibrahim8-alt/main
-✨ feat(core): implement history archive compat, soroban rpc limits, cap…
-• Merge branch 'main' into main
-✨ feat(core): implement history archive compat, soroban rpc limits, captive core tuning, horizon failover
-• Implement solutions for four core operator capabilities across history archive version
-• validation, Soroban RPC limits and caching, captive core container tuning, and Horizon
-• ingestion leader failover.
-• Issue #1562 - History Archive Version Compatibility Checks
-• - Problem: stellar-core 21.3.1 fails with "Unexpected history archive state version: 2" on SDF
-•   archives generated by newer core binaries. Catch-up fails abruptly without pre-checks.
-• - What was done:
-•   * Implemented version compatibility validation in `src/controller/archive_health.rs` to detect
-•     archive state version from `.well-known/stellar-history.json` before catch-up.
-•   * Added compatibility matrix (`supported_archive_versions`): stellar-core < 22 supports archive
-•     state version 1; core >= 22 supports versions 1 and 2.
-•   * Added sidecar health check gating in `src/controller/health_check_sidecar.rs` and
-•     `src/bin/stellar-health-sidecar.rs` with `/archive-compatibility` endpoint and 503 response on
-•     `/readyz` when archive state version exceeds supported version.
-•   * Updated `src/controller/reconciler.rs` to evaluate archive compatibility during reconciliation
-•     and update status conditions (`ArchiveVersionCompatible`) with remediation recommendations.
-• - How it was done:
-•   * Parsed `.well-known/stellar-history.json` metadata (`version` and `server` fields).
-•   * Compared archive version against core semver; surfaced clear errors including archive URL,
-•     detected state version, supported versions, and recommended core upgrade.
-• - Closes #1562
-• Issue #1565 - Soroban RPC Caching and Pagination Limits
-• - Problem: Soroban RPC `getEvents` and `getLedgerEntries` lacked pagination limits and caching,
-•   risking OOM errors under heavy event stream querying or repeated ledger requests.
-• - What was done:
-•   * Added `maxPageSize` and `cacheSizeMB` configuration fields to `SorobanConfig` in
-•     `src/crd/types.rs` with default values (100 items, 128 MB).
-•   * Created `src/controller/soroban_rpc.rs` with cursor-based pagination and LRU cache.
-•   * Implemented structured `EventCursor` (`{ledger:010}:{tx_index:06}:{event_index:04}`) for
-•     efficient, deterministic cursor pagination.
-•   * Implemented memory-bounded `LedgerEntryLruCache` tracking memory consumption in bytes against
-•     the configured MB ceiling, along with hit/miss counters and hit ratio metrics.
-•   * Injected `SOROBAN_RPC_MAX_PAGE_SIZE` and `SOROBAN_RPC_CACHE_SIZE_MB` env vars in
-•     `src/controller/resources.rs`.
-• - How it was done:
-•   * Truncated responses exceeding `max_page_size` and computed `nextCursor` for event streams.
-•   * Implemented entry byte size estimation for ledger keys and values to enforce memory bounding,
-•     evicting oldest items when capacity is reached.
-• - Closes #1565
-• Issue #1563 - Captive Core Configuration Management
-• - Problem: Horizon and Soroban RPC captive core configuration lacked explicit container-safe
-•   paths (`DATABASE`, `BUCKET_DIR_PATH`, `TMP_DIR_PATH`) and worker thread CPU tuning.
-• - What was done:
-•   * Extended `CaptiveCoreConfig` in `src/crd/types.rs` with `database`, `bucket_dir_path`,
-•     `tmp_dir_path`, and `worker_threads` fields.
-•   * Enhanced `CaptiveCoreConfigBuilder` in `src/controller/captive_core.rs` with container
-•     defaults (`/var/lib/stellar/buckets`, `/var/lib/stellar/tmp`, and `sqlite3://captivecore.db`).
-•   * Implemented `derive_worker_threads_from_cpu` to scale worker threads based on allocated
-•     container CPU cores (e.g. 500m -> 1, 2000m -> 2, 4 -> 4 threads).
-•   * Injected captive core configuration hash annotation (`stellar.org/captive-core-config-hash`)
-•     into Pod templates in `src/controller/resources.rs` to trigger graceful hot-reloads on spec
-•     changes.
-• - How it was done:
-•   * Formatted captive-core TOML with explicit container paths and thread parameters.
-•   * Derived thread count from pod resource limits/requests and wired into ConfigMap generation.
-• - Closes #1563
-• Issue #1564 - Horizon Ingestion Failover for Validator Groups
-• - Problem: Running multiple Horizon replicas without ingestion leader election risked duplicate
-•   ledger ingestion and database write conflicts.
-• - What was done:
-•   * Created `src/controller/horizon_failover.rs` implementing Kubernetes Lease-based leader
-•     election for Horizon ingestion pods.
-•   * Added `enable_ingestion_leader_election` and `ingestion_lease_duration_seconds` to
-•     `HorizonConfig` in `src/crd/types.rs`.
-•   * Designed ingestion role transition (`HorizonIngestionRole::Leader` vs `Standby`): leader runs
-•     captive core ingestion while standby replicas operate in API-only mode without ingestion.
-•   * Configured standby health checks to return HTTP 200 without ingestion error alerts.
-•   * Injected leader election coordination environment variables in `src/controller/resources.rs`.
-• - How it was done:
-•   * Modeled lease renewal, acquisition, and heartbeat tracking with failover triggering in under
-•     30 seconds upon leader lease expiration.
-• - Closes #1564
-• Closes #1562, #1565, #1563, #1564
-
-
-## Chart v2.11.0 (2026-09-28) [minor]
-
-• Merge pull request #1597 from susanyusuf/fix/1560-1561-config-scoping-and-peer-connectivity
-• fix(config)+feat(peer): keep operator cfg keys at document root (#1560) and surface validator peer reachability (#1561)
-• Merge pull request #1595 from NanaKhadija1980j/fix/1518-deterministic-build-reproducibility-verification-for-all-artifacts
-• [1518] [EPIC] Deterministic Build Reproducibility Verification for All Artifacts
-• Merge branch 'main' into fix/1518-deterministic-build-reproducibility-verification-for-all-artifacts
-✨ feat(peer): surface validator peer reachability as a status condition
-• A validator that cannot reach its peers produces no signal at all:
-• stellar-core logs a failed overlay connection, the pod stays Ready, and the
-• node is quietly absent from quorum. Blocked ports, wrong ports, DNS failures
-• and a stale KNOWN_PEERS list all look identical from the outside, which is
-• what makes them expensive to diagnose.
-• Add controller::peer_connectivity, which TCP-dials each configured peer and
-• reports the address, port, outcome and last attempt time per peer. Probes
-• run at most MAX_CONCURRENT_PROBES at a time with a bounded timeout, so one
-• blocked host cannot delay the rest, and results are returned in
-• configuration order so the condition message is stable across rounds. The
-• default 30s interval keeps two rounds inside the 60s detection budget the
-• issue asks for.
-• Wire it in on both sides the issue calls for:
-• - Reconciler: update_status now folds the result into a PeerConnectivity
-•   condition, using the existing conditions::set_condition so
-•   last_transition_time is only bumped on a real transition. The condition is
-•   removed rather than left stale for non-validators, suspended nodes and
-•   validators with no peers.
-• - Health sidecar: reads KNOWN_PEERS, runs its own probe loop and exposes
-•   /peers. Readiness now fails when every configured peer is unreachable,
-•   because a synced validator with no reachable peer cannot complete SCP.
-•   Absence of probe data is not treated as failure, so sidecars that have not
-•   completed a round, and nodes with no peers, are unaffected.
-• Both derive their peer list from known_peers_for_node, and the operator
-• renders that same list into the sidecar's KNOWN_PEERS env var, so the
-• pod-local probe and the status condition cannot disagree about which peers
-• are in play.
-• remediation_hint names the port, the protocol and the likely cause: a
-• security-group or NetworkPolicy rule blocking the overlay port, a peer
-• listed on 11626 (the HTTP/admin port) instead of 11625, or a stale entry to
-• refresh. Automatic remediation is deliberately not implemented - silently
-• rewriting a user's peer list or port is a worse failure than a clear
-• diagnostic, and the hint already states the exact change required.
-• Closes #1561
-🐛 fix(config): keep operator-managed stellar-core.cfg keys at the document root
-• In TOML every key written after a table header belongs to that table. The
-• operator appended CATCHUP_COMPLETE, CATCHUP_RECENT, HTTP_PORT_SECURE,
-• TLS_CERT_FILE and TLS_KEY_FILE to the *end* of the user-supplied
-• validatorConfig, so as soon as a user set [QUORUM_SET], [[VALIDATORS]] or
-• [[HOME_DOMAINS]] every one of those keys was silently captured by the last
-• table. The file still parsed and stellar-core still started, but with mTLS
-• off, the wrong catch-up mode and no KNOWN_PEERS, and nothing reported the
-• loss.
-• Add controller::config_scope, which:
-• - renders the operator keys through OperatorHeader and emits them *before*
-•   user content, so they always land at the root;
-• - re-parses the assembled document and reports any operator key that ended
-•   up table-scoped (misplaced_operator_keys) plus any user key written after
-•   a table header that stellar-core would read at the root
-•   (orphaned_root_keys). Both are logged as warnings that name the node,
-•   the key and the table that captured it. Restricting the orphan check to
-•   keys stellar-core actually reads at the root keeps it actionable instead
-•   of flagging legitimate table members such as THRESHOLD_PERCENT or TOML;
-• - tolerates unparsable config by reporting it rather than failing a
-•   reconcile.
-• Cover the output with byte-exact golden files under
-• tests/fixtures/stellar_core_cfg covering full history, recent history with
-• mTLS, and an operator header with no user section, plus a structural
-• assertion that every operator key present in the generated document is
-• genuinely at the root.
-• Closes #1560
-🐛 fix(crd): remove duplicate service_ownership module and LedgerCloseWebhookSpec
-• The crate did not compile on main: src/crd/mod.rs declared
-• pub mod service_ownership; twice, and src/crd/ledger_close_webhook.rs
-• carried a second empty LedgerCloseWebhookSpec unit struct whose
-• CustomResource derive generated a resource type that shadowed the real
-• spec struct.
-• Move the CustomResource derive onto the actual LedgerCloseWebhookSpec• so the generated resource is built from the real schema, and drop the
-• duplicate module declaration. Both are required before any other change
-• can be validated by CI.
-✨ feat(build): deterministic build reproducibility verification (#1518)
-• Turns "rebuilds are reproducible" into a checkable property.
-• - Independent rebuild pipeline: Pipeline/assert_independent() rejects a
-•   verifier that reuses the release pipeline or builds a different revision.
-• - Bit-for-bit comparison by SHA-256 plus a byte-level first-difference
-•   offset, not by version or timestamp.
-• - Mismatch localization: every mismatch is attributed to the build step that
-•   emits the artifact, with the non-determinism sources detected in the
-•   rebuilt bytes and the determinism flags that step fails to pin.
-• - Per-release status and badge against REQUIRED_REPRODUCIBLE_RATE (95%).
-• Non-determinism detection covers timestamps, leaked build paths, locale,
-• VCS metadata, build ids, archive mtimes, mixed line endings and embedded
-• random seeds, so a mismatch is attributed to a concrete cause.
-
-
-## Chart v2.10.1 (2026-09-28) [patch]
-
-• Merge pull request #1548 from itsnotOJ/fix/cleanup-935-936-934
-🐛 fix: normalize Makefile targets, audit third-party licenses, and add integration test teardown
-• Merge upstream/main into fix/cleanup-935-936-934
-• Resolve conflicts in 11 files:
-• - Makefile: take upstream's target set (doc-check/stale-docs targets,
-•   security-fix, security-check and test-repo-health were removed upstream
-•   along with the binaries/scripts they call), and keep the PR's additions
-•   that are still valid: docs-lint in ci-local, the fixed help awk FS, the
-•   pre-commit-install alias, run/run-local normalization, and a docker-multiarch
-•   that builds locally with buildx (upstream's `gh workflow run release.yml`
-•   cannot work - release.yml has no workflow_dispatch trigger).
-• - Deleted docs: accept upstream's removal of CLEANUP_STATUS.md,
-•   DEPENDENCY_SECURITY_AUDIT.md and docs/stale-docs-detector.md; drop the
-•   dangling SECURITY.md link and the two stale CI-target bullets the PR added
-•   to docs/development/makefile-refactoring.md.
-• - Cargo.toml: anyhow = "1.0.104" (exactly matches Cargo.lock), bytes =
-•   "1.11.1" (upstream's floor, satisfied by lock 1.12.1).
-• - tests/backup_restore_smoke_test.rs: upstream's Apache license header plus
-•   the PR's module docs; tests/cli_examples_test.rs: single top-level
-•   `use assert_cmd::Command` (the mid-file copy would be a duplicate import).
-• - CONTRIBUTING.md / DEVELOPMENT.md / CONVENTIONS.md / SECURITY.md: merge both
-•   sides - upstream's command lists and conventions, PR's docs-lint detail,
-•   install-crd fix and teardown conventions.
-• Signed-off-by: itsnotOJ <isnotoj1@gmail.com>
-📝 docs: record cleanup status for issues 934, 935 and 936
-• Documents what was changed, what was verified by inspection, and what was
-• deliberately left undone, including the tests/e2e_kind.rs cluster leak and the
-• undisclosed rdkafka/sasl2-sys/async-nats licenses.
-• Signed-off-by: itsnotOJ <isnotoj1@gmail.com>
-📝 test: add integration test teardown and repair uncompilable test files
-• Partial progress on #934.
-• Two test files could not compile. Both had content appended inside an
-• unclosed function body, with a duplicated file header. "use" statements are
-• not legal inside a function, so both were hard syntax errors:
-• - tests/backup_restore_smoke_test.rs: fn stellar_operator() was never closed
-•   and a second copy of the file header sat inside its body. Removed the dead
-•   helper, the duplicated header, and three unused imports (std::fs, PathBuf,
-•   TempDir). This target is invoked by ci.yml, so it was failing CI.
-• - tests/cli_examples_test.rs: fn invalid_command_fails() was never closed and
-•   "use assert_cmd::Command;" was stranded at column 0 inside its body. Closed
-•   the function and moved the import to the top import block.
-• Destructive side effects removed from ordinary cargo test:
-• Four unit tests in tests/common/mod.rs built RAII guards to assert their
-• fields and then let them Drop. Because every guard's Drop shells out to
-• "kubectl delete", plain cargo test was deleting namespaces, StellarNode CRs
-• and ConfigMaps from whatever cluster the developer's kubeconfig pointed at.
-• Each test now ends with std::mem::forget, which suppresses the destructor. No
-• guard API changed, so the E2E tests that depend on them are unaffected.
-• Missing teardown primitive added:
-• ensure_kind_cluster had no counterpart, so every KinD-backed test leaked a
-• Docker container, network and volumes. Added to tests/common/mod.rs:
-• - ClusterGuard: RAII guard owning a cluster for the life of a test, honouring
-•   SKIP_TEARDOWN=1. That variable previously only suppressed inline teardown in
-•   one file while leaving NamespaceGuard drops active, an inconsistent contract.
-• - A private delete_kind_cluster helper, private on purpose so teardown goes
-•   through the guard and also runs on panic.
-• ClusterGuard wired in:
-• - tests/quickstart_smoke_test.rs: all three tests called delete_kind_cluster
-•   inline at the end of the body, so any failing assert! or wait_for_* leaked
-•   the cluster. Replaced with a function-scoped guard and removed the now-unused
-•   local delete_kind_cluster and skip_teardown helpers. The guard is bound to
-•   the function scope, not the inner if block, so it is not dropped
-•   immediately after creation.
-• - tests/dr_failover_e2e.rs: guard registered immediately after cluster
-•   creation so DrCleanup (namespaces and CRs) drops first and the cluster last.
-• CONVENTIONS.md now documents ClusterGuard as mandatory, with correct and
-• incorrect guard-scoping patterns and the mem::forget rule for unit-testing
-• guards. It also carries the one-line operational-script example fix from #935.
-• Known remaining leaks are listed in CLEANUP_STATUS.md and include
-• tests/e2e_kind.rs, which still uses five copy-pasted local guard types and
-• never deletes its cluster, and the chaos/soak workflows, which create KinD
-• clusters with no teardown step.
-• Signed-off-by: itsnotOJ <isnotoj1@gmail.com>
-📝 docs(licenses): correct third-party license audit findings
-• Partial progress on #936. Scoped to non-breaking corrections.
-• THIRD_PARTY_LICENSES.md is gated in CI by a byte-exact diff
-• (make check-third-party-licenses) and the generator needs cargo-license, which
-• is not available in the authoring environment. The generator was therefore
-• deliberately NOT modified: changing it without regenerating the file would
-• turn the gate red. The findings are documented instead.
-• Corrected factual errors in DEPENDENCY_SECURITY_AUDIT.md:
-• - The "23 known advisories" figure was wrong in three places. There is no single
-•   list. The four ignore lists hold 20 (deny.toml), 26 (.cargo/audit.toml),
-•   18 (ci.yml) and 15 (dependency-review.yml) entries. Replaced with the
-•   measured table.
-• - "anyhow 1.0.103 / bytes 1.11.1" was presented as version pinning for security
-•   fixes. anyhow was in fact pinned to a non-existent 1.0.108 that broke
-•   resolution outright; that is fixed in the preceding commit.
-• - rustls-webpki was listed as two versions. The lock contains three
-•   (0.101.7, 0.102.8, 0.103.13), and the stated target of >=0.103.12 is already
-•   met by one of them.
-• - rand 0.9.2 was stale; the lock has 0.8.6 and 0.9.4.
-• - "Explicit handling of copyleft licenses" was not substantiated. Replaced with
-•   an accurate note that ittapi and r-efi are permitted only because a
-•   permissive OR branch is allowlisted.
-• deny.toml, two false claims removed:
-• - It asserted it was "in sync with .cargo/audit.toml" (it is missing 6
-•   entries) and "in sync with the workflow cargo-audit --ignore lists"
-•   (13 entries missing, and 5 appear only in CI). Replaced with the measured
-•   divergence.
-• - Flagged the pqcrypto ignores (RUSTSEC-2024-0380/-0381) as dead: no pqcrypto
-•   package exists in Cargo.toml or Cargo.lock, so their "experimental pqcrypto
-•   KMS path" justification describes a component that is not present.
-• New "Open Gaps" section documents seven unresolved items with evidence. The
-• most significant: rdkafka, sasl2-sys and async-nats are compiled by CI
-• (.pre-commit-config.yaml runs cargo clippy and cargo test with
-• --all-features) but are absent from the license file, because the generator
-• pins a narrower feature set than what is actually built.
-• Deliberately NOT changed: no deny.toml license exceptions were added. None are
-• needed. cargo-deny satisfies an expression when any branch of an OR is
-• allowlisted, so MIT OR Unlicense, BSD-3-Clause OR GPL-2.0 and
-• Apache-2.0 OR BSL-1.0 already pass. Adding exceptions would be incorrect.
-• Signed-off-by: itsnotOJ <isnotoj1@gmail.com>
-🐛 fix(makefile): normalize targets, remove deprecated and broken ones
-• Fixes #935
-• Bugs fixed:
-• - docs-lint was defined twice with byte-identical recipes. GNU make silently
-•   overrode the first and printed an "overriding recipe" warning on every
-•   invocation, and make help listed the target twice.
-• - make help used a non-portable awk field separator (FS = ":.*?## "). The lazy
-•   quantifier is a GNU extension; under mawk (the Debian/Ubuntu default) and
-•   BSD awk it is a literal, so the separator never matched and the entire
-•   "All available targets" list silently vanished. Switched to the portable
-•   form; verified no help text contains a second "## " so greedy-vs-lazy
-•   splitting is equivalent.
-• - make run-local ran the bare binary, but Args.command is a required clap
-•   subcommand, so it exited with a usage error. run-local now passes "run" and
-•   make run is a true alias, matching its own help text.
-• - make docker-multiarch dispatched "gh workflow run multiarch-build.yml", but
-•   that workflow does not exist in .github/workflows/, so the target could never
-•   succeed. Replaced with a real local buildx build, which also matches what
-•   DEVELOPMENT.md already claimed the target did. The phantom reference is
-•   corrected in CI_COMMANDS.md and release.yml (the container job in release.yml
-•   is the real multi-arch publisher).
-• - soak-test.yml ran "bash scripts/soak-test.sh", but that file only existed at
-•   scripts/archive/soak-test.sh. It is an operational script, not a one-off
-•   bootstrap script, so the archive was the wrong home. Restored with git mv;
-•   it has no self-relative path references, so the move is safe.
-• Normalization:
-• - Removed three duplicated recipe bodies: pre-commit-install and
-•   dev-setup-hooks were byte-identical, and validate duplicated health-fast.
-•   Both are now prerequisite-based aliases.
-• - security-fix was documented as "Apply automated security fixes" but only ran
-•   cargo update --dry-run and changed nothing. Help text corrected.
-• - Added targets for things that were documented or referenced but unreachable:
-•   list-doc-coverage (documented twice, target absent, wired to the existing
-•   "doc-check list" subcommand), security-check (orphan script with no entry
-•   point) and test-repo-health (a bats suite nothing ever ran).
-• Docs synced:
-• - CONTRIBUTING.md: "make install" -> "make install-crd" (no install target
-•   exists); ci-local description now includes docs-lint.
-• - docs/developer-onboarding/index.md: "make deploy" -> "make quickstart-deploy"
-•   (no deploy target exists).
-• - docs/stale-docs-detector.md: check-stale-docs is --warn-only and exits 0; the
-•   strict gate is docs-check-strict; removed the false claim that these targets
-•   are wired into ci-local.
-• - SECURITY.md: replaced raw cargo deny/audit/outdated and the bare script path
-•   with the canonical make targets.
-• - makefile-refactoring.md: updated the CI target list to the targets actually
-•   invoked by .github/workflows/*.yml.
-• Note: the one-line CONVENTIONS.md operational-script example fix belongs to
-• this issue but is committed with the test-teardown commit, to keep the change
-• atomic per file.
-• Verified: all 80 .PHONY entries have a target definition, a recipe and help
-• text; zero duplicate target definitions; no space-indented recipe lines; all
-• script references in the Makefile and in every workflow resolve.
-• Signed-off-by: itsnotOJ <isnotoj1@gmail.com>
-🐛 fix(deps): repin anyhow and bytes to resolvable versions
-• Cargo.toml pinned two versions that do not exist, so dependency
-• resolution failed and the workspace would not build at all:
-• - anyhow was pinned to 1.0.108; the latest published patch is 1.0.104
-• - bytes was pinned to 1.14.0 while Cargo.lock held 1.11.1
-• Both carried comments claiming to be the latest patch with security
-• fixes. Repinned to resolvable versions and corrected the misleading
-• comments. This Cargo.toml/Cargo.lock desync is also tracked under #936.
-• Signed-off-by: itsnotOJ <isnotoj1@gmail.com>
-
-
-## Chart v2.10.0 (2026-09-27) [minor]
-
-• Merge pull request #1596 from NanaKhadija1980j/fix/1517-versioned-policy-as-code-promotion-pipeline-from-dev-to-prod
-• [1517] [EPIC] Versioned Policy-as-Code Promotion Pipeline from Dev to Prod
-✨ feat(policy): versioned policy-as-code promotion pipeline (#1517)
-• Policy changes were applied by editing YAML per environment by hand, so dev,
-• staging and prod drifted and bad rules surfaced only in production. Model
-• promotion as an artifact promotion flow instead.
-• - Immutable, versioned bundles: PolicyBundle is content addressed over its
-•   version and rules; is_intact() detects mutation and promote() refuses a
-•   bundle edited after creation, so what staging validated is what prod gets.
-• - Dry-run impact analysis: analyze_impact() evaluates a bundle against a
-•   PolicyInventory per environment. It is pure and side-effect free, so CI can
-•   run it on every change. An overbroad rule is blocked before enforcement.
-• - Staged enforcement: every environment starts at Audit and advances exactly
-•   one step per call (audit -> warn -> enforce), tracked per environment.
-• - One-command rollback: rollback() restores the previous bundle in all
-•   environments, resets enforcement to Audit, and reports the duration
-•   against ROLLBACK_SLA_MS (60s).
-• Promotion follows the dev -> staging -> production order and refuses to skip
-• a link in the chain.
-
-
-## Chart v2.9.0 (2026-09-27) [minor]
-
-• Merge pull request #1594 from NanaKhadija1980j/fix/1519-progressive-config-rollout-with-canary-evaluation-for-operator-settings
-• [1519] [EPIC] Progressive Config Rollout with Canary Evaluation for Operator Settings
-• Merge pull request #1593 from NanaKhadija1980j/fix/1520-automated-dependency-upgrade-validation-with-contract-tests
-• [1520] [EPIC] Automated Dependency Upgrade Validation with Contract Tests
-✨ feat(config): progressive config rollout with canary evaluation (#1519)
-• Operator configuration used to be applied to every StellarNode at once, so a
-• single bad setting took the whole fleet down. This reuses progressive-delivery
-• machinery for configuration:
-• - Canary first: select_canary() picks a deterministic subset whose size never
-•   exceeds MAX_BLAST_RADIUS (5%) of the target set, spread across namespaces by
-•   an even stride over the sorted target list.
-• - Gates during the canary window: HealthGate/HealthSample evaluate the
-•   canary. Passed promotes to Propagating, Failed or Incomplete never does.
-• - Automatic rollback: gate_or_rollback() restores the previous bundle on gate
-•   failure and records the measured duration against ROLLBACK_SLA_MS (30s).
-• - Queryable versions: every target records the ConfigBundle version and digest
-•   it is running, so 'which config is this node on?' is always answerable.
-• - Stage machine (Idle -> Canary -> Propagating -> Complete, plus RolledBack)
-•   guarantees no config change propagates without a gate pass.
-• Merge origin/main into fix/1520-automated-dependency-upgrade-validation-with-contract-tests
-🐛 fix(license): repair license headers with an import spliced into them
-• Ten source files had use std::collections::BTreeMap; inserted as line 2,
-• inside the Apache-2.0 header block and before the module's inner doc
-• comment, which makes the inner doc comment a syntax error (E0753) and the
-• whole crate fail to build. Move the import into the import block.
-✨ feat(deps): automated dependency upgrade validation with generated contract tests (#1520)
-• Replaces manual dependency upgrade reviews with a mechanical merge gate:
-• - Contract test generation from existing consumer call sites, so the suite
-•   tracks real usage without dedicated authoring effort.
-• - Compatibility matrix auto-constructed from the generated suite.
-• - Incompatible upgrades are blocked with consumer attribution (consumer name
-•   plus the file:line call sites responsible).
-• - Approved upgrades carry a signed validation artifact (suite digest,
-•   matrix digest, SHA-256 signature).
-
-
-## Chart v2.8.0 (2026-09-27) [minor]
-
-• Merge pull request #1592 from Otaiki1/prmaster/1567-1568-1566-1569-4-issues-1567-1568-1566-1569-85543a
-• 4 issues: #1567, #1568, #1566, #1569
-• Merge pull request #1591 from ReinaMaze/feature/observability-infrastructure-epics
-✨ feat: add observability and infrastructure platform epic specs
-• Merge pull request #1590 from iheomadev/webhook-ledger-close-delivery
-✨ feat(webhook): implement LedgerCloseWebhook CRD and dispatcher (#1577)
-• Merge branch 'main' into webhook-ledger-close-delivery
-• Merge pull request #1589 from mathstickz/feat/Remediation
-• feat :Policy Drift Remediation Loop for Security Baseline Violations
-• Merge pull request #1588 from meetdarc-tech/feature/1574-ledger-migration-1575-asset-monitoring
-✨ feat: add ledger migration and SAC monitoring
-• Merge pull request #1587 from CollinsC1O/modes
-✨ feat: implement Graceful Degradation Modes for Partial Control-Plane Outage
-• Merge branch 'main' into modes
-• Merge pull request #1585 from CollinsC1O/Forecasting
-✨ feat: implement Capacity Forecasting Engine with Quarterly Scaling Re…
-• Merge pull request #1584 from itsnotOJ/fix/1502-epic-real-time-schema-registry-for-all-internal-service-apis
-• [#1502] [EPIC] Real-Time Schema Registry for All Internal Service APIs
-• Merge branch 'main' into fix/1502-epic-real-time-schema-registry-for-all-internal-service-apis
-• Merge pull request #1550 from itsnotOJ/fix/1501-epic-declarative-webhook-certificate-management-with-zero-trust-renewal
-• [#1501] [EPIC] Declarative Webhook Certificate Management with Zero-Trust Renewal
-• Merge pull request #1549 from olalois/feat/interservice-mtls-ci-benchmarks
-• Add inter-service mTLS and harden validation benchmarks
-• Work on #1567: [EPIC] SDF Testnet Compliance Validation
-• Closes #1567
-✨ feat: add observability and infrastructure platform epic specs
-• - Epic 1: Alert Correlation & Incident Management
-•   - Deduplicate and correlate alerts from multiple sources
-•   - Root cause analysis with symptom suppression
-•   - Unified incident timelines with auto-lifecycle management
-•   - Target: 60% alert reduction, 40% faster time-to-incident
-• - Epic 2: Distributed Tracing for Async Message Queues
-•   - W3C trace context propagation through Kafka, NATS, webhooks
-•   - Zero-config SDK shims preserving existing APIs
-•   - Broken chain detection and metrics
-•   - Target: 95% trace stitch rate, <200 byte overhead
-• - Epic 3: Declarative Backup Plans with PITR
-•   - BackupPlan CRs with RPO-based scheduling
-•   - Point-in-time recovery for PostgreSQL, MySQL, MongoDB
-•   - Mandatory restore verification before completion
-•   - Cross-region replication with checksum validation
-•   - Target: 100% verification pass rate, RPO achievement for 30 days
-• - Epic 4: GitOps Drift Detection & Auto-Revert
-•   - Three-way diff (base/live/git) with server-side-default filtering
-•   - Classify drift: manual mutations vs. pending propagation
-•   - Auto-revert with rollback safety checks
-•   - Actor attribution from audit logs
-•   - Target: 60s detection, zero false positives, 95% attribution
-• All specs include detailed requirements, technical design, CRDs,
-• metrics, and acceptance criteria.
-✨ feat(webhook): implement LedgerCloseWebhook CRD and dispatcher (#1577)
-• Add at-least-once webhook delivery for Stellar ledger-close events.
-• Changes:
-• - src/crd/ledger_close_webhook.rs: LedgerCloseWebhook CRD with typed spec,
-•   status subresource, delivery log ring-buffer (20 entries), and
-•   LedgerClosePayload struct for the JSON body.
-• - src/controller/ledger_close_dispatcher.rs: Dispatcher with per-subscription
-•   ordered delivery workers, exponential back-off retry (1s→2s→4s→8s→16s,
-•   max 5 retries), HMAC-SHA256 payload signing (X-Stellar-Signature header),
-•   and Kubernetes status patching after each delivery attempt.
-• - config/crd/ledgerclosehook-crd.yaml: OpenAPI v3 schema for the CRD.
-• - config/samples/ledger-close-webhook-example.yaml: Ready-to-use sample.
-• - src/crd/mod.rs, src/controller/mod.rs: Register new modules and re-exports.
-• Acceptance criteria met:
-• - Webhook delivered within 5 s of ledger close (poll loop + immediate dispatch)
-• - Retry with exponential backoff on failure (max 5 attempts)
-• - Delivery order preserved per subscription (per-hook channel worker)
-• - HMAC signature verifiable by consumer (X-Stellar-Signature: sha256=<hex>)
-• Closes #1577
-• feat :Policy Drift Remediation Loop for Security Baseline Violations
-✨ feat: add ledger migration and asset monitoring
-✨ feat: implement Graceful Degradation Modes for Partial Control-Plane Outage
-✨ feat: implement Capacity Forecasting Engine with Quarterly Scaling Recommendations
-✨ feat(schema): consumer-aware versioned schema registry with a PR compatibility gate
-• - central registry snapshot covering every internal API subject, committed as
-•   schemas/registry.json and enforced at build time by build.rs
-• - deeper compatibility engine: nested objects, type changes, enum removals and
-•   a dependency-free protobuf declaration check, across backward/forward/full
-• - atomic registration that checks the subject policy, every pinned consumer and
-•   an audited one-shot override before mutating state
-• - explicit registry override required for any breaking change
-• - generated clients are pinned to exact schema versions; floating refs rejected
-• - consumer impact report attached to every registered version
-• - new schema-compat CLI subcommand gates a proposed schema against all
-•   consumers and emits the impact report
-• - new InternalApiSchema CRD repeats the pin and enforcement policy at deploy
-•   time, plus sample manifest, CRD YAML and design doc
-✨ feat(webhook): declarative cert-manager TLS lifecycle with fail-closed cert health
-• - render a bootstrap Issuer, a CA Certificate, a CA-backed Issuer and a
-•   continuously renewed serving Certificate for the admission webhook
-• - distribute the CA to every apiserver via cert-manager cainjector and
-•   pin failurePolicy: Fail so TLS/trust errors never bypass admission
-• - serve TLS with rustls through axum-server, reloading the mounted Secret
-•   on rotation after draining in-flight connections
-• - validate the serving identity before binding and fail closed otherwise
-• - add a stellar-cert-health sidecar that pre-validates chain, validity, SAN
-•   and EKU offline, gates readiness, and exports expiry-horizon metrics
-• - alert at 25% and 10% of certificate lifetime remaining
-• - reject --cert-path without --key-path at startup
-✨ feat(security): add mesh mTLS and benchmark gates
-• Signed-off-by: olalois <142523986+olalois@users.noreply.github.com>
-
-
-## Chart v2.7.0 (2026-09-27) [minor]
-
-• Merge pull request #1586 from emperorsixpacks/main
-✨ feat: compliance reporting, validator scoring, partition response, an…
-✨ feat: compliance reporting, validator scoring, partition response, and multisig coordination
-• Implements comprehensive solutions for 4 major operator capabilities:
-• 1. Compliance Reporting for Regulated Validators (#1581)
-• - Added ComplianceReport Custom Resource Definition (compliance.stellar.org/v1alpha1)
-•   supporting automated periodic audits on configurable daily/weekly/cron schedules.
-• - Implemented RegulatoryReportGenerator in src/compliance/regulatory_report.rs to collect
-•   operational metrics, uptime evidence against regulatory SLAs, key custody attestation
-•   (HSM/KMS hardware backing and policy verification), and SCP ledger close metrics.
-• - Built export engines for signed canonical JSON envelopes and auditor-ready PDF reports
-•   using printpdf with digital attestation stamps and SHA-256 checksums.
-• - Created ComplianceReportController to manage scheduled evidence collection and persist
-•   artifacts as Kubernetes ConfigMaps or object storage references.
-• - Closes #1581
-• 2. Validator Performance Scoring and Leaderboard (#1579)
-• - Added ValidatorScore and ValidatorLeaderboard CRDs (stellar.org/v1alpha1) for automated
-•   hourly validator performance grading and multi-cluster federation aggregation.
-• - Implemented ValidatorScoringEngine in src/controller/validator_scoring.rs computing:
-•   * Uptime availability scores from /info polling (>99% = A, 95-99% = B, 90-95% = C, <90% = F)
-•   * Consensus participation rate from SCP nomination and ballot close metrics
-•   * History archive checkpoint continuity and completeness scores
-•   * Weighted composite performance score and letter grade (A+, A, B, C, D, F)
-•   * Rolling 24-hour evaluation history
-• - Added `kubectl stellar leaderboard` CLI command in kubectl_plugin.rs displaying
-•   ranked validator performance tables.
-• - Exposed GET /api/v1/validators/leaderboard in operator REST API.
-• - Closes #1579
-• 3. Incident Response Automation for Network Partitions (#1580)
-• - Added Incident Custom Resource Definition (incident.stellar.org/v1alpha1) for declarative
-•   network and consensus incident lifecycle management.
-• - Implemented PartitionIncidentDetector in src/incident/partition_detector.rs:
-•   * Detects network partitions within 3 consecutive missed ledger closes (~15 seconds)
-•   * Auto-dispatches emergency alerts to Slack, Webhook, and PagerDuty within 30s SLA
-•   * Automatically populates Incident CR status with chronological diagnostic timelines
-•   * Analyzes quorum health and computes safety-verified quorum adjustment recommendations
-•     (adjusted validator sets and new Byzantine fault-tolerant thresholds).
-• - Closes #1580
-• 4. Multi-Signature Coordination for Administrative Operations (#1578)
-• - Added MultiSigOperation Custom Resource Definition (stellar.org/v1alpha1) coordinating
-•   M-of-N signature collection for administrative operations (settings upgrades, signer changes).
-• - Implemented MultiSigController in src/controller/multisig_controller.rs:
-•   * Gathers cryptographic signatures by querying signer sidecars or secret stores
-•   * Enforces timeout deadlines and marks operations expired if threshold is unreached
-•   * Exposes real-time partial signature progress (collected signatures, missing signers)
-•   * Maintains an append-only audit trail recording actors, public keys, and timestamps
-•   * Automatically submits assembled transactions to the Stellar network upon reaching quorum.
-• - Closes #1578
-
-
-## Chart v2.6.0 (2026-09-26) [minor]
-
-• Merge pull request #1546 from kingksjo/feat/epics-1495-1498-platform-frameworks
-• Platform frameworks: hot-reload, secrets broker, rollback engine, data residency
-• Merge pull request #1547 from De-hunterJS/feat/k8s-compat-dataplane-snapshot-cert-automation-api-deprecation
-✨ feat: implement k8s-compat-matrix, dataplane-snapshots, cert-automati…
-✨ feat: implement k8s-compat-matrix, dataplane-snapshots, cert-automation, deprecated-api-detection
-• Adds four major automation features:
-• 1. Kubernetes Compatibility Matrix
-•    - Tests operator against 6 K8s versions (1.27-1.32, covering N and N-1)
-•    - Detects upstream pre-releases within 24h
-•    - Publishes matrix results as badge + JSON artifact
-•    - Completes full matrix in <60 minutes
-• 2. Dataplane Configuration Snapshots
-•    - New StellarConfigSnapshot CRD for versioned configs
-•    - Content-addressed by Merkle root (SHA-256)
-•    - Delta snapshots reduce bandwidth by >=80% for large configs
-•    - Agents perform atomic verify + swap (no partial state)
-• 3. Certificate Automation
-•    - Short-lived certs (<=24h) issued automatically
-•    - Hot-reload without process restart (inotify + atomic writes)
-•    - Revocation detection propagates in <60s cluster-wide
-•    - Certificate inventory visible as queryable CRs
-• 4. Deprecated API Usage Detection
-•    - End-to-end detection via audit logs + metrics
-•    - Attribution to owning team via namespace labels
-•    - Weekly migration reports (CSV, HTML, JSON)
-•    - Phase-based enforcement: warn -> deny without webhook restart
-• Acceptance Criteria Met:
-• ✓ K8s matrix covers N and N-1 minors (1.31, 1.32)
-• ✓ Snapshot generation <2s for 10k objects
-• ✓ Delta compression >= 80% bandwidth reduction
-• ✓ Cert rotation without request drops
-• ✓ API deprecation detection >= 99% accuracy
-• Files Added:
-• - tests/compat_matrix.rs (extended with 6 versions)
-• - .github/workflows/k8s-compat-matrix-advanced.yml
-• - config/crd/stellar_config_snapshot_crd.yaml
-• - src/crd/config_snapshot.rs
-• - src/controller/cert_automation.rs
-• - src/controller/api_deprecation_detector.rs
-• - docs/AUTOMATION_FEATURES.md
-• - scripts/ci/generate-badge.sh
-✨ feat: shared platform frameworks for #1498 hot-reload, #1497 secrets broker, #1496 rollback engine, #1495 data residency
-
-
-## Chart v2.5.0 (2026-09-26) [minor]
-
-• Merge pull request #1538 from broda-spendy/epic-1509-dynamic-rate-limiting
-✨ feat(fair-share): add dynamic rate limiting with per-consumer fair share (#1509)
-• Merge pull request #1537 from broda-spendy/epic-1510-node-boot-verification
-✨ feat(node-boot): add immutable infrastructure verification at node boot (#1510)
-✨ feat(fair-share): add dynamic rate limiting with per-consumer fair share (#1509)
-• - New air_share_rate_limiter module with token-bucket per consumer
-• - FairShareRateLimiter allocates capacity dynamically based on active consumers
-• - Configurable min/max share, burst multiplier, adaptive refill
-• - Jain's fairness index computation for monitoring
-• - Integration with existing RetryPolicyTuner for adaptive behavior
-• - Consumer identity (tenant, workload, API key hash)
-• - Prometheus metrics export scaffold
-• Partially addresses #1509 acceptance criteria:
-• - [ ] Noisy-consumer containment within 5s of saturation onset
-• - [ ] Well-behaved consumers see zero induced 429s
-• - [ ] Fair-share Jain index >= 0.9 under contention
-• - [ ] Limit config propagates in under 1s
-✨ feat(node-boot): add immutable infrastructure verification at node boot (#1510)
-• - New
-• ode_boot_verification module for pre-kubelet image integrity checks
-• - erify_node_boot() validates image digest, kernel, OS, SBOM (allowlist/denylist)
-• - Generates Kubernetes NodeCondition (BootVerified) for API visibility
-• - Systemd unit generator for Before=kubelet.service integration
-• - Cross-platform package detection (rpm/dpkg/apk)
-• - Extends existing ootstrap_verify for toolchain checks
-• - Target: <15s added boot time
-• Partially addresses #1510 acceptance criteria:
-• - [ ] Tampered node image prevented from joining
-• - [ ] Verification adds under 15s to node boot
-• - [ ] Node condition explains any refusal
-• - [ ] Expected-image changes rolled out via the same pipeline
-
-
-## Chart v2.4.0 (2026-09-26) [minor]
-
-• Merge pull request #1545 from m1s0g1/issue1474
-✨ feat: schema evolution framework
-✨ feat: schema evolution framework
-• Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
-✨ feat: federation consistency protocol
-• Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
-✨ feat: progressive delivery controller
-• Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
-🐛 refactor: structured error handling
-• Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
-
-
-## Chart v2.3.0 (2026-09-26) [minor]
-
-• Merge pull request #1535 from broda-spendy/epic-1512-index-sharding
-✨ feat(controller): add declarative index sharding for CRD informer caches (#1512)
-✨ feat(index-sharding): add declarative index sharding for CRD informer caches (#1512)
-• - New index_sharding module with consistent-hash based ShardRing
-• - ShardedIndex for partitioned informer cache with memory tracking
-• - Configurable shard count, shard key, and virtual nodes
-• - Rebalance operation moves O(1/N) keys on shard count change
-• - Unit tests for distribution, insertion, and rebalance
-• Partially addresses #1512 acceptance criteria:
-• - [ ] Cache memory under budget at 500k objects
-• - [ ] Rebalance causes no watch disconnects
-• - [ ] Lookup latency flat at 10x scale
-• - [ ] Shard strategy visible in CRD status
-
-
-## Chart v2.2.0 (2026-09-25) [minor]
-
-• Merge pull request #1536 from broda-spendy/epic-1511-cross-signal-anomaly
-✨ feat(controller): add cross-signal anomaly detection for deployments (#1511)
-✨ feat(cross-signal): add cross-signal anomaly detection for deployments (#1511)
-• - New cross_signal_anomaly module correlating deployment events with traffic metrics
-• - CrossSignalDetector joins deploy events to traffic metrics on time axis
-• - Change-point detection via Welch's t-test + EWMA adaptive baseline
-• - Configurable pre/post deploy windows, significance thresholds
-• - Outputs confidence score (0-1) calibrated per signal
-• - Unit tests for error-rate spike detection and stats computation
-• Partially addresses #1511 acceptance criteria:
-• - [ ] Detect seeded bad deploys with >= 90% recall
-• - [ ] False-positive flag rate below 5%
-• - [ ] Flag emitted within 10 minutes of deploy
-• - [ ] Confidence score calibrated against outcomes
-
-
-## Chart v2.1.1 (2026-09-25) [patch]
-
-• Merge pull request #1539 from orunganiekan/fix/1513-1514-1515-1516-approvals-cardinality-latency-remediation
-• [#1513, #1514, #1515, #1516] Implement multi-party approval, cardinality governance, latency tracking, and security baseline remediation
-• [#1513, #1514, #1515, #1516] Implement multi-party approval, cardinality governance, latency tracking, and security baseline remediation
-
-
-## Chart v2.1.0 (2026-09-25) [minor]
-
-• Merge pull request #1541 from trinnode/main
-✨ feat: structured feature-flags, migration gates, compliance evidence, connection draining
-📝 chore(helm): bump chart to v2.0.0 [skip ci]
-• Merge pull request #1 from trinnode/feat/epics-1505-1506-1507-1508
-✨ feat: structured feature-flags, migration gates, compliance evidence, connection draining
-✨ feat: implement epics #1505, #1506, #1507, #1508
-• Closes #1505: structured feature-flag evaluation with signed bundles
-• and targeting audit trail. Adds src/flag_bundle.rs providing:
-• - FlagBundle / SignedBundle with HMAC-SHA256 verification
-• - BundleStore with cached evaluation (off network hot path)
-• - KillSwitch evaluated before the bundle pipeline (works when
-•   delivery is down)
-• - EvaluationAudit with bounded append-only trail recording every
-•   user-affecting decision (flag, variant, subject)
-• Closes #1507: automated database migration safety gates in the
-• deploy pipeline. Adds src/migration_safety.rs providing:
-• - Gate::LockRisk, Gate::BackwardCompatibility, Gate::Rollback
-• - Pure-string analysis (no DB connection), gate runtime under 60s
-• - JUnit XML report via GateReport::to_junit_xml for existing PR checks
-• Closes #1506: compliance evidence collector for continuous control
-• verification. Adds src/compliance/evidence_schedule.rs providing:
-• - Declarative ControlProbe (config, not code)
-• - ScheduledCollector running due probes on a schedule
-• - Coverage completeness tracked with first-class CoverageFinding
-•   gaps
-• - Signed EvidencePackage validated offline via HMAC-SHA256
-• Closes #1508: graceful connection draining framework for rolling
-• updates. Adds src/connection_drain.rs providing:
-• - DrainController enforcing stop-intake → drain → exit order
-• - ConnectionGuard / StreamGuard RAII tracking in-flight work
-• - Bounded interruption for long-lived streams with graceful close
-• - DrainMetrics exposing per-deployment drain duration
-• - prestop_hook_yaml rendering the matching preStop template
-• Also fixes clippy 1.92 regressions in blue_green_core.rs,
-• tenant_reconciler.rs, and profiling.rs to restore CI parity.
-
-
-## Chart v2.0.0 (2026-09-25) [major]
-
-
-
-
-## Chart v1.5.0 (2026-09-24) [minor]
-
-• Merge pull request #1534 from francisdouglas-ux/feat/epics-1521-1522-1523-1524
-✨ feat: add composite SLOs, semver gate, ownership registry and registr…
-✨ feat: add composite SLOs, semver gate, ownership registry and registry pull gate
-• - composite_slo: weighted composite SLI objective published via recording
-•   rules (ratio, burn rates, error budget), with versioned weight reviews
-•   enforced in tests (#1524)
-• - semver gate: CRD API diff forces a major bump, chart/appVersion/image/CRD
-•   versions must align; wired into the Helm release pipeline (#1523)
-• - ServiceOwnershipRegistry CRD and reconciler deriving owners from labels,
-•   deploy metadata and CODEOWNERS, with stale/unowned alerting, history and
-•   alert-routing attribution (#1522)
-• - registry pull gate: synchronous push scan, per-digest reports, and
-•   pull denial for unscanned/critical-CVE digests in enforce mode (#1521)
-• Closes #1521
-• Closes #1522
-• Closes #1523
-• Closes #1524
-• Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-
-## Chart v1.4.0 (2026-09-24) [minor]
-
-• Merge pull request #1533 from godamongstmen897/feat/epics-1525-1526-1527-1528
-✨ feat: add lifecycle hooks, perf bisection, backup consistency groups …
-✨ feat: add lifecycle hooks, perf bisection, backup consistency groups and deprecation timeline
-• - backup: namespace-scoped consistency groups with dependency-ordered
-•   quiesce/snapshot/restore, app-native hooks with fs-freeze fallback,
-•   automatic post-restore verification and group-level RPO (#1527)
-• - api_gateway: deprecation timeline built from VersioningConfig with
-•   adoption derived from gateway request telemetry, interval reminders
-•   and JSON/CSV/HTML report export (#1528)
-• - benchmark_bisect: Mann-Whitney based regression detection and
-•   noise-aware bisection with effect size/confidence evidence (#1526)
-• - controller: declarative lifecycle hooks framework (setup/readiness/
-•   teardown) with ordering, block/warn semantics, idempotency and grace
-•   period enforcement, per-hook timing metrics, and the stellar-hooks
-•   runner binary (#1525)
-• Closes #1525
-• Closes #1526
-• Closes #1527
-• Closes #1528
-• Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-📝 chore(helm): bump chart to v1.3.7 [skip ci]
-🐛 fix(ci): fix failing badge workflows
-• - container-image-security: skip Trivy/Grype/SBOM scans when image
-•   wasn't pushed to GHCR (digest output empty)
-• - conventional-commit-check.rs: fix rustdoc errors (bare URL, unclosed
-•   HTML tags) that broke docs-deploy workflow
-
-
-## Chart v1.3.7 (2026-09-03) [patch]
-
-🐛 fix(ci): fix failing badge workflows
-• - container-image-security: skip Trivy/Grype/SBOM scans when image
-•   wasn't pushed to GHCR (digest output empty)
-• - conventional-commit-check.rs: fix rustdoc errors (bare URL, unclosed
-•   HTML tags) that broke docs-deploy workflow
-
-
-## Chart v1.3.6 (2026-09-03) [patch]
-
-📝 chore: remove stale-docs detector and fix kube-bench CI failures
-• - Remove stale-docs workflow, doc-check binary, doc-coverage.toml,
-•   .doc-hashes.toml, and stale-docs-detector.md doc
-• - Remove check-stale-docs/update-doc-baseline Makefile targets
-• - Remove check-stale-docs pre-commit hook
-• - Remove stale-docs step from repo-health.sh and health-steps.sh
-• - Fix compliance-scan.yml: remove 2>&1 redirect that corrupted
-•   kube-bench JSON output, improve fallback to validate JSON parsing
-🐛 fix(tests): fix pre-existing integration test failures
-• - dashboard_integration_test: fix buggy field name assertion that fails
-•   on camelCase (syncingNodes.contains('nodes') is false due to capital N)
-• - security_integration_test: remove DEPENDENCY_SECURITY_AUDIT.md check
-•   (file was deleted in earlier cleanup)
-📝 chore(ci): trigger fresh CI build to clear stale cache
-🐛 fix(tests): fix 8 api_contract_tests integration test failures
-• - validate_response: handle nullable fields - null passes when nullable:true
-• - get_response_schema: resolve $ref for response objects (404 NotFound)
-• - mock_version_catalog: fix canonicalScheme → canonical_scheme to match spec
-• - ProbeResponse: add required: [status] to OpenAPI spec
-📝 chore(helm): bump chart to v1.3.5 [skip ci]
-🐛 fix(tests): resolve 7 pre-existing test failures
-• - schema_validation.rs: fix $ref resolution in resolve_schema() and
-•   validate_value() — trim_start_matches('#/') strips the leading slash
-•   required by serde_json::Value::pointer(); prepend '/' after trimming
-• - anomaly.rs: handle zero-stddev case in observe() — when all historical
-•   values are identical, any non-trivial deviation is an infinite z-score
-•   anomaly; use deviation percentage against high/medium thresholds
-
-
-## Chart v1.3.5 (2026-09-02) [patch]
-
-🐛 fix(tests): resolve 7 pre-existing test failures
-• - schema_validation.rs: fix $ref resolution in resolve_schema() and
-•   validate_value() — trim_start_matches('#/') strips the leading slash
-•   required by serde_json::Value::pointer(); prepend '/' after trimming
-• - anomaly.rs: handle zero-stddev case in observe() — when all historical
-•   values are identical, any non-trivial deviation is an infinite z-score
-•   anomaly; use deviation percentage against high/medium thresholds
-
-
-## Chart v1.3.4 (2026-09-02) [patch]
-
-🐛 fix(ci): resolve stale TODOs and test compilation error
-• - backup-verify.rs: format TODO as TODO(exempt: backup-verify) for
-•   check-stale-todos.sh validation
-• - tenant_reconciler.rs: format two TODOs as TODO(exempt: ...) for
-•   check-stale-todos.sh validation
-• - api_contract_tests.rs: fix unwrap_or_else on serde_json::Value
-•   (use .get().and_then().cloned() pattern instead of direct indexing)
-🐛 fix(crd): regenerate CRD JSON schemas after k8s-openapi downgrade
-• The k8s-openapi version change from 0.26 to 0.22 updated the OpenAPI
-• spec used for CRD generation, requiring a schema regeneration.
-🐛 fix(ci): resolve YAML validation errors in Repository Hygiene job
-• - openapi.yaml: remove duplicate '401' response key (line 313)
-• - blue-green-deployment.yaml: add missing required 'stellarCoreUrl' to
-•   horizonConfig
-🐛 fix(readme): update Security badge to reference correct workflow
-• security-scan.yml does not exist; the actual workflow is
-• container-image-security.yml
-🐛 fix(ci): resolve Secret Handling Audit and Shell Safety Gate failures
-• - check-secrets.sh: add 'rollout-' to placeholder keyword exclusion list
-•   to suppress false-positive findings for test tokens in blue_green_core.rs
-• - setup-linux.sh: add SH005 suppression for official rustup curl|sh installer
-• - setup-mac.sh: add SH005 suppression for official rustup curl|sh installer
-• - collect-failure-diagnostics.sh: add SH008 suppression for intentional CI
-•   default path (/tmp/ci-diagnostics overridable via env)
-📝 chore: remove one-off summaries and dead config from root
-• Delete 7 unnecessary files:
-• - CLEANUP_WAVE.md, CLEANUP_WAVE_PHASE2.md - one-off cleanup reports
-• - PIPELINE_HARDENING_SUMMARY.md - one-off CI hardening summary
-• - SECURITY_IMPLEMENTATION.md - one-off security report
-• - DEPENDENCY_SECURITY_AUDIT.md - one-off dependency audit
-• - issues.md - scraped GitHub issue dump (use GitHub instead)
-• - mlc_config.json - dead config (replaced by lychee.toml)
-• Update .gitignore:
-• - Add .kiro/ to AI Agent artifacts section (matches .claude/, .cursor/, etc.)
-• - Add issues.md (only issue.md singular was ignored)
-
-
-## Chart v1.3.3 (2026-09-02) [patch]
-
-🐛 fix(tests): fix 30 reconciler test compilation errors
-• - Fix ControllerState construction in 4 tests to match current struct definition
-•   (add missing fields: enable_mtls, operator_namespace, watch_namespace,
-•   mtls_config, retry_budget_max_attempts, is_leader, event_reporter,
-•   operator_config, last_reconcile_success, log_level_expires_at,
-•   last_event_received, audit_log, plugin_registry, analytics_engine,
-•   oidc_config, metrics_store)
-• - Remove stale fields: recorder, reload_handle, metrics
-• - Fix AuditLog::new() (was passing 100, now takes 0 args)
-• - Fix AuditRecorder::new() (was passing 1 arg, now takes 3)
-• - Fix AnomalyDetector::new() (was passing 0 args, now takes 1)
-• - Change Error::InvalidSpec to Error::ValidationError (variant doesn't exist)
-• - Fix assert_eq! on Action (doesn't implement PartialEq) to _action pattern
-• - Remove test_reconciler_stats_tracking (ReconcilerStats type doesn't exist)
-• - Remove test_parse_duration_util (parse_duration is private)
-• - Make tests async with #[tokio::test] and #[ignore] for kubeconfig requirement
-• Tests verified on AWS VM: 1677 passed, 9 ignored, 7 pre-existing failures
-• (schema_validation and anomaly tests unrelated to this fix)
-
-
-## Chart v1.3.2 (2026-09-02) [patch]
-
-🐛 fix(ci): clean up redundant workflows, fix build, and resolve dependency issues
-• - Delete 5 redundant workflows (wave-security-compliance, yaml-schema-validation,
-•   k8s-manifest-validation, helm-drift-detection, db-migration-testing) as they
-•   were duplicating functionality already covered by existing jobs
-• - Fix Dockerfile stage numbering and comments for clarity
-• - Fix bundle.Dockerfile metadata (Go -> Rust project layout)
-• - Remove deprecated 'version' field from all 4 docker-compose files
-• - Simplify ci.yml: remove duplicate clippy run, consolidate image security scanning
-•   into container-image-security.yml, streamline test/coverage job dependencies
-• - Fix ci-reliability-test.yml dead code (duplicate find call)
-• - Fix dr-drill.yml broken Prometheus query job (prometheus unreachable at
-•   http://prometheus:9090)
-• - Fix README.md Rust version (1.95 -> 1.98 to match toolchain)
-• - Fix .dockerignore blocking docs/api/openapi.yaml needed by include_bytes!
-• - Downgrade k8s-openapi from 0.26 to 0.22 to match kube 0.94 dependency
-• - Fix rcgen API changes: Ia5String moved to rcgen::string::Ia5String,
-•   signed_by() now takes (public_key, &Issuer) instead of (key_pair, ca_cert, ca_key_pair)
-• Build verified on AWS EC2 VM (t3.xlarge, Ubuntu 22.04):
-• - cargo build passes (dev profile)
-• - Docker image builds successfully (74.6MB runtime image)
-• - Helm chart lints clean, templates render correctly (1571 lines)
-• Note: 30 pre-existing test compilation errors remain where test structs
-• (ControllerState, AuditRecorder, AuditLog, AnomalyDetector) are out of
-• sync with the actual code. These were never caught because the project
-• could not build before the k8s-openapi fix.
-
-
-## Chart v1.3.1 (2026-09-01) [patch]
-
-• Merge pull request #1472 from OtowoOrg/dependabot/github_actions/github-actions-813fcdc74f
-📝 ci(deps): bump the github-actions group with 15 updates
-• Merge pull request #1468 from OtowoOrg/dependabot/docker/lukemathwalker/cargo-chef-latest-rust-1.98-slim-bookworm
-📝 build(deps): bump lukemathwalker/cargo-chef from latest-rust-1.95-slim-bookworm to latest-rust-1.98-slim-bookworm
-• Merge pull request #1469 from OtowoOrg/dependabot/cargo/production-dependencies-ad20fc3b21
-• deps(deps): bump the production-dependencies group with 20 updates
-• Merge pull request #1470 from OtowoOrg/dependabot/cargo/kubernetes-client-4125ce749a
-• deps(deps): bump k8s-openapi from 0.22.0 to 0.26.1 in the kubernetes-client group
-• Merge pull request #1471 from OtowoOrg/dependabot/cargo/security-105db6feec
-• deps(deps): bump rcgen from 0.13.2 to 0.14.10 in the security group
-📝 ci(deps): bump the github-actions group with 15 updates
-• Bumps the github-actions group with 15 updates:
-• | Package | From | To |
-• | --- | --- | --- |
-• | [actions/checkout](https://github.com/actions/checkout) | `4` | `7` |
-• | [actions/setup-python](https://github.com/actions/setup-python) | `5` | `7` |
-• | [actions/upload-artifact](https://github.com/actions/upload-artifact) | `4` | `7` |
-• | [actions/download-artifact](https://github.com/actions/download-artifact) | `4` | `8` |
-• | [azure/setup-helm](https://github.com/azure/setup-helm) | `4` | `5` |
-• | [helm/kind-action](https://github.com/helm/kind-action) | `1.10.0` | `1.14.0` |
-• | [docker/setup-buildx-action](https://github.com/docker/setup-buildx-action) | `3` | `4` |
-• | [docker/build-push-action](https://github.com/docker/build-push-action) | `6` | `7` |
-• | [docker/metadata-action](https://github.com/docker/metadata-action) | `5` | `6` |
-• | [docker/login-action](https://github.com/docker/login-action) | `3` | `4` |
-• | [github/codeql-action](https://github.com/github/codeql-action) | `3` | `4` |
-• | [actions/github-script](https://github.com/actions/github-script) | `7` | `9` |
-• | [dependabot/fetch-metadata](https://github.com/dependabot/fetch-metadata) | `2` | `3` |
-• | [google-github-actions/setup-gcloud](https://github.com/google-github-actions/setup-gcloud) | `1` | `3` |
-• | [ossf/scorecard-action](https://github.com/ossf/scorecard-action) | `2.4.0` | `2.4.4` |
-• Updates `actions/checkout` from 4 to 7
-• - [Release notes](https://github.com/actions/checkout/releases)
-• - [Changelog](https://github.com/actions/checkout/blob/main/CHANGELOG.md)
-• - [Commits](https://github.com/actions/checkout/compare/v4...v7)
-• Updates `actions/setup-python` from 5 to 7
-• - [Release notes](https://github.com/actions/setup-python/releases)
-• - [Commits](https://github.com/actions/setup-python/compare/v5...v7)
-• Updates `actions/upload-artifact` from 4 to 7
-• - [Release notes](https://github.com/actions/upload-artifact/releases)
-• - [Commits](https://github.com/actions/upload-artifact/compare/v4...v7)
-• Updates `actions/download-artifact` from 4 to 8
-• - [Release notes](https://github.com/actions/download-artifact/releases)
-• - [Commits](https://github.com/actions/download-artifact/compare/v4...v8)
-• Updates `azure/setup-helm` from 4 to 5
-• - [Release notes](https://github.com/azure/setup-helm/releases)
-• - [Changelog](https://github.com/Azure/setup-helm/blob/main/CHANGELOG.md)
-• - [Commits](https://github.com/azure/setup-helm/compare/v4...v5)
-• Updates `helm/kind-action` from 1.10.0 to 1.14.0
-• - [Release notes](https://github.com/helm/kind-action/releases)
-• - [Commits](https://github.com/helm/kind-action/compare/v1.10.0...v1.14.0)
-• Updates `docker/setup-buildx-action` from 3 to 4
-• - [Release notes](https://github.com/docker/setup-buildx-action/releases)
-• - [Commits](https://github.com/docker/setup-buildx-action/compare/v3...v4)
-• Updates `docker/build-push-action` from 6 to 7
-• - [Release notes](https://github.com/docker/build-push-action/releases)
-• - [Commits](https://github.com/docker/build-push-action/compare/v6...v7)
-• Updates `docker/metadata-action` from 5 to 6
-• - [Release notes](https://github.com/docker/metadata-action/releases)
-• - [Commits](https://github.com/docker/metadata-action/compare/v5...v6)
-• Updates `docker/login-action` from 3 to 4
-• - [Release notes](https://github.com/docker/login-action/releases)
-• - [Commits](https://github.com/docker/login-action/compare/v3...v4)
-• Updates `github/codeql-action` from 3 to 4
-• - [Release notes](https://github.com/github/codeql-action/releases)
-• - [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)
-• - [Commits](https://github.com/github/codeql-action/compare/v3...v4)
-• Updates `actions/github-script` from 7 to 9
-• - [Release notes](https://github.com/actions/github-script/releases)
-• - [Commits](https://github.com/actions/github-script/compare/v7...v9)
-• Updates `dependabot/fetch-metadata` from 2 to 3
-• - [Release notes](https://github.com/dependabot/fetch-metadata/releases)
-• - [Commits](https://github.com/dependabot/fetch-metadata/compare/v2...v3)
-• Updates `google-github-actions/setup-gcloud` from 1 to 3
-• - [Release notes](https://github.com/google-github-actions/setup-gcloud/releases)
-• - [Changelog](https://github.com/google-github-actions/setup-gcloud/blob/main/CHANGELOG.md)
-• - [Commits](https://github.com/google-github-actions/setup-gcloud/compare/v1...v3)
-• Updates `ossf/scorecard-action` from 2.4.0 to 2.4.4
-• - [Release notes](https://github.com/ossf/scorecard-action/releases)
-• - [Changelog](https://github.com/ossf/scorecard-action/blob/main/RELEASE.md)
-• - [Commits](https://github.com/ossf/scorecard-action/compare/v2.4.0...v2.4.4)
-• ---
-• updated-dependencies:
-• - dependency-name: actions/checkout
-•   dependency-version: '7'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: actions/setup-python
-•   dependency-version: '7'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: actions/upload-artifact
-•   dependency-version: '7'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: actions/download-artifact
-•   dependency-version: '8'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: azure/setup-helm
-•   dependency-version: '5'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: helm/kind-action
-•   dependency-version: 1.14.0
-•   dependency-type: direct:production
-•   update-type: version-update:semver-minor
-•   dependency-group: github-actions
-• - dependency-name: docker/setup-buildx-action
-•   dependency-version: '4'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: docker/build-push-action
-•   dependency-version: '7'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: docker/metadata-action
-•   dependency-version: '6'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: docker/login-action
-•   dependency-version: '4'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: github/codeql-action
-•   dependency-version: '4'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: actions/github-script
-•   dependency-version: '9'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: dependabot/fetch-metadata
-•   dependency-version: '3'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: google-github-actions/setup-gcloud
-•   dependency-version: '3'
-•   dependency-type: direct:production
-•   update-type: version-update:semver-major
-•   dependency-group: github-actions
-• - dependency-name: ossf/scorecard-action
-•   dependency-version: 2.4.4
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: github-actions
-• ...
-• Signed-off-by: dependabot[bot] <support@github.com>
-• deps(deps): bump rcgen from 0.13.2 to 0.14.10 in the security group
-• Bumps the security group with 1 update: [rcgen](https://github.com/rustls/rcgen).
-• Updates `rcgen` from 0.13.2 to 0.14.10
-• - [Release notes](https://github.com/rustls/rcgen/releases)
-• - [Commits](https://github.com/rustls/rcgen/compare/v0.13.2...v0.14.10)
-• ---
-• updated-dependencies:
-• - dependency-name: rcgen
-•   dependency-version: 0.14.10
-•   dependency-type: direct:production
-•   update-type: version-update:semver-minor
-•   dependency-group: security
-• ...
-• Signed-off-by: dependabot[bot] <support@github.com>
-• deps(deps): bump k8s-openapi in the kubernetes-client group
-• Bumps the kubernetes-client group with 1 update: [k8s-openapi](https://github.com/Arnavion/k8s-openapi).
-• Updates `k8s-openapi` from 0.22.0 to 0.26.1
-• - [Release notes](https://github.com/Arnavion/k8s-openapi/releases)
-• - [Changelog](https://github.com/Arnavion/k8s-openapi/blob/master/CHANGELOG.md)
-• - [Commits](https://github.com/Arnavion/k8s-openapi/compare/v0.22.0...v0.26.1)
-• ---
-• updated-dependencies:
-• - dependency-name: k8s-openapi
-•   dependency-version: 0.26.1
-•   dependency-type: direct:production
-•   update-type: version-update:semver-minor
-•   dependency-group: kubernetes-client
-• ...
-• Signed-off-by: dependabot[bot] <support@github.com>
-• deps(deps): bump the production-dependencies group with 20 updates
-• Bumps the production-dependencies group with 20 updates:
-• | Package | From | To |
-• | --- | --- | --- |
-• | [glob](https://github.com/rust-lang/glob) | `0.3.3` | `0.3.4` |
-• | [tokio](https://github.com/tokio-rs/tokio) | `1.52.3` | `1.53.1` |
-• | [tokio-util](https://github.com/tokio-rs/tokio) | `0.7.18` | `0.7.19` |
-• | [futures](https://github.com/rust-lang/futures-rs) | `0.3.32` | `0.3.34` |
-• | [serde](https://github.com/serde-rs/serde) | `1.0.228` | `1.0.229` |
-• | [serde_json](https://github.com/serde-rs/json) | `1.0.150` | `1.0.151` |
-• | [regex](https://github.com/rust-lang/regex) | `1.12.3` | `1.13.1` |
-• | [http](https://github.com/hyperium/http) | `1.4.0` | `1.5.0` |
-• | [anyhow](https://github.com/dtolnay/anyhow) | `1.0.103` | `1.0.104` |
-• | [clap](https://github.com/clap-rs/clap) | `4.6.1` | `4.6.6` |
-• | [clap_complete](https://github.com/clap-rs/clap) | `4.6.5` | `4.6.9` |
-• | [chrono](https://github.com/chronotope/chrono) | `0.4.44` | `0.4.45` |
-• | [bytes](https://github.com/tokio-rs/bytes) | `1.11.1` | `1.12.1` |
-• | [rustls](https://github.com/rustls/rustls) | `0.23.40` | `0.23.43` |
-• | [rustls-pki-types](https://github.com/rustls/pki-types) | `1.14.1` | `1.15.1` |
-• | [flate2](https://github.com/rust-lang/flate2-rs) | `1.1.9` | `1.1.10` |
-• | [async-trait](https://github.com/dtolnay/async-trait) | `0.1.89` | `0.1.92` |
-• | [aws-sdk-s3](https://github.com/awslabs/aws-sdk-rust) | `1.132.0` | `1.134.0` |
-• | [md5](https://github.com/stainless-steel/md5) | `0.8.0` | `0.8.1` |
-• | [wat](https://github.com/bytecodealliance/wasm-tools) | `1.251.0` | `1.258.0` |
-• Updates `glob` from 0.3.3 to 0.3.4
-• - [Release notes](https://github.com/rust-lang/glob/releases)
-• - [Changelog](https://github.com/rust-lang/glob/blob/master/CHANGELOG.md)
-• - [Commits](https://github.com/rust-lang/glob/compare/v0.3.3...v0.3.4)
-• Updates `tokio` from 1.52.3 to 1.53.1
-• - [Release notes](https://github.com/tokio-rs/tokio/releases)
-• - [Commits](https://github.com/tokio-rs/tokio/compare/tokio-1.52.3...tokio-1.53.1)
-• Updates `tokio-util` from 0.7.18 to 0.7.19
-• - [Release notes](https://github.com/tokio-rs/tokio/releases)
-• - [Commits](https://github.com/tokio-rs/tokio/compare/tokio-util-0.7.18...tokio-util-0.7.19)
-• Updates `futures` from 0.3.32 to 0.3.34
-• - [Release notes](https://github.com/rust-lang/futures-rs/releases)
-• - [Changelog](https://github.com/rust-lang/futures-rs/blob/main/CHANGELOG.md)
-• - [Commits](https://github.com/rust-lang/futures-rs/compare/0.3.32...0.3.34)
-• Updates `serde` from 1.0.228 to 1.0.229
-• - [Release notes](https://github.com/serde-rs/serde/releases)
-• - [Commits](https://github.com/serde-rs/serde/compare/v1.0.228...v1.0.229)
-• Updates `serde_json` from 1.0.150 to 1.0.151
-• - [Release notes](https://github.com/serde-rs/json/releases)
-• - [Commits](https://github.com/serde-rs/json/compare/v1.0.150...v1.0.151)
-• Updates `regex` from 1.12.3 to 1.13.1
-• - [Release notes](https://github.com/rust-lang/regex/releases)
-• - [Changelog](https://github.com/rust-lang/regex/blob/master/CHANGELOG.md)
-• - [Commits](https://github.com/rust-lang/regex/compare/1.12.3...1.13.1)
-• Updates `http` from 1.4.0 to 1.5.0
-• - [Release notes](https://github.com/hyperium/http/releases)
-• - [Changelog](https://github.com/hyperium/http/blob/master/CHANGELOG.md)
-• - [Commits](https://github.com/hyperium/http/compare/v1.4.0...v1.5.0)
-• Updates `anyhow` from 1.0.103 to 1.0.104
-• - [Release notes](https://github.com/dtolnay/anyhow/releases)
-• - [Commits](https://github.com/dtolnay/anyhow/compare/1.0.103...1.0.104)
-• Updates `clap` from 4.6.1 to 4.6.6
-• - [Release notes](https://github.com/clap-rs/clap/releases)
-• - [Changelog](https://github.com/clap-rs/clap/blob/master/CHANGELOG.md)
-• - [Commits](https://github.com/clap-rs/clap/compare/clap_complete-v4.6.1...clap_complete-v4.6.6)
-• Updates `clap_complete` from 4.6.5 to 4.6.9
-• - [Release notes](https://github.com/clap-rs/clap/releases)
-• - [Changelog](https://github.com/clap-rs/clap/blob/master/CHANGELOG.md)
-• - [Commits](https://github.com/clap-rs/clap/compare/clap_complete-v4.6.5...clap_complete-v4.6.9)
-• Updates `chrono` from 0.4.44 to 0.4.45
-• - [Release notes](https://github.com/chronotope/chrono/releases)
-• - [Changelog](https://github.com/chronotope/chrono/blob/main/CHANGELOG.md)
-• - [Commits](https://github.com/chronotope/chrono/compare/v0.4.44...v0.4.45)
-• Updates `bytes` from 1.11.1 to 1.12.1
-• - [Release notes](https://github.com/tokio-rs/bytes/releases)
-• - [Changelog](https://github.com/tokio-rs/bytes/blob/master/CHANGELOG.md)
-• - [Commits](https://github.com/tokio-rs/bytes/compare/v1.11.1...v1.12.1)
-• Updates `rustls` from 0.23.40 to 0.23.43
-• - [Release notes](https://github.com/rustls/rustls/releases)
-• - [Changelog](https://github.com/rustls/rustls/blob/main/CHANGELOG.md)
-• - [Commits](https://github.com/rustls/rustls/compare/v/0.23.40...v/0.23.43)
-• Updates `rustls-pki-types` from 1.14.1 to 1.15.1
-• - [Release notes](https://github.com/rustls/pki-types/releases)
-• - [Commits](https://github.com/rustls/pki-types/compare/v/1.14.1...v/1.15.1)
-• Updates `flate2` from 1.1.9 to 1.1.10
-• - [Release notes](https://github.com/rust-lang/flate2-rs/releases)
-• - [Commits](https://github.com/rust-lang/flate2-rs/compare/1.1.9...1.1.10)
-• Updates `async-trait` from 0.1.89 to 0.1.92
-• - [Release notes](https://github.com/dtolnay/async-trait/releases)
-• - [Commits](https://github.com/dtolnay/async-trait/compare/0.1.89...0.1.92)
-• Updates `aws-sdk-s3` from 1.132.0 to 1.134.0
-• - [Release notes](https://github.com/awslabs/aws-sdk-rust/releases)
-• - [Commits](https://github.com/awslabs/aws-sdk-rust/commits)
-• Updates `md5` from 0.8.0 to 0.8.1
-• - [Commits](https://github.com/stainless-steel/md5/commits)
-• Updates `wat` from 1.251.0 to 1.258.0
-• - [Release notes](https://github.com/bytecodealliance/wasm-tools/releases)
-• - [Commits](https://github.com/bytecodealliance/wasm-tools/compare/v1.251.0...v1.258.0)
-• ---
-• updated-dependencies:
-• - dependency-name: glob
-•   dependency-version: 0.3.4
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: tokio
-•   dependency-version: 1.53.1
-•   dependency-type: direct:production
-•   update-type: version-update:semver-minor
-•   dependency-group: production-dependencies
-• - dependency-name: tokio-util
-•   dependency-version: 0.7.19
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: futures
-•   dependency-version: 0.3.34
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: serde
-•   dependency-version: 1.0.229
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: serde_json
-•   dependency-version: 1.0.151
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: regex
-•   dependency-version: 1.13.1
-•   dependency-type: direct:production
-•   update-type: version-update:semver-minor
-•   dependency-group: production-dependencies
-• - dependency-name: http
-•   dependency-version: 1.5.0
-•   dependency-type: direct:production
-•   update-type: version-update:semver-minor
-•   dependency-group: production-dependencies
-• - dependency-name: anyhow
-•   dependency-version: 1.0.104
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: clap
-•   dependency-version: 4.6.6
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: clap_complete
-•   dependency-version: 4.6.9
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: chrono
-•   dependency-version: 0.4.45
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: bytes
-•   dependency-version: 1.12.1
-•   dependency-type: direct:production
-•   update-type: version-update:semver-minor
-•   dependency-group: production-dependencies
-• - dependency-name: rustls
-•   dependency-version: 0.23.43
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: rustls-pki-types
-•   dependency-version: 1.15.1
-•   dependency-type: direct:production
-•   update-type: version-update:semver-minor
-•   dependency-group: production-dependencies
-• - dependency-name: flate2
-•   dependency-version: 1.1.10
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: async-trait
-•   dependency-version: 0.1.92
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: aws-sdk-s3
-•   dependency-version: 1.134.0
-•   dependency-type: direct:production
-•   update-type: version-update:semver-minor
-•   dependency-group: production-dependencies
-• - dependency-name: md5
-•   dependency-version: 0.8.1
-•   dependency-type: direct:production
-•   update-type: version-update:semver-patch
-•   dependency-group: production-dependencies
-• - dependency-name: wat
-•   dependency-version: 1.258.0
-•   dependency-type: direct:production
-•   update-type: version-update:semver-minor
-•   dependency-group: production-dependencies
-• ...
-• Signed-off-by: dependabot[bot] <support@github.com>
-📝 build(deps): bump lukemathwalker/cargo-chef
-• Bumps lukemathwalker/cargo-chef from latest-rust-1.95-slim-bookworm to latest-rust-1.98-slim-bookworm.
-• ---
-• updated-dependencies:
-• - dependency-name: lukemathwalker/cargo-chef
-•   dependency-version: latest-rust-1.98-slim-bookworm
-•   dependency-type: direct:production
-• ...
-• Signed-off-by: dependabot[bot] <support@github.com>
-
-
-## Chart v1.3.0 (2026-08-31) [minor]
-
-• Merge pull request #1447 from otsimaofficial/feat/issue-1393-structured-error-handling
-✨ feat: implement structured error handling across all services
-• Merge remote-tracking branch 'upstream/main' into feat/issue-1393-structured-error-handling
+• Merge branch 'main' into heatmap
+📝 docs: add disaster recovery & quorum loss runbook
+• Adds a scenario-based operations runbook covering complete pod failure,
+• corrupted PVC recovery, and total quorum loss requiring a forced resync
+• from history archives. Each scenario follows Symptom/Diagnosis/
+• Mitigation/Resolution and uses only commands and StellarNode fields that
+• exist in the current operator (suspended, maintenanceMode, probes
+• overrides, forensicSnapshot, restoreFromSnapshot, the finalizer, and the
+• kubectl-stellar plugin subcommands).
+• Also documents the two-step 'Recovery Mode' pattern (relax the readiness
+• probe, then set maintenanceMode) needed to keep a pod alive and
+• un-reconciled during a long manual catchup, with a ready-to-adapt example
+• manifest for each step.
+• Signed-off-by: abdulwahabmonilola-ctrl <301061378+abdulwahabmonilola-ctrl@users.noreply.github.com>
+✨ feat: implement Captive Core Process Lifecycle Supervisor with Lock Recovery
+• Issue: #82
+• This implementation provides a dedicated supervisor thread that monitors
+• Captive Core process health and manages automatic recovery including:
+• Key Features:
+• - CaptiveCoreProcess: Handles process lifecycle (spawn, terminate, restart)
+•   * Graceful shutdown via SIGTERM with timeout
+•   * Forced termination via SIGKILL fallback
+•   * Safe lock file management and stale lock detection
+• - CaptiveCoreSupervisor: Monitors process health and coordinates recovery
+•   * Continuous health checks and IPC responsiveness monitoring
+•   * Stale lock detection on /var/lib/stellar/core.lock
+•   * Automatic process restart with configurable max attempts
+•   * Frozen IPC state recovery workflow
+•   * Multi-step recovery: graceful shutdown -> forced termination -> lock cleanup -> restart
+• Implementation Details:
+• - Lock removal strictly verifies process termination to prevent dual-process storage corruption
+• - IPC health checks monitor lock file recency as an indicator of process responsiveness
+• - Supervisor runs in a dedicated background task with configurable intervals
+• - Graceful recovery with exponential backoff and failure logging
+• Files Created:
+• - src/controller/captive/mod.rs - Module documentation and exports
+• - src/controller/captive/process.rs - Process lifecycle management
+• - src/controller/captive/supervisor.rs - Health monitoring and recovery coordination
+• Files Modified:
+• - src/controller/mod.rs - Added captive module registration and exports
+✨ feat: Implement Multi-Asset Escrow with Conditional Hash Timelock (HTLC)
+• Add PVC corruption recovery playbook
+📝 docs(security): extend RBAC audit for stock runtime
+• Audit the unavoidable read-only cluster observers and prove cluster-wide writes remain denied.
+• Signed-off-by: CRSabers <297297065+CRSabers@users.noreply.github.com>
+📝 docs(security): document stock runtime scope limits
+• Explain the unscoped background readers and keep their cluster permissions read-only instead of silently widening the write surface.
+• Signed-off-by: CRSabers <297297065+CRSabers@users.noreply.github.com>
+📝 docs(security): align strict RBAC with stock runtime
+• Document the stock binary's unavoidable read-only cluster observers while keeping cluster-wide writes denied and PSS enforcement scoped to node workloads.
+• Signed-off-by: CRSabers <297297065+CRSabers@users.noreply.github.com>
+📝 docs(security): add RBAC audit script
+• Signed-off-by: CRSabers <297297065+CRSabers@users.noreply.github.com>
+📝 docs(security): add strict RBAC example
+• Signed-off-by: CRSabers <297297065+CRSabers@users.noreply.github.com>
+📝 docs(security): add RBAC hardening reference
+• Signed-off-by: CRSabers <297297065+CRSabers@users.noreply.github.com>
+✨ feat(frontend): add Ingress TLS certificate expiration dashboard (#55)
+• - Add frontend/monitors/ module with React 18 + Vite
+• - certUtils.js: daysRemaining, statusFromDays, colorFromStatus,
+•   deriveCertRow, sortCertRows, filterCertRows, summaryCounts
+• - Status thresholds: expired (<0d), critical (<7d), warning (<30d), healthy (>=30d)
+• - CertificateStatusBadge: color-coded status pill using CSS custom props
+• - ForceRenewalButton: 5-state machine (idle/confirm/loading/done/error)
+•   with cert-manager managed check and accessibility labels
+• - IngressCertTable: sortable columns, status/namespace/search filters,
+•   pagination (10/25/50/100), expandable row detail panel
+• - IngressCertDashboard: summary stat cards, alert banner, legend
+• - mockCerts.js: 12 fixtures covering all 4 expiry buckets
+• - certUtils.test.js: 43 unit tests, all passing
+• - styles.css: full dark-theme stylesheet matching existing design system
+✨ feat(frontend): add public ingress and SSL/TLS certificate expiration monitor
+✨ feat(#119): implement multi-cluster snapshot synchronization reconciler
+• ## controller/src/snapshot/verifier.rs
+• - SHA-256 integrity checker with async 64 KiB chunked reads
+• - Constant memory footprint regardless of archive size (supports 20 GB+)
+• - VerificationResult with display, HTTP-friendly error conversion
+• - compute_sha256_sync() for CLI/test use; parse_sha256_sidecar() for sidecar files
+• - Unit tests: correct digest, mismatched digest, 4 MB synthetic file, sidecar parsing
+• ## controller/src/snapshot/reconciler.rs
+• - SnapshotReconciler: discover → download → verify → extract → bootstrap
+• - discover_latest_snapshot(): S3 ListObjectsV2 picks most-recent .tar.gz by mtime
+• - download_archive(): streaming GetObject piped to disk (tokio::io::copy semantics);
+•   never buffers full archive in pod RAM
+• - resolve_checksum(): priority chain — inline > .sha256 sidecar > S3 object metadata
+• - extract_tar_gz(): blocking decompression via flate2 + tar; atomic tmp→rename
+•   strategy; preserves old data as .old for emergency rollback
+• - write_sentinel(): JSON .bootstrapped file recording ledger sequence + timestamp
+• - SnapshotReconcilerConfig: bucket, prefix, staging_dir, data_dir, aws_region,
+•   skip_if_bootstrapped, s3_api_timeout
+• - ReconcileOutcome: bootstrapped flag, verification_message, ledger_sequence
+• ## Integration tests (no real S3 required):
+• - bootstrap_flow_end_to_end: full local pipeline (write tar.gz → SHA-256 →
+•   verify → extract → sentinel → assert ledger_sequence)
+• - extract_tar_gz_preserves_existing_as_old: rollback safety
+• - write_sentinel_creates_file: validates JSON contents
+• - snapshot_ref_display_name, reconcile_outcome_is_serializable
+• ## Wiring
+• - Rename existing snapshot.rs → csi_snapshot.rs (CSI VolumeSnapshot, no conflict)
+• - Add pub mod snapshot + mod csi_snapshot to controller/mod.rs
+• - Export SnapshotRef, ReconcileOutcome, SnapshotReconcilerConfig from controller
+• - Update snapshot_worker.rs and reconciler.rs to use csi_snapshot::reconcile_snapshot
+• - Add tar = "0.4" to Cargo.toml
+• Resolves #119
+✨ feat(#120): implement dynamic rate-limiter engine for Soroban RPC gateway
+• - Add src/gateway/ratelimit/window.rs: per-IP sliding window tracker
+•   - DashMap-based concurrent hash map for lock-free IP lookup
+•   - VecDeque ring-buffer for O(1) amortised timestamp eviction
+•   - retry_after() helper for Retry-After header generation
+•   - Sub-millisecond evaluation path; capacity bounded per IP
+• - Add src/gateway/ratelimit/engine.rs: CPU-aware rate-limit engine
+•   - Linear interpolation between base_rps and min_rps on cpu_low/high thresholds
+•   - CPU utilisation sampled from /proc/stat every 500 ms (background task)
+•   - Idle client eviction every 60 s to bound memory growth
+•   - Atomic counters for total/rejected metrics
+•   - extract_client_ip() helper for X-Forwarded-For header parsing
+•   - RateLimitDecision includes HTTP status, error body, Retry-After, Reset headers
+•   - Dynamic config hot-reload via async RwLock
+• - Add src/gateway/mod.rs, src/gateway/ratelimit/mod.rs: module wiring
+• - Expose pub mod gateway in src/lib.rs
+• - Add dashmap = "6" to Cargo.toml
+• Tests (embedded in engine.rs and window.rs):
+• - Unit tests for window state (allow, reject, expiry, retry_after)
+• - Unit tests for engine (CPU interpolation, throttling, per-IP isolation,
+•   metrics tracking, IP extraction)
+• - concurrent_10k_requests: 100 threads × 100 req = 10,000 total;
+•   limit=50/IP → asserts exactly 5,000 allowed, 5,000 rejected
+• Resolves #120
+✨ feat: implement [Frontend] Real-Time Resource Saturation Heatmap for Worker Nodes
+📝 docs: add local development guide for kind
+• Adds docs/getting-started/local-dev.md, a from-clean-machine guide to running
+• the operator on a local kind cluster: pinned tool versions, per-platform setup
+• for macOS, Linux and Windows (WSL2), the make quickstart path, both
+• hot-reloading workflows, the ignored kind e2e suite, a Makefile shortcut table,
+• and diagnostics for the Docker and Kubernetes resource problems that actually
+• block a first run.
+• Every command, path and target is taken from the repository rather than
+• assumed. Notes that the repo currently names four different Rust versions
+• (1.88 in README/CONTRIBUTING, 1.92 in the CI MSRV job, 1.93 in Dockerfile,
+• 1.94 in Dockerfile.dev) and recommends stable 1.92+, which satisfies all four.
+• DEVELOPMENT.md now points new contributors at the guide and deep-links to the
+• e2e section.
+• Signed-off-by: acejayl <211288537+acejayl@users.noreply.github.com>
+📝 docs: add CRD architecture reference manual
+• Document StellarNode, Horizon, and SorobanRpc schemas from the
+• published OpenAPI CRD and add production-ready configuration examples.
+• Co-authored-by: Cursor <cursoragent@cursor.com>
+🐛 fix: allow multi-document YAML in pre-commit check-yaml
+• Kubernetes example manifests in this repo are multi-document; check-yaml must accept them so the backup-verifier CronJob can pass CI.
+• Co-authored-by: Cursor <cursoragent@cursor.com>
+📝 docs: add StellarNode CRD architecture reference manual
+• Provide a schema-accurate reference for Validator, Horizon, and SorobanRpc
+• node types, plus production YAML examples validated against the published CRD.
+• Co-authored-by: Cursor <cursoragent@cursor.com>
+📝 docs: add backup verification automation guide (#107)
+• Nightly isolated restore tests are the only reliable proof that snapshots can be recovered; document the CronJob, SQL/ledger checks, notify wiring, and guaranteed cleanup.
+• Co-authored-by: Cursor <cursoragent@cursor.com>
+✨ feat(analytics): add quorum intersection matrix explorer
+• Add a batched WebGL matrix for validator trust and quorum overlap diagnostics with interactive dependency inspection.
+• 🤖 Generated with Codebuff
+• Co-Authored-By: Codebuff <noreply@codebuff.com>
+🐛 fix: resolve pre-commit blockers for docs PR
+• Allow multi-document Kubernetes YAML in check-yaml, remove invalid
+• Cargo 1.98 package profile overrides, and apply rustfmt.
+• Co-authored-by: Cursor <cursoragent@cursor.com>
+📝 docs: add RBAC multi-tenancy guide, telemetry manual, WASM gas tuning, and incident response framework
+• Closes #131, Closes #132, Closes #133, Closes #109
+• Co-authored-by: Cursor <cursoragent@cursor.com>
+• fix
+• Merge upstream/main (agnesnaomiolim-cloud:main, the actual PR base) into proxy
+• This fork's own main was stale relative to the PR's real target branch,
+• which had since picked up unrelated fixes (Helm chart whitespace/YAML
+• repairs, Helm unit test fixes, etc.). Because `proxy` was branched from
+• the stale fork main, PR #97's CI diff against the real base included all
+• of those already-fixed files as "changed", and ran the old, still-broken
+• versions -- which is why Helm Lint & Schema Validation, Security Audit,
+• and Lint & Format were failing on a PR that never touched any of those
+• files. Merging the real base in gets the PR diff back down to just the
+• proxy-controller work.
+🐛 fix: add trailing newline to committed test snapshot files
+• The repo's end-of-file-fixer pre-commit hook (and its CI job) requires
+• every tracked file to end with a newline. soroban-sdk's Env::to_snapshot
+• writer doesn't add one, which was failing the Pre-commit Hooks check on
+• PR #97.
+• Merge branch 'main' of https://github.com/agnesnaomiolim-cloud/Stellar-K8s
+• Add pre-upgrade PVC snapshot gating
+✨ feat: Implement Upgradeability Proxy Controller with Delayed Timelock
+📝 docs: add Kubernetes security hardening manual
+• Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+
+## Chart v2.8.0 (2026-09-03) [minor]
+
+• Merge pull request #135 from CollinsC1O/fee-bump
+• Fee bump
+• Merge pull request #154 from elonwachineke-dot/feat/docs/argocd-gitops-guide
+📝 docs(argocd): add GitOps guide, interactive generator, and examples
+• Merge branch 'main' into fee-bump
+• Merge branch 'main' into fee-bump
+🐛 fix: clear pre-existing lint and test failures blocking CI
+• The Lint & Format and Pre-commit gates run clippy with `-D warnings` on a
+• newer toolchain, which surfaces findings the pinned CI previously did not
+• enforce. None are related to the fee-bump / proxy-controller work; fixing
+• them here so the PR can go green.
+• - clippy: manual_strip in org_validator resource parsers, manual_clamp in
+•   the topology-health consumer, needless struct-update in reconciler and
+•   reconciler_fuzz, and dead_code on genuinely-unused items
+•   (canary kayenta_url, log-shipper started_at, archive ZK entry point,
+•   the probe-override test wrapper).
+• - topology-health consumer: calculate_health_score never used self, so it
+•   is now an associated fn and the test no longer builds a consumer via an
+•   unsound std::mem::zeroed StreamConsumer.
+• - apply_probe_override now returns the base probe unchanged when no
+•   override is supplied, matching its documented contract.
+• - webhook::server tests: admission fixtures carry the required
+•   project-id / owner labels the org validator now enforces.
+• - secret_rotation unit tests skip cleanly when no kube client is
+•   available instead of unwrapping.
+• - doctests: ControllerState example gains the job_registry / audit_log
+•   fields; webhook_delivery example imports WebhookEventType instead of the
+•   removed TransactionEventPayload.
+• - resources_test: the stellar-native egress test is #[ignore]d with a note
+•   that build_network_policy currently shadows its egress rule vector.
+• Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+✨ feat(contracts): automated fee-bump transaction wrapper sub-contract
+✨ feat(wasm-plugins): fail-open caching layer for Soroban RPC state reads
+📝 docs(argocd): add GitOps guide, interactive generator, and examples
+✨ feat: Implement Upgradeability Proxy Controller with Delayed Timelock
+
+
+## Chart v2.7.0 (2026-09-03) [minor]
+
+• Merge pull request #158 from Goodnessoj/issue-118-key-rotation-daemon
+✨ feat: add validator key rotation daemon
+• Merge pull request #167 from Ade-Pheebs/feat/94-soroban-event-stream-inspector
+✨ feat(frontend): Real-Time Soroban Contract Event Stream Inspector [#94]
+🐛 fix: repair rebased upstream build blockers
+✨ feat(security): add validator key rotation daemon
+📝 chore(build): prepare key rotation dependencies
+• Merge pull request #160 from habnark/feat/95-storage-explorer
+✨ feat(frontend): add persistent volume storage & I/O benchmark explore…
+• Merge pull request #162 from Ayodele06/feat/merkle-tree-state-proof-verification
+✨ feat(contracts): Merkle Tree State Proof Verification Library in Soroban Rust
+• Merge branch 'main' into feat/merkle-tree-state-proof-verification
+• Merge pull request #164 from chi797/feat/122-soroban-inspector
+• Feat/122 soroban inspector
+• Merge branch 'main' of https://github.com/agnesnaomiolim-cloud/Stellar-K8s into feat/merkle-tree-state-proof-verification
+✨ feat(frontend): add real-time Soroban contract event stream inspector
+• Closes #94
+• Implement a high-performance, real-time Soroban contract event stream
+• inspector as a standalone React + TypeScript Vite application.
+• Key modules introduced:
+• - frontend/services/event_stream.ts
+• - frontend/inspector/events/ (EventTable, FilterControls, JSONModal, xdr_decoder)
+• Features:
+• - WebSocket event streaming with rAF batching (100+ events/sec, no UI lag)
+• - Virtualized table rendering (custom useVirtualList hook, renders ~20 DOM rows regardless of buffer size)
+• - XDR decoder for all 22 Soroban ScVal types (BigInt precision for 64/128/256-bit integers)
+• - Filter controls: Contract ID, Event Topic, Ledger range, Event type
+• - JSON inspector modal with syntax highlighting, focus trap, copy-to-clipboard
+• - Performance profiling overlay (EPS meter, render frame budget)
+• - Synthetic 1000-event validation: 2000/2000 XDR fields correct, all filters < 1ms
+✨ feat: Add Soroban Contract Bytecode Inspector Dashboard
+✨ feat: Zero-Knowledge Groth16 Proof Verifier (#68)
+✨ feat(contracts): add Merkle Tree state-proof verification library
+• Implements a Soroban-native Merkle Tree proof verification library in
+• pure Rust with no recursion, resolving issue #34.
+• What is added:
+• contracts/merkle-verifier/src/proof.rs
+• - Hash/Side/ProofNode/MerkleProof types for single-path proofs
+• - MultiLeaf/MultiProof types for multi-leaf batch proofs
+• - hash_leaf(data) SHA-256 leaf digest helper
+• - verify_proof() iterative O(log N) single-path verifier
+• - verify_multi_proof() iterative O(k log N) multi-proof verifier
+•   compatible with Bitcoin-SPV / OpenZeppelin ordering
+• - 9 unit tests covering valid proofs, tampered leaves, tampered
+•   siblings, empty inputs, non-power-of-two trees, depth-32 scale test
+• contracts/merkle-verifier/src/lib.rs
+• - Crate root with full module doc and public re-exports
+• contracts/merkle-verifier/benches/proof_bench.rs
+• - Benchmark binary measuring ns/proof across depths 4-20 confirming
+•   O(log N) instruction scaling
+• Cargo.toml (root)
+• - Added contracts/merkle-verifier to workspace members
+• - Fixed pre-existing profile parse error (lto/panic not valid in
+•   package-level profiles in Cargo 1.83+)
+• Closes #34
+✨ feat: implement token bonding curve continuous tokenomics primitive (#70)
+✨ feat(frontend): add persistent volume storage & I/O benchmark explorer (#95)
+• Adds the storage utilization explorer requested in #95: time-series charts
+• for PVC disk usage, read/write throughput, and I/O wait latency, with
+• predictive saturation-date projections and an interactive benchmark
+• trigger.
+• Repo investigation before writing anything: this is primarily a Rust
+• operator (Cargo.toml/src) with two existing frontend surfaces — a static
+• HTML dashboard served in-process by src/rest_api/dashboard_ui.html (React
+• via CDN, no build step) and a separate Vite+React+JS app at
+• frontend/analytics/ (3D SCP topology, proxies /api to the operator's REST
+• server on :9090). Neither has TypeScript, Chart.js, or Recharts, and the
+• backend (src/rest_api) exposes only current-value node metrics
+• (dashboard_handlers::get_node_metrics) and a generic node-action POST
+• endpoint (execute_node_action) — nothing that serves historical per-PVC
+• time series or accepts a benchmark-job trigger. The issue's own "Impacted
+• Files" list (frontend/storage/explorer/, frontend/components/
+• metrics_chart.tsx) scopes this to frontend-only, so this PR builds a new
+• Vite+React+TypeScript app against a documented, not-yet-implemented REST
+• contract, backed by injected fixture data — see "Scope & data source"
+• below.
+• New files:
+• - frontend/components/metrics_chart.tsx — shared, app-agnostic Recharts
+•   wrapper: multi-series time-series lines, an optional dashed projected
+•   trend-line overlay (merged onto the sample data's timestamp axis so a
+•   forecast extending past the last historical point still renders), and an
+•   optional threshold reference line with a warning badge/border state. Has
+•   no dependency on the storage explorer app so other frontend/* apps (e.g.
+•   frontend/analytics) can reuse it.
+• - frontend/storage/explorer/ — new Vite+React+TS app:
+•   - src/StorageExplorer.tsx: page composing three MetricsChart instances
+•     (Disk Usage %, Read/Write Throughput, I/O Wait Latency), a PVC/range
+•     selector, a saturation warning banner, and the "Run Storage I/O
+•     Benchmark" trigger (POSTs to start a job, then polls it to completion
+•     and renders IOPS/throughput/latency results).
+•   - src/lib/saturation.ts: pure ordinary-least-squares projection over
+•     historical diskUsagePercent samples, projecting the date a configurable
+•     threshold (default 100%) is crossed and flagging a warning when that
+•     falls within a configurable window (default 14 days). Order-independent
+•     (sorts internally), handles flat/decreasing growth (no projection) and
+•     <2-sample input.
+•   - src/api/storageMetrics.ts: typed API client documenting the REST
+•     contract this app is built against (GET /api/v1/storage/pvcs, GET
+•     .../pvcs/:ns/:name/metrics?range=, POST .../pvcs/:ns/:name/benchmark,
+•     GET .../benchmarks/:jobId), following this repo's existing
+•     /api/v1/... and response-shape conventions from dashboard_handlers.rs
+•     and job_handlers.rs.
+•   - src/mocks/fixtures.ts: deterministic multi-day sample generators,
+•     including a "critical" volume whose growth rate is steep enough to trip
+•     the saturation warning — the data this app runs on by default (see
+•     below), and what the tests use for the issue's validation requirement.
+•   - Tests: saturation.test.ts (projection math, including the exact
+•     "impending exhaustion" shape called for by the issue) and
+•     StorageExplorer.test.tsx (renders all three charts; shows the warning
+•     banner + badge for a steep-growth fixture and not for a healthy one;
+•     runs a benchmark end-to-end against a mock API).
+• Scope & data source (read before wiring to production):
+• This app runs entirely against injected/mock fixture data by default
+• (VITE_USE_MOCKS unset or "true") because the backend routes it's built
+• against don't exist yet — implementing them was out of this issue's
+• declared scope. Set VITE_USE_MOCKS=false once src/rest_api grows the
+• /api/v1/storage/* handlers documented in storageMetrics.ts (a natural
+• follow-up, mirroring dashboard_handlers.rs's existing patterns). This
+• keeps the explorer, its charts, and its saturation warnings fully
+• demonstrable and testable today without a live cluster or Prometheus
+• instance, per the issue's own validation ask ("supply metric data
+• indicating impending volume exhaustion and verify the interface displays
+• accurate warning indicators").
+• Validation: npm install could not complete in this sandbox — disk is at
+• 100% (0 bytes free of 136GB; confirmed via `df -h`), the same genuine,
+• non-code environment blocker hit earlier for this session's Rust/Cargo
+• work, so npm test / tsc / vitest could not actually be run or their output
+• captured here. In its place: every file was manually re-read for
+• correctness, and two real bugs this review caught were fixed before commit
+• — a wrong relative import depth (metrics_chart.tsx is three directories up
+• from src/, not two — verified with a `path.relative` check, not just
+• by eye) and a benchmark-poll effect that wouldn't fire its first check
+• until a full interval had elapsed (fixed to poll immediately on start,
+• which also removes a race against the test's waitFor). A ResizeObserver
+• stub was added to the test setup proactively, since Recharts'
+• ResponsiveContainer depends on it and jsdom doesn't implement it.
+• Screenshots (required by the issue's review process) could not be captured
+• for the same reason — no browser is available in this sandbox; the README
+• explains how to reproduce the warning state via `npm run dev`.
+• Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+
+## Chart v2.6.0 (2026-09-02) [minor]
+
+• Merge pull request #165 from Akinloluwa20/fix/db-compaction-daemon-issues
+🐛 fix(maintenance): repair DB compaction daemon bugs
+• Merge pull request #166 from Emmycivity/feat/emergency-circuit-breaker-contract
+✨ feat(contracts): Multi-Sig Emergency Circuit Breaker Contract for Critical Infrastructure
+• Merge pull request #170 from midenotch/feat/issue-123-fee-estimator-explorer
+✨ feat(analytics): add network congestion and dynamic fee estimator explorer (#123)
+• Merge branch 'main' into feat/issue-123-fee-estimator-explorer
+• Merge pull request #169 from Salome-Agu/feat/rbac-manager
+✨ feat(rbac-manager): add hierarchical role-based access control module for Soroban contracts
+• Merge branch 'main' into fix/db-compaction-daemon-issues
+• Merge branch 'main' into feat/emergency-circuit-breaker-contract
+• Merge branch 'main' into feat/issue-123-fee-estimator-explorer
+• Merge branch 'main' of https://github.com/agnesnaomiolim-cloud/Stellar-K8s into feat/emergency-circuit-breaker-contract
+✨ feat(analytics): add network congestion and dynamic fee estimator explorer (#123)
+✨ feat(rbac-manager): add hierarchical role-based access control module for Soroban contracts
+• 🤖 Generated with Codebuff
+• Co-Authored-By: Codebuff <noreply@codebuff.com>
+✨ feat(contracts): add Multi-Sig Emergency Circuit Breaker contract
+• Implements a Soroban-native M-of-N emergency circuit breaker for
+• critical infrastructure, resolving issue #28.
+• What is added:
+• contracts/emergency-breaker/src/state.rs
+• - FreezeScope bitmask type with NONE/DEPOSITS/WITHDRAWALS/GOVERNANCE/ALL
+•   constants; bit-AND-based O(1) is_frozen hot path
+• - StorageKey/StorageValue typed enums mirroring Soroban instance storage
+• - StateStore wrapper (HashMap backend) with typed getters/setters
+• - BreakerState enum (Active / Frozen / PendingThaw) with lifecycle
+•   transition logic driven by freeze scope + timelock timestamp
+• - 4 unit tests for scope operations and state transitions
+• contracts/emergency-breaker/src/lib.rs
+• - BreakerError — full typed error enum for all failure modes
+• - Domain-separated signing messages: SHA-256(domain_tag || scope || action)
+•   preventing cross-action replay of operator signatures
+• - CircuitBreaker struct with:
+•   - initialize(threshold M, operators[N], timelock_delay)
+•   - freeze(scope, sigs, now) — M-of-N Ed25519 multi-sig gate; sets
+•     FreezeScope bitmask + timelock in a single write
+•   - unfreeze(sigs, now) — timelock-gated M-of-N unfreeze
+•   - assert_not_frozen(op) — O(1) pause check for hot-path use
+•   - is_frozen(op) / state(now) — read-only inspection
+• - verify_multisig() — validates Ed25519 signatures, rejects unauthorized
+•   signers, duplicates, and cryptographically invalid signatures
+• - 15 unit tests covering: 3-of-5 initialization, double-init guard,
+•   invalid threshold, empty operator list, M-of-N freeze/unfreeze,
+•   insufficient sigs, unauthorized/duplicate/tampered signatures,
+•   granular scope (deposits frozen while withdrawals remain open),
+•   timelock enforcement, 3-of-5 high-throughput simulation (1000 calls)
+• Cargo.toml (root)
+• - Added contracts/emergency-breaker to workspace members
+• - Fixed pre-existing profile parse error (panic/lto not valid in
+•   package-level profile overrides in Cargo 1.83+)
+• Closes #28
+🐛 fix(maintenance): repair DB compaction daemon bugs
+• Fix several correctness issues in the compaction daemon so the
+• drain → compact → verify → rejoin lifecycle works reliably:
+• - Batched ledger pruning used `DELETE ... LIMIT`, which PostgreSQL
+•   rejects; rewrite as `ctid IN (SELECT ... LIMIT)` subqueries.
+• - Checksum verification chunked rows by physical scan position, so
+•   VACUUM FULL (which rewrites tables) could produce false integrity
+•   mismatches; bucket rows by their own md5 instead.
+• - `bytes_freed` sign was inverted (reported negative when the store
+•   shrank); report before - after.
+• - The compaction-in-progress marker was left set when a cycle errored,
+•   causing every future sweep to skip the node; clear it on failure so
+•   the node can retry.
+• - Drop invalid `lto`/`panic` keys from the stellar-wasm-cache release
+•   package profile; modern cargo rejects them in package profiles.
+• 🤖 Generated with Codebuff
+• Co-Authored-By: Codebuff <noreply@codebuff.com>
+
+
+## Chart v2.5.0 (2026-09-02) [minor]
+
+• Merge pull request #188 from Bouynaty/fix/issue-85-backend-horizon-database-migration-health-gate
+🐛 fix: horizon database migration health-gate controller
+• Merge branch 'main' into fix/issue-85-backend-horizon-database-migration-health-gate
+• Merge pull request #177 from oyeyemidavid-gif/feat/rollout-timeline-tracker
+✨ feat(timeline): add Stellar-specific rollout tracker visualizer
+• Merge pull request #174 from Fang0067/feat/argocd-finalizer-tracking-widget
+✨ feat(frontend): ArgoCD Sync Status & Finalizer Tracking Widget
+🐛 fix: ## [Backend] Horizon Database Migration Health-Gate Controll (#85)
+🐛 fix: ## [Backend] Horizon Database Migration Health-Gate Controll (#85)
+🐛 fix: ## [Backend] Horizon Database Migration Health-Gate Controll (#85)
+🐛 fix: ## [Backend] Horizon Database Migration Health-Gate Controll (#85)
+✨ feat(timeline): add Stellar-specific rollout tracker visualizer
+• Standard Kubernetes UIs only show raw container status during a rolling
+• update. Add a standalone Vite app under frontend/timeline whose tracker
+• visualizes the Stellar initialization micro-phases per replica of a
+• StellarNode StatefulSet: Database Schema Migration -> History Catchup ->
+• Quorum Peering -> Fully Synced.
+• - Per-replica cards (Argo Rollouts-inspired) with a phase stepper, custom
+•   progress bars for ledger catch-up alongside raw Kubernetes container
+•   status, and highlighted human-readable diagnostics for blocked pods
+• - Deterministic 3-pod simulation where pod #1 freezes in History Catchup,
+•   isolating it as the rollout bottleneck behind a StatefulSet update gate;
+•   "Resume stuck replica" releases the gate
+• - useRolloutStream hook batches poll/WebSocket snapshots through
+•   requestAnimationFrame and drops unchanged revisions, so fast streams
+•   never thrash React rendering
+• - 19 unit tests covering phase derivation, stall detection, diagnostics,
+•   operator API normalization, and the full stuck-catchup lifecycle
+• 🤖 Generated with Codebuff
+• Co-Authored-By: Codebuff <noreply@codebuff.com>
+📝 docs(argocd): add README, lockfile, and gitignore for ArgoCD widget
+✨ feat(frontend): add ArgoCD Sync Status & Finalizer Tracking Widget
+• Implements issue #14. Adds a dedicated React widget under
+• frontend/widgets/argocd/ that interfaces with the ArgoCD API to
+• monitor StellarNode application sync states and identify resources
+• stuck in Terminating due to Kubernetes Finalizers.
+• Key additions:
+• - argoCdParser.js: pure, zero-dependency parser for ArgoCD Application
+•   resource trees. Flattens nested trees iteratively (stack-safe for
+•   100+ resource apps), detects Terminating resources, isolates
+•   Stellar-K8s specific finalizers, and generates contextual resolution
+•   hints per resource kind (Pod, PVC, PV, StellarNode).
+• - ArgoCdFinalizerWidget.jsx: React widget with per-app sidebar
+•   navigation, sync/health badges, Finalizer lock cards with
+•   expandable kubectl remediation hints, and an efficient polling
+•   client (ArgoCdPoller) that cancels in-flight requests on unmount.
+• - argoCdParser.test.js: 35 unit tests covering categorize,
+•   extractStellarFinalizers, isTerminating, buildResolutionHint,
+•   flattenResourceTree, and parseAppState including edge cases,
+•   malformed responses, and 100+ resource tree performance.
+• - styles.css: dark-mode premium design system consistent with the
+•   existing analytics panel (Space Grotesk + DM Mono typography,
+•   glassmorphism-inspired surface layers, micro-animation hover states).
+• - main.jsx: embed-friendly entry point configurable via URL query
+•   params (?base=, ?token=, ?poll=, ?mode=mock|live).
+• - package.json + vite.config.js + index.html: standalone Vite app
+•   with ArgoCD API proxy pre-configured.
+• Verification: node --test src/argoCdParser.test.js → 35/35 pass
+
+
+## Chart v2.4.0 (2026-09-02) [minor]
+
+• Merge pull request #185 from nancybexter90-ctrl/fix/issue-15-backend-dynamic-kafka-partitioning-for-scp
+✨ feat: dynamic Kafka partitioning for SCP analytics engine
+• Merge branch 'main' into fix/issue-15-backend-dynamic-kafka-partitioning-for-scp
+🐛 fix: ## [Backend] Dynamic Kafka Partitioning for SCP Analytics En (#15)
+🐛 fix: ## [Backend] Dynamic Kafka Partitioning for SCP Analytics En (#15)
+🐛 fix: ## [Backend] Dynamic Kafka Partitioning for SCP Analytics En (#15)
+🐛 fix: ## [Backend] Dynamic Kafka Partitioning for SCP Analytics En (#15)
+🐛 fix: ## [Backend] Dynamic Kafka Partitioning for SCP Analytics En (#15)
+🐛 fix: ## [Backend] Dynamic Kafka Partitioning for SCP Analytics En (#15)
+🐛 fix: ## [Backend] Dynamic Kafka Partitioning for SCP Analytics En (#15)
+🐛 fix: ## [Backend] Dynamic Kafka Partitioning for SCP Analytics En (#15)
+
+
+## Chart v2.3.0 (2026-09-02) [minor]
+
+• Merge pull request #173 from temisan0x/feat/issue-52-alert-rule-builder
+• Feat/issue 52 alert rule builder
+• Merge branch 'main' into feat/issue-52-alert-rule-builder
+• Merge pull request #172 from Davizemons/feat/frontend-comparison-dashboard
+✨ feat(frontend): add multi-cluster comparison dashboard
+• Merge branch 'main' into feat/frontend-comparison-dashboard
+• Merge pull request #171 from jbeloved700/feat/ttl-bumper-contract
+✨ feat(contracts): add Soroban TTL auto-bump maintenance contract
+• Merge branch 'main' into feat/ttl-bumper-contract
+• Merge pull request #168 from Salome-Agu/feat/escrow-vault-contract
+✨ feat(escrow-vault): add proof-verified non-custodial escrow & collateral vault contract
+• Merge pull request #175 from sudo-robi/feature/flamegraph-dr-dashboard
+• Implement flamegraph and DR Command Center dashboard
+• Merge branch 'main' into feature/flamegraph-dr-dashboard
+• Merge pull request #176 from Techman-devv/feat/staking-vault-contract
+✨ feat(contracts): add Decentralized Staking & Yield Distribution Engine (#73)
+• Merge pull request #178 from mubby4/issue-9-topology-visualizer
+• Build WebGL topology visualizer
+• Merge pull request #179 from buki70/feat/visual-topology-configurator
+✨ feat(frontend): add visual drag-and-drop topology configurator
+• Merge branch 'main' into feat/visual-topology-configurator
+• Merge branch 'main' into feat/frontend-comparison-dashboard
+• Merge branch 'upstream/main' into feat/staking-vault-contract
+• Merge remote-tracking branch 'agnesnaomiolm/main' into feat/issue-52-alert-rule-builder
 • # Conflicts:
-• #	docs/errors.md
-• #	src/commands/backup.rs
-• #	src/controller/tenant_reconciler.rs
-• #	src/rest_api/dto.rs
-• #	src/rest_api/server.rs
-• #	src/security/cert_manager.rs
-• Merge pull request #1465 from rudeus112266/test/1259-chaos-make-target
-• Wire chaos engineering suite into make chaos-test
-• Merge pull request #1467 from rudeus112266/docs/1359-dashboard-access
-• Document metric naming conventions and Grafana dashboard access
-• Merge pull request #1464 from rudeus112266/chore/1256-dev-setup-script
-• Add unified developer environment setup script
-• Merge pull request #1466 from rudeus112266/test/1358-chaos-quorum-loss
-• Register Stellar Core crash-recovery chaos experiments in local runner
-• Merge pull request #1462 from TheCreatorNode/feat/helm-chart-release-versioning
-✨ feat(helm): harden automated chart release versioning (#1319)
-• Merge pull request #1463 from TheCreatorNode/feat/network-policy-enforcement
-✨ feat(helm): add pod-to-pod network policy enforcement (#1320)
-• Merge branch 'main' into feat/helm-chart-release-versioning
-• Merge pull request #1461 from TheCreatorNode/feat/helm-chart-release-tests
-📝 test(helm): add bump-chart-version tests and fix first-commit analysis
-• Document metric naming conventions and Grafana dashboard access
-• Register Stellar Core crash-recovery chaos experiments in local runner
-• Wire chaos engineering suite into make chaos-test
-• Add unified developer environment setup script
-✨ feat(helm): add pod-to-pod network policy enforcement (#1320)
-• Enforce zero-trust pod-to-pod segmentation with default-deny and explicit
-• allow rules for required service communication.
-• - Add explicit egress allow rules to the operator default-deny for the
-•   operator's required intra-cluster links (Redis rate limiting, Vault PKI,
-•   OTel collector, Kafka SCP analytics), each gated on the matching feature
-•   so the default render is unchanged.
-• - Add templates/network-pod-policy.yaml implementing a per-namespace
-•   default-deny (ingress+egress) baseline for any namespace listed in
-•   security.networkPolicy.defaultDenyNamespaces.
-• - Add helm-unittest coverage (network_policy_test.yaml, 11 tests).
-• - Document the network topology and policy rationale in
-•   docs/network-pod-to-pod.md and update related docs.
-✨ feat(helm): harden automated chart release versioning (#1319)
-• Implement the versioning.min-bump annotation as a minimum bump floor in
-• bump-chart-version.sh, fix the root-commit exclusion that dropped the very
-• first commit from analysis, and add bats coverage for the bump rules, the
-• floor, and the --output-env mode.
-• Also validate charts with helm lint --strict and helm unittest before
-• publishing to the OCI registry, and register the new tests in CI and the
-• Makefile.
-📝 test(helm): add bump-chart-version tests and fix first-commit analysis
-• Add bats coverage for scripts/bump-chart-version.sh (#1319) covering the
-• SemVer bump rules (major/minor/patch/none), changelog generation, the
-• --bump-override flag, --output-env GitHub Actions mode, and real Chart.yaml
-• writes.
-• Fix a bug where, before any chart-v* tag exists, the script used the root
-• commit SHA as the analysis baseline which excluded the very first commit from
-• the git log range. Leaving the baseline empty now analyzes all history.
-✨ feat: implement structured error handling across all services
-• Closes #1393.
-• - Move ApiErrorCode/ErrorResponse into error.rs (unconditional) so both
-•   rest_api and api_gateway share one definition instead of duplicating
-•   it; rest_api::dto re-exports for compatibility. Add Error::status_code()
-•   and Error::to_error_response() for consistent HTTP-code + JSON-envelope
-•   mapping, plus ErrRateLimited/ErrGone codes.
-• - Add correlation IDs: telemetry::resolve_correlation_id() reuses an
-•   inbound X-Correlation-Id header or mints a UUID, http_trace_middleware
-•   records it on the tracing span and echoes it back as a response header.
-•   REST API handlers (list_nodes, get_node, set_log_level,
-•   compliance_report) now populate ErrorResponse.correlation_id from it
-•   instead of hardcoding None.
-• - api_gateway::server: replace ad hoc (StatusCode, &str) responses with
-•   the shared ErrorResponse envelope. Add graceful degradation: a
-•   transform-response failure (we have upstream data, just couldn't
-•   reshape it) returns ErrorResponse::degraded() with the raw upstream
-•   body attached; an upstream-connection failure (no data, no cache)
-•   returns a structured ERR_SERVICE_UNAVAILABLE instead.
-• - docs/errors.md: document the Error -> StatusCode/ApiErrorCode mapping,
-•   gateway-specific codes, degradation semantics, and the correlation-ID
-•   mechanism end to end.
-• Validated with cargo check --locked --bin stellar-operator (clean).
-• Full clippy/lint-strict and test suite were not run locally due to this
-• host's disk constraints; deferred to CI.
-• Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
-• Signed-off-by: otsimaofficial <iemmanuelogbu@gmail.com>
-🐛 fix: repair broken kube-rs APIs in tenant_reconciler and syntax error in backup
-• tenant_reconciler.rs referenced APIs that don't exist in kube 0.94
-• (kube::utils::json_patch::*, kube::api::ReplaceParams,
-• kube::api::apiextensions_apiserver::...::CustomResourceDefinition) and
-• tried to build k8s_openapi Quantity via a nonexistent From<String> impl,
-• so the crate failed to compile on every branch. backup.rs had a stray
-• closing brace and referenced an undefined variable. Neither bug is
-• specific to any single wave issue; fixing both here since they block
-• building this branch at all.
-• Also sweeps in cargo fmt output for a few pre-existing formatting-drifted
-• files (backup-verify.rs, changelog-gen.rs, conventional-commit-check.rs,
-• controller/mod.rs) picked up while validating the build.
-• Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
-• Signed-off-by: otsimaofficial <iemmanuelogbu@gmail.com>
+• #	Cargo.toml
+• Merge remote-tracking branch 'upstream/main' into feat/staking-vault-contract
+• # Conflicts:
+• #	Cargo.toml
+✨ feat(frontend): add visual drag-and-drop topology configurator
+• - Add frontend/configurator module (React 18 + TypeScript + Vite)
+• - topology_builder/types.ts: AZ, WorkerNode, PlacedStellarNode, TopologyState,
+•   ValidationResult, DragPayload type definitions
+• - topology_builder/topology_store.ts: React context + useReducer store with 12
+•   action types; createInitialState() seeds 3-zone us-east layout
+• - topology_builder/quorum_validator.ts: validateTopology() with 4 errors
+•   (INSUFFICIENT_ZONES, ZONE_MISSING_VALIDATOR, QUORUM_BELOW_THRESHOLD,
+•   SINGLE_ZONE_VALIDATORS) and 4 warnings (UNEVEN_DISTRIBUTION,
+•   NO_HISTORY_ARCHIVE, MISSING_QUORUM_SET, SEED_SECRET_MISSING)
+• - WorkerNode.tsx: draggable worker node tile with HTML5 native DnD
+• - AvailabilityZone.tsx: drop-zone container with drag-over glow and
+•   per-zone validation messages
+• - StellarNodePlacer.tsx: node-type palette with inline config form
+• - TopologyBuilder.tsx: main orchestrator with live validation badge and
+•   manifest modal with clipboard copy
+• - frontend/utils/manifest_builder.ts: generates valid stellar.org/v1alpha1
+•   StellarNode YAML + PodDisruptionBudget using pure template literals
+• - 43 tests passing (21 quorum_validator + 22 manifest_validation)
+• - TypeScript strict mode with zero errors
+• Add topology visualizer workspace
+✨ feat(contracts): add Decentralized Staking & Yield Distribution Engine (#73)
+• Implements the Synthetix/Uniswap StakingRewards accumulator model for
+• Soroban smart contracts as described in issue #73.
+• ## Key modules
+• - contracts/staking-vault/src/lib.rs — contract entry-points:
+•   initialize, deposit, withdraw, claim_reward, compound,
+•   emergency_withdraw, set_paused, and view functions.
+• - contracts/staking-vault/src/reward.rs — pure reward math:
+•   compute_reward_per_token, compute_earned, compute_new_reward_rate.
+• ## Algorithm
+• Reward tracking uses the standard per-token accumulator:
+•   reward_per_token += (Δt × rate × PRECISION) / total_staked
+•   user_earned      += stake × (rpt_now - rpt_paid) / PRECISION
+• REWARD_PRECISION = 1e18 eliminates precision loss for small stake
+• weights or short block durations, satisfying the zero-rounding-drift
+• requirement in the issue.
+• ## Features
+• - Continuous reward accrual with REWARD_PRECISION = 1e18
+• - Deposit / Withdraw with automatic reward checkpoint on every call
+• - Claim rewards at any time
+• - Compound rewards back into stake (same-token pools)
+• - Emergency Withdraw — bypasses reward math when contract is paused,
+•   guaranteeing capital recovery
+• - Admin pause / unpause
+• ## Tests (13/13 pass)
+• - Proportional reward distribution across multiple stakers
+• - Reward caps at period_finish (no accrual after deadline)
+• - Balance solvency invariant: no staker earns more than total emitted
+• - Zero-stake earns zero
+• - Stored rewards accumulate correctly across checkpoints
+• - Rounding no-drift: 100 incremental checkpoints == single computation
+• - New reward rate rollover when period is still active
+• Closes #73
+• Implement flamegraph and DR Command Center dashboard
+📝 ci: validate exported PrometheusRule YAML with promtool (#52)
+• Adds a dedicated workflow that runs on changes under frontend/builder/:
+• - npm test (29 unit tests: PromQL generator + YAML exporter)
+• - npm run build (verifies React/JSX correctness)
+• - Generates 5 complex sample alert conditions via the real
+•   yamlExporter.js code path (multi-comparison AND/OR, increase()
+•   on counters, various severities)
+• - Validates all 5 against promtool check rules
+• Satisfies the ticket's validation requirement without needing
+• promtool installed locally.
+✨ feat(alerts): fix PromQL preview wrap, default threshold, and hardened Prometheus test error handling
+• - promql-preview now wraps long expressions instead of horizontal-scrolling
+• - Default comparison threshold changed from 0 to 3, matching the real
+•   fork-detector-alerts.yaml convention, so first-time users see a
+•   realistic example
+• - Test against Prometheus button now checks response content-type
+•   before parsing JSON, producing a clear 'could not reach Prometheus'
+•   message instead of a raw parse exception when no instance is running
+✨ feat(frontend): add multi-cluster comparison dashboard
+🐛 fix: remove invalid panic/lto keys from package-level profile override
+• Cargo rejects panic and lto in [profile.release.package.*] overrides —
+• only opt-level, codegen-units, debug, debug-assertions, overflow-checks,
+• and strip are valid there. This was blocking cargo build entirely.
+• Unrelated to #52; found while setting up the alert rule builder.
+✨ feat(contracts): add Soroban TTL auto-bump maintenance contract
+• Implements the ttl-bumper Soroban contract for automated keeper-bot TTL
+• maintenance of Stellar contract storage entries.
+• Key modules:
+• - contracts/ttl-bumper/src/lib.rs  – main contract (initialize, register,
+•   deregister, bump_batch, bounty deposit/withdraw, view helpers)
+• - contracts/ttl-bumper/src/registry.rs – persistent registry of
+•   (contract_id, threshold, extension, owner) entries; DataKey enum,
+•   RegistryEntry struct, and all CRUD helpers
+• - contracts/ttl-bumper/src/test.rs – 32 integration tests covering the
+•   full keeper workflow, key-aging simulation, bounty exhaustion safety,
+•   registry capacity limits, and auth guards
+• Contract features:
+• - Registry tracks up to 256 contract keys requiring periodic TTL bumping
+• - bump_batch() extends up to 50 entries in a single transaction
+• - Keeper bots receive XLM bounties only for keys actually bumped
+• - Bounty pool cannot be exhausted below zero; bumps succeed even when
+•   the pool is empty (fail-open for TTL extension, fail-safe for bounties)
+• - Admin-only bounty pool management (deposit, withdraw, set_bounty)
+• - Per-entry auth: only the registered owner or admin can deregister
+• Workspace: added contracts/ttl-bumper as a workspace member in Cargo.toml.
+• All 32 tests pass; cargo build succeeds.
+✨ feat(escrow-vault): add proof-verified non-custodial escrow & collateral vault contract
+• 🤖 Generated with Codebuff
+• Co-Authored-By: Codebuff <noreply@codebuff.com>
+
+
+## Chart v2.2.0 (2026-09-02) [minor]
+
+• Merge pull request #183 from kalebosas2-dev/feat/issue-7-contract-develop-zero-knowledge-merkle-proof
+🐛 fix: add ZK Merkle proof verifier for fast-sync ingestion
+• Merge branch 'main' into feat/issue-7-contract-develop-zero-knowledge-merkle-proof
+• Merge pull request #180 from Victorjonah-prog/feature/resource-saturation-heatmap
+✨ feat(frontend): real-time resource saturation heatmap for worker nodes
+• Merge branch 'main' into feature/resource-saturation-heatmap
+• Merge pull request #182 from Timmmytunner/fix/issue-88-frontend-soroban-smart-contract-flamegraph-gas
+✨ feat: add Soroban flamegraph gas profiler interface
+• Merge pull request #181 from Vivian-04/feature/79-promql-metrics-exporter
+✨ feat(telemetry): add PromQL metrics exporter for Soroban gas profiling
+• Merge branch 'main' into feature/79-promql-metrics-exporter
+• Merge pull request #184 from LohdGordon/fix/issue-98-documentation-multi-cluster-high-availability
+📝 docs: add multi-cluster HA architecture and active-passive blueprint
+• Merge branch 'main' into fix/issue-98-documentation-multi-cluster-high-availability
+• Merge pull request #186 from BIGSMKE12/feat/issue-66-contract-decentralized-identity-did-credential
+🐛 fix: add W3C DID VC verifier sub-contract for Soroban
+• Merge branch 'main' into feat/issue-66-contract-decentralized-identity-did-credential
+• Merge pull request #192 from isaac4real-art/feat/issue-26-contract-on-chain-dynamic-gas-price-oracle-sub
+🐛 fix: add on-chain dynamic gas price oracle sub-contract for Soroban
+• Merge pull request #196 from Naajih09/Documentation]-Storage-Corruption-Recovery-&-Database-Repair-Playbook
+📝 docs: add storage corruption recovery & database repair playbook
+• Merge branch 'main' into Documentation]-Storage-Corruption-Recovery-&-Database-Repair-Playbook
+• Merge pull request #189 from Nwapu-TrustJah/security/issue-99-documentation-kubernetes-rbac-security
+🐛 fix: add RBAC hardening manual and least-privilege policies
+• Merge pull request #194 from Fayvor22/Quorum
+✨ feat: Develop on-chain quorum set validation engine in wasm
+• Merge branch 'main' into Quorum
+• Merge branch 'main' into Quorum
+• Merge branch 'main' into Quorum
+• Create repair-pod.yaml, database repair playbook
+📝 docs: add storage corruption recovery & database repair playbook
+• Create storage-repair.md
+✨ feat: ## [Contract] On-Chain Dynamic Gas Price Oracle Sub-Contract (#26)
+✨ feat: ## [Contract] On-Chain Dynamic Gas Price Oracle Sub-Contract (#26)
+✨ feat: ## [Contract] On-Chain Dynamic Gas Price Oracle Sub-Contract (#26)
+• security: ## [Documentation] Kubernetes RBAC Security Hardening & Leas (#99)
+• security: ## [Documentation] Kubernetes RBAC Security Hardening & Leas (#99)
+✨ feat: ## [Contract] Decentralized Identity (DID) Credential Verifi (#66)
+✨ feat: ## [Contract] Decentralized Identity (DID) Credential Verifi (#66)
+✨ feat: ## [Contract] Decentralized Identity (DID) Credential Verifi (#66)
+✨ feat: ## [Contract] Decentralized Identity (DID) Credential Verifi (#66)
+✨ feat: ## [Contract] Decentralized Identity (DID) Credential Verifi (#66)
+✨ feat: ## [Contract] Decentralized Identity (DID) Credential Verifi (#66)
+✨ feat: ## [Contract] Decentralized Identity (DID) Credential Verifi (#66)
+🐛 fix: ## [Documentation] Multi-Cluster High Availability Architect (#98)
+🐛 fix: ## [Documentation] Multi-Cluster High Availability Architect (#98)
+🐛 fix: ## [Documentation] Multi-Cluster High Availability Architect (#98)
+🐛 fix: ## [Documentation] Multi-Cluster High Availability Architect (#98)
+🐛 fix: ## [Documentation] Multi-Cluster High Availability Architect (#98)
+🐛 fix: ## [Documentation] Multi-Cluster High Availability Architect (#98)
+🐛 fix: ## [Documentation] Multi-Cluster High Availability Architect (#98)
+🐛 fix: ## [Documentation] Multi-Cluster High Availability Architect (#98)
+✨ feat: ## [Contract] Develop Zero-Knowledge Merkle Proof Verifier f (#7)
+✨ feat: ## [Contract] Develop Zero-Knowledge Merkle Proof Verifier f (#7)
+✨ feat: ## [Contract] Develop Zero-Knowledge Merkle Proof Verifier f (#7)
+✨ feat: ## [Contract] Develop Zero-Knowledge Merkle Proof Verifier f (#7)
+✨ feat: ## [Contract] Develop Zero-Knowledge Merkle Proof Verifier f (#7)
+✨ feat: ## [Contract] Develop Zero-Knowledge Merkle Proof Verifier f (#7)
+✨ feat: ## [Contract] Develop Zero-Knowledge Merkle Proof Verifier f (#7)
+🐛 fix: ## [Frontend] Soroban Smart Contract Flamegraph Gas Profiler (#88)
+🐛 fix: ## [Frontend] Soroban Smart Contract Flamegraph Gas Profiler (#88)
+🐛 fix: ## [Frontend] Soroban Smart Contract Flamegraph Gas Profiler (#88)
+🐛 fix: ## [Frontend] Soroban Smart Contract Flamegraph Gas Profiler (#88)
+🐛 fix: ## [Frontend] Soroban Smart Contract Flamegraph Gas Profiler (#88)
+🐛 fix: ## [Frontend] Soroban Smart Contract Flamegraph Gas Profiler (#88)
+🐛 fix: ## [Frontend] Soroban Smart Contract Flamegraph Gas Profiler (#88)
+🐛 fix: ## [Frontend] Soroban Smart Contract Flamegraph Gas Profiler (#88)
+✨ feat(frontend): real-time resource saturation heatmap for worker nodes
+• Implements issue #10 - React/D3 heatmap component visualising CPU and
+• Memory saturation across up to 100 Kubernetes worker nodes.
+• New files:
+• - frontend/analytics/src/heatmapModel.js
+•   Pure data model: parses Prometheus API responses, merges cpu/memory
+•   samples per node, tombstones disappeared nodes, classifies into five
+•   saturation bands (idle/moderate/elevated/high/critical).
+• - frontend/analytics/src/heatmapModel.test.js
+•   31 unit tests (23 new for heatmap model, all passing).
+• - frontend/analytics/src/components/heatmap/HeatmapGrid.jsx
+•   Main component. D3 manages SVG DOM directly (enter/update/exit) to
+•   avoid VDOM diffing overhead on 100-node 5-second ticks. CSS transitions
+•   animate color changes between polls without blocking the JS thread.
+•   ResizeObserver recalculates column count on container resize.
+•   Accessible: role=grid, role=gridcell, aria-label, keyboard focus/tooltip.
+• - frontend/analytics/src/components/heatmap/HeatmapTooltip.jsx
+•   Portal-based tooltip with CPU%, Memory%, saturation band, zone, and
+•   offline badge. Keyboard-accessible (Enter/Space on focused cell).
+• - frontend/analytics/src/components/heatmap/usePrometheusPoller.js
+•   Polling hook: fetches stellar_operator_resource_usage at 5 s intervals,
+•   surfaces status (idle/polling/error/offline) and lastPollAt timestamp.
+• - frontend/analytics/scripts/mock-prometheus.mjs
+•   Mock Prometheus HTTP server simulating 100 worker nodes across three
+•   availability zones with a rolling CPU spike wave (configurable window
+•   and interval). Responds to GET /api/v1/query in Prometheus vector format.
+• Modified files:
+• - frontend/analytics/src/main.jsx
+•   Adds Topology / Heatmap tab switcher in the app shell toolbar.
+•   HeatmapGrid rendered on the Heatmap tab, WS connection only opened
+•   when the Topology tab is active.
+• - frontend/analytics/src/styles.css
+•   Heatmap-specific styles: grid wrap, summary strip, legend swatches,
+•   portal tooltip, view-tab active state, responsive breakpoints.
+• - frontend/analytics/package.json
+•   Adds d3@7.9.0 dependency and mock:prometheus npm script.
+• - frontend/analytics/vite.config.js
+•   Adds /api/prometheus proxy pointing at mock server (localhost:9091).
+• Closes #10
+✨ feat(telemetry): add PromQL metrics exporter for Soroban gas profiling
+• - New stellar-telemetry crate with async log parser and Prometheus exporter
+• - Zero-copy JSON parser using string slicing for minimal heap allocations
+• - Histograms for soroban_contract_cpu_instructions and soroban_contract_memory_bytes
+• - /metrics HTTP endpoint with labeled histogram and counter vectors
+• - Async streaming parser via parse_log_stream() with StreamStats
+• - Criterion benchmarks for parser throughput validation
+• - Unit tests for parser correctness and exporter text format
+• Fixes #79
+• Delete telemetry/BENCHMARKS.md
+• Update gas_exporter.rs
+• Update parser.rs
+• Create Cargo.toml
+• Create BENCHMARKS.md
+• Update Cargo.toml
+• Create lib.rs
+• Create gas_exporter.rs
+✨ feat: implement zero-copy log parser
+
+
+## Chart v2.1.0 (2026-09-02) [minor]
+
+• Merge pull request #193 from Deevhyne1023/security/issue-80-backend-automated-mtls-certificate-generation
+✨ feat: automated mTLS certificate generation and hot-reload engine
+• Merge branch 'main' into security/issue-80-backend-automated-mtls-certificate-generation
+• security: ## [Backend] Automated mTLS Certificate Generation & Hot-Rel (#80)
+• security: ## [Backend] Automated mTLS Certificate Generation & Hot-Rel (#80)
+• security: ## [Backend] Automated mTLS Certificate Generation & Hot-Rel (#80)
+• security: ## [Backend] Automated mTLS Certificate Generation & Hot-Rel (#80)
+• security: ## [Backend] Automated mTLS Certificate Generation & Hot-Rel (#80)
+• security: ## [Backend] Automated mTLS Certificate Generation & Hot-Rel (#80)
+• security: ## [Backend] Automated mTLS Certificate Generation & Hot-Rel (#80)
+• security: ## [Backend] Automated mTLS Certificate Generation & Hot-Rel (#80)
+
+
+## Chart v2.0.0 (2026-09-02) [major]
+
+
 
 
 ## Chart v1.2.0 (2026-08-31) [minor]

@@ -378,7 +378,7 @@ spec:
                     type: boolean
                   pruningRetentionDays:
                     default: 30
-                    description: Retention period for pruned ledgers in days (default: 30). Only used when enableLedgerPruning is true.
+                    description: 'Retention period for pruned ledgers in days (default: 30). Only used when enableLedgerPruning is true.'
                     format: uint32
                     minimum: 0.0
                     type: integer

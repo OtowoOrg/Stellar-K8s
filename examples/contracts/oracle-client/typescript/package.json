@@ -1,0 +1,22 @@
+{
+  "name": "gas-oracle-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript client for the Stellar-K8s gas fee oracle contract",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node --test dist/*.test.js",
+    "example": "tsc && node dist/example.js"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^17.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.0",
+    "typescript": "^5.9.3"
+  }
+}

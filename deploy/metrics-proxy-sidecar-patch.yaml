@@ -1,0 +1,81 @@
+# Strategic merge patch to inject the stellar-metrics-proxy sidecar into an
+# existing StellarNode StatefulSet.
+#
+# Apply with:
+#   kubectl patch statefulset <stellar-core-sts> -n stellar-system \
+#     --patch-file deploy/metrics-proxy-sidecar-patch.yaml
+#
+# Or include in your Helm values / Kustomize overlay.
+#
+# After patching, update your Prometheus ServiceMonitor to scrape port 9091
+# (the proxy) instead of port 11626 (Stellar Core directly).
+#
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: stellar-core          # replace with your StatefulSet name
+  namespace: stellar-system
+spec:
+  template:
+    spec:
+      containers:
+        - name: metrics-proxy
+          image: ghcr.io/stellar/stellar-metrics-proxy:latest
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: metrics-proxy
+              containerPort: 9091
+              protocol: TCP
+
+          env:
+            - name: METRICS_PROXY_CONFIG
+              value: /etc/stellar-metrics-proxy/config.yaml
+            - name: RUST_LOG
+              value: "info"
+
+          volumeMounts:
+            - name: metrics-proxy-config
+              mountPath: /etc/stellar-metrics-proxy
+              readOnly: true
+
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              # Hard limit enforces the 50 MB RAM constraint from the spec.
+              memory: "50Mi"
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9091
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 9091
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534          # nobody
+            capabilities:
+              drop: ["ALL"]
+
+      volumes:
+        - name: metrics-proxy-config
+          configMap:
+            name: stellar-metrics-proxy-config
+            optional: false

@@ -1,4 +1,5 @@
 //! Registry module for the TTL auto-bump maintenance contract.
+//! Registry module for the TTL auto-bump maintenance contract.
 //!
 //! Tracks all (contract_address, storage_key) pairs that require periodic TTL
 //! extension.  Each entry records:

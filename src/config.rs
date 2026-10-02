@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-[derive(Debug, Clone, Deserialize, Serialize)]
-#[derive(default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub kafka: KafkaConfig,
     pub scp_stream: ScpStreamConfig,
@@ -38,22 +37,30 @@ impl Config {
             config.kafka.metadata_refresh_interval_secs = v.parse().unwrap_or(15);
         }
         if let Ok(v) = std::env::var("SCP_HASH_SEED") {
-            config.scp_stream.hash_seed = v.parse().unwrap_or_0;
+            config.scp_stream.hash_seed = v.parse().unwrap_or(0);
         }
         if let Ok(v) = std::env::var("SCP_BUFFER_SIZE") {
-            config.scp_stream.buffer_size = v.parse().unwrap_or_100000;
+            config.scp_stream.buffer_size = v.parse().unwrap_or(100_000);
+        }
+        if let Ok(v) = std::env::var("SCP_OVERFLOW_STRATEGY") {
+            config.scp_stream.overflow_strategy = match v.as_str() {
+                "backpressure" => OverflowStrategy::Backpressure,
+                _ => OverflowStrategy::DropOldest,
+            };
+        }
+        if let Ok(v) = std::env::var("SCP_DRAIN_BATCH_SIZE") {
+            config.scp_stream.drain_batch_size = v.parse().unwrap_or(256);
         }
         config
     }
 }
 
-[derive(Debug, Clone, Deserialize, Serialize)]
-#[derive(default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct KafkaConfig {
     pub brokers: String,
     pub topic: String,
     pub group_id: String,
-    pub num_partitions: useze,
+    pub num_partitions: usize,
     pub partitioning: PartitionMode,
     pub metadata_refresh_interval_secs: u64,
 }
@@ -71,8 +78,8 @@ impl Default for KafkaConfig {
     }
 }
 
-[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[derive(rename_all="snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PartitionMode {
     Single,
     Dynamic,
@@ -84,11 +91,31 @@ impl Default for PartitionMode {
     }
 }
 
-[derive(Debug, Clone, Deserialize, Serialize)]
-#[derive(default)]
+/// Buffer overflow strategy when the ring-buffer is full.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OverflowStrategy {
+    /// Silently drop the oldest unread message and insert the new one.
+    DropOldest,
+    /// Signal backpressure to the caller (write returns `false`).
+    Backpressure,
+}
+
+impl Default for OverflowStrategy {
+    fn default() -> Self {
+        OverflowStrategy::DropOldest
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ScpStreamConfig {
     pub hash_seed: u64,
-    pub buffer_size: useze,
+    /// Capacity of the lock-free ring-buffer (number of messages).
+    pub buffer_size: usize,
+    /// What to do when the buffer is full.
+    pub overflow_strategy: OverflowStrategy,
+    /// Number of messages drained per micro-batch iteration.
+    pub drain_batch_size: usize,
 }
 
 impl Default for ScpStreamConfig {
@@ -96,6 +123,8 @@ impl Default for ScpStreamConfig {
         Self {
             hash_seed: 0xD1B5A32D,
             buffer_size: 100_000,
+            overflow_strategy: OverflowStrategy::DropOldest,
+            drain_batch_size: 256,
         }
     }
 }

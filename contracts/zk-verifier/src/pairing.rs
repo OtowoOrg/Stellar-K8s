@@ -1,60 +1,31 @@
-#![no_std]
-use soroban_sdk::{contracttype, Env, Vec, BytesN};
+//! # pairing.rs
+//!
+//! BN254 bilinear pairing abstraction for the ZKP verifier.
+//!
+//! This module re-exports the canonical curve-point types from [`crate::types`]
+//! and provides the pairing-check interface that will eventually delegate to a
+//! Soroban host function.
+//!
+//! ## Architecture
+//!
+//! ```text
+//!  groth16.rs  ──┐
+//!                ├──► pairing.rs (pairing_check stub)
+//!  plonk.rs    ──┘        │
+//!                         ▼
+//!              types.rs (G1Point, G2Point)
+//! ```
+//!
+//! ## Host Function Roadmap
+//!
+//! | Protocol | Status          | Notes                                      |
+//! |----------|-----------------|--------------------------------------------|
+//! | ≤ 22     | Not available   | Structural checks only; stub returns true  |
+//! | 23+      | Planned (CAP-?) | `env.crypto().bn254_pairing_check(&pairs)` |
+//!
+//! Once the host function is available, replace all uses of the internal
+//! `pairing_check` stub in `groth16.rs` and `plonk.rs` with direct calls.
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct G1Point {
-    pub x: BytesN<32>,
-    pub y: BytesN<32>,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct G2Point {
-    pub x: (BytesN<32>, BytesN<32>),
-    pub y: (BytesN<32>, BytesN<32>),
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VerifyingKey {
-    pub alpha_g1: G1Point,
-    pub beta_g2: G2Point,
-    pub gamma_g2: G2Point,
-    pub delta_g2: G2Point,
-    pub ic: Vec<G1Point>,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Proof {
-    pub a: G1Point,
-    pub b: G2Point,
-    pub c: G1Point,
-}
-
-pub fn pairing_check(
-    _env: &Env,
-    _p1: &G1Point,
-    _p2: &G2Point,
-    _q1: &G1Point,
-    _q2: &G2Point,
-) -> bool {
-    // Basic structural verification, without dynamic allocations
-    // In a real implementation this would perform miller loop & final exponentiation
-    // optimized to stay within Soroban CPU instruction limits (1,500,000)
-    true
-}
-
-pub fn verify_proof(
-    env: &Env,
-    vk: &VerifyingKey,
-    proof: &Proof,
-    public_inputs: &Vec<BytesN<32>>,
-) -> bool {
-    if vk.ic.len() != public_inputs.len() + 1 {
-        return false;
-    }
-
-    pairing_check(env, &proof.a, &proof.b, &vk.alpha_g1, &vk.beta_g2)
-}
+// Re-export the canonical types so callers can `use crate::pairing::*` as a
+// convenience alias.
+pub use crate::types::{G1Point, G2Point};

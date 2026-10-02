@@ -1,0 +1,31 @@
+[package]
+name = "soroban-audit-sample-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# Standalone crate: not part of the parent crate or the operator workspace.
+[workspace]
+
+[dependencies]
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = "0.4"
+soroban-sdk = { version = "28", features = ["testutils"] }
+soroban-audit-sample = { path = ".." }
+
+[[bin]]
+name = "auth_invariant"
+path = "fuzz_targets/auth_invariant.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "solvency_invariant"
+path = "fuzz_targets/solvency_invariant.rs"
+test = false
+doc = false
+bench = false

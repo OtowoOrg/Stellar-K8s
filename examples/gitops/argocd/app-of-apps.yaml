@@ -1,0 +1,46 @@
+# app-of-apps.yaml — Root ArgoCD Application for Stellar-K8s GitOps pipeline.
+#
+# Bootstrap with a single command:
+#   kubectl apply -f examples/gitops/argocd/app-of-apps.yaml
+#
+# ArgoCD renders this directory and discovers the per-environment child
+# Applications (testnet-app.yaml, futurenet-app.yaml, mainnet-app.yaml).
+# The operator Application (wave -20) is managed by examples/argocd/v1/bootstrap.yaml
+# and must be Running before any StellarNode CR is applied (wave 10).
+#
+# IMMUTABILITY CONSTRAINT: Live cluster objects must never be edited manually.
+# GitHub is the single source of truth. ArgoCD (selfHeal: true) will revert
+# any out-of-band mutation within its sync interval.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: stellar-k8s-gitops
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: stellar-k8s
+    app.kubernetes.io/component: gitops-root
+    stellar.org/gitops-version: v1
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/agnesnaomiolim-cloud/Stellar-K8s.git
+    targetRevision: main
+    path: examples/gitops/argocd
+    directory:
+      recurse: false
+      include: "*.yaml"
+      exclude: "app-of-apps.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - PruneLast=true
+      - PrunePropagationPolicy=foreground
+      - CreateNamespace=false

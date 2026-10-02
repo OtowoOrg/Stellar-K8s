@@ -1,0 +1,64 @@
+# Validation overlay: deploys examples/architecture/captive-core-scaling.yaml UNCHANGED
+# except for pointing it at the local standalone network and shrinking resource requests
+# to fit a laptop. The topology (1 ingest pod + 5 API pods) is untouched.
+# Render with: kubectl kustomize --load-restrictor=LoadRestrictionsNone validation
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../captive-core-scaling.yaml
+  - standalone-network.yaml
+patches:
+  # Standalone network instead of testnet (NETWORK must be unset when the passphrase
+  # and archives are given explicitly). CHECKPOINT_FREQUENCY matches accelerated time.
+  - target:
+      kind: ConfigMap
+      name: horizon-network
+    patch: |
+      - op: replace
+        path: /data
+        value:
+          NETWORK_PASSPHRASE: "Standalone Network ; February 2017"
+          HISTORY_ARCHIVE_URLS: "http://stellar-core-validator:1570"
+          CHECKPOINT_FREQUENCY: "8"
+  - target:
+      kind: ConfigMap
+      name: horizon-captive-core
+    patch: |
+      - op: replace
+        path: /data/captive-core.cfg
+        value: |
+          ARTIFICIALLY_ACCELERATE_TIME_FOR_TESTING=true
+          NETWORK_PASSPHRASE="Standalone Network ; February 2017"
+          HTTP_PORT=11626
+          PUBLIC_HTTP_PORT=true
+          PEER_PORT=11725
+          UNSAFE_QUORUM=true
+          FAILURE_SAFETY=0
+
+          [[VALIDATORS]]
+          NAME="local_core"
+          HOME_DOMAIN="core.local"
+          PUBLIC_KEY="GD5KD2KEZJIGTC63IGW6UMUSMVUVG5IHG64HUTFWCHVZH2N2IBOQN7PS"
+          ADDRESS="stellar-core-validator:11625"
+          QUALITY="MEDIUM"
+  - target:
+      kind: StatefulSet
+      name: horizon-ingest
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests: {cpu: 250m, memory: 512Mi}
+          limits: {memory: 3Gi}
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 2Gi
+  - target:
+      kind: Deployment
+      name: horizon-api
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests: {cpu: 50m, memory: 128Mi}
+          limits: {memory: 512Mi}

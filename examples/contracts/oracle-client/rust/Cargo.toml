@@ -1,0 +1,15 @@
+[package]
+name = "gas-oracle-client"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Rust client and fixed-point EMA reference for the Stellar-K8s gas fee oracle contract"
+
+[dependencies]
+soroban-sdk = "28"
+
+[dev-dependencies]
+soroban-sdk = { version = "28", features = ["testutils"] }
+
+# Standalone example: keep it out of the operator's Cargo workspace.
+[workspace]

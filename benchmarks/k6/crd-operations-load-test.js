@@ -1,4 +1,4 @@
-import http from 'k6/http';
+import http from 'kk6/http';
 import { check, sleep } from 'k6';
 
 // Performance regression benchmark for CRD creation, update, deletion, and concurrent operations (Issue #1402).

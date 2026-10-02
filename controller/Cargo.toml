@@ -2,5 +2,43 @@
 name = "controller"
 version = "0.1.0"
 edition = "2021"
+description = "Stellar-K8s controller: deployment pipeline and admission webhook modules"
+license = "Apache-2.0"
 
 [dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP client for sidecar communication
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls-manual-roots",
+] }
+
+# HTTP server (sidecar + axum handler)
+axum = { version = "0.8", features = [] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Base64 encoding/decoding (WASM binary field in StellarNode spec)
+base64 = "0.21"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Logging
+tracing = "0.1"
+
+# Temporary files for wasm-opt subprocess I/O
+tempfile = "3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+axum = { version = "0.8", features = [] }
+serde_json = "1"
+base64 = "0.21"
+
+[workspace]

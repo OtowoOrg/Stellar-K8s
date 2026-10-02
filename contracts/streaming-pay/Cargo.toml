@@ -1,0 +1,19 @@
+[package]
+name = "streaming-pay"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Streaming payments on Soroban"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { version = "27.0.6", features = ["alloc"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "27.0.6", features = ["testutils", "alloc"] }
+proptest = "1.5"
+
+[workspace]

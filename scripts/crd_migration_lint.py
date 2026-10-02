@@ -102,6 +102,18 @@ def _first_crd_doc(text: str):
     return None
 
 
+def _parse_baseline(text: str):
+    """Parse the baseline CRD, returning ``(doc, skip_reason)``.
+
+    A baseline that is not valid YAML could never have been applied to a
+    cluster, so it carries no compatibility contract to check against.
+    """
+    try:
+        return _first_crd_doc(text), None
+    except yaml.YAMLError as exc:
+        return None, f"baseline is not valid YAML ({getattr(exc, 'problem', exc)})"
+
+
 def _load_at_ref(ref: str, rel_path: str, repo_root: Path):
     proc = subprocess.run(
         ["git", "show", f"{ref}:{rel_path}"],
@@ -110,8 +122,8 @@ def _load_at_ref(ref: str, rel_path: str, repo_root: Path):
         cwd=repo_root,
     )
     if proc.returncode != 0:
-        return None  # file did not exist at the baseline ref -> new CRD, skip
-    return _first_crd_doc(proc.stdout)
+        return None, None  # file did not exist at the baseline ref -> new CRD, skip
+    return _parse_baseline(proc.stdout)
 
 
 def main() -> int:
@@ -129,7 +141,10 @@ def main() -> int:
     all_problems = []
     for crd_file in sorted(crd_dir.glob("*.yaml")):
         rel = crd_file.relative_to(repo_root).as_posix()
-        old = _load_at_ref(args.against, rel, repo_root)
+        old, skip_reason = _load_at_ref(args.against, rel, repo_root)
+        if skip_reason:
+            print(f"skip ({skip_reason}): {rel}")
+            continue
         if old is None:
             print(f"skip (new or non-CRD file at baseline): {rel}")
             continue

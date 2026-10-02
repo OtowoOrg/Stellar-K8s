@@ -58,6 +58,14 @@ spec:
         - name: profiling-tmp
           emptyDir: {}
         {{- end }}
+        {{- if .Values.gitopsSecrets.enabled }}
+        # Ephemeral RAM-backed volume for GitOps-decrypted validator keys.
+        # medium: Memory ensures the decrypted payload never touches physical disks.
+        - name: gitops-secrets-tmpfs
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.gitopsSecrets.tmpfsSizeLimit | default "16Mi" }}
+        {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
@@ -105,6 +113,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.uid
+            {{- if .Values.gitopsSecrets.enabled }}
+            - name: GITOPS_SECRETS_ENABLED
+              value: "true"
+            - name: GITOPS_SECRETS_MOUNT_PATH
+              value: {{ .Values.gitopsSecrets.mountPath | default "/var/run/stellar/gitops-secrets" | quote }}
+            {{- end }}
             {{- if .Values.otel.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.otel.endpoint | quote }}
@@ -133,6 +147,11 @@ spec:
             {{- if and .Values.operator.restApiEnabled .Values.operator.profiling.enabled }}
             - name: profiling-tmp
               mountPath: /tmp
+            {{- end }}
+            {{- if .Values.gitopsSecrets.enabled }}
+            - name: gitops-secrets-tmpfs
+              mountPath: {{ .Values.gitopsSecrets.mountPath | default "/var/run/stellar/gitops-secrets" }}
+              readOnly: false
             {{- end }}
           args:
             - run

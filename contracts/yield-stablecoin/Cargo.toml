@@ -1,0 +1,28 @@
+[package]
+name = "yield-stablecoin"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Programmable yield-bearing stablecoin with compliance hooks (SEP-41 / SAC-compatible) for Stellar Soroban."
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { version = "=27.0.6", features = ["alloc"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "=27.0.6", features = ["testutils", "alloc"] }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug-assertions = false
+strip = "symbols"
+codegen-units = 1
+lto = true
+
+# This crate is a standalone Soroban contract workspace, independent from the
+# root Stellar-K8s binary-crate workspace.
+[workspace]

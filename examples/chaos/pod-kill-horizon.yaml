@@ -1,0 +1,43 @@
+# examples/chaos/pod-kill-horizon.yaml
+# Chaos Mesh PodChaos: kill Horizon pods repeatedly while the node is
+# still syncing, and verify stellar-operator recreates and reconnects
+# them with no human intervention. This is the validation case from
+# docs/testing/chaos-engineering.md (issue #295).
+#
+# Prerequisites:
+#   - Chaos Mesh >= 2.x installed (namespace `chaos-mesh`)
+#   - A syncing Horizon StellarNode in `stellar-system`
+#     (e.g. the `chaos-test-horizon` node from chaos-tests.yml)
+#
+# Usage:
+#   kubectl apply -f examples/chaos/pod-kill-horizon.yaml -n chaos-testing
+#   kubectl -n stellar-system get stellarnodes -w
+#   kubectl delete -f examples/chaos/pod-kill-horizon.yaml -n chaos-testing
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: horizon-sync-pod-kill
+  namespace: chaos-testing
+  labels:
+    chaos.stellar.org/suite: chaos-examples
+    chaos.stellar.org/category: pod-failure
+    chaos.stellar.org/severity: high
+spec:
+  action: pod-kill
+  # SIGKILL every Horizon pod of the target deployment at once.
+  mode: all
+  selector:
+    # Namespace-scoped on purpose: only chaos-testing may inject, only
+    # stellar-system may be injected into.
+    namespaces:
+      - stellar-system
+    labelSelectors:
+      app.kubernetes.io/name: stellar-node
+      app.kubernetes.io/component: horizon
+  gracePeriod: 0
+  duration: "60s"
+  scheduler:
+    # Re-kill every 15s for the 60s duration: four kill waves in total,
+    # so the operator must recover pods that die mid-recovery.
+    cron: "@every 15s"

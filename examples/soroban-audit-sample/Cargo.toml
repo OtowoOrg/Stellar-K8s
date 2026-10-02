@@ -1,0 +1,22 @@
+[package]
+name = "soroban-audit-sample"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "DELIBERATELY VULNERABLE Soroban contracts used to validate docs/templates/audit-checklist.md. Never deploy."
+
+# Standalone crate: not a member of the operator workspace.
+[workspace]
+
+[lib]
+# rlib only: no cdylib, so this crate cannot be built into a deployable WASM by accident.
+crate-type = ["rlib"]
+
+[dependencies]
+soroban-sdk = "28"
+
+[dev-dependencies]
+soroban-sdk = { version = "28", features = ["testutils"] }
+
+[profile.release]
+overflow-checks = true

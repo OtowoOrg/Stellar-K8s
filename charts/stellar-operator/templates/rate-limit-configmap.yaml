@@ -35,4 +35,24 @@ data:
     {{- range $path, $tier := .Values.rateLimiting.endpointTiers }}
       {{ $path }}: {{ $tier }}
     {{- end }}
+    {{- if .Values.rateLimiting.egressSaping.enabled }}
+    egressShaping:
+      enabled: true
+      internalPriority: {{ .Values.rateLimiting.egressSaping.internalPriority | default "prio_3" }}
+      externalPriority: {{ .Values.rateLimiting.egressSaping.externalPriority | default "prio_6" }}
+      internalCidrs:
+      {{- range .Values.rateLimiting.egressSaping.internalCidrs }}
+        - {{ . | quote }}
+      {{- end }}
+      cni: {{ .Values.rateLimiting.egressSaping.cni | default "calico" }}
+      dynamicScaling:
+        enabled: {{ .Values.rateLimiting.egressSaping.dynamicScaling.enabled | default true }}
+        minEgressBpps: {{ .Values.rateLimiting.egressSaping.dynamicScaling.minEgressBpps | default 100000000 }}
+        maxEgressBpps: {{ .Values.rateLimiting.egressSaping.dynamicScaling.maxEgressBpps | default 10000000000 }}
+        scaleUpThresholdPercent: {{ .Values.rateLimiting.egressSaping.dynamicScaling.scaleUpThresholdPercent | default 80 }}
+        scaleDownThresholdPercent: {{ .Values.rateLimiting.egressSaping.dynamicScaling.scaleDownThresholdPercent | default 30 }}
+        adjustIntervalSeconds: {{ .Values.rateLimiting.egressSaping.dynamicScaling.adjustIntervalSeconds | default 30 }}
+      podSelector:
+        {{- toYAml .Values.rateLimiting.egressSaping.podSelector | nIndent 8 }}
+    {{- end }}
 {{- end }}

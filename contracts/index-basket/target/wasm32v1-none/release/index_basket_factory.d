@@ -1,0 +1,1 @@
+/Users/collins/projects/drip_wave_contrbt/Stellar-K8s-/contracts/index-basket/target/wasm32v1-none/release/index_basket_factory.wasm: /Users/collins/projects/drip_wave_contrbt/Stellar-K8s-/contracts/index-basket/factory/src/lib.rs

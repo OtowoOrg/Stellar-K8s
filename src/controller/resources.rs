@@ -1290,28 +1290,36 @@ pub(crate) fn build_service(node: &StellarNode, _enable_mtls: bool) -> Service {
 }
 
 // ============================================================================
-// LoadBalancer Service (MetalLB Integration) — stubs unchanged
+// LoadBalancer Service (MetalLB Anycast Integration)
 // ============================================================================
 
 #[allow(dead_code)]
-#[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
-pub async fn ensure_load_balancer_service(_client: &Client, _node: &StellarNode) -> Result<()> {
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_load_balancer_service(client: &Client, node: &StellarNode) -> Result<()> {
+    let controller = crate::controller::network::metallb::MetalLBController::new();
+    controller.reconcile_metallb(client, node).await?;
     Ok(())
 }
 
-#[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
-pub async fn delete_load_balancer_service(_client: &Client, _node: &StellarNode) -> Result<()> {
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn delete_load_balancer_service(client: &Client, node: &StellarNode) -> Result<()> {
+    let controller = crate::controller::network::metallb::MetalLBController::new();
+    controller.delete_metallb_resources(client, node).await?;
     Ok(())
 }
 
 #[allow(dead_code)]
-#[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
-pub async fn ensure_metallb_config(_client: &Client, _node: &StellarNode) -> Result<()> {
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn ensure_metallb_config(client: &Client, node: &StellarNode) -> Result<()> {
+    let controller = crate::controller::network::metallb::MetalLBController::new();
+    controller.reconcile_metallb(client, node).await?;
     Ok(())
 }
 
-#[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
-pub async fn delete_metallb_config(_client: &Client, _node: &StellarNode) -> Result<()> {
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+pub async fn delete_metallb_config(client: &Client, node: &StellarNode) -> Result<()> {
+    let controller = crate::controller::network::metallb::MetalLBController::new();
+    controller.delete_metallb_resources(client, node).await?;
     Ok(())
 }
 

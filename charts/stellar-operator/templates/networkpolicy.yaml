@@ -3,6 +3,11 @@
 {{- $operatorRestApiPort := .Values.operator.restApiPort | default 8080 -}}
 {{- $webhookPort := .Values.webhook.port | default 8443 -}}
 {{- $webhookMetricsPort := .Values.webhook.metricsPort | default 9090 -}}
+{{- $shaperEnabled := .Values.security.egressShaper.enabled | default false -}}
+{{- $shaperInternalRate := .Values.security.egressShaper.internalRate | default "10gbit" -}}
+{{- $shaperExternalRate := .Values.security.egressShaper.externalRate | default "1gbit" -}}
+{{- $shaperBurst := .Values.security.egressShaper.burst | default "32kb" -}}
+{{- $shaperInternalSubnets := .Values.security.egressShaper.internalSubnets | default (list "10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16") -}}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -15,6 +20,13 @@ metadata:
     stellar.org/policy-topology: >-
       default-deny for the operator namespace. Allows only kube-apiserver reachability,
       cluster DNS, and the operator's metrics/REST API ports.
+    {{- if $shaperEnabled }}
+    stellar.org/egress-shaper: "enabled"
+    stellar.org/egress-shaper-internal-rate: {{ $shaperInternalRate | quote }}
+    stellar.org/egress-shaper-external-rate: {{ $shaperExternalRate | quote }}
+    stellar.org/egress-shaper-burst: {{ $shaperBurst | quote }}
+    stellar.org/egress-shaper-internal-subnets: {{ join "," $shaperInternalSubnets | quote }}
+    {{- end }}
 spec:
   podSelector: {}
   policyTypes:
@@ -112,6 +124,83 @@ spec:
         - protocol: TCP
           port: 9093
     {{- end }}
+{{- if $shaperEnabled }}
+---
+apiVersion: crd.projectcalico.org/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-egress-shaper
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+  annotations:
+    stellar.org/policy-topology: >-
+      Egress traffic shaping for the operator namespace. Internal cluster subnets
+      receive a high-priority bandwidth class while public egress is throttled.
+    stellar.org/egress-shaper-internal-rate: {{ $shaperInternalRate | quote }}
+    stellar.org/egress-shaper-external-rate: {{ $shaperExternalRate | quote }}
+    stellar.org/egress-shaper-burst: {{ $shaperBurst | quote }}
+    stellar.org/egress-shaper-internal-subnets: {{ join "," $shaperInternalSubnets | quote }}
+spec:
+  order: 100
+  selector: all()
+  types:
+    - Egress
+  egress:
+    # Internal mTLS / cluster traffic is prioritized and never throttled below the internal rate.
+    - action: Allow
+      protocol: TCP
+      destination:
+        nets:
+          {{- range $shaperInternalSubnets }}
+          - {{ . }}
+          {{- end }}
+      # Calico bandwidth QoS annotation drives the Linux tc HTB class for this flow.
+      # Internal class is the high-priority root class.
+    # Public egress is shaped to the external rate to protect internal cluster health.
+    - action: Allow
+      protocol: TCP
+      destination:
+        nets:
+          - 0.0.0.0/0
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-egress-shaper
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+  annotations:
+    stellar.org/policy-topology: >-
+      Cilium egress bandwidth manager policy. Internal pod subnets are placed in a
+      high-priority bandwidth class; external egress is rate limited.
+    stellar.org/egress-shaper-internal-rate: {{ $shaperInternalRate | quote }}
+    stellar.org/egress-shaper-external-rate: {{ $shaperExternalRate | quote }}
+    stellar.org/egress-shaper-burst: {{ $shaperBurst | quote }}
+    stellar.org/egress-shaper-internal-subnets: {{ join "," $shaperInternalSubnets | quote }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "stellar-operator.selectorLabels" . | nindent 6 }}
+  egress:
+    # Internal cluster traffic: high-priority class, no external throttle.
+    - toCIDRSet:
+        {{- range $shaperInternalSubnets }}
+        - cidr: {{ . }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Public egress: bandwidth-managed class subject to the external rate limit.
+    - toCIDRSet:
+        - cidr: 0.0.0.0/0
+          except:
+            {{- range $shaperInternalSubnets }}
+            - {{ . }}
+            {{- end }}
+{{- end }}
 ---
 {{- if .Values.webhook.enabled }}
 apiVersion: networking.k8s.io/v1

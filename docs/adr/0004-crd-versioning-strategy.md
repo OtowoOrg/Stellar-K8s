@@ -1,7 +1,7 @@
 # ADR-0004: CRD Versioning Strategy
 
 ## Status
-Accepted
+Superseded by [ADR-002: CRD API Evolution and Backward Compatibility](../adrs/002-crd-versioning-strategy.md). Note: the `v1` storage version and conversion webhook described here were never implemented; the served and stored version is `stellar.org/v1alpha1`.
 
 ## Context
 Kubernetes Custom Resource Definitions (CRDs) require careful versioning to ensure:

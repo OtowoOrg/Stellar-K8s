@@ -164,8 +164,16 @@ def load_documents(path: Path) -> tuple[list[Any], list[Issue]]:
 # ---------------------------------------------------------------------------
 
 
+# API groups whose documents are read by local tooling (kustomize, kind) and
+# never submitted to a cluster, so Kubernetes object rules do not apply.
+CLIENT_SIDE_CONFIG_GROUPS = ("kustomize.config.k8s.io", "kind.x-k8s.io")
+
+
 def is_kubernetes_document(doc: Any) -> bool:
-    return isinstance(doc, dict) and "apiVersion" in doc and "kind" in doc
+    if not (isinstance(doc, dict) and "apiVersion" in doc and "kind" in doc):
+        return False
+    api_version = doc["apiVersion"]
+    return not (isinstance(api_version, str) and api_version.split("/")[0] in CLIENT_SIDE_CONFIG_GROUPS)
 
 
 def validate_structure(rel: str, doc: dict, index: int) -> list[Issue]:

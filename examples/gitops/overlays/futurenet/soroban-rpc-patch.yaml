@@ -1,0 +1,26 @@
+# Futurenet Soroban RPC strategic-merge patch.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: soroban-rpc
+spec:
+  network: futurenet
+  version: "v22.0.0-preview"
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  sorobanConfig:
+    stellarCoreUrl: "http://futurenet-validator:11626"
+    captiveCoreStructuredConfig:
+      logLevel: "debug"
+      historyArchiveUrls:
+        - "https://history.stellar.org/prd/core-futurenet/core_futurenet_001"
+    maxEventsPerRequest: 10000
+  autoscaling:
+    minReplicas: 1
+    maxReplicas: 3
+    targetCpuUtilizationPercentage: 70

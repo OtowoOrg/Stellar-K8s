@@ -1,0 +1,34 @@
+# Base SorobanRpc StellarNode skeleton.
+# All environment-specific fields are set via Kustomize overlay patches.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: soroban-rpc
+  namespace: stellar
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  nodeType: SorobanRpc
+  network: testnet
+  version: "v21.1.0"
+  maxUnavailable: 1
+  minAvailable: 1
+  topologySpreadConstraints: []
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  sorobanConfig:
+    stellarCoreUrl: "http://validator:11626"
+    captiveCoreStructuredConfig:
+      logLevel: "info"
+      historyArchiveUrls:
+        - "https://history.stellar.org/prd/core-testnet/core_testnet_001"
+    maxEventsPerRequest: 10000
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 5
+    targetCpuUtilizationPercentage: 70

@@ -18,7 +18,7 @@ spec:
           labels:
             severity: critical
           annotations:
-            summary: 'Stellar node {{ `{{ $labels.node_name }}` }} is down'
+            summary: 'Stellar node {{ `${{ $labels.node_name }}` }} is down'
             description: 'stellar_node_up has been 0 for more than 2 minutes.'
         - alert: StellarNodeNotSyncing
           expr: stellar_node_sync_status == 0
@@ -68,6 +68,102 @@ spec:
         {{- with .Values.monitoring.prometheusRule.additionalRules }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+    - name: stellar.wasm.cache
+      interval: 30s
+      rules:
+        - record: stellar:wasm_cache_hit_ratio
+          expr: sum(rate(stellar_wasm_cache_hits_total[5m])) by (namespace, pod) / clamp_min(sum(rate(stellar_wasm_cache_hits_total[5m] + stellar_wasm_cache_misses_total[5m])) by (namespace, pod), 1e-9)
+        - record: stellar:wasm_compilation_latency_p99_seconds
+          expr: histogram_quantile(0.99, sum by (le, namespace, pod) (rate(stellar_wasm_compilation_duration_seconds_bucket[5m])))
+        - record: stellar:wasm_cache_eviction_rate
+          expr: sum(rate(stellar_wasm_cache_evictions_total[5m])) by (namespace, pod)
+        - alert: StellarGasmCacheHitRatioLow
+          expr: stellar:wasm_cache_hit_ratio < 0.50
+          for: 15m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "WASM cache hit ratio is below 50% for {{ `{{ $labels.pod }}` }}"
+            description: "WASM cache hit ratio is {{ `{{ $value | humanizePercentage }}` }} over the last 5 minutes. Redundant compilation is driving CPU overhead."
+            runbook_url: "https://docs.stellar.org/runbooks/wasm-cache-hit-ratio"
+        - alert: StellarGasmCacheHitRatioCritical
+          expr: stellar:wasm_cache_hit_ratio < 0.20
+          for: 10m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "WASM cache hit ratio is below 20% for {{ `{{ $labels.pod }}` }}"
+            description: "WASM cache hit ratio is {{ `{{ $value | humanizePercentage }}` }}. The distributed cache is effectively missing and compilation latency is unbounded."
+            runbook_url: "https://docs.stellar.org/runbooks/wasm-cache-critical"
+        - alert: StellarGasmCompilationLatencyHigh
+          expr: stellar:wasm_compilation_latency_p99_seconds > 0.050
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "WASM compilation p99 latency exceeds 50ms"
+            description: "WASM compilation p99 is {{ `{{ $value | humanizeDuration }}` }}, above the 50ms budget. Cache coverage may be insufficient."
+            runbook_url: "https://docs.stellar.org/runbooks/wasm-compilation-latency"
+        - alert: StellarGasmCacheEvictionSpike
+          expr: stellar:wasm_cache_eviction_rate > 10
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "WASM cache eviction rate is elevated"
+            description: "Cache evictions are occurring at {{ `{{ $value | humanize }}` }}/per second. Consider increasing the cache capacity or replica count."
+            runbook_url: "https://docs.stellar.org/runbooks/wasm-cache-eviction"
+        - alert: StellarGasmCacheInvalidationFailure
+          expr: rate(stellar_wasm_cache_invalidation_failures_total[5m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "WASM cache invalidation is failing on {{ `{{ $labels.pod }}` }}"
+            description: "Failed to invalidate cached WASM modules after a network state upgrade. Stale code execution risk."
+            runbook_url: "https://docs.stellar.org/runbooks/wasm-cache-invalidation"
+        - alert: StellarGasmCacheReplicationLagHigh
+          expr: stellar_wasm_cache_replication_lag_seconds > 30
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "WASM cache replication lag exceeds 30s on {{ `{{ $labels.pod }}` }}"
+            description: "Replication lag is {{ `{{ $value | humanizeDuration }}` }}. Hot WASM binaries may not be present on all Captive Core pods."
+            runbook_url: "https://docs.stellar.org/runbooks/wasm-cache-replication"
+        - alert: StellarGasmCacheMemoryPressureHigh
+          expr: stellar_wasm_cache_memory_usage_ratio > 0.90
+          for: 15m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "WASM cache is using over 90% of its allocated memory"
+            description: "Cache memory usage is at {{ `{{ $value | humanizePercentage }}` }}. Evictions may begin degrading hit ratio."
+            runbook_url: "https://docs.stellar.org/runbooks/wasm-cache-memory"
+        - alert: StellarGasmCacheLockContentionHigh
+          expr: stellar:wasm_cache_lock_wait_p99_seconds > 0.010
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "WASM cache read/write lock contention is high"
+            description: "Lock wait p99 is {{ `{{ $value | humanizeDuration }}` }}, above the 10ms budget. Concurrency pressure on the cache layer is elevated."
+            runbook_url: "https://docs.stellar.org/runbooks/wasm-cache-lock-contention"
+    - name: stellar.wasm.cache.recording
+      interval: 60s
+      rules:
+        - record: stellar:wasm_cache_effectiveness_ratio
+          expr: stellar:wasm_cache_hit_ratio * (1 - clamp_min(stellar:wasm_cache_eviction_rate / clamp_min(sum(rate(stellar_wasm_cache_lookups_total[5m])), 1e-9), 1))
+        - record: stellar:wasm_compilation_savings_seconds
+          expr: sum(rate(stellar_wasm_cache_hits_total[5m])) by (namespace, pod) * avg(stellar_wasm_compilation_duration_seconds_sum) by (namespace, pod)
 {{- end }}
 {{- if (and .Values.monitoring .Values.monitoring.enabled .Values.monitoring.prometheusRule.enabled .Values.monitoring.prometheusRule.certAlerts) }}
 ---

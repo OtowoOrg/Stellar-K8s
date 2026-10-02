@@ -129,6 +129,16 @@ pub static NODE_SYNC_STATUS: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
 /// Gauge tracking node up status (0=down, 1=up) based on pod readiness
 pub static NODE_UP: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> = Lazy::new(Family::default);
 
+// Gauge indicating if the operator pod is leader (1) or follower (0)
+use prometheus_client::metrics::gauge::Gauge as SimpleGauge;
+static LEADER_STATUS_GAUGE: Lazy<SimpleGauge<i64, AtomicI64>> = Lazy::new(SimpleGauge::default);
+
+/// Set the leader status metric.
+pub fn set_leader_status(is_leader: bool) {
+    LEADER_STATUS_GAUGE.set(if is_leader { 1 } else { 0 });
+}
+
+
 /// Gauge tracking number of critical nodes in the quorum
 pub static QUORUM_CRITICAL_NODES: Lazy<Family<NodeLabels, Gauge<i64, AtomicI64>>> =
     Lazy::new(Family::default);

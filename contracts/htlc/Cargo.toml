@@ -1,0 +1,30 @@
+# Standalone workspace root — intentionally excluded from the top-level
+# Stellar-K8s operator workspace (which builds Kubernetes binaries, not
+# on-chain Soroban contracts).  Pattern mirrors contracts/governance-vote.
+[workspace]
+
+[package]
+name = "stellar-htlc"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Cross-Chain Hash Time-Locked Contract (HTLC) for trustless atomic swaps on Soroban/Stellar."
+license = "Apache-2.0"
+repository = "https://github.com/agnesnaomiolim-cloud/Stellar-K8s"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = "=27.0.6"
+
+[dev-dependencies]
+soroban-sdk = { version = "=27.0.6", features = ["testutils"] }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug-assertions = false
+strip = "symbols"
+codegen-units = 1
+lto = true

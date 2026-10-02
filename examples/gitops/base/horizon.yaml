@@ -1,0 +1,27 @@
+# Base Horizon StellarNode skeleton.
+# All environment-specific fields are set via Kustomize overlay patches.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon
+  namespace: stellar
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  nodeType: Horizon
+  network: testnet
+  version: "v2.29.0"
+  maxUnavailable: 1
+  minAvailable: 1
+  topologySpreadConstraints: []
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  storage:
+    storageClass: "standard"
+    size: "200Gi"
+    retentionPolicy: Delete

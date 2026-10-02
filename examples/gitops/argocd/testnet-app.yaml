@@ -1,0 +1,53 @@
+# testnet-app.yaml — ArgoCD Application for the Testnet environment.
+#
+# Automated sync is enabled. Changes merged to main are applied automatically
+# within 3 minutes (or immediately if a webhook is configured).
+#
+# Sync wave ordering:
+#   -20  Stellar-K8s operator     (examples/argocd/v1/bootstrap.yaml)
+#     0  Namespaces, ExternalSecrets
+#    10  StellarNode CRs           (rendered by this Application)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: stellar-testnet
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: stellar-k8s
+    app.kubernetes.io/component: testnet-workloads
+    stellar.org/network: testnet
+    stellar.org/gitops-version: v1
+  annotations:
+    # This Application itself is a child; no wave annotation needed here.
+    # The StellarNode CRs inside the overlay carry wave: "10".
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/agnesnaomiolim-cloud/Stellar-K8s.git
+    targetRevision: main
+    path: examples/gitops/overlays/testnet
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: stellar-testnet
+  syncPolicy:
+    automated:
+      # Automatically prune resources removed from Git.
+      prune: true
+      # Revert any out-of-band mutations to the Git state.
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - PruneLast=true
+      - PrunePropagationPolicy=foreground
+  # Ignore operator-managed status fields to avoid spurious OutOfSync events.
+  ignoreDifferences:
+    - group: stellar.org
+      kind: StellarNode
+      jsonPointers:
+        - /status
+        - /metadata/resourceVersion
+        - /metadata/generation

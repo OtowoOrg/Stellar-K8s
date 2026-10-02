@@ -1,0 +1,28 @@
+[package]
+name = "smart-multisig"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Multi-signature wallet with programmable on-chain ExecutionPolicy: ledger base-fee threshold guard and cross-contract TWAP oracle deviation check."
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { version = "=27.0.6", features = ["alloc"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "=27.0.6", features = ["testutils", "alloc"] }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug-assertions = false
+strip = "symbols"
+codegen-units = 1
+lto = true
+
+# Standalone Soroban contract workspace — intentionally isolated from the
+# root Stellar-K8s Rust binary workspace.
+[workspace]

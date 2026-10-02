@@ -1,0 +1,30 @@
+# This crate is a standalone Soroban contract workspace, independent from the
+# root Stellar-K8s binary-crate workspace.
+[workspace]
+
+[package]
+name = "dao-treasury"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "DAO Treasury Multi-Sig Soroban contract with BFT threshold verification, signature aggregation, and timelock-protected configuration."
+license = "Apache-2.0"
+repository = "https://github.com/OtowoOrg/Stellar-K8s"
+keywords = ["soroban", "stellar", "dao", "multisig", "treasury"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = "=27.0.6"
+
+[dev-dependencies]
+soroban-sdk = { version = "=27.0.6", features = ["testutils"] }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug-assertions = false
+strip = "symbols"
+codegen-units = 1
+lto = true

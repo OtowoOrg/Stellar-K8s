@@ -1,0 +1,23 @@
+[package]
+name = "registry-enforcer"
+version = "1.0.0"
+edition = "2021"
+description = "Enterprise image-registry allow-list validation plugin for Stellar-K8s"
+license = "Apache-2.0"
+
+# cdylib produces the .wasm binary consumed by the Stellar-K8s Wasmtime runtime
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde      = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Release profile tuned for minimal Wasm binary size.
+# See https://rustwasm.github.io/docs/book/reference/code-size.html
+[profile.release]
+opt-level     = "z"     # optimise for size over speed
+lto           = true    # link-time optimisation across all crates
+codegen-units = 1       # single codegen unit for maximum inlining
+panic         = "abort" # removes ~30 KiB of unwinding machinery
+strip         = true    # strip debug symbols from the final binary

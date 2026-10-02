@@ -55,5 +55,6 @@ Key signals to monitor:
 - [Production Profiling Runbook](profiling-runbook.md)
 - [Readiness Probe State Machine Coverage](readiness-probe-states.md)
 - [Container Command Configuration](container-commands.md)
+- [Zero-Downtime Protocol Upgrade Runbook](protocol-upgrades.md)
 - [API Reference](../api/index.md)
 - [Production Security Hardening](../production-security-hardening.md)

@@ -1743,6 +1743,16 @@ pub struct StellarNodeStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vault_observed_secret_version: Option<String>,
 
+    /// Storage state of the node's data volume, maintained by the PVC
+    /// auto-resize controller.
+    ///
+    /// `spec.storage` records what was requested, which goes stale as soon as the
+    /// operator expands a PVC. This field reports what the volume actually is,
+    /// so the parent CR reflects the dynamically expanded limits rather than the
+    /// original request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_storage: Option<ObservedStorageStatus>,
+
     /// Phase of the last forensic snapshot request (`Pending`, `Capturing`, `Complete`, `Failed`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forensic_snapshot_phase: Option<String>,
@@ -1828,6 +1838,47 @@ pub struct BGPStatus {
     /// Last BGP update time
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_update: Option<String>,
+}
+
+/// Observed state of a StellarNode's data volume.
+///
+/// Maintained by the PVC auto-resize controller so the parent Custom Resource
+/// reflects storage that the operator expanded at runtime, rather than only the
+/// size that was requested in `spec.storage`.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ObservedStorageStatus {
+    /// Name of the PersistentVolumeClaim backing the node's data volume.
+    pub claim_name: String,
+
+    /// Size currently requested on the PVC spec, in bytes.
+    ///
+    /// This changes as soon as the operator patches the PVC, which is what makes
+    /// it differ from `spec.storage`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_bytes: Option<i64>,
+
+    /// Capacity reported by the storage provider, in bytes.
+    ///
+    /// Kubernetes fills this in only after the volume controller has actually
+    /// grown the volume, so it lags `requested_bytes` while an expansion is in
+    /// flight. `None` means the provider has not reported a capacity yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_capacity_bytes: Option<i64>,
+
+    /// Whether the provider has caught up with the requested size.
+    ///
+    /// `false` while an expansion is pending, which is the signal an operator
+    /// needs to tell "grew successfully" from "asked to grow".
+    pub expansion_complete: bool,
+
+    /// Number of automatic expansions the operator has performed on this PVC.
+    #[serde(default)]
+    pub expansion_count: u32,
+
+    /// RFC3339 timestamp of the most recent automatic expansion.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_expanded_at: Option<String>,
 }
 
 /// Status of a snapshot-based bootstrap operation.

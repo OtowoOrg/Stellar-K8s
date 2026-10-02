@@ -17,7 +17,7 @@ metadata:
     role: active
 spec:
   nodeType: SorobanRpc
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   replicas: 3
 

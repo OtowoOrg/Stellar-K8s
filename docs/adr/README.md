@@ -26,10 +26,19 @@ We follow the [MADR (Markdown Architecture Decision Record)](https://adr.github.
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
 | [0001](0001-wasm-admission-webhook.md) | Wasm-Based Admission Webhook for Custom Validation | Accepted | 2024-02-24 |
-| [0002](0002-rust-language-choice.md) | Choice of Rust Programming Language | Accepted | 2024-03-25 |
-| [0003](0003-kube-rs-finalizers.md) | Use of kube-rs Finalizers | Accepted | 2024-03-25 |
-| [0004](0004-crd-versioning-strategy.md) | CRD Versioning Strategy | Accepted | 2024-03-25 |
+| [0002](0002-rust-language-choice.md) | Choice of Rust Programming Language | Superseded by [ADR-001](../adrs/001-rust-operator-architecture.md) | 2024-03-25 |
+| [0003](0003-kube-rs-finalizers.md) | Use of kube-rs Finalizers | Superseded by [ADR-001](../adrs/001-rust-operator-architecture.md) | 2024-03-25 |
+| [0004](0004-crd-versioning-strategy.md) | CRD Versioning Strategy | Superseded by [ADR-002](../adrs/002-crd-versioning-strategy.md) | 2024-03-25 |
 | [0005](0005-reentrancy-guard-middleware.md) | Native Reentrancy Guard Middleware for Soroban | Accepted | 2026-08-31 |
+
+### Foundational architecture ADRs (`docs/adrs/`)
+
+These two records document the project's core technology choices and are the entry point for new contributors. They supersede ADRs 0002 to 0004 above, which described an earlier design that no longer matches the implementation.
+
+| ADR | Title | Status | Date |
+|-----|-------|--------|------|
+| [001](../adrs/001-rust-operator-architecture.md) | Rust and kube-rs as the Operator Foundation | Accepted | 2026-09-30 |
+| [002](../adrs/002-crd-versioning-strategy.md) | CRD API Evolution and Backward Compatibility | Accepted | 2026-09-30 |
 
 ## Creating a New ADR
 

@@ -1,0 +1,58 @@
+# horizon.yaml
+# Stateless Horizon API tier, managed by the Stellar-K8s operator, pointed at the
+# PgBouncer pooler (never at a PostgreSQL pod or the primary Service directly).
+#
+# Prerequisite (created at deploy time, never committed):
+#   HZ_PW=$(kubectl -n stellar get secret horizon-db-credentials \
+#     -o jsonpath='{.data.horizon-password}' | base64 -d)
+#   POOLER=horizon-db-pooler.stellar.svc.cluster.local:6432
+#   kubectl -n stellar create secret generic horizon-db-dsn --from-literal=DATABASE_URL=\
+#   "postgres://horizon:${HZ_PW}@${POOLER}/horizon?sslmode=disable&binary_parameters=yes"
+#
+# binary_parameters=yes makes lib/pq (Horizon's driver) send each parameterised query
+# in a single round trip, which PgBouncer transaction pooling requires.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-mainnet
+  namespace: stellar
+spec:
+  nodeType: Horizon
+  network: mainnet
+  version: "29.0.0"
+
+  # Stateless API tier: scale horizontally; database HA is handled below it.
+  replicas: 3
+  maxUnavailable: 1
+  minAvailable: 2
+  topologySpreadConstraints: []
+
+  horizonConfig:
+    databaseSecretRef: "horizon-db-dsn"
+    stellarCoreUrl: "http://validator-mainnet:11626"
+    enableIngest: true
+    ingestWorkers: 2
+
+  # External database = the HA stack from patroni-config.yaml + pgbouncer.yaml.
+  database:
+    host: "horizon-db-pooler.stellar.svc.cluster.local"
+    port: 6432
+    database: "horizon"
+    user: "horizon"
+    passwordSecret: "horizon-db-credentials"
+    secretKeyRef:
+      name: "horizon-db-dsn"
+      key: "DATABASE_URL"
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+
+  storage:
+    storageClass: "standard"
+    size: "100Gi"
+    retentionPolicy: Retain

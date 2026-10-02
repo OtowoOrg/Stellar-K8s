@@ -56,3 +56,56 @@ spec:
     failureThreshold: 5
     successThreshold: 2
     openWindowSecs: 30
+  internalPriority:
+    enabled: true
+    mtlsPort: 7000
+    guaranteedBandwidthPercent: 25
+    maxLatencyMs: 5
+    priorityClass: 0
+  egressShaping:
+    enabled: true
+    interface: eth0
+    externalBandwidthMbps: 10000
+    internalBandwidthMbps: 25000
+    burstMbits: 500
+    latencyMs: 10
+    priorityBands:
+      - >
+        priority: 0
+        classId: 1:1
+        description: "internal-mtls-scp"
+        minBandwidthPercent: 25
+      - >
+        priority: 1
+        classId: 1:2
+        description: "critical-api"
+        minBandwidthPercent: 40
+      - >
+        priority: 2
+        classId: 1:3
+        description: "authenticated"
+        minBandwidthPercent: 30
+      - >
+        priority: 3
+        classId: 1:4
+        description: "public"
+        minBandwidthPercent: 20
+      - >
+        priority: 4
+        classId: 1:5
+        description: "bulk"
+        minBandwidthPercent: 10
+  adaptiveScaling:
+    enabled: true
+    metricsIntervalSecs: 15
+    scaleUpThreshold: 0.85
+    scaleDownThreshold: 0.40
+    maxScaleFactor: 3.0
+    minScaleFactor: 0.5
+    nodeCapacityMetric: "network.egress.bandwidth.capacity"
+  cniPlugin:
+    provider: calico
+    felixPolicyName: horizon-egress-shaper
+    ciliumPolicyName: horizon-egress-shaper
+    syncIntervalSecs: 10
+    failopen: false

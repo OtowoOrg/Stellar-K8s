@@ -1,0 +1,424 @@
+# captive-core-scaling.yaml
+# Decoupled Horizon: ONE isolated ingestion pod that owns the only Captive Core, and a
+# horizontally scalable tier of read-only Horizon API pods that never run Stellar Core.
+#
+#                 +-------------------------------+
+#   Stellar  <--->| horizon-ingest-0 (StatefulSet)|  INGEST=true
+#   network       |  stellar-horizon              |  owns captive core storage (PVC)
+#   (peers,       |   `-- stellar-core (child)    |  ledger meta via anonymous pipe (fd:3)
+#   archives)     +---------------+---------------+
+#                        writes  |   :11626 (tx submission only, NetworkPolicy-restricted)
+#                                v               ^
+#                     +---------------------+    |
+#                     |  Horizon PostgreSQL |    |
+#                     +----------+----------+    |
+#                          reads |               |
+#                                v               |
+#               +--------------------------------+---+
+#               | horizon-api  (Deployment, 5..N)    |  INGEST=false: no core, no PVC,
+#               +------------------------------------+  no IPC. Scales like any web tier.
+#
+# Captive Core IPC constraint (see docs/architecture/decoupled-horizon.md, section 3):
+# the ledger stream is an anonymous pipe between ONE Horizon process and the stellar-core
+# child it spawned. It cannot be shared, proxied or load-balanced, so it can never be the
+# thing you scale. Every extra ingesting replica means another full Captive Core with its
+# own storage. API replicas read the database and hold no pipe at all.
+#
+# Prerequisites (created at deploy time, never committed):
+#   kubectl -n stellar create secret generic horizon-db \
+#     --from-literal=DATABASE_URL='postgres://horizon:<password>@<db-host>:5432/horizon?sslmode=require'
+#
+# Network: testnet (short, stable quorum). For pubnet, set NETWORK=pubnet and replace
+# captive-core.cfg with a quorum you have vetted (see the guide, section 5.4).
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: horizon-network
+      namespace: stellar
+    data:
+      NETWORK: testnet
+
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: horizon-captive-core
+      namespace: stellar
+    data:
+      # Based on go-stellar-sdk v0.7.2 ingest/ledgerbackend/configs/captive-core-testnet.cfg.
+      # PUBLIC_HTTP_PORT lets the API tier submit transactions through this core (port
+      # 11626 is locked down to the API pods by the NetworkPolicy below).
+      # Never set BUCKET_DIR_PATH or DATABASE here: Horizon keeps them under
+      # CAPTIVE_CORE_STORAGE_PATH so no two captive cores can share state.
+      captive-core.cfg: |
+        NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
+        HTTP_PORT=11626
+        PUBLIC_HTTP_PORT=true
+        PEER_PORT=11725
+        UNSAFE_QUORUM=true
+        FAILURE_SAFETY=1
+
+        [[HOME_DOMAINS]]
+        HOME_DOMAIN="testnet.stellar.org"
+        QUALITY="HIGH"
+
+        [[VALIDATORS]]
+        NAME="sdf_testnet_1"
+        HOME_DOMAIN="testnet.stellar.org"
+        PUBLIC_KEY="GDKXE2OZMJIPOSLNA6N6F2BVCI3O777I2OOC4BV7VOYUEHYX7RTRYA7Y"
+        ADDRESS="core-testnet1.stellar.org"
+        HISTORY="curl -sf http://history.stellar.org/prd/core-testnet/core_testnet_001/{0} -o {1}"
+
+        [[VALIDATORS]]
+        NAME="sdf_testnet_2"
+        HOME_DOMAIN="testnet.stellar.org"
+        PUBLIC_KEY="GCUCJTIYXSOXKBSNFGNFWW5MUQ54HKRPGJUTQFJ5RQXZXNOLNXYDHRAP"
+        ADDRESS="core-testnet2.stellar.org"
+        HISTORY="curl -sf http://history.stellar.org/prd/core-testnet/core_testnet_002/{0} -o {1}"
+
+        [[VALIDATORS]]
+        NAME="sdf_testnet_3"
+        HOME_DOMAIN="testnet.stellar.org"
+        PUBLIC_KEY="GC2V2EFSXN6SQTWVYA5EPJPBWWIMSD2XQNKUOHGEKB535AQE2I6IXV2Z"
+        ADDRESS="core-testnet3.stellar.org"
+        HISTORY="curl -sf http://history.stellar.org/prd/core-testnet/core_testnet_003/{0} -o {1}"
+
+  # ---------------------------------------------------------------------------
+  # Ingestion tier: the single, isolated Captive Core
+  # ---------------------------------------------------------------------------
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: horizon-ingest
+      namespace: stellar
+      labels:
+        app.kubernetes.io/name: horizon
+        app.kubernetes.io/component: ingest
+    spec:
+      clusterIP: None
+      selector:
+        app.kubernetes.io/name: horizon
+        app.kubernetes.io/component: ingest
+      ports:
+        - name: http
+          port: 8000
+
+  # Transaction submission endpoint for the API tier (stellar-core HTTP on the ingest pod).
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: horizon-captive-core
+      namespace: stellar
+      labels:
+        app.kubernetes.io/name: horizon
+        app.kubernetes.io/component: ingest
+    spec:
+      selector:
+        app.kubernetes.io/name: horizon
+        app.kubernetes.io/component: ingest
+      ports:
+        - name: core-http
+          port: 11626
+          targetPort: 11626
+
+  - apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      name: horizon-ingest
+      namespace: stellar
+      labels:
+        app.kubernetes.io/name: horizon
+        app.kubernetes.io/component: ingest
+    spec:
+      # Exactly one captive core. Raising this adds hot-standby ingesters, each with a
+      # FULL captive core and its own PVC; Horizon's DB lock lets only one ingest at a time.
+      replicas: 1
+      serviceName: horizon-ingest
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: horizon
+          app.kubernetes.io/component: ingest
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: horizon
+            app.kubernetes.io/component: ingest
+        spec:
+          # Captive core flushes buckets on SIGTERM; give it time to exit cleanly.
+          terminationGracePeriodSeconds: 120
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: horizon
+              image: stellar/stellar-horizon:29.0.0
+              envFrom:
+                - configMapRef:
+                    name: horizon-network
+              env:
+                - name: INGEST
+                  value: "true"
+                # Single writer applies schema migrations; API pods never do.
+                - name: APPLY_MIGRATIONS
+                  value: "true"
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: horizon-db
+                      key: DATABASE_URL
+                - name: CAPTIVE_CORE_CONFIG_PATH
+                  value: /etc/captive-core/captive-core.cfg
+                - name: CAPTIVE_CORE_STORAGE_PATH
+                  value: /var/lib/stellar/captive-core
+                - name: STELLAR_CORE_BINARY_PATH
+                  value: /usr/bin/stellar-core
+                - name: ADMIN_PORT
+                  value: "6060"
+              ports:
+                - name: http
+                  containerPort: 8000
+                - name: core-http
+                  containerPort: 11626
+                - name: core-peer
+                  containerPort: 11725
+                - name: admin
+                  containerPort: 6060
+              # Catch-up from history archives can take a long time on first start.
+              startupProbe:
+                httpGet:
+                  path: /
+                  port: 8000
+                periodSeconds: 10
+                failureThreshold: 180
+              livenessProbe:
+                httpGet:
+                  path: /
+                  port: 8000
+                periodSeconds: 20
+                failureThreshold: 6
+              # /health = database reachable AND captive core up and synced.
+              readinessProbe:
+                httpGet:
+                  path: /health
+                  port: 8000
+                periodSeconds: 10
+                failureThreshold: 3
+              resources:
+                # Sized for pubnet; testnet needs far less.
+                requests:
+                  cpu: "2"
+                  memory: 8Gi
+                limits:
+                  memory: 16Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: captive-core-storage
+                  mountPath: /var/lib/stellar/captive-core
+                - name: captive-core-config
+                  mountPath: /etc/captive-core
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: captive-core-config
+              configMap:
+                name: horizon-captive-core
+            - name: tmp
+              emptyDir: {}
+      # Private to this pod: buckets + captive core SQLite. Never shared, never RWX.
+      volumeClaimTemplates:
+        - metadata:
+            name: captive-core-storage
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                # pubnet: >= 100Gi on SSD. testnet: 20Gi is plenty.
+                storage: 20Gi
+
+  - apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: horizon-ingest
+      namespace: stellar
+    spec:
+      # A single ingester may be drained; the API tier keeps serving from the DB meanwhile.
+      maxUnavailable: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: horizon
+          app.kubernetes.io/component: ingest
+
+  # Only the API tier may talk to captive core's HTTP port; nothing may reach the ingest
+  # pod's Horizon API directly.
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: horizon-captive-core
+      namespace: stellar
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: horizon
+          app.kubernetes.io/component: ingest
+      policyTypes: ["Ingress"]
+      ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: horizon
+                  app.kubernetes.io/component: api
+          ports:
+            - port: 11626
+              protocol: TCP
+
+  # ---------------------------------------------------------------------------
+  # API tier: stateless, no captive core, scales horizontally
+  # ---------------------------------------------------------------------------
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: horizon-api
+      namespace: stellar
+      labels:
+        app.kubernetes.io/name: horizon
+        app.kubernetes.io/component: api
+    spec:
+      replicas: 5
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: horizon
+          app.kubernetes.io/component: api
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 0
+          maxSurge: 25%
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: horizon
+            app.kubernetes.io/component: api
+        spec:
+          terminationGracePeriodSeconds: 30
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: horizon
+                  app.kubernetes.io/component: api
+          containers:
+            - name: horizon
+              image: stellar/stellar-horizon:29.0.0
+              envFrom:
+                - configMapRef:
+                    name: horizon-network
+              env:
+                - name: INGEST
+                  value: "false"
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: horizon-db
+                      key: DATABASE_URL
+                # Transaction submission goes to the single captive core over HTTP.
+                # Set DISABLE_TX_SUB=true instead for a purely read-only tier.
+                - name: STELLAR_CORE_URL
+                  value: http://horizon-captive-core:11626
+              ports:
+                - name: http
+                  containerPort: 8000
+              # NOT /health: it also requires core to be synced, which would pull every
+              # API replica out of rotation together whenever the one ingester restarts.
+              readinessProbe:
+                httpGet:
+                  path: /
+                  port: 8000
+                periodSeconds: 5
+                failureThreshold: 3
+              livenessProbe:
+                httpGet:
+                  path: /
+                  port: 8000
+                initialDelaySeconds: 10
+                periodSeconds: 10
+                failureThreshold: 6
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 512Mi
+                limits:
+                  memory: 2Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: horizon
+      namespace: stellar
+      labels:
+        app.kubernetes.io/name: horizon
+        app.kubernetes.io/component: api
+    spec:
+      selector:
+        app.kubernetes.io/name: horizon
+        app.kubernetes.io/component: api
+      ports:
+        - name: http
+          port: 8000
+          targetPort: 8000
+
+  - apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: horizon-api
+      namespace: stellar
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: horizon-api
+      minReplicas: 5
+      # Bounded by database read capacity, not by Captive Core.
+      maxReplicas: 50
+      metrics:
+        - type: Resource
+          resource:
+            name: cpu
+            target:
+              type: Utilization
+              averageUtilization: 70
+
+  - apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: horizon-api
+      namespace: stellar
+    spec:
+      minAvailable: 80%
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: horizon
+          app.kubernetes.io/component: api

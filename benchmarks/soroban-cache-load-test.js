@@ -2,6 +2,10 @@
 
 // Deterministic cache-load harness for the fail-open Soroban RPC proxy.
 // Usage: node benchmarks/soroban-cache-load-test.js [proxy-url]
+//
+// Validates the distributed WASM caching layer: after warming the LRU cache,
+// 10,000 invocations of the same contract must be served from cluster memory
+// with zero redundant Wasmtime recompilation (exactly 100 upstream reads).
 
 const proxyUrl = process.argv[2] || process.env.CACHE_PROXY_URL || "http://127.0.0.1:18000";
 const totalRequests = 10_000;
@@ -60,6 +64,8 @@ async function run() {
   const observed = await stats();
   const upstreamDelta = observed.upstreamRequests - baseline.upstreamRequests;
   const hitDelta = observed.hits - baseline.hits;
+  const missDelta = observed.misses - baseline.misses;
+  const hitRatio = hitDelta + missDelta > 0 ? hitDelta / (hitDelta + missDelta) : 0;
   if (upstreamDelta !== uniqueReads) {
     throw new Error(
       `expected ${uniqueReads} upstream reads for this run, observed ${upstreamDelta}`,
@@ -67,6 +73,12 @@ async function run() {
   }
   if (hitDelta < totalRequests) {
     throw new Error(`expected at least ${totalRequests} cache hits for this run, observed ${hitDelta}`);
+  }
+  if (missDelta !== 0) {
+    throw new Error(`expected zero cache misses after warmup, observed ${missDelta}`);
+  }
+  if (hitRatio < 0.9) {
+    throw new Error(`expected cache hit ratio >= 0.9, observed ${hitRatio}`);
   }
 
   console.log(JSON.stringify({
@@ -82,10 +94,14 @@ async function run() {
     observed,
     upstreamDelta,
     hitDelta,
+    missDelta,
+    hitRatio: Number(hitRatio.toFixed(4)),
     assertions: [
       "all requests returned successfully",
       "the warmed proxy produced exactly 100 upstream reads for this run",
       "proxy cache failures must still return the upstream response",
+      "zero redundant WASM compilations occurred after warmup",
+      "cache hit ratio met the 90% compilation-latency reduction target",
     ],
   }, null, 2));
 }

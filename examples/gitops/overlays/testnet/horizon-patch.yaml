@@ -1,0 +1,19 @@
+# Testnet Horizon strategic-merge patch.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon
+spec:
+  network: testnet
+  version: "v2.29.0"
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  storage:
+    storageClass: "standard"
+    size: "200Gi"
+    retentionPolicy: Delete

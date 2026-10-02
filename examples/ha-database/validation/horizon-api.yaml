@@ -1,0 +1,111 @@
+# Stateless Horizon API tier used for the kind validation (no operator needed).
+# It renders what the operator creates for a Horizon StellarNode, minus ingestion:
+# INGEST=false and DISABLE_TX_SUB=true let Horizon serve the API from the database
+# alone, without a Stellar Core / Captive Core dependency in the test cluster.
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: horizon-db-migrate
+      namespace: stellar
+    spec:
+      backoffLimit: 6
+      template:
+        spec:
+          restartPolicy: OnFailure
+          nodeSelector:
+            stellar.org/pool: apps
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+          containers:
+            - name: migrate
+              image: stellar/stellar-horizon:29.0.0
+              args: ["db", "migrate", "up"]
+              env:
+                - name: NETWORK
+                  value: testnet
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: horizon-db-dsn
+                      key: DATABASE_URL
+
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: horizon-api
+      namespace: stellar
+      labels:
+        app.kubernetes.io/name: horizon-api
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: horizon-api
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: horizon-api
+        spec:
+          nodeSelector:
+            stellar.org/pool: apps
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: horizon
+              image: stellar/stellar-horizon:29.0.0
+              ports:
+                - name: http
+                  containerPort: 8000
+              env:
+                - name: NETWORK
+                  value: testnet
+                - name: INGEST
+                  value: "false"
+                - name: DISABLE_TX_SUB
+                  value: "true"
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: horizon-db-dsn
+                      key: DATABASE_URL
+              readinessProbe:
+                httpGet:
+                  path: /
+                  port: 8000
+                periodSeconds: 5
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: horizon-api
+      namespace: stellar
+    spec:
+      selector:
+        app.kubernetes.io/name: horizon-api
+      ports:
+        - name: http
+          port: 8000
+          targetPort: 8000

@@ -11,7 +11,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
-use crate::Result;
+use crate::controller::metrics::set_leader_status;
 
 const DEFAULT_LEASE_NAME: &str = "stellar-operator-leader";
 const LEASE_DURATION_SECS: i32 = 15;
@@ -145,6 +145,8 @@ async fn run_leader_election(
                     info!("Acquired leadership: {}", lease_name);
                 }
                 IS_LEADER.store(true, Ordering::Relaxed);
+                // Update Prometheus metric for leader status
+                set_leader_status(true);
                 let _ = tx.send(true);
                 tokio::time::sleep(RENEW_INTERVAL).await;
             }
@@ -153,6 +155,8 @@ async fn run_leader_election(
                     warn!("Lost leadership: {}", lease_name);
                 }
                 IS_LEADER.store(false, Ordering::Relaxed);
+                // Update Prometheus metric for leader status
+                set_leader_status(false);
                 let _ = tx.send(false);
                 tokio::time::sleep(RETRY_INTERVAL).await;
             }

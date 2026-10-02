@@ -1,0 +1,33 @@
+# Base Validator StellarNode skeleton.
+# All environment-specific fields are set via Kustomize overlay patches.
+# Do not set network, version, storage sizes, or secrets here.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator
+  namespace: stellar
+  annotations:
+    # Apply StellarNode CRs after the operator (wave -20) and namespaces (wave 0).
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  nodeType: Validator
+  # network, version, and environment-specific overrides are applied by overlays.
+  network: testnet
+  version: "v21.0.0"
+  maxUnavailable: 0
+  minAvailable: 1
+  topologySpreadConstraints: []
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  storage:
+    storageClass: "standard"
+    size: "100Gi"
+    retentionPolicy: Delete
+  validatorConfig:
+    seedSecretRef: "validator-seed"
+    enableHistoryArchive: true

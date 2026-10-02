@@ -15,6 +15,7 @@ Stellar-K8s supports multiple strategies for managing sensitive credentials, fro
 | Automated rotation | [Secret Rotation](../secret-rotation.md) | Zero-downtime database credential rotation |
 | All rotation workflows | [Rotation Workflows](../rotation-workflows.md) | Unified guide for secrets, certs, and passphrases |
 | HashiCorp Vault | [Vault + Stellar Tutorial](../vault-stellar-tutorial.md) | Production Vault Agent Injector pattern |
+| Validator seed custody | [Key Sharding & Seed Custody](key-sharding.md) | Shamir sharding, Vault Transit assembly, air-gapped ceremonies |
 | Production hardening | [Security Hardening Guide](../production-security-hardening.md) | Full security posture for production |
 | External Secrets Operator | [ExternalSecret chart template](../../charts/stellar-operator/templates/externalsecret.yaml) | ESO integration via Helm |
 
@@ -87,3 +88,4 @@ Stellar-K8s supports multiple strategies for managing sensitive credentials, fro
 - [Pod Security Standards](pss.md)
 - [Gatekeeper Policies](../gatekeeper-policies.md)
 - [Image Pinning](../image-pinning.md)
+- [Key Sharding & Seed Custody](key-sharding.md)

@@ -62,6 +62,54 @@ spec:
                     type: string
                     default: 1m
                     description: Sync interval
+              secretInjection:
+                type: object
+                description: GitOps-driven immutable secret injection configuration
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                    description: Enable GitOps-driven secret injection
+                  provider:
+                    type: string
+                    enum:
+                    - SealedSecrets
+                    - SOPS
+                    description: Encrypted manifest provider
+                  sops:
+                    type: object
+                    description: SOPS-specific configuration
+                    properties:
+                      ageKeySecretRef:
+                        type: string
+                        description: Secret reference containing the age master key
+                      encryptedManifestPath:
+                        type: string
+                        description: Path to the age-encrypted SOPS manifest
+                  sealedSecrets:
+                    type: object
+                    description: Bitnami SealedSecrets-specific configuration
+                    properties:
+                      controllerNamespace:
+                        type: string
+                        default: kube-system
+                        description: Namespace of the SealedSecrets controller
+                  tmpfs:
+                    type: object
+                    description: Ephemeral tmpfs volume mount configuration
+                    properties:
+                      mountPath:
+                        type: string
+                        default: /var/run/secrets/stellar
+                        description: In-memory mount path for decrypted payload
+                      sizeLimit:
+                        type: string
+                        default: 16Mi
+                        description: Maximum size of the tmpfs volume
+                  hardFailOnDecryptError:
+                    type: boolean
+                    default: true
+                    description: Refuse to boot if decryption fails rather than falling back
               argocdConfig:
                 type: object
                 description: ArgoCD-specific configuration
@@ -99,6 +147,15 @@ spec:
               lastSyncTime:
                 type: string
                 format: date-time
+              secretInjectionStatus:
+                type: object
+                properties:
+                  decrypted:
+                    type: boolean
+                  mountedPath:
+                    type: string
+                  lastError:
+                    type: string
               syncStatus:
                 type: string
                 enum:

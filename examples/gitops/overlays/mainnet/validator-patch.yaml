@@ -1,0 +1,43 @@
+# Mainnet validator strategic-merge patch.
+# PRODUCTION — all changes require a PR with ≥2 reviewer approvals and must
+# pass all CI gates before the mainnet ArgoCD Application is manually synced.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator
+spec:
+  network: mainnet
+  # Pin to a reviewed release tag. Never use "latest" or a branch name here.
+  version: "v21.0.0"
+  maxUnavailable: 0
+  minAvailable: 1
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  storage:
+    mode: PersistentVolume
+    storageClass: "ssd-premium"
+    # Mainnet ledger: 400 GiB+ and growing.
+    size: "500Gi"
+    # Retain prevents accidental data loss on ArgoCD prune.
+    retentionPolicy: Retain
+  validatorConfig:
+    seedSecretRef: "validator-seed-mainnet"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+      - "https://history.stellar.org/prd/core-live/core_live_002"
+      - "https://history.stellar.org/prd/core-live/core_live_003"
+    quorumSet: |
+      [QUORUM_SET]
+      THRESHOLD_PERCENT=67
+      VALIDATORS=[
+        "$sdf1", "$sdf2", "$sdf3",
+        "$tieron_1", "$tieron_2", "$tieron_3"
+      ]
+  alerting: true
+  podAntiAffinity: Hard

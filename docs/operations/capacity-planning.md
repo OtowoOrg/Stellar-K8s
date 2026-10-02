@@ -131,6 +131,8 @@ Horizon is really two tiers with different sizing:
   provisioned-IOPS network volume and accept the latency cost; don't try to
   combine local SSD with online expansion — local disks generally cannot be
   resized live.
+  For drive, scheduler and filesystem tuning plus a `fio` acceptance test, see
+  [Bare-Metal NVMe IOPS Tuning](../performance/bare-metal-iops.md).
 
 ---
 

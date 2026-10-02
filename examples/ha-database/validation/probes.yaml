@@ -1,0 +1,75 @@
+# Continuous traffic probes for the failover test.
+#   http-probe:  GET /ledgers?limit=1 on Horizon every 200ms (a DB-backed read).
+#                Log line: "HH:MM:SS <http-status>"
+#   write-probe: INSERT through PgBouncer every 200ms; records which PostgreSQL
+#                server acknowledged it. Log line: "HH:MM:SS ok <seq>|<server-ip>"
+#                or "HH:MM:SS err <seq> <message>"
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: Pod
+    metadata:
+      name: http-probe
+      namespace: stellar
+    spec:
+      nodeSelector:
+        stellar.org/pool: apps
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: probe
+          image: curlimages/curl:8.22.0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              while true; do
+                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+                  'http://horizon-api:8000/ledgers?limit=1')
+                echo "$(date -u +%H:%M:%S) $code"
+                sleep 0.2
+              done
+
+  - apiVersion: v1
+    kind: Pod
+    metadata:
+      name: write-probe
+      namespace: stellar
+    spec:
+      nodeSelector:
+        stellar.org/pool: apps
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: probe
+          image: stellar-horizon-patroni:17-4.1.5
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HZ_PW
+              valueFrom:
+                secretKeyRef:
+                  name: horizon-db-credentials
+                  key: horizon-password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              DSN="postgresql://horizon:${HZ_PW}@horizon-db-pooler:6432/horizon?sslmode=disable&connect_timeout=5"
+              until psql "$DSN" -XAtq -c 'CREATE TABLE IF NOT EXISTS ha_probe (
+                  seq bigint PRIMARY KEY, at timestamptz NOT NULL DEFAULT now())'; do sleep 1; done
+              i=0
+              while true; do
+                i=$((i + 1))
+                if out=$(psql "$DSN" -XAtq \
+                    -c "INSERT INTO ha_probe (seq) VALUES ($i) RETURNING seq, inet_server_addr()" 2>&1); then
+                  echo "$(date -u +%H:%M:%S) ok $out"
+                else
+                  echo "$(date -u +%H:%M:%S) err $i $(echo "$out" | tr '\n' ' ')"
+                fi
+                sleep 0.2
+              done

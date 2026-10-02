@@ -1,0 +1,205 @@
+# Test-only dependencies for the validation run (never use in production):
+#   - a one-validator standalone Stellar network with a local history archive, using
+#     the same settings as Horizon's own integration tests (accelerated time,
+#     checkpoint every 8 ledgers), so Captive Core catches up in seconds;
+#   - a job that upgrades the network to the validator's newest protocol;
+#   - a throwaway PostgreSQL for Horizon;
+#   - a curl pod used by verify.sh to query every Horizon pod individually.
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: stellar-core-validator
+      namespace: stellar
+    data:
+      # Public test seed from Horizon's integration test suite (standalone network only).
+      stellar-core.cfg: |
+        ARTIFICIALLY_ACCELERATE_TIME_FOR_TESTING=true
+        NETWORK_PASSPHRASE="Standalone Network ; February 2017"
+        PEER_PORT=11625
+        HTTP_PORT=11626
+        PUBLIC_HTTP_PORT=true
+        NODE_SEED="SACJC372QBSSKJYTV5A7LWT4NXWHTQO6GHG4QDAVC2XDPX6CNNXFZ4JK"
+        NODE_IS_VALIDATOR=true
+        UNSAFE_QUORUM=true
+        FAILURE_SAFETY=0
+        DATABASE="sqlite3:///data/stellar.db"
+        BUCKET_DIR_PATH="/data/buckets"
+
+        [QUORUM_SET]
+        THRESHOLD_PERCENT=100
+        VALIDATORS=["GD5KD2KEZJIGTC63IGW6UMUSMVUVG5IHG64HUTFWCHVZH2N2IBOQN7PS"]
+
+        [HISTORY.vs]
+        get="cp /data/history/vs/{0} {1}"
+        put="cp {0} /data/history/vs/{1}"
+        mkdir="mkdir -p /data/history/vs/{0}"
+
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: stellar-core-validator
+      namespace: stellar
+    spec:
+      replicas: 1
+      strategy:
+        type: Recreate
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: stellar-core-validator
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: stellar-core-validator
+        spec:
+          containers:
+            - name: stellar-core
+              image: stellar/stellar-core:29.0.0-3589.4eb833373.noble
+              workingDir: /data
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -e
+                  CFG=/etc/stellar-standalone/stellar-core.cfg
+                  stellar-core --conf "$CFG" new-db
+                  stellar-core --conf "$CFG" new-hist vs
+                  exec stellar-core --conf "$CFG" run
+              ports:
+                - name: peer
+                  containerPort: 11625
+                - name: http
+                  containerPort: 11626
+              readinessProbe:
+                httpGet:
+                  path: /info
+                  port: 11626
+                periodSeconds: 5
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                - name: config
+                  mountPath: /etc/stellar-standalone
+                  readOnly: true
+            # Serves the local history archive over HTTP (the core image has no web server).
+            - name: history
+              image: busybox:1.37.0
+              command: ["/bin/sh", "-c"]
+              args:
+                - until [ -d /data/history/vs ]; do sleep 1; done; exec httpd -f -p 1570 -h /data/history/vs
+              ports:
+                - name: history
+                  containerPort: 1570
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                  readOnly: true
+          volumes:
+            - name: data
+              emptyDir: {}
+            - name: config
+              configMap:
+                name: stellar-core-validator
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: stellar-core-validator
+      namespace: stellar
+    spec:
+      selector:
+        app.kubernetes.io/name: stellar-core-validator
+      ports:
+        - name: peer
+          port: 11625
+        - name: http
+          port: 11626
+        - name: history
+          port: 1570
+
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: stellar-core-protocol-upgrade
+      namespace: stellar
+    spec:
+      backoffLimit: 10
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: upgrade
+              image: curlimages/curl:8.22.0
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -e
+                  CORE=http://stellar-core-validator:11626
+                  until curl -sf "$CORE/info" -o /tmp/info; do sleep 2; done
+                  V=$(sed -n 's/.*"protocol_version" *: *\([0-9][0-9]*\).*/\1/p' /tmp/info | head -1)
+                  echo "upgrading standalone network to protocol $V"
+                  curl -sf "$CORE/upgrades?mode=set&upgradetime=1970-01-01T00:00:00Z&protocolversion=$V"
+
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: horizon-postgres
+      namespace: stellar
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: horizon-postgres
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: horizon-postgres
+        spec:
+          containers:
+            - name: postgres
+              image: postgres:17.11-alpine3.24
+              env:
+                - name: POSTGRES_USER
+                  value: horizon
+                - name: POSTGRES_DB
+                  value: horizon
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: horizon-postgres
+                      key: password
+              ports:
+                - containerPort: 5432
+              readinessProbe:
+                exec:
+                  command: ["pg_isready", "-U", "horizon", "-d", "horizon"]
+                periodSeconds: 5
+              volumeMounts:
+                - name: data
+                  mountPath: /var/lib/postgresql/data
+          volumes:
+            - name: data
+              emptyDir: {}
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: horizon-postgres
+      namespace: stellar
+    spec:
+      selector:
+        app.kubernetes.io/name: horizon-postgres
+      ports:
+        - port: 5432
+
+  - apiVersion: v1
+    kind: Pod
+    metadata:
+      name: api-probe
+      namespace: stellar
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.22.0
+          command: ["sleep", "infinity"]

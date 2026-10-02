@@ -1,0 +1,31 @@
+[package]
+name = "mpt-verifier"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Merkle Patricia Trie state-proof validator for trustless EVM-to-Stellar bridge deposits"
+repository = "https://github.com/agnesnaomiolim-cloud/Stellar-K8s"
+
+[lib]
+# `cdylib` is what actually gets compiled to WASM for deployment; `rlib` lets
+# host-side integration tests link the same code.
+crate-type = ["cdylib", "rlib"]
+
+[features]
+testutils = ["soroban-sdk/testutils"]
+# Build the deployable no_std WASM artifact. Off by default so that `cargo
+# test` can link host integration tests, which require std.
+contract-wasm = []
+
+[dependencies]
+soroban-sdk = { version = "27.0.6", features = ["alloc"] }
+# Keccak-256 (the pre-NIST padding variant Ethereum uses). The `keccak` feature
+# exposes `Keccak::v256`; the default `sha3`/`shake` hashes are a different
+# padding rule and would silently produce wrong trie hashes.
+tiny-keccak = { version = "2.0", default-features = false, features = ["keccak"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "27.0.6", features = ["testutils", "alloc"] }
+hex = "0.4"
+
+[workspace]

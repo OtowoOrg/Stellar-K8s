@@ -5,8 +5,8 @@ metadata:
   name: {{ include "stellar-operator.fullname" . }}-nodes
   labels:
     {{- include "stellar-operator.labels" . | nindent 4 }}
-    {{- with .Values.monitoring.podMonitor.labels }}
-    {{- toYaml . | nindent 4 }}
+    {-- with .Values.monitoring.podMonitor.labels }}
+    {{- toYAml . | nindent 4 }}
     {{- end }}
 spec:
   selector:
@@ -16,4 +16,30 @@ spec:
     - port: {{ .Values.monitoring.podMonitor.portName }}
       path: /metrics
       interval: {{ .Values.monitoring.podMonitor.interval }}
+    - port: {{ .Values.monitoring.podMonitor.wasmCachePortName | default "wasm-cache-metrics" }}
+      path: /metrics/wasm-cache
+      interval: {{ .Values.monitoring.podMonitor.interval }}
+      relabelings:
+        - action: replace
+          sourceLabels: [__meta__kubernetes_pod_name]
+          separator: +
+          regex: (.+)
+          targetLabel: pod
+        - action: replace
+          sourceLabels: [__meta__kubernetes_namespace]
+          separator: +
+          regex: (.+)
+          targetLabel: namespace
+        - action: replace
+          sourceLabels: [__meta__kubernetes_container_name]
+          separator: +
+          regex: (.+)
+          targetLabel: container
+      metricRelabelings:
+        - action: keep
+          regex: wasm_cache_.*
+        - action: keep
+          regex: wasm_compilation_.*
+        - action: keep
+          regex: wasm_eviction_.*
 {{- end }}

@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Futurenet overlay — SDF Futurenet is used for protocol preview testing.
+# Futurenet resets frequently; retentionPolicy is Delete across all nodes.
+namespace: stellar-futurenet
+
+resources:
+  - ../../base
+
+namePrefix: futurenet-
+
+commonLabels:
+  stellar.org/network: futurenet
+  app.kubernetes.io/managed-by: argocd
+  app.kubernetes.io/part-of: stellar-k8s
+
+patches:
+  - path: validator-patch.yaml
+    target:
+      kind: StellarNode
+      name: validator
+  - path: soroban-rpc-patch.yaml
+    target:
+      kind: StellarNode
+      name: soroban-rpc

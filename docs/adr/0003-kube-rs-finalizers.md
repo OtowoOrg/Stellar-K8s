@@ -1,7 +1,7 @@
 # ADR-0003: Use of kube-rs Finalizers
 
 ## Status
-Accepted
+Superseded by [ADR-001: Rust and kube-rs as the Operator Foundation](../adrs/001-rust-operator-architecture.md). Note: the finalizer name in this document (`stellar.k8s.io/finalizer`) does not match the implementation, which uses `stellarnode.stellar.org/finalizer`.
 
 ## Context
 In Kubernetes, when a Custom Resource (CR) is deleted, the deletion can happen immediately without giving the operator a chance to clean up associated resources. This can lead to:

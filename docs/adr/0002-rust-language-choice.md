@@ -1,7 +1,7 @@
 # ADR-0002: Choice of Rust Programming Language
 
 ## Status
-Accepted
+Superseded by [ADR-001: Rust and kube-rs as the Operator Foundation](../adrs/001-rust-operator-architecture.md), which reflects the current implementation.
 
 ## Context
 When designing the Stellar Kubernetes Operator, we needed to choose a programming language that would meet the demanding requirements of cloud-native infrastructure software. The operator needed to:

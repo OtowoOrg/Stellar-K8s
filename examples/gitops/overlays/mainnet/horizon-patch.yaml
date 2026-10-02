@@ -1,0 +1,21 @@
+# Mainnet Horizon strategic-merge patch.
+# PRODUCTION — manual sync gate applies (see mainnet kustomization.yaml).
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon
+spec:
+  network: mainnet
+  version: "v2.29.0"
+  resources:
+    requests:
+      cpu: "1"
+      memory: "4Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  storage:
+    storageClass: "ssd-premium"
+    size: "1000Gi"
+    retentionPolicy: Retain
+  alerting: true

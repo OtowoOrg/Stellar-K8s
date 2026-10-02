@@ -1,0 +1,18 @@
+[package]
+name = "escrow"
+version = "0.1.0"
+edition = "2021"
+description = "Decentralized on-chain escrow with multi-party arbitration"
+license = "Apache-2.0"
+
+this-crate = { type = "rcd-crate" }
+
+[dependencies]
+soroban-sdk = { version = "21.0.0", features = ["allocate"] }
+soroban-token = { version = "21.0.0" }
+
+[lib]
+crate-type = ["cd-lib"]
+
+[dev-dependencies]
+soroban-sdk = { version = "21.0.0", features = ["testutils", "allocate"] }

@@ -1,0 +1,59 @@
+# mainnet-app.yaml — ArgoCD Application for the Mainnet (production) environment.
+#
+# IMPORTANT: Automated sync is DISABLED for mainnet. Syncing to production
+# requires:
+#   1. A merged PR with ≥2 reviewer approvals.
+#   2. All CI gates passing (schema, compat-check, conftest, smoke test).
+#   3. An explicit manual sync command:
+#        argocd app sync stellar-mainnet
+#
+# Never run `kubectl apply` or `kubectl edit` against mainnet objects directly.
+# All changes must flow through Git and this Application.
+#
+# Storage uses retentionPolicy: Retain across all mainnet nodes to prevent
+# accidental data loss during ArgoCD prune operations.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: stellar-mainnet
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: stellar-k8s
+    app.kubernetes.io/component: mainnet-workloads
+    stellar.org/network: mainnet
+    stellar.org/environment: production
+    stellar.org/gitops-version: v1
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    # Remind operators that this Application requires manual promotion.
+    stellar.org/sync-policy: "manual-approval-required"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/agnesnaomiolim-cloud/Stellar-K8s.git
+    # Production MUST use a pinned release tag or commit SHA, not a branch.
+    # Change this to the reviewed release before syncing:
+    #   targetRevision: "v1.2.3"
+    targetRevision: main
+    path: examples/gitops/overlays/mainnet
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: stellar-mainnet
+  syncPolicy:
+    # automated block is intentionally absent — mainnet is MANUAL sync only.
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - PruneLast=true
+      - PrunePropagationPolicy=foreground
+  # Self-heal is not enabled for mainnet. Drift is reported but not
+  # automatically corrected — an operator must review and manually sync.
+  ignoreDifferences:
+    - group: stellar.org
+      kind: StellarNode
+      jsonPointers:
+        - /status
+        - /metadata/resourceVersion
+        - /metadata/generation

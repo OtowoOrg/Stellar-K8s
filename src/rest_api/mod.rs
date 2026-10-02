@@ -71,6 +71,7 @@ pub mod custom_metrics;
 mod dashboard_dto;
 mod dashboard_handlers;
 pub mod dto;
+mod ebpf_sniffer_handlers;
 mod handlers;
 mod health_summary;
 mod horizon_cache_handlers;

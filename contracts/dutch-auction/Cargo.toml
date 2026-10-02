@@ -1,0 +1,24 @@
+# Standalone workspace root so this crate is not conflated with the parent
+# operator workspace (which pins its own toolchain/profile settings).
+[workspace]
+
+[package]
+name = "dutch-auction"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Dutch Auction Token Launchpad Primitive for Stellar Soroban — fair token distribution via deterministic descending-price curve"
+repository = "https://github.com/stellar/stellar-k8s"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+testutils = ["soroban-sdk/testutils"]
+
+[dependencies]
+soroban-sdk = "20.0.0"
+
+[dev-dependencies]
+soroban-sdk = { version = "20.0.0", features = ["testutils"] }

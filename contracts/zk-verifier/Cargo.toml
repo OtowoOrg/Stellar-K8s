@@ -1,19 +1,47 @@
 [package]
 name = "zk-verifier"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+authors = ["Stellar K8s Contributors"]
+description = "Soroban ZKP verifier contract: Groth16 + PLONK proof verification, shielded pool, and nullifier registry for privacy-preserving transfers"
+license = "Apache-2.0"
+repository = "https://github.com/agnesnaomiolim-cloud/Stellar-K8s"
+keywords = ["soroban", "stellar", "zkp", "groth16", "plonk", "privacy"]
+categories = ["cryptography", "wasm"]
 
+# Mark as a standalone workspace root so it is not pulled into the top-level
+# workspace (which only includes wasm-plugins).
 [workspace]
 
-
+# The contract is compiled to a cdylib for Soroban deployment and also
+# exposes an rlib for integration-test harnesses.
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# ─── Features ───────────────────────────────────────────────────────────────
 [features]
+# Enable testutils (mock env, register_contract, etc.) for tests
 testutils = ["soroban-sdk/testutils"]
 
+# ─── Dependencies ───────────────────────────────────────────────────────────
 [dependencies]
-soroban-sdk = "20.0.0"
+soroban-sdk = { version = "20.0.0" }
 
+# ─── Dev / Test Dependencies ────────────────────────────────────────────────
 [dev-dependencies]
 soroban-sdk = { version = "20.0.0", features = ["testutils"] }
+
+# ─── Build Profile Overrides ────────────────────────────────────────────────
+# Optimise aggressively for WASM size and speed in release builds.
+[profile.release]
+opt-level = "z"        # minimise WASM binary size
+lto = true             # link-time optimisation
+codegen-units = 1      # single CGU for maximum LTO effectiveness
+panic = "abort"        # no panic unwinding in Wasm
+overflow-checks = true # keep overflow checks for correctness
+
+# A small separate profile for quickly checking compilation.
+[profile.release-with-logs]
+inherits = "release"
+opt-level = 1
+overflow-checks = true

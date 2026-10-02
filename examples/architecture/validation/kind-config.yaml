@@ -1,0 +1,6 @@
+# Single-node kind cluster for validating examples/architecture/captive-core-scaling.yaml.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: horizon-decoupled
+nodes:
+  - role: control-plane

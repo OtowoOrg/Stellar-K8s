@@ -1,0 +1,261 @@
+{{- if .Values.wasmOptimizer.enabled }}
+# =============================================================================
+# WASM Bytecode Optimizer Sidecar — issue #325
+#
+# Deploys the wasm-opt sidecar alongside the stellar-webhook server and wires
+# it into the MutatingAdmissionWebhook so every StellarNode WASM deployment
+# payload is automatically optimised (dead-code elimination, memory packing)
+# before being persisted to etcd.
+#
+# Prerequisites:
+#   - .Values.webhook.enabled must be true (the webhook Service already exists)
+#   - cert-manager or manual caBundle injection must be configured
+#
+# Quick-start (values.yaml):
+#   wasmOptimizer:
+#     enabled: true
+#     sidecar:
+#       image: ghcr.io/stellar/wasm-opt-sidecar:latest
+# =============================================================================
+---
+# ── Namespace (reuse stellar-webhook if it already exists) ──────────────────
+# The optimizer sidecar shares the stellar-webhook namespace.
+# No separate Namespace resource is needed — it is created by webhook.yaml.
+
+# ── ServiceAccount ───────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wasm-opt-sidecar
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: wasm-opt-sidecar
+    app.kubernetes.io/component: wasm-optimizer
+    app.kubernetes.io/part-of: stellar-k8s
+  annotations:
+    {{- toYaml .Values.wasmOptimizer.serviceAccount.annotations | nindent 4 }}
+automountServiceAccountToken: false
+---
+# ── Deployment ───────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wasm-opt-sidecar
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: wasm-opt-sidecar
+    app.kubernetes.io/component: wasm-optimizer
+    app.kubernetes.io/part-of: stellar-k8s
+  annotations:
+    # Trigger a rollout when this ConfigMap changes.
+    checksum/config: {{ include (print $.Template.BasePath "/wasm-optimizer.yaml") . | sha256sum }}
+spec:
+  replicas: {{ .Values.wasmOptimizer.replicaCount | default 2 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wasm-opt-sidecar
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wasm-opt-sidecar
+        app.kubernetes.io/component: wasm-optimizer
+      annotations:
+        prometheus.io/scrape: "false"
+    spec:
+      serviceAccountName: wasm-opt-sidecar
+      automountServiceAccountToken: false
+      # Run as non-root (UID 10001 matches the sidecar Dockerfile user).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: wasm-opt-sidecar
+          image: "{{ .Values.wasmOptimizer.sidecar.image | default "ghcr.io/stellar/wasm-opt-sidecar:latest" }}"
+          imagePullPolicy: {{ .Values.wasmOptimizer.sidecar.pullPolicy | default "IfNotPresent" }}
+          args:
+            - "--bind"
+            - "0.0.0.0:9080"
+          ports:
+            - name: http-optimizer
+              containerPort: 9080
+              protocol: TCP
+          env:
+            - name: WASM_OPT_BIN
+              value: /usr/bin/wasm-opt
+            - name: WASM_OPT_LEVEL
+              value: {{ .Values.wasmOptimizer.optLevel | default "3" | quote }}
+            # Cap optimizer timeout at 8 s (leaves 2 s before K8s deadline).
+            - name: WASM_OPT_TIMEOUT_SECS
+              value: {{ .Values.wasmOptimizer.timeoutSecs | default "8" | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          # Temp dir is needed by wasm-opt subprocess for I/O.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: {{ .Values.wasmOptimizer.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.wasmOptimizer.resources.requests.memory | default "128Mi" }}
+            limits:
+              cpu: {{ .Values.wasmOptimizer.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.wasmOptimizer.resources.limits.memory | default "256Mi" }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http-optimizer
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http-optimizer
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http-optimizer
+            failureThreshold: 10
+            periodSeconds: 2
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: wasm-opt-sidecar
+---
+# ── Service ──────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: wasm-opt-sidecar
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: wasm-opt-sidecar
+    app.kubernetes.io/component: wasm-optimizer
+spec:
+  type: ClusterIP
+  ports:
+    - name: http-optimizer
+      port: 9080
+      targetPort: http-optimizer
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: wasm-opt-sidecar
+---
+# ── PodDisruptionBudget ───────────────────────────────────────────────────────
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: wasm-opt-sidecar
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: wasm-opt-sidecar
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wasm-opt-sidecar
+---
+# ── MutatingWebhookConfiguration ─────────────────────────────────────────────
+#
+# Intercepts CREATE and UPDATE operations on StellarNode resources and routes
+# them to the stellar-webhook server's /mutate/wasm endpoint.
+#
+# The stellar-webhook server calls the wasm-opt-sidecar service internally
+# (WASM_OPT_SIDECAR_URL env var) — the K8s API server only talks to stellar-webhook.
+#
+# Timeout: 10 s (K8s hard maximum for mutating webhooks).
+# FailurePolicy: Ignore — a sidecar failure must not block deployments.
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: stellar-wasm-optimizer
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+    app.kubernetes.io/component: wasm-optimizer
+  {{- if .Values.webhook.certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: stellar-webhook/stellar-webhook-cert
+  {{- end }}
+webhooks:
+  - name: wasm-optimizer.stellar.io
+    # Route to the existing stellar-webhook service (already TLS-terminated).
+    clientConfig:
+      service:
+        name: stellar-webhook
+        namespace: stellar-webhook
+        path: /mutate/wasm
+        port: 443
+      {{- if not .Values.webhook.certManager.enabled }}
+      # caBundle must be set manually when cert-manager is not used.
+      # caBundle: <base64-encoded-ca-cert>
+      {{- end }}
+    rules:
+      - apiGroups: ["stellar.org"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["stellarnodes"]
+        scope: Namespaced
+    admissionReviewVersions: ["v1", "v1beta1"]
+    sideEffects: None
+    # Must be ≤ 10 s (Kubernetes hard limit for admission webhooks).
+    timeoutSeconds: {{ .Values.wasmOptimizer.webhookTimeoutSeconds | default 10 }}
+    # IMPORTANT: Ignore failures — a degraded optimizer must not block deploys.
+    # The webhook is fail-open: if optimization fails the original binary is deployed.
+    failurePolicy: {{ .Values.wasmOptimizer.failurePolicy | default "Ignore" }}
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        # Skip system namespaces to avoid recursive interception.
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - kube-system
+            - stellar-webhook
+    # Only fire when the StellarNode spec carries a wasmBinary field.
+    # This avoids unnecessary roundtrips for Validator/Horizon nodes.
+    objectSelector:
+      matchExpressions:
+        - key: stellar.io/wasm-optimized
+          operator: DoesNotExist
+    reinvocationPolicy: Never
+---
+# ── ConfigMap — sidecar environment overrides ────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wasm-opt-sidecar-config
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: wasm-opt-sidecar
+data:
+  # Optimization level forwarded to wasm-opt -O<level>.
+  # 0=no optimization, 1=basic, 2=default, 3=aggressive, 4=very aggressive, z=size.
+  WASM_OPT_LEVEL: {{ .Values.wasmOptimizer.optLevel | default "3" | quote }}
+  # Hard cap on optimization time (must be < webhook timeoutSeconds).
+  WASM_OPT_TIMEOUT_SECS: {{ .Values.wasmOptimizer.timeoutSecs | default "8" | quote }}
+  # Sidecar URL consumed by the stellar-webhook operator.
+  # Set on the stellar-webhook Deployment via WASM_OPT_SIDECAR_URL env var.
+  WASM_OPT_SIDECAR_URL: "http://wasm-opt-sidecar.stellar-webhook.svc.cluster.local:9080"
+{{- end }}

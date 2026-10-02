@@ -1,0 +1,21 @@
+[package]
+name = "wrapped-token"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "SEP-41 wrapped asset token with bridge relayer controls"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+testutils = ["soroban-sdk/testutils"]
+
+[dependencies]
+soroban-sdk = { version = "27.0.6", features = ["alloc"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "27.0.6", features = ["testutils", "alloc"] }
+
+[workspace]

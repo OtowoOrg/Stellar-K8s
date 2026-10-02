@@ -16,6 +16,7 @@
 
 pub mod cert_rotation;
 pub mod compliance;
+pub mod ebpf_sniffer;
 pub mod kms;
 pub mod policy;
 pub mod remediation;
@@ -30,6 +31,9 @@ pub use cert_rotation::{
     CertExpiryAlert, CertIssuanceRequest, CertIssuanceResponse, CertRecord, CertRotationController,
     CertRotationError, ExpiryMonitor, ExpiryMonitorConfig, ExpirySeverity, LocalCaBackend,
     PkiBackend, RotationAuditLog, RotationEvent, RotationTrigger, VaultPkiBackend, VaultPkiConfig,
+};
+pub use ebpf_sniffer::{
+    PeerNetworkStats, ScpNetworkHealthState, ScpSnifferMonitor, ScpSnifferStore,
 };
 
 use serde::{Deserialize, Serialize};

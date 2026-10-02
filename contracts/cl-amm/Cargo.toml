@@ -1,0 +1,34 @@
+# Standalone workspace so this crate is not conflated with the operator
+# workspace at the repository root.
+[workspace]
+
+[package]
+name = "cl-amm"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Concentrated liquidity AMM for Soroban: tick-based Q64.96 pricing"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = "23.5.3"
+# Pure-Rust, no_std 256-bit integers for the Q64.96 / Q128.128 tick math.
+ethnum = { version = "1.5", default-features = false }
+
+[dev-dependencies]
+soroban-sdk = { version = "23.5.3", features = ["testutils"] }
+proptest = "1.5"
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true

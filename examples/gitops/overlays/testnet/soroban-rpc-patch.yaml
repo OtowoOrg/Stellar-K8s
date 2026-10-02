@@ -1,0 +1,27 @@
+# Testnet Soroban RPC strategic-merge patch.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: soroban-rpc
+spec:
+  network: testnet
+  version: "v21.1.0"
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  sorobanConfig:
+    # Points at the testnet validator created in this same overlay.
+    stellarCoreUrl: "http://testnet-validator:11626"
+    captiveCoreStructuredConfig:
+      logLevel: "info"
+      historyArchiveUrls:
+        - "https://history.stellar.org/prd/core-testnet/core_testnet_001"
+    maxEventsPerRequest: 10000
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 5
+    targetCpuUtilizationPercentage: 70

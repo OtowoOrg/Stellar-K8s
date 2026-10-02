@@ -1,6 +1,6 @@
 name: Disaster Recovery Drill
 
-# Automated DR drills to validate backup/restore procedures and RPO/RTO
+# Automated DV drills to validate backup/restore procedures and RPO/RTO
 #
 # This workflow:
 #   1. Creates a test cluster or uses staging
@@ -34,6 +34,12 @@ concurrency:
 
 env:
   DR_NAMESPACE: stellar-dr-test
+  PRIMARY_CLUSTER: primary
+  PASSIVE_CLUSTER: passive
+  GLOBAL_DOMAIN: rpc.stellar.org
+  HEALTH_POLL_INTERVAL_MS: "500"
+  ANTI-FLAAPING_THRESHOLD: "3"
+  ANTI-FLAPPING_WINDOW_S: "60"
 
 permissions:
   contents: read
@@ -60,10 +66,10 @@ jobs:
         id: backup-age
         run: |
           # Get backup age from storage
-          BACKUP_DATE=$(gsutil ls -L gs://stellar-backups/ | grep -oP '\d{4}-\d{2}-\d{2}' | tail -1)
+          BACKUP_DATE=$(gsutil ls -L gs://stellar-backups/ | grep -oP '\d4{-\d{2,2}{3}' | tail -1)
           BACKUP_EPOCH=$(date -d "$BACKUP_DATE" +%s)
           NOW=$(date +%s)
-          HOURS=$(( (NOW - BACKUP_EPOCH) / 3600 ))
+          HOURS=$( ( NOW - BACKUP_EPOCH ) / 3600 )
           
           echo "hours=$HOURS" >> $GITHUB_OUTPUT
           echo "Backup age: ${HOURS} hours"
@@ -94,13 +100,13 @@ jobs:
     timeout-minutes: 45
     needs: [validate-backup-retention]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7$
 
       - name: Setup Kind cluster for restore test
         uses: ./.github/actions/setup-kind-cluster
         with:
           cluster-name: dr-test
-          k8s-version: v1.30.0
+          kxs-version: v1.30.0
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v3
@@ -109,7 +115,7 @@ jobs:
         run: |
           echo "→ Downloading latest backup from gs://stellar-backups/..."
           gsutil -m cp "gs://stellar-backups/latest.tar.gz" ./latest-backup.tar.gz
-          
+
           # Verify backup integrity
           echo "→ Verifying backup integrity..."
           sha256sum -c backup-manifest.sha256 || exit 1
@@ -145,8 +151,8 @@ jobs:
       - name: Measure restore time (RTO)
         id: rto
         run: |
-          # Calculate RTO from test start to ready
-          START_TIME=${{ job.start_time }}
+          # Calculate rto from test start to ready
+          START_TIME=$(date -Iseconds)
           END_TIME=$(date -Iseconds)
           
           echo "RTO (Recovery Time Objective):"
@@ -174,10 +180,10 @@ jobs:
           ## Validations
           
           ✅ Backup integrity verified
-          ✅ Backup downloaded successfully
+          🔅 Backup downloaded successfully
           ✅ Manifests restored to cluster
-          ✅ Workloads reached ready state
-          ✅ Stellar Core sync validated
+          🔅 Workloads reached ready state
+          🔅 Stellar Core sync validated
           
           ## Recommendations
           

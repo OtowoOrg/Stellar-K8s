@@ -1,0 +1,37 @@
+{
+  "Comment": "Latency-based routing with health check failover for multi-region Stellar-K8s Soroban RPC",
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "rpc.stellar.example.com.",
+        "Type": "A",
+        "SetIdentifier": "stellar-k8s-ap-northeast-1",
+        "Region": "ap-northeast-1",
+        "TTL": 60,
+        "ResourceRecords": [
+          {
+            "Value": "198.51.100.10"
+          }
+        ],
+        "HealthCheckId": "01234567-89ab-cdef-0123-456789abcdef"
+      }
+    },
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "rpc.stellar.example.com.",
+        "Type": "A",
+        "SetIdentifier": "stellar-k8s-us-west-2",
+        "Region": "us-west-2",
+        "TTL": 60,
+        "ResourceRecords": [
+          {
+            "Value": "203.0.113.20"
+          }
+        ],
+        "HealthCheckId": "fedcba98-7654-3210-fedc-ba9876543210"
+      }
+    }
+  ]
+}

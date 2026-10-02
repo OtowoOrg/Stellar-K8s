@@ -443,15 +443,31 @@
               "minimum": 0.0,
               "type": "integer"
             },
+            "enableLedgerPruning": {
+              "default": false,
+              "description": "Prune old ledgers (history_ledgers and dependent history tables) during maintenance. Disabled by default because pruning is destructive.",
+              "type": "boolean"
+            },
             "enabled": {
               "default": true,
               "description": "Enable automated database maintenance",
               "type": "boolean"
             },
+            "pruningRetentionDays": {
+              "default": 30,
+              "description": "Retention period for pruned ledgers in days (default: 30). Only used when enableLedgerPruning is true.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
             "readPoolCoordination": {
               "default": true,
               "description": "Coordination with read-pool for zero-downtime",
               "type": "boolean"
+            },
+            "schedule": {
+              "description": "Optional cron expression (6 fields with seconds, e.g., \"0 0 2 * * *\") that triggers compaction on a fixed schedule. When set, this takes precedence over windowStart/windowDuration.",
+              "type": "string"
             },
             "windowDuration": {
               "description": "Maintenance window duration (e.g., \"2h\")",
@@ -1655,6 +1671,35 @@
           },
           "type": "object"
         },
+        "backupConfig": {
+          "description": "Pre-upgrade backup configuration for Validator PVC snapshots. When set, the operator snapshots the PVC before applying a new version.",
+          "nullable": true,
+          "properties": {
+            "encryptionKeyRef": {
+              "description": "Reference to a Cloud KMS key for encrypting the snapshot.",
+              "nullable": true,
+              "type": "string"
+            },
+            "flushBeforeSnapshot": {
+              "default": false,
+              "description": "If true, the operator will attempt to flush/lock the Stellar database briefly before creating the snapshot.",
+              "type": "boolean"
+            },
+            "readyTimeoutSeconds": {
+              "default": 300,
+              "description": "Maximum time in seconds to wait for the snapshot to become ReadyToUse before failing the upgrade.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "volumeSnapshotClassName": {
+              "description": "VolumeSnapshotClass name. If unset, the default class for the PVC's driver is used.",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
         "sorobanConfig": {
           "description": "Soroban RPC server configuration",
           "nullable": true,
@@ -1710,6 +1755,41 @@
               "format": "uint32",
               "minimum": 0.0,
               "type": "integer"
+            },
+            "cache": {
+              "description": "Bounded fail-open cache for read-only Soroban RPC state requests",
+              "nullable": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "ttlSecs": {
+                  "default": 30,
+                  "format": "int64",
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                "maxEntries": {
+                  "default": 10000,
+                  "format": "int64",
+                  "maximum": 10000.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                "maxBytes": {
+                  "default": 67108864,
+                  "format": "int64",
+                  "maximum": 67108864.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                "image": {
+                  "nullable": true,
+                  "type": "string"
+                }
+              },
+              "type": "object"
             },
             "stellarCoreUrl": {
               "type": "string"

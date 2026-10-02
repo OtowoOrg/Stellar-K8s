@@ -1,11 +1,32 @@
-
+# Production-ready Soroban JSON-RPC deployment with HPA and captive core.
+# Validated against config/crd/stellarnode-crd.yaml (kind StellarNode, v1alpha1).
+#
+# SorobanRpc is a nodeType on StellarNode, not a separate CRD. When
+# sorobanConfig is set, OpenAPI requires stellarCoreUrl.
 apiVersion: stellar.org/v1alpha1
 kind: StellarNode
 metadata:
   name: soroban-rpc-testnet
   namespace: stellar
   labels:
+    app.kubernetes.io/name: soroban-rpc
+    app.kubernetes.io/component: rpc
+    stellar.org/network: testnet
+spec:
+  nodeType: SorobanRpc
+  network: testnet
+  version: "21.2.0"
 
+  replicas: 2
+  minAvailable: 1
+  maxUnavailable: 1
+  topologySpreadConstraints: []
+
+  historyMode: Recent
+  podAntiAffinity: Soft
+  alerting: true
+  strategy:
+    type: rollingUpdate
 
   resources:
     requests:
@@ -17,9 +38,29 @@ metadata:
 
   storage:
     mode: PersistentVolume
+    storageClass: ssd-premium
+    size: 100Gi
+    retentionPolicy: Retain
 
+  # autoscaling.minReplicas and maxReplicas are required when this object is set.
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCpuUtilizationPercentage: 70
+
+  sorobanConfig:
+    stellarCoreUrl: http://validator-testnet:11626
+    # Prefer captiveCoreStructuredConfig over the deprecated captiveCoreConfig string.
+    captiveCoreStructuredConfig:
+      logLevel: info
+      historyArchiveUrls:
+        - https://history.stellar.org/prd/core-testnet/core_testnet_001
+    # OpenAPI defaults: enablePreflight=true, maxEventsPerRequest=10000.
+    enablePreflight: true
+    maxEventsPerRequest: 10000
+    cache:
+      # Bounded fail-open cache for read-only state RPC methods.
       enabled: true
       ttlSecs: 30
       maxEntries: 10000
       maxBytes: 67108864
-

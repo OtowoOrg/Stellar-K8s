@@ -1,0 +1,173 @@
+---
+# ==============================================================================
+# Production NGINX Ingress Rate Limiting & DoS Mitigation Configuration
+# Target Workload: Public Soroban RPC & Horizon Nodes
+# Tracking: Issue #250
+# ==============================================================================
+# This manifest illustrates multi-layered rate limiting at the Ingress controller level:
+# 1. IP-based Rate Limiting (Per-client IP throughput and concurrency limits)
+# 2. API-Key-based Rate Limiting (Tiered rate limit zones via NGINX snippets)
+# 3. Path & Method Differentiation (Separating read-heavy simulations from write-heavy tx submissions)
+# 4. Strict 429 Status Code enforcement with RFC 6585 headers
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Main Ingress for Read-Heavy Operations (e.g., simulateTransaction, getHealth)
+# ------------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: soroban-rpc-read-ingress
+  namespace: stellar-nodes
+  labels:
+    app.kubernetes.io/name: soroban-rpc
+    app.kubernetes.io/component: rpc-ingress
+    app.kubernetes.io/part-of: stellar-k8s
+    stellar.org/tier: public-rpc
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    
+    # Enable CORS for web dApps
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "POST, GET, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-API-Key"
+    
+    # --------------------------------------------------------------------------
+    # Standard NGINX Ingress IP-Based Rate Limiting Annotations (Read Path)
+    # --------------------------------------------------------------------------
+    # Limit requests per second per IP address
+    nginx.ingress.kubernetes.io/limit-rps: "30"
+    
+    # Limit requests per minute per IP address
+    nginx.ingress.kubernetes.io/limit-rpm: "1000"
+    
+    # Limit maximum concurrent connections per IP address
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+    
+    # Burst multiplier (Burst limit = rps * burst-multiplier = 30 * 3 = 90)
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+    
+    # Whitelist internal monitoring & operator subnets from rate limits
+    nginx.ingress.kubernetes.io/limit-whitelist: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    
+    # Custom NGINX Snippet for API Key & Custom 429 Response Customization
+    nginx.ingress.kubernetes.io/server-snippet: |
+      # Define shared memory zones for API-Key-based & Method-based rate limiting
+      # Keyed by $http_x_api_key, falling back to $binary_remote_addr if no API key is supplied
+      map $http_x_api_key $rpc_rate_key {
+          default $binary_remote_addr;
+          "~.+"   $http_x_api_key;
+      }
+
+      # Rate limit zones stored in NGINX shared memory (10MB handles ~160,000 state keys)
+      limit_req_zone $rpc_rate_key zone=soroban_read_zone:10m rate=30r/s;
+      limit_req_zone $rpc_rate_key zone=soroban_sim_zone:10m rate=10r/s;
+      limit_req_zone $rpc_rate_key zone=soroban_write_zone:10m rate=5r/s;
+
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      # Enforce strict 429 Too Many Requests response code on rate-limit breach
+      limit_req_status 429;
+      
+      # Inject RFC 6585 rate limit telemetry headers
+      more_set_headers "X-RateLimit-Limit: 30";
+      more_set_headers "Retry-After: 60";
+spec:
+  tls:
+    - hosts:
+        - rpc.stellar.example.com
+      secretName: soroban-rpc-tls-cert
+  rules:
+    - host: rpc.stellar.example.com
+      http:
+        paths:
+          # Main JSON-RPC endpoint serving read-heavy queries (getHealth, getAccount, etc.)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: soroban-rpc-service
+                port:
+                  number: 8000
+          # Separate path mapping for simulation endpoints if routed via path
+          - path: /simulation
+            pathType: Prefix
+            backend:
+              service:
+                name: soroban-rpc-read-pool-service
+                port:
+                  number: 8000
+
+---
+# ------------------------------------------------------------------------------
+# 2. Ingress for Write-Heavy Operations (e.g., sendTransaction)
+# ------------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: soroban-rpc-write-ingress
+  namespace: stellar-nodes
+  labels:
+    app.kubernetes.io/name: soroban-rpc
+    app.kubernetes.io/component: rpc-ingress-write
+    app.kubernetes.io/part-of: stellar-k8s
+    stellar.org/tier: write-rpc
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    
+    # --------------------------------------------------------------------------
+    # Strict Write-Path IP Rate Limits to protect Mempool & Consensus Traffic
+    # --------------------------------------------------------------------------
+    # Stricter RPS limit for transaction submissions (5 req/sec per client IP)
+    nginx.ingress.kubernetes.io/limit-rps: "5"
+    nginx.ingress.kubernetes.io/limit-connections: "5"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2" # Max burst of 10
+    
+    # Custom snippet enforcing write-path buffer limits and strict rate limit status
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      limit_req_status 429;
+      more_set_headers "X-RateLimit-Limit: 5";
+      more_set_headers "Retry-After: 30";
+      
+      # Limit payload sizes to prevent huge blob submission attacks (max 2MB per tx)
+      client_max_body_size 2m;
+      client_body_timeout 10s;
+spec:
+  tls:
+    - hosts:
+        - rpc-tx.stellar.example.com
+      secretName: soroban-rpc-tx-tls-cert
+  rules:
+    - host: rpc-tx.stellar.example.com
+      http:
+        paths:
+          - path: /sendTransaction
+            pathType: Prefix
+            backend:
+              service:
+                name: soroban-rpc-write-pool-service
+                port:
+                  number: 8000
+
+---
+# ------------------------------------------------------------------------------
+# 3. Dynamic IP Blocklist ConfigMap (Fail2ban / Operator Auto-Ban Integration)
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-ingress-ip-blocklist
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: nginx-ingress
+    app.kubernetes.io/component: security-blocklist
+data:
+  # The stellar-k8s operator or fail2ban watcher dynamically populates banned IPs here
+  blocklist.conf: |
+    # Dynamic IP Ban List - Automatically managed by Stellar-K8s Operator
+    # IPs exhibiting >80% simulateTransaction error rates or aggressive body spam are added here.
+    # deny 192.0.2.45;
+    # deny 198.51.100.12;

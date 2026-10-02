@@ -1,0 +1,350 @@
+# patroni-config.yaml
+# Highly available PostgreSQL for Horizon: 3-member Patroni cluster using the
+# Kubernetes API as its DCS (no etcd/Consul needed).
+#
+# Split-brain protection (see docs/architecture/horizon-ha-db.md, "Split-brain protection"):
+#   1. Leader lock = the `horizon-db` Endpoints object (use_endpoints: true). Only the
+#      lock holder can write its own IP into it, so the `horizon-db` Service routes to
+#      exactly one member, atomically with leadership. Pod labels are NOT used for routing.
+#   2. A primary that cannot renew the lock within `ttl` demotes itself (restarting
+#      PostgreSQL read-only, which drops every client session).
+#      loop_wait + 2 * retry_timeout <= ttl guarantees demotion before a new leader is elected.
+#   3. synchronous_mode: a commit is acknowledged only after a standby has it, and only
+#      that synchronous standby may be promoted. An isolated old primary cannot
+#      acknowledge writes, so no acknowledged write is ever lost to a failover.
+#   4. pg_rewind resynchronises a demoted primary onto the new timeline before it rejoins.
+#
+# Prerequisites (created at deploy time, never committed):
+#   kubectl -n stellar create secret generic horizon-db-credentials \
+#     --from-literal=superuser-password="$(openssl rand -hex 24)" \
+#     --from-literal=replication-password="$(openssl rand -hex 24)" \
+#     --from-literal=horizon-password="$(openssl rand -hex 24)"
+#
+# Image: build examples/ha-database/Dockerfile (PostgreSQL 17 + Patroni 4.1.5).
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: horizon-db
+      namespace: stellar
+
+  # Patroni stores the leader lock and cluster config in Endpoints objects and
+  # labels its own pod with its role.
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: horizon-db
+      namespace: stellar
+    rules:
+      - apiGroups: [""]
+        resources: ["endpoints"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+      - apiGroups: [""]
+        resources: ["pods"]
+        verbs: ["get", "list", "watch", "update", "patch"]
+      - apiGroups: [""]
+        resources: ["services"]
+        verbs: ["create"]
+
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: horizon-db
+      namespace: stellar
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: horizon-db
+    subjects:
+      - kind: ServiceAccount
+        name: horizon-db
+        namespace: stellar
+
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: horizon-db-patroni
+      namespace: stellar
+    data:
+      patroni.yml: |
+        scope: horizon-db
+        restapi:
+          listen: 0.0.0.0:8008
+        kubernetes:
+          use_endpoints: true
+          bypass_api_service: true
+          labels:
+            application: patroni
+            cluster-name: horizon-db
+          role_label: role
+          leader_label_value: primary
+          follower_label_value: replica
+          ports:
+            - name: postgresql
+              port: 5432
+        bootstrap:
+          dcs:
+            ttl: 30
+            loop_wait: 10
+            retry_timeout: 10
+            maximum_lag_on_failover: 1048576
+            # Survive a Kubernetes API outage without demoting, but only while every
+            # member confirms over the REST API that the primary is still the primary.
+            failsafe_mode: true
+            synchronous_mode: true
+            synchronous_mode_strict: false
+            synchronous_node_count: 1
+            postgresql:
+              use_pg_rewind: true
+              use_slots: true
+              parameters:
+                wal_level: replica
+                hot_standby: "on"
+                wal_log_hints: "on"
+                hot_standby_feedback: "on"
+                synchronous_commit: "on"
+                password_encryption: scram-sha-256
+                max_connections: 200
+                max_wal_senders: 10
+                max_replication_slots: 10
+                wal_keep_size: 1GB
+          initdb:
+            - encoding: UTF8
+            - locale: C
+            - data-checksums
+          post_bootstrap: /etc/patroni/post-bootstrap.sh
+        postgresql:
+          listen: 0.0.0.0:5432
+          data_dir: /home/postgres/pgdata/pgroot/data
+          pgpass: /tmp/pgpass
+          authentication:
+            superuser:
+              username: postgres
+            replication:
+              username: replicator
+          pg_hba:
+            - local all all trust
+            - host replication replicator 0.0.0.0/0 scram-sha-256
+            - host all all 0.0.0.0/0 scram-sha-256
+          remove_data_directory_on_rewind_failure: true
+          remove_data_directory_on_diverged_timelines: true
+        # Set to `required` on nodes that expose /dev/watchdog (softdog) for hardware-level
+        # fencing of a hung primary. kind and most managed node pools do not provide one.
+        watchdog:
+          mode: "off"
+      # Runs once, on the member that initialises the cluster. $1 is a superuser DSN.
+      post-bootstrap.sh: |
+        #!/bin/sh
+        set -eu
+        psql "$1" -v ON_ERROR_STOP=1 -v pw="$HORIZON_DB_PASSWORD" <<'SQL'
+        CREATE ROLE horizon LOGIN PASSWORD :'pw';
+        CREATE DATABASE horizon OWNER horizon;
+        SQL
+
+  # Primary (read-write). No selector: its Endpoints ARE the Patroni leader lock.
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: horizon-db
+      namespace: stellar
+      labels:
+        application: patroni
+        cluster-name: horizon-db
+    spec:
+      type: ClusterIP
+      ports:
+        - name: postgresql
+          port: 5432
+          targetPort: 5432
+
+  # Holds the Patroni cluster configuration Endpoints; must exist and have no selector.
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: horizon-db-config
+      namespace: stellar
+      labels:
+        application: patroni
+        cluster-name: horizon-db
+    spec:
+      clusterIP: None
+
+  # Read-only replicas (optional read scaling; not used for writes).
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: horizon-db-repl
+      namespace: stellar
+      labels:
+        application: patroni
+        cluster-name: horizon-db
+    spec:
+      type: ClusterIP
+      selector:
+        application: patroni
+        cluster-name: horizon-db
+        role: replica
+      ports:
+        - name: postgresql
+          port: 5432
+          targetPort: 5432
+
+  # Stable per-member DNS for the StatefulSet.
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: horizon-db-members
+      namespace: stellar
+      labels:
+        application: patroni
+        cluster-name: horizon-db
+    spec:
+      clusterIP: None
+      publishNotReadyAddresses: true
+      selector:
+        application: patroni
+        cluster-name: horizon-db
+      ports:
+        - name: postgresql
+          port: 5432
+        - name: patroni
+          port: 8008
+
+  - apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      name: horizon-db
+      namespace: stellar
+      labels:
+        application: patroni
+        cluster-name: horizon-db
+    spec:
+      replicas: 3
+      serviceName: horizon-db-members
+      podManagementPolicy: Parallel
+      selector:
+        matchLabels:
+          application: patroni
+          cluster-name: horizon-db
+      template:
+        metadata:
+          labels:
+            application: patroni
+            cluster-name: horizon-db
+        spec:
+          serviceAccountName: horizon-db
+          terminationGracePeriodSeconds: 30
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            fsGroup: 70
+            seccompProfile:
+              type: RuntimeDefault
+          # One member per node: losing a node never costs more than one member.
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      application: patroni
+                      cluster-name: horizon-db
+          containers:
+            - name: patroni
+              image: stellar-horizon-patroni:17-4.1.5
+              imagePullPolicy: IfNotPresent
+              ports:
+                - name: postgresql
+                  containerPort: 5432
+                - name: patroni
+                  containerPort: 8008
+              env:
+                - name: PATRONI_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: PATRONI_KUBERNETES_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: PATRONI_KUBERNETES_POD_IP
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.podIP
+                - name: PATRONI_POSTGRESQL_CONNECT_ADDRESS
+                  value: "$(PATRONI_KUBERNETES_POD_IP):5432"
+                - name: PATRONI_RESTAPI_CONNECT_ADDRESS
+                  value: "$(PATRONI_KUBERNETES_POD_IP):8008"
+                - name: PATRONI_SUPERUSER_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: horizon-db-credentials
+                      key: superuser-password
+                - name: PATRONI_REPLICATION_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: horizon-db-credentials
+                      key: replication-password
+                - name: HORIZON_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: horizon-db-credentials
+                      key: horizon-password
+              readinessProbe:
+                httpGet:
+                  path: /readiness
+                  port: 8008
+                periodSeconds: 5
+                failureThreshold: 3
+              livenessProbe:
+                httpGet:
+                  path: /liveness
+                  port: 8008
+                initialDelaySeconds: 30
+                periodSeconds: 10
+                failureThreshold: 6
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+                limits:
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: data
+                  mountPath: /home/postgres/pgdata
+                - name: patroni-config
+                  mountPath: /etc/patroni
+                  readOnly: true
+          volumes:
+            - name: patroni-config
+              configMap:
+                name: horizon-db-patroni
+                defaultMode: 0555
+      volumeClaimTemplates:
+        - metadata:
+            name: data
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            # Production: set storageClassName to a low-latency SSD class.
+            resources:
+              requests:
+                storage: 10Gi
+
+  - apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: horizon-db
+      namespace: stellar
+    spec:
+      maxUnavailable: 1
+      selector:
+        matchLabels:
+          application: patroni
+          cluster-name: horizon-db

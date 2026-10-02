@@ -18,7 +18,7 @@ metadata:
     role: standby
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   version: "v21.0.0"
   replicas: 1
 
@@ -46,7 +46,7 @@ spec:
   # Cross-cluster communication using ExternalName services
   crossCluster:
     enabled: true
-    mode: ExternalName
+    mode: externalName
 
     externalName:
       externalDnsName: "validator-cluster-b.stellar.io"

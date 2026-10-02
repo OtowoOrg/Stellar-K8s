@@ -1,0 +1,39 @@
+# Standalone workspace so this crate is not conflated with the operator
+# workspace at the repository root.
+[workspace]
+
+[package]
+name = "state-verifier"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Stellar ledger state verification oracle: ledger header checkpoints, transaction inclusion proofs and native XDR decoding"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { version = "23.5.3", features = ["alloc"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "23.5.3", features = ["testutils", "alloc"] }
+# Signs synthetic worst-case headers in the gas profile.
+ed25519-dalek = "2"
+
+[profile.release]
+# Level 2 halves CPU cost versus "z" (profiled in tests/gas_profile.rs) for
+# ~1 KB of extra WASM; CPU is the binding cost for a verification oracle.
+opt-level = 2
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true

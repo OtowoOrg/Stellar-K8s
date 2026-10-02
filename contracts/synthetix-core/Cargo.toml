@@ -1,0 +1,30 @@
+[package]
+name = "synthetix-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Synthetic asset issuance, index-based pooled debt tracking and localized liquidation for Stellar/Soroban"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { version = "27.0.6", features = ["alloc"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "27.0.6", features = ["testutils", "alloc"] }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+codegen-units = 1
+lto = true
+
+# This crate is a standalone Soroban contract workspace, independent from the
+# root Stellar-K8s operator workspace (which pins its own toolchain and
+# profile settings).
+[workspace]

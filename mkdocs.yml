@@ -104,6 +104,7 @@ nav:
     - Soroban RPC: deployment-guides/soroban-rpc.md
   - Multi-Region:
     - multi-region-deployment-and-failover.md
+    - Global Load Balancing & DNS: architecture/global-load-balancing.md
   - Configuration:
     - configuration/index.md
     - CRD Reference: configuration/crd-reference.md
@@ -111,6 +112,7 @@ nav:
     - Storage: configuration/storage.md
     - Validator Container Command: configuration/validator-command.md
     - Database Optimization: database/optimization-guide.md
+    - Soroban Cost Optimization: infrastructure/cost-optimization.md
   - Tutorials:
     - tutorials/index.md
     - Deploy Testnet Validator: tutorials/deploy-testnet-validator.md
@@ -146,8 +148,10 @@ nav:
     - Security Compliance Guide: security/compliance-guide.md
     - Container Image Security: container-image-security.md
     - Credentials & Secrets: security/credentials-and-secrets.md
+    - Key Sharding & Seed Custody: security/key-sharding.md
     - Pod Security Standards: security/pss.md
     - Automated Dependency Updates: security/dependency-updates.md
+    - RPC Rate Limiting & DoS Mitigation: security/rpc-dos-mitigation.md
   - Networking:
     - Comprehensive Network Guide: networking/index.md
   - Development:
@@ -156,6 +160,7 @@ nav:
     - Static Analysis Gates: development/static-analysis-gates.md
     - License Header Compliance: development/license-headers.md
     - Automated Load Testing: load-testing.md
+    - Chaos Engineering Strategy: testing/chaos-engineering.md
     - YAML Schema Validation: yaml-schema-validation.md
     - Helm Chart Testing: helm-chart-testing.md
     - Database Migrations: database/migrations.md

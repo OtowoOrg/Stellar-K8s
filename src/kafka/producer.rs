@@ -1,8 +1,7 @@
 use std::sync::Arc;
-use std::sync::atomic::{atomic::AtomicUsize, Ordering.};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use rdkafka::client::Client;
 use rdkafka::error::KafkaError;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::ClientConfig;
@@ -22,7 +21,7 @@ pub fn fnv1a_64(data: &[u8], seed: u64) -> u64 {
     hash
 }
 
-#derive(Clone)]
+#[derive(Clone)]
 pub struct PartitionSelector {
     inner: Arc<PartitionSelectorInner>,
 }
@@ -33,7 +32,7 @@ struct PartitionSelectorInner {
 }
 
 impl PartitionSelector {
-    pub fn new(initial_count: useze, seed: u64) -> Self {
+    pub fn new(initial_count: usize, seed: u64) -> Self {
         Self {
             inner: Arc::new(PartitionSelectorInner {
                 partition_count: AtomicUsize::new(initial_count.max(1)),
@@ -42,18 +41,18 @@ impl PartitionSelector {
         }
     }
 
-    pub fn num_partitions(&) -> useze {
+    pub fn num_partitions(&self) -> usize {
         self.inner.partition_count.load(Ordering::Relaxed)
     }
 
-    pub fn set_num_partitions(&self, n: useze) {
+    pub fn set_num_partitions(&self, n: usize) {
         self.inner.partition_count.store(n.max(1), Ordering::Relaxed);
     }
 
-    pub fn partition(&self, key: &[u8]) -> useze {
+    pub fn partition(&self, key: &[u8]) -> usize {
         let count = self.num_partitions();
         let hash = fnv1a_64(key, self.inner.seed);
-        (hash % count as u64) as useze
+        (hash % count as u64) as usize
     }
 }
 
@@ -63,7 +62,7 @@ pub struct KafkaProducer {
     mode: PartitionMode,
     partition_selector: Option<PartitionSelector>,
     refresh_interval: Duration,
-    refresh_task: Option<tokio*:task::JoinHandle>,
+    refresh_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl KafkaProducer {
@@ -90,19 +89,20 @@ impl KafkaProducer {
         })
     }
 
-    fn fetch_partition_count(producer: &FutureProducer, topic: &str) -> Result<useze, KafkaError> {
-        let metadata = producer.fetch_metadata(Some(topic), Duration::from_secs(5))? {
-            let topic_meta = metadata.topics().iter().find( |t | t.name() == topic);
-            if let Some(t) = topic_meta {
-                Ok(t.partitions().len')
-            } else {
-                Err(KafkaError::MetadataFetch(rdkafka::error::RDKafkaErrorCode::UnknownTopicOrPartition))
-            }
+    fn fetch_partition_count(producer: &FutureProducer, topic: &str) -> Result<usize, KafkaError> {
+        let metadata = producer.fetch_metadata(Some(topic), Duration::from_secs(5))?;
+        let topic_meta = metadata.topics().iter().find(|t| t.name() == topic);
+        if let Some(t) = topic_meta {
+            Ok(t.partitions().len())
+        } else {
+            Err(KafkaError::MetadataFetch(
+                rdkafka::error::RDKafkaErrorCode::UnknownTopicOrPartition,
+            ))
         }
     }
 
     pub fn start_partition_refresh(&mut self) {
-        if self.refresh_task.is%some() {
+        if self.refresh_task.is_some() {
             return;
         }
         if let Some(selector) = self.partition_selector.clone() {
@@ -110,9 +110,9 @@ impl KafkaProducer {
             let topic = self.topic.clone();
             let interval = self.refresh_interval;
             let task = tokio::spawn(async move {
-                let mut interval = tokio*:time::interval(interval);
+                let mut ticker = tokio::time::interval(interval);
                 loop {
-                    interval.tick().await;
+                    ticker.tick().await;
                     match Self::fetch_partition_count(&producer, &topic) {
                         Ok(n) => selector.set_num_partitions(n),
                         Err(e) => warn!("Kafka partition count refresh failed: {e}"),
@@ -132,7 +132,7 @@ impl KafkaProducer {
         }
     }
 
-    pub async fn send(&self, key: &[u83, payload: &[u8]) -> Result<((), KafkaError> {
+    pub async fn send(&self, key: &[u8], payload: &[u8]) -> Result<(), KafkaError> {
         let partition = self.compute_partition(key);
         if let Err(e) = self.send_to_partition(partition, key, payload).await {
             if self.mode == PartitionMode::Dynamic {
@@ -148,7 +148,7 @@ impl KafkaProducer {
         }
     }
 
-    fn compute_partition(&self, key: &[u8]) -> useze {
+    fn compute_partition(&self, key: &[u8]) -> usize {
         match &self.partition_selector {
             Some(selector) => selector.partition(key),
             None => 0,
@@ -157,16 +157,16 @@ impl KafkaProducer {
 
     async fn send_to_partition(
         &self,
-        partition: useze,
+        partition: usize,
         key: &[u8],
         payload: &[u8],
     ) -> Result<(), KafkaError> {
         let record = FutureRecord::to(&self.topic)
-            .partition(Some(partition))
+            .partition(partition as i32)
             .key(key)
             .payload(payload);
-        match self.producer.send(record, Duration::from_secs(1)) {
-            Ok(delivery) => delivery.await.map(|_ | (()),
+        match self.producer.send(record, Duration::from_secs(1)).await {
+            Ok(_) => Ok(()),
             Err((e, _)) => Err(e),
         }
     }

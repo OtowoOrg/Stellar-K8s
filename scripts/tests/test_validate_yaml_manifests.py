@@ -84,6 +84,14 @@ class StructureLayerTest(unittest.TestCase):
     def test_missing_metadata_is_reported(self):
         self.assertTrue(self.check({"apiVersion": "v1", "kind": "ConfigMap"}))
 
+    def test_client_side_tool_configs_are_not_kubernetes_objects(self):
+        for doc in (
+            {"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization"},
+            {"apiVersion": "kind.x-k8s.io/v1alpha4", "kind": "Cluster"},
+        ):
+            self.assertFalse(val.is_kubernetes_document(doc))
+        self.assertTrue(val.is_kubernetes_document(self.BASE))
+
     def test_missing_name_is_reported(self):
         doc = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {}}
         self.assertIn("metadata.name", self.check(doc)[0].message)

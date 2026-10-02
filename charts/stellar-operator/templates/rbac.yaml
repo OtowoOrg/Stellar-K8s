@@ -1,7 +1,7 @@
 ---
 # RBAC for the Stellar Operator
 # Grants permissions to watch/manage StellarNode CRDs and related resources
-#{{- if .Anders.watchNamespace }}
+{{- if .Values.watchNamespace }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -88,9 +88,22 @@ rules:
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # GitOps immutable secret injection (SKKS-022):
+  # The operator only needs to read the SealedSecret/SOPS manifests and the controller-owned
+  # keys it decrypts into tmpfs. It must NOT be able to list or get arbitrary secrets,
+  # and it must never be able to write the decrypted validator keys back to the API server.
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch"]
+    resourceNames:
+      - {{ include "stellar-operator.fullname" . }}-gitops-source
+      - {{ include "stellar-operator.fullname" . }}-gitops-age-key
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "update", "patch", "delete"]
+    resourceNames:
+      - {{ include "stellar-operator.fullname" . }}-gitops-source
+      - {{ include "stellar-operator.fullname" . }}-gitops-age-key
 
   # Workload resources
   - apiGroups: ["apps"]
@@ -138,6 +151,25 @@ rules:
     resources: ["pods/eviction"]
     verbs: ["create"]
 
+  # Bitnami SealedSecrets - operator reads the encrypted manifests from the GitOps
+  # controller and decrypts them in-memory. We never grant write access to the decrypted
+  # payload, only the controller-owned source objects.
+  - apiGroups: ["bitnami.com"]
+    resources: ["sealedsecrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["bitnami.com"]
+    resources: ["sealedsecrets/status"]
+    verbs: ["get", "update", "patch"]
+
+  # Mozilla SOPS - operator reads the age-encrypted manifests from the GitOps
+  # controller and decrypts them in-memory. The age key is mounted from a
+  # kube-controller-owned Secret and is never written to disk.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+    resourceNames:
+      - {{ include "stellar-operator.fullname" . }}-gitops-source
+
 ---
 # Bind the Role to the ServiceAccount
 apiVersion: rbac.authorization.k8s.io/v1
@@ -170,12 +202,12 @@ subjects:
 
 ---
 # Namespace-reader ClusterRole -- grants the operator read-only access to
-# Namespace objects so the network safety check (SK8S-021) can verify the
+# Namespace objects so the network safety check (SKKS-021) can verify the
 # stellar.org/network label on the namespace hosting a StellarNode.
 #
- # This is intentionally a separate, minimal ClusterRole so that teams running
+# This is intentionally a separate, minimal ClusterRole so that teams running
 # the operator with namespace-scoped RBAC (watchNamespace set) can grant
-# only this narrow cluster-level permission without evating the main Role.
+# only this narrow cluster-level permission without elevating the main Role.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

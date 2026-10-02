@@ -1,0 +1,48 @@
+[package]
+name = "merkle-airdrop"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Merkle-proof token airdrop claim distributor for Stellar Soroban"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Declared so that `cfg(feature = "testutils")` is a known condition (otherwise
+# `--check-cfg` warns), and so consumers can pull the host-backed helpers on demand.
+testutils = ["soroban-sdk/testutils"]
+
+[dependencies]
+soroban-sdk = { version = "27.0.6", features = ["alloc"] }
+
+[dev-dependencies]
+# `hazmat-address` lets tests build an `Address` from a raw 32-byte payload, which is what
+# makes the benchmark's fixtures independent of the test Env: a distribution tree can be
+# hashed once off-chain and then claimed in a fresh Env per measurement. It is enabled for
+# dev builds only, so the wasm target never sees it, and it is used purely to *construct*
+# test recipients — never as a form of authentication, which is what the feature's own
+# warning is about.
+soroban-sdk = { version = "27.0.6", features = [
+    "testutils",
+    "alloc",
+    "hazmat-address",
+] }
+# Off-chain tree generation. Mirrors the hashing used by the on-chain verifier so
+# that a tree built by this crate's generator is provably the tree the contract
+# accepts. `contracts/merkle-verifier` pins the same crate and version.
+sha2 = { version = "0.10", default-features = false }
+
+[[bench]]
+name = "claim_bench"
+harness = false
+
+# The 100 000-recipient integration test spends its wall clock in SHA-256 over a
+# 131 072-leaf tree. Optimising just that dependency keeps `cargo test` quick without
+# changing how the contract itself is compiled. Honoured here because this crate is its
+# own workspace root.
+[profile.dev.package.sha2]
+opt-level = 3
+
+[workspace]

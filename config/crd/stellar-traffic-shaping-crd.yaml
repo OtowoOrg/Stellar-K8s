@@ -1,0 +1,262 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: trafficshapingpolicies.network.stellar.org
+spec:
+  group: network.stellar.org
+  names:
+    kind: TrafficShapingPolicy
+    listKind: TrafficShapingPolicyList
+    plural: trafficshapingpolicies
+    singular: trafficshapingpolicy
+    shortNames:
+      - tsp
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPI: v3
+        type: object
+        required:
+          - spec
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            required:
+              - targetSelector
+              - priorityClasses
+              - egressPolicy
+            properties:
+              targetSelector:
+                type: object
+                description: Label selector for pods whose egress traffic will be shaped.
+                required:
+                  - matchLabels
+                properties:
+                  matchLabels:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  matchExpressions:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - key
+                        - operator
+                      properties:
+                        key:
+                          type: string
+                        operator:
+                          type: string
+                          enum:
+                            - In
+                            - NotIn
+                            - Exists
+                            - DoesNotExist
+                        values:
+                          type: array
+                          items:
+                            type: string
+              priorityClasses:
+                type: array
+                description: Ordered list of traffic classes from highest to lowest priority.
+                minItems: 1
+                items:
+                  type: object
+                  required:
+                    - name
+                    - priority
+                    - selector
+                    - minimumBandwidth
+                  properties:
+                    name:
+                      type: string
+                      description: Name of the traffic class (e.g. internal-mtls, public-ingress).
+                    priority:
+                      type: integer
+                      minimum: 0
+                      maximum: 6
+                      description: Linux tc priority. Lower number means higher scheduling priority.
+                    selector:
+                      type: object
+                      description: Selects the traffic this class applies to.
+                      required:
+                        - direction
+                        - peerSelector
+                      properties:
+                        direction:
+                          type: string
+                          enum:
+                            - ingress
+                            - egress
+                        peerSelector:
+                          type: object
+                          description: Selects peer pods by label or CIDR.
+                          properties:
+                            matchLabels:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            cidr:
+                              type: string
+                              description: CIDR block for non-pod peers (e.g. cluster service subnet).
+                    minimumBandwidth:
+                      type: string
+                      pattern: '^[0-9]+[KMG]T]?$'
+                      description: Guaranteed bandwidth for this class (e.g. "100Gbit").
+                    maximumBandwidth:
+                      type: string
+                      pattern: '^[0-9]+[KMGMT]]?$'
+                      description: Hard ceiling for this class.
+                    burst:
+                      type: string
+                      pattern: '^[0-9]+[KMGMT]]?$'
+                      default: "15Mbit"
+                    latencyTarget:
+                      type: string
+                      pattern: '^[0-9]+(ms|us|s)$'
+                      default: "5ms"
+              egressPolicy:
+                type: object
+                required:
+                  - defaultClass
+                properties:
+                  defaultClassBandwidth:
+                    type: string
+                    pattern: '^[0-9]+[KMGMT]]?$'
+                    default: "1Gbit"
+                    description: Bandwidth applied to traffic not matching any priority class.
+                  defaultClass:
+                    type: string
+                    default: "default"
+                  prioritizeInternal:
+                    type: boolean
+                    default: true
+                    description: When true, intra-cluster mTLS traffic is placed in a strict priority class above public ingress.
+                  internalCIDRs:
+                    type: array
+                    items:
+                      type: string
+                    default:
+                      - "10.0.0.0/8"
+                      - "10.244.0.0/16"
+                      - "172.16.0.0/12"
+                      - "192.168.0.0/16"
+                    description: Pod/service CIDRs considered internal for prioritization.
+              dynamicScaling:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: true
+                  capacityMetric:
+                    type: string
+                    default: "node-network-capacity"
+                    description: Metric used to determine cluster network capacity scaling.
+                  scaleFactor:
+                    type: string
+                    default: "1.0"
+                    pattern: '^[0-9]+(\.[0-9]+)?$'
+                    description: Multiplier applied to minimumBandwidth when capacity increases.
+                  minCapacityThreshold:
+                    type: string
+                    default: "1Gbit"
+                    pattern: '^[0-9]+[KMGMT]]?$'
+                    description: Minimum node capacity before dynamic widening is applied.
+                  reconcileInterval:
+                    type: string
+                    default: "30s"
+                    pattern: '^[0-9]+(ms|s|m)$'
+              nodeSelector:
+                type: object
+                description: Nodes this policy applies to. Empty means all nodes.
+                properties:
+                  matchLabels:
+                    type: object
+                    additionalProperties:
+                      type: string
+              cniPlugin:
+                type: string
+                enum:
+                  - calico
+                  - cilium
+                default: calico
+                description: CNI plugin the controller integrates with for tc programming.
+          status:
+            type: object
+            properties:
+              observedGeneration:
+                type: integer
+              conditions:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - type
+                    - status
+                    - lastTransitionTime
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+                      enum:
+                        - True
+                        - False
+                        - Unknown
+                    reason:
+                      type: string
+                    message:
+                      type: string
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
+              appliedClasses:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - name
+                    - priority
+                    - effectiveBandwidth
+                  properties:
+                    name:
+                      type: string
+                    priority:
+                      type: integer
+                    effectiveBandwidth:
+                      type: string
+                    appliedAt:
+                      type: string
+                      format: date-time
+              observedCapacity:
+                type: string
+                pattern: '^[0-9]+[KMGMT]]?$'
+              lastReconcileTime:
+                type: string
+                format: date-time
+      additionalPrinterColumns:
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+        - name: CNI
+          type: string
+          jsonPath: .spec.cniPlugin
+        - name: InternalPrioritized
+          type: string
+          jsonPath: .spec.egressPolicy.prioritizeInternal
+        - name: DynamicScaling
+          type: string
+          jsonPath: .spec.dynamicScaling.enabled
+        - name: ObservedCapacity
+          type: string
+          jsonPath: .status.observedCapacity

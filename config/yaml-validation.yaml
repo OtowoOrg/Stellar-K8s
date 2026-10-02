@@ -24,6 +24,8 @@ exclude:
   - "charts/*/templates/**"
   # helm-unittest test definitions: a test DSL that happens to use .yaml.
   - "charts/*/tests/**"
+  # Helm chart templates shipped inside examples are Go templates, not YAML.
+  - "examples/**/templates/**"
   # mkdocs config uses !!python/name: tags that no safe loader can resolve.
   - "mkdocs.yml"
   # A kubeconfig is a client-side file, not a Kubernetes API object; it has
@@ -106,3 +108,11 @@ known_deviations:
   - path: "examples/metallb-bgp-anycast.yaml"
     layer: "L3-schema"
     reason: "MetalLB demo: BGP block omits a site-specific localAsn"
+  - path: "examples/recovery-mode-*.yaml"
+    layer: "L3-schema"
+    contains: "is a required property"
+    reason: "recovery-mode runbook: partial specs applied onto an existing StellarNode"
+  - path: "examples/debug/repair-pod.yaml"
+    layer: "L2-structure"
+    contains: "<NAMESPACE>"
+    reason: "repair-pod runbook template: namespace is filled in by the operator"

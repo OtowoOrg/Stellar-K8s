@@ -1,0 +1,41 @@
+# Standalone workspace so these crates are not conflated with the operator
+# workspace at the repository root.
+[workspace]
+members = [".", "factory"]
+default-members = [".", "factory"]
+resolver = "2"
+
+[workspace.dependencies]
+soroban-sdk = "23.5.3"
+
+[package]
+name = "index-basket"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Multi-asset index basket token with proportional issuance/redemption and oracle-guided arbitrageur rebalancing"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true

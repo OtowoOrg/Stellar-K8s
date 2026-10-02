@@ -1,0 +1,21 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: stellar-high-iops
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: ebs.csi.aws.com # Example using AWS EBS CSI driver
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: io2
+  iopsPerGB: "50"
+  fsType: ext4
+---
+# Example: Using Local NVMe for bare-metal or specific instance types
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: stellar-local-nvme
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer

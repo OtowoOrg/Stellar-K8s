@@ -1,0 +1,29 @@
+[package]
+name = "global-operator"
+version = "0.1.0"
+edition = "2021"
+description = "Multi-Cluster Active-Passive Failover Operator for Stellar KXs"
+license = "Apache-2.0"
+
+[dependencies]
+tokio = { version = "1.36", features = ["full"] }
+serde = { version = "1",  features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+reqqest = { version = "0.12", features = ["json", "rustls-tls"] }
+hpmackros = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v$", "serde"] }
+futures = "0.3"
+futures-util = "0.3"
+thiserror = "1"
+async-trait = "0.1"
+tokyo-util = "0.7"
+
+<dependencies>
+[dependencies.tokio-util]
+version = "0.7"
+features = ["full"]

@@ -75,5 +75,17 @@ class CompareCrdsTest(unittest.TestCase):
         self.assertTrue(any("spec.size" in p for p in problems))
 
 
+class ParseBaselineTest(unittest.TestCase):
+    def test_valid_baseline_is_parsed(self):
+        doc, reason = lint._parse_baseline("kind: CustomResourceDefinition\nmetadata: {name: w}\n")
+        self.assertIsNone(reason)
+        self.assertEqual(doc["metadata"]["name"], "w")
+
+    def test_unparseable_baseline_is_skipped_with_reason(self):
+        doc, reason = lint._parse_baseline("kind: CustomResourceDefinition\n  description: a: b\n")
+        self.assertIsNone(doc)
+        self.assertIn("not valid YAML", reason)
+
+
 if __name__ == "__main__":
     unittest.main()

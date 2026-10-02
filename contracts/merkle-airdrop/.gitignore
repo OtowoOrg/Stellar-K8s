@@ -1,0 +1,3 @@
+# Build output. The repository root has no `target` rule, so each standalone contract
+# workspace needs its own — otherwise `cargo build` output here is committable.
+/target

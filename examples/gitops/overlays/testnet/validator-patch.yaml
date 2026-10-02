@@ -1,0 +1,28 @@
+# Testnet validator strategic-merge patch.
+# Only fields that differ from the base are listed here.
+# To bump the Captive Core version: change spec.version and open a PR.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator
+spec:
+  network: testnet
+  version: "v21.0.0"
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  storage:
+    storageClass: "standard"
+    size: "100Gi"
+    retentionPolicy: Delete
+  validatorConfig:
+    # Reference a Kubernetes Secret containing STELLAR_CORE_SEED.
+    # Create via ExternalSecret or SealedSecret — never commit the plaintext key.
+    seedSecretRef: "validator-seed-testnet"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-testnet/core_testnet_001"

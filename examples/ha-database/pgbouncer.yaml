@@ -1,0 +1,176 @@
+# pgbouncer.yaml
+# Stateless connection pooler in front of the Patroni primary.
+#
+# Horizon connects ONLY to `horizon-db-pooler:6432`. PgBouncer connects to the
+# `horizon-db` Service, whose single endpoint is always the current Patroni leader,
+# so a failover needs no Horizon reconfiguration or restart.
+#
+# pool_mode = transaction is required for zero-downtime switchover: PAUSE then waits
+# only for in-flight transactions instead of for every client to disconnect.
+#
+# Prerequisite (created at deploy time, never committed). The horizon password must
+# match `horizon-password` in the horizon-db-credentials Secret:
+#   HZ_PW=$(kubectl -n stellar get secret horizon-db-credentials \
+#     -o jsonpath='{.data.horizon-password}' | base64 -d)
+#   kubectl -n stellar create secret generic horizon-db-pooler-auth \
+#     --from-literal=userlist.txt="$(printf '"horizon" "%s"\n"pgbouncer_admin" "%s"\n' \
+#       "$HZ_PW" "$(openssl rand -hex 24)")"
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: horizon-db-pooler
+      namespace: stellar
+    data:
+      pgbouncer.ini: |
+        [databases]
+        horizon = host=horizon-db.stellar.svc.cluster.local port=5432 dbname=horizon
+
+        [pgbouncer]
+        listen_addr = 0.0.0.0
+        listen_port = 6432
+        unix_socket_dir =
+        auth_type = scram-sha-256
+        auth_file = /etc/pgbouncer-auth/userlist.txt
+        admin_users = pgbouncer_admin
+        stats_users = pgbouncer_admin
+
+        pool_mode = transaction
+        max_client_conn = 1000
+        default_pool_size = 20
+        reserve_pool_size = 5
+        reserve_pool_timeout = 3
+
+        ; Horizon appends these to its DSN and lib/pq sends them as startup
+        ; parameters, which PgBouncer rejects unless they are ignored. Horizon still
+        ; enforces its request timeout client-side (context cancel -> cancel request).
+        ignore_startup_parameters = extra_float_digits,statement_timeout,idle_in_transaction_session_timeout
+
+        ; Failover behaviour: fail fast on a dead primary, retry quickly, and let
+        ; clients queue (not error) while a new leader is being elected.
+        server_connect_timeout = 3
+        server_login_retry = 1
+        query_wait_timeout = 60
+        server_check_delay = 5
+        server_lifetime = 600
+        server_idle_timeout = 60
+        dns_max_ttl = 5
+        ; Detect half-open connections to a partitioned old primary within ~25s.
+        tcp_keepalive = 1
+        tcp_keepidle = 10
+        tcp_keepintvl = 5
+        tcp_keepcnt = 3
+
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: horizon-db-pooler
+      namespace: stellar
+      labels:
+        app.kubernetes.io/name: horizon-db-pooler
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: horizon-db-pooler
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 0
+          maxSurge: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: horizon-db-pooler
+        spec:
+          terminationGracePeriodSeconds: 30
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    topologyKey: kubernetes.io/hostname
+                    labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: horizon-db-pooler
+          containers:
+            - name: pgbouncer
+              image: ghcr.io/cloudnative-pg/pgbouncer:1.26.0
+              args: ["/etc/pgbouncer/pgbouncer.ini"]
+              ports:
+                - name: pgbouncer
+                  containerPort: 6432
+              readinessProbe:
+                tcpSocket:
+                  port: 6432
+                periodSeconds: 5
+              livenessProbe:
+                tcpSocket:
+                  port: 6432
+                initialDelaySeconds: 10
+                periodSeconds: 10
+              # Stop accepting new connections, then let in-flight transactions finish.
+              lifecycle:
+                preStop:
+                  exec:
+                    command: ["/bin/sh", "-c", "sleep 5"]
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 32Mi
+                limits:
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/pgbouncer
+                  readOnly: true
+                - name: auth
+                  mountPath: /etc/pgbouncer-auth
+                  readOnly: true
+          volumes:
+            - name: config
+              configMap:
+                name: horizon-db-pooler
+            - name: auth
+              secret:
+                secretName: horizon-db-pooler-auth
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: horizon-db-pooler
+      namespace: stellar
+      labels:
+        app.kubernetes.io/name: horizon-db-pooler
+    spec:
+      type: ClusterIP
+      selector:
+        app.kubernetes.io/name: horizon-db-pooler
+      ports:
+        - name: pgbouncer
+          port: 6432
+          targetPort: 6432
+
+  - apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: horizon-db-pooler
+      namespace: stellar
+    spec:
+      minAvailable: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: horizon-db-pooler

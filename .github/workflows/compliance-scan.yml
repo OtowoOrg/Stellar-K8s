@@ -37,9 +37,9 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          curl -fsSLo /usr/local/bin/kind \
+          curl -fsSLo kind \
             "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
-          chmod +x /usr/local/bin/kind
+          sudo install -m 0755 kind /usr/local/bin/kind
           kind create cluster --image "${KIND_IMAGE}"
 
       - name: Download kube-bench release
@@ -48,7 +48,7 @@ jobs:
           set -euo pipefail
           curl -fsSLO "https://github.com/aquasecurity/kube-bench/releases/download/v${KUBE_BENCH_VERSION}/kube-bench_${KUBE_BENCH_VERSION}_linux_amd64.tar.gz"
           tar -xzf "kube-bench_${KUBE_BENCH_VERSION}_linux_amd64.tar.gz"
-          cp kube-bench /usr/local/bin/kube-bench
+          sudo cp kube-bench /usr/local/bin/kube-bench
 
       - name: Stage kube-bench and custom controls on the control-plane node
         continue-on-error: true
@@ -65,12 +65,16 @@ jobs:
           mkdir -p security/kube-bench/reports
           docker exec kind-control-plane \
             /usr/local/bin/kube-bench run --benchmark stellar-bench --output json \
-            > security/kube-bench/reports/kube-bench-report.json
+            > security/kube-bench/reports/kube-bench-report.json \
+            2> security/kube-bench/reports/kube-bench-stderr.log
           rc=$?
           set -e
           echo "kube-bench exit code: ${rc} (nonzero means checks failed)"
-          if ! python3 -c "import json; json.load(open('security/kube-bench/reports/kube-bench-report.json'))" 2>/dev/null; then
-            echo "report missing or invalid JSON; writing placeholder" >&2
+          cat security/kube-bench/reports/kube-bench-stderr.log >&2 || true
+          # Keep downstream parsing well-defined: anything that is not a JSON
+          # report (no cluster, missing binary, ...) becomes an empty report.
+          if ! python3 -m json.tool security/kube-bench/reports/kube-bench-report.json >/dev/null 2>&1; then
+            echo "no valid report produced; writing placeholder" >&2
             echo '{"Totals":{},"Controls":[]}' > security/kube-bench/reports/kube-bench-report.json
           fi
 

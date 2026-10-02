@@ -1,0 +1,27 @@
+[package]
+name        = "cross-shard"
+version     = "0.1.0"
+edition     = "2021"
+license     = "Apache-2.0"
+description = "Cross-Shard Liquidity State Verifier: atomic multi-AMM swap coordinator (issue #333)"
+publish     = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { version = "22.0.0", features = ["alloc"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "22.0.0", features = ["alloc", "testutils"] }
+
+[profile.release]
+opt-level     = "z"
+overflow-checks = true
+debug         = false
+strip         = "symbols"
+lto           = true
+codegen-units = 1
+panic         = "abort"
+
+[workspace]

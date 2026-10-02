@@ -1,0 +1,27 @@
+# Futurenet validator strategic-merge patch.
+# Futurenet tracks protocol preview builds; version must match the preview branch.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator
+spec:
+  network: futurenet
+  # Track the latest Futurenet-compatible build. Update via PR.
+  version: "v22.0.0-preview"
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  storage:
+    storageClass: "standard"
+    size: "50Gi"
+    # Futurenet resets periodically; Delete is appropriate here.
+    retentionPolicy: Delete
+  validatorConfig:
+    seedSecretRef: "validator-seed-futurenet"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-futurenet/core_futurenet_001"

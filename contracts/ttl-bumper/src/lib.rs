@@ -29,6 +29,14 @@
 //!   2. Build a batch of IDs (max `MAX_BATCH_SIZE`).
 //!   3. Submit a `bump_batch(keeper_address, entry_ids)` transaction.
 //!   4. Collect the emitted `BountyPaid` event to confirm payout.
+//!
+//! ## State Archival Strategy
+//!
+//! See `docs/architecture/state-archival-strategy.md` for the full guide.
+//! In short: Temporary entries are *deleted* on expiry and never archived,
+//! so they must NOT be registered here.  Only Persistent and Instance
+//! entries benefit from TTL extension.  This contract extends the target
+//! contract's *instance* TTL, which is the recommended in-contract strategy.
 
 #![no_std]
 // The soroban_sdk events::publish API is deprecated in favour of the
@@ -96,6 +104,9 @@ impl TtlBumperContract {
     ///
     /// * `admin`          – privileged address for bounty management
     /// * `bounty_per_key` – stroops paid to keeper per bumped key (can be 0)
+    ///
+    /// Note: only Persistent/Instance storage keys should be registered.
+    /// Temporary entries are deleted on expiry and do not need TTL bumps.
     pub fn initialize(env: Env, admin: Address, bounty_per_key: i128) {
         // Guard against re-initialisation.
         if env
@@ -129,6 +140,11 @@ impl TtlBumperContract {
     /// * `extension_ledgers`  – extend by this many ledgers
     ///                          (0 → use default `DEFAULT_EXTENSION_LEDGERS`)
     /// * `owner`              – address that can later deregister this entry
+    ///
+    /// Do NOT register keys backed by Temporary storage: those entries are
+    /// designed to be entirely deleted on expiry, not archived, and therefore
+    /// never require a TTL extension.  Registering them wastes keeper gas and
+    /// bounty funds.
     pub fn register(
         env: Env,
         contract_id: Address,
@@ -174,6 +190,13 @@ impl TtlBumperContract {
     ///
     /// Returns the total bounty (in stroops) awarded to the keeper.
     ///
+    /// This implements the "In-Contract Extension" strategy: TTLs are
+    /// extended from within a public user-facing function so that active
+    /// users keep their state alive without a separate maintenance tx.
+    /// Temporary entries are intentionally excluded from this path — they
+    /// are deleted, not archived, so extending their TTL is a no-op at best
+    /// and a waste of rent at worst.
+    ///
     /// Panics if:
     /// - `entry_ids` is empty (`EmptyBatch`)
     /// - `entry_ids.len() > MAX_BATCH_SIZE` (`BatchTooLarge`)
@@ -214,6 +237,10 @@ impl TtlBumperContract {
             // Extend the target contract's *instance* TTL.
             // The host function only extends if the current live_until_ledger
             // is below the requested value, making this idempotent.
+            //
+            // NOTE: `extend_ttl` on a Temporary key is a no-op because
+            // Temporary entries are deleted on expiry, never archived.
+            // Only Persistent and Instance keys benefit from this call.
             env.deployer().extend_ttl(
                 entry.contract_id.clone(),
                 entry.threshold_ledgers,

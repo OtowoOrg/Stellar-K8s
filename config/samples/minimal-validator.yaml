@@ -15,3 +15,19 @@ spec:
   validatorConfig:
     seedSecretRef: validator-seed
     enableHistoryArchive: false
+  gitopsSecrets:
+    enabled: true
+    provider: sops
+    manifestPath: gitops/validator-seed.sops.yaml
+    ageRecipientRef:
+      name: validator-age-key
+      key: age-recipient
+    hardFailOnDecryptError: true
+    tmpfs:
+      enabled: true
+      mountPath: /var/run/stellar/secrets
+      sizeLimit: 64Mi
+      readOnly: true
+      noExec: true
+    rbac:
+      denySecretAccess: true

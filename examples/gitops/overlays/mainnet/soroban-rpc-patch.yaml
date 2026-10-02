@@ -1,0 +1,29 @@
+# Mainnet Soroban RPC strategic-merge patch.
+# PRODUCTION — manual sync gate applies (see mainnet kustomization.yaml).
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: soroban-rpc
+spec:
+  network: mainnet
+  version: "v21.1.0"
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+  sorobanConfig:
+    stellarCoreUrl: "http://mainnet-validator:11626"
+    captiveCoreStructuredConfig:
+      logLevel: "info"
+      historyArchiveUrls:
+        - "https://history.stellar.org/prd/core-live/core_live_001"
+        - "https://history.stellar.org/prd/core-live/core_live_002"
+    maxEventsPerRequest: 10000
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 10
+    targetCpuUtilizationPercentage: 65
+  alerting: true

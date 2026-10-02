@@ -1,0 +1,18 @@
+[package]
+name = "yield-vault"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "ERC-4626 style auto-compounder vault with harvest mechanics and protocol fees for Stellar Soroban"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { version = "27.0.6", features = ["alloc"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "27.0.6", features = ["testutils", "alloc"] }
+
+[workspace]

@@ -1,0 +1,44 @@
+# Prometheus ServiceMonitor — scrape the metrics-proxy sidecar (port 9091)
+# instead of Stellar Core directly (port 11626).
+#
+# Requires the Prometheus Operator CRDs to be installed in the cluster.
+# Adjust `namespaceSelector` and `selector` labels to match your deployment.
+#
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: stellar-metrics-proxy
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-metrics-proxy
+    app.kubernetes.io/component: telemetry
+    app.kubernetes.io/part-of: stellar-k8s
+    # Label used by your Prometheus instance's serviceMonitorSelector:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stellar-core
+  namespaceSelector:
+    matchNames:
+      - stellar-system
+  endpoints:
+    - port: metrics-proxy          # matches containerPort name in the patch
+      path: /metrics
+      interval: 15s                # default Prometheus scrape interval
+      scrapeTimeout: 10s
+      scheme: http
+      # Optional: honour the proxy's rate-limit by aligning the scrape interval
+      # with minScrapeIntervalMs in the ConfigMap (both default 1 s / 15 s here).
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+      metricRelabelings:
+        # Drop any residual Go runtime metrics that slip through the proxy filter
+        - sourceLabels: [__name__]
+          regex: "^go_.*"
+          action: drop

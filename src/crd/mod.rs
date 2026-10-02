@@ -199,8 +199,8 @@ pub use stellar_network_policy::{
     StellarWorkloadProfileSpec, TLSRule, WorkloadIdentity,
 };
 pub use stellar_node::{
-    BGPStatus, SnapshotBootstrapStatus, SpecValidationError, StellarNode, StellarNodeSpec,
-    StellarNodeStatus,
+    BGPStatus, ObservedStorageStatus, SnapshotBootstrapStatus, SpecValidationError, StellarNode,
+    StellarNodeSpec, StellarNodeStatus,
 };
 pub use stellar_observability::{
     AlertRule, AlertingConfig, AnomalyDetectionConfig, AnomalyModel, AnomalySensitivity,

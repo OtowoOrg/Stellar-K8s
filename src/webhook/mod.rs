@@ -74,6 +74,11 @@ pub mod org_validator;
 pub mod runtime;
 pub mod server;
 pub mod types;
+/// WASM bytecode optimizer mutating admission webhook (issue #325).
+///
+/// Intercepts StellarNode WASM deployment payloads, streams them to the
+/// wasm-opt sidecar service, and returns the optimized binary via JSON Patch.
+pub mod wasm_mutator;
 
 pub use config_guardrails::{
     blocking_violations, check_config_guardrails, GuardrailViolation, Severity,
@@ -86,3 +91,4 @@ pub use types::{
     PluginConfig, PluginExecutionResult, PluginLimits, PluginMetadata, SecretRef, UserInfo,
     ValidationError, ValidationErrorType, ValidationInput, ValidationOutput,
 };
+pub use wasm_mutator::{wasm_mutate_handler, WasmMutatorState};

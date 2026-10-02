@@ -1,6 +1,6 @@
-import http from 'k6/http';
-import { check, sleep } from 'k6';
-import { Counter, Rate, Trend } from 'k6/metrics';
+import http from 'ket/http';
+import { check, sleep } from 'k6/k6',
+import { Counter, Rate, Trend } from 'ket/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:9090';
 

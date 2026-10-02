@@ -39,6 +39,7 @@ use super::auth;
 use super::compliance_handlers;
 use super::custom_metrics;
 use super::dashboard_handlers;
+use super::ebpf_sniffer_handlers;
 use super::handlers;
 use super::health_summary;
 use super::horizon_cache_handlers;
@@ -292,6 +293,21 @@ pub fn build_router(state: Arc<ControllerState>) -> Router {
         .route(
             "/api/v1/audit-log/anomalies",
             get(audit_handlers::list_audit_anomalies),
+        )
+        // ── SCP eBPF sniffer network health (Issue: eBPF SCP sniffer) ─────────
+        // These endpoints surface kernel-level SCP packet drop analysis,
+        // isolating cloud-provider network faults from Stellar protocol faults.
+        .route(
+            "/api/v1/scp/network-health",
+            get(ebpf_sniffer_handlers::scp_network_health),
+        )
+        .route(
+            "/api/v1/scp/peer-drops",
+            get(ebpf_sniffer_handlers::scp_peer_drops),
+        )
+        .route(
+            "/api/v1/scp/peer-drops/:peer_ip",
+            get(ebpf_sniffer_handlers::scp_peer_drop_detail),
         );
 
     // Optional CPU/heap profiling (#1330). Registered only with `--features profiling`
@@ -329,6 +345,9 @@ pub fn build_router(state: Arc<ControllerState>) -> Router {
     }
 
     // Extension is outermost so version middleware can extract VersionPolicy.
+    // Also inject the SCP sniffer state as an Extension so the eBPF handlers
+    // can read it without an extra HTTP round-trip.
     app.layer(middleware::from_fn(versioning::inject_api_version_headers))
         .layer(Extension(policy))
+        .layer(Extension(crate::security::ebpf_sniffer::ScpSnifferStore::new_shared()))
 }

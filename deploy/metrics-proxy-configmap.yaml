@@ -1,0 +1,116 @@
+# Kubernetes ConfigMap for the Stellar metrics rate-limiter proxy.
+#
+# Mount this ConfigMap into the stellar-metrics-proxy sidecar container at
+# /etc/stellar-metrics-proxy/config.yaml
+#
+# Fields reference:
+#   upstream            — full URL of the Stellar Core /metrics endpoint
+#   listenAddr          — address:port the proxy binds to
+#   minScrapeIntervalMs — minimum ms between upstream scrapes (default: 1000)
+#   upstreamTimeoutMs   — HTTP timeout for upstream fetch (default: 10000)
+#   labelDropRules      — label *names* to strip from every metric line
+#   seriesFilterRules   — keep/drop rules matched against metric *names*
+#   cacheRules          — per-family TTL cache for slow-changing metrics
+#   highFrequencyPatterns — metric families that always bypass the cache
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stellar-metrics-proxy-config
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-metrics-proxy
+    app.kubernetes.io/component: telemetry
+    app.kubernetes.io/part-of: stellar-k8s
+data:
+  config.yaml: |
+    # Upstream Stellar Core metrics endpoint (sidecar: same pod, loopback)
+    upstream: "http://127.0.0.1:11626/metrics"
+
+    # Proxy listen address — Prometheus scrapes this instead of core directly
+    listenAddr: "0.0.0.0:9091"
+
+    # Minimum interval between upstream scrapes.
+    # Prometheus scrapes arriving faster than this return the cached response.
+    # Raise this if the Stellar Core pod shows CPU spikes during scrapes.
+    minScrapeIntervalMs: 1000
+
+    # Upstream HTTP request timeout.
+    upstreamTimeoutMs: 8000
+
+    # -------------------------------------------------------------------------
+    # Label-drop rules
+    # Labels whose names match any pattern are stripped from every metric line.
+    # This reduces cardinality and payload size before Prometheus ingests data.
+    # -------------------------------------------------------------------------
+    labelDropRules:
+      # Prometheus-internal histogram bucket boundary label — not useful in dashboards
+      - pattern: "^le$"
+      # Prometheus-internal summary quantile label
+      - pattern: "^quantile$"
+      # Instance label is redundant when scraped via pod service discovery
+      - pattern: "^instance$"
+      # Prometheus job label — Prometheus adds its own
+      - pattern: "^job$"
+
+    # -------------------------------------------------------------------------
+    # Series-filter rules
+    # Rules are evaluated in order; the first match wins.
+    # Unmatched metrics default to keep.
+    # -------------------------------------------------------------------------
+    seriesFilterRules:
+      # Always forward high-value Stellar consensus metrics
+      - pattern: "^stellar_scp_"
+        action: keep
+      # Always forward ledger and transaction metrics
+      - pattern: "^stellar_ledger_"
+        action: keep
+      # Always forward resource metrics
+      - pattern: "^stellar_node_"
+        action: keep
+      - pattern: "^process_cpu_"
+        action: keep
+      - pattern: "^process_resident_memory_"
+        action: keep
+      # Drop Go runtime internals — high cardinality, low operational value
+      - pattern: "^go_gc_"
+        action: drop
+      - pattern: "^go_memstats_"
+        action: drop
+      - pattern: "^go_sched_"
+        action: drop
+
+    # -------------------------------------------------------------------------
+    # Cache rules for slow-changing metric families
+    # Cached families are served from memory for ttlSecs between upstream fetches.
+    # -------------------------------------------------------------------------
+    cacheRules:
+      # Node version string — changes only on upgrades
+      - pattern: "^stellar_node_version"
+        ttlSecs: 300
+      # Node build info — static between deployments
+      - pattern: "^stellar_operator_info"
+        ttlSecs: 300
+      # Uptime counter — monotonically increasing, 60 s precision is fine
+      - pattern: "^stellar_node_uptime_seconds_total"
+        ttlSecs: 60
+      # Archive integrity check — runs every few minutes at most
+      - pattern: "^stellar_archive_integrity"
+        ttlSecs: 120
+      # History archive size — changes slowly
+      - pattern: "^stellar_archive_size_bytes"
+        ttlSecs: 120
+      # Database size — changes slowly
+      - pattern: "^stellar_database_size_bytes"
+        ttlSecs: 60
+
+    # -------------------------------------------------------------------------
+    # High-frequency patterns — always bypasses the per-family cache
+    # These metrics must be fresh on every non-rate-limited scrape.
+    # -------------------------------------------------------------------------
+    highFrequencyPatterns:
+      - "^stellar_scp_"
+      - "^stellar_ledger_close_time"
+      - "^stellar_transaction_throughput"
+      - "^process_cpu_"
+      - "^process_resident_memory_"

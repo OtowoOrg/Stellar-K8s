@@ -1,0 +1,58 @@
+# examples/chaos/network-partition.yaml
+# Chaos Mesh NetworkChaos: partition a validator from its core quorum set.
+# See docs/testing/chaos-engineering.md for the full strategy (issue #295).
+#
+# Effect:
+#   One validator pod is severed (bidirectionally) from every other validator
+#   in `stellar-system` for 120s — i.e. it loses the peers listed in its
+#   StellarNode `spec.quorumSet` while the pod itself keeps running.
+#
+# Prerequisites:
+#   - Chaos Mesh >= 2.x installed (namespace `chaos-mesh`)
+#   - Experiment namespace `chaos-testing` with the target-namespace
+#     RoleBinding (see docs/testing/chaos-engineering.md, "Safety")
+#   - At least two validator StellarNodes in `stellar-system`
+#   - Edit `app.kubernetes.io/instance` below to the name of the StellarNode
+#     you want to isolate.
+#
+# Usage:
+#   kubectl apply -f examples/chaos/network-partition.yaml -n chaos-testing
+#   kubectl -n stellar-system get stellarnodes -w
+#   kubectl -n chaos-testing get networkchaos
+#   kubectl delete -f examples/chaos/network-partition.yaml -n chaos-testing
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: validator-quorum-partition
+  namespace: chaos-testing
+  labels:
+    chaos.stellar.org/suite: chaos-examples
+    chaos.stellar.org/category: quorum-partition
+    chaos.stellar.org/severity: critical
+spec:
+  action: partition
+  # Pick a single validator pod as the isolated side of the partition.
+  mode: one
+  selector:
+    # Chaos is scoped to one namespace on purpose: never widen this to
+    # cluster-wide selectors on a shared cluster.
+    namespaces:
+      - stellar-system
+    labelSelectors:
+      app.kubernetes.io/name: stellar-node
+      app.kubernetes.io/component: validator
+      # The StellarNode whose pods lose quorum connectivity.
+      app.kubernetes.io/instance: validator-testnet
+  direction: both
+  # Far side of the partition: every other validator pod (the quorum peers).
+  to:
+    mode: all
+    selector:
+      namespaces:
+        - stellar-system
+      labelSelectors:
+        app.kubernetes.io/name: stellar-node
+        app.kubernetes.io/component: validator
+  duration: "120s"
+  gracePeriod: 0

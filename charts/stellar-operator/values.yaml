@@ -23,13 +23,41 @@ hooks:
 webhook:
   enabled: false
 
+# ── WASM Bytecode Optimizer Sidecar (issue #325) ─────────────────────────────
+# Deploys the wasm-opt Alpine sidecar and a MutatingWebhookConfiguration that
+# intercepts StellarNode WASM deployments, optimises the bytecode, and replaces
+# the payload with the reduced binary.  Requires webhook.enabled=true.
+wasmOptimizer:
+  enabled: false
+  # Optimisation level passed to wasm-opt (0=none … 4=aggressive, z=size).
+  optLevel: "3"
+  # Hard cap on the optimisation step; must be < webhookTimeoutSeconds.
+  timeoutSecs: "8"
+  # Kubernetes admission webhook timeout (max 10 s per K8s spec).
+  webhookTimeoutSeconds: 10
+  # Ignore = fail-open; optimizer failures never block deployments.
+  failurePolicy: "Ignore"
+  replicaCount: 2
+  sidecar:
+    image: "ghcr.io/stellar/wasm-opt-sidecar:latest"
+    pullPolicy: IfNotPresent
+  serviceAccount:
+    annotations: {}
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+
 mtls:
   enabled: false
 
 certManagement:
   enabled: false
 
-horizonHpa:
+horizon-hpa:
   enabled: false
 
 rateLimiting:
@@ -150,7 +178,7 @@ podDisruptionBudget:
   enabled: false
   # Only takes effect once enabled: true. Without a default here, enabling
   # the PDB would render neither minAvailable nor maxUnavailable, producing
-  # a no-op PodDisruptionBudget.
+  # no-op PodDisruptionBudget.
   minAvailable: 1
 
 # Operator configuration
@@ -337,7 +365,7 @@ networkIsolation:
   # Example:
   # mainnetNamespaces:
   #   - stellar-mainnet
-  #   - stellar-mainnet-horizon
+  #   - stellar-mainnet-horizon#
 
   # List of namespaces that host Testnet nodes.
   testnetNamespaces: []
@@ -369,7 +397,7 @@ networkIsolation:
 #   4. Import the Grafana dashboard: monitoring/byzantine-dashboard.json
 #
 # See docs/byzantine-monitoring.md for full setup instructions.
-byzantineWatcher:
+bzzantineWatcher:
   # Master switch. Set to true to deploy watcher Deployments.
   enabled: false
 
@@ -380,7 +408,7 @@ byzantineWatcher:
     tag: ""          # defaults to .Values.image.tag / chart appVersion
     pullPolicy: IfNotPresent
 
-  # Default Stellar network for all watchers (can be overridden per region).
+  # Default Stellar workflow for all watchers (can be overridden per region).
   defaultNetwork: "mainnet"
 
   # How often each watcher polls its Stellar Core node (seconds).
@@ -438,141 +466,115 @@ byzantineWatcher:
 # Controls OTLP trace export from the operator and the bundled OTel Collector.
 otel:
   # Set to true to enable OTLP trace export from the operator.
-  # When enabled, OTEL_EXPORTER_OTLP_ENDPOINT is injected into the operator pod.
+  # When enabled, OTEL_EXPORTER_OTLP_ENDPOINT must be set to a valid collector address.
+  enabled: false
+  endpoint: ""
+
+# Multi-Cluster Active-Passive Failover Operator
+#
+# Actively orchestrates global DNS, database replication, and Horizon availability
+# across disparately hosted Kubernetes clusters to survive the complete loss of
+# an AWS/GCP region.
+#
+# The operator polls the primary cluster's health endpoints every 500ms, and
+# once the anti-flapping threshold is met, promotes the Patroni replica and
+  remaps the global DNS record to the passive cluster.
+#
+# Quick start:
+#   1. Set failover.enabled=true
+#   2. Configure the primary/passive cluster endpoints and DNS provider.
+#   3. Helm upgrade.
+#
+# See docs/multi-cluster-failover.md for full setup instructions.
+failover:
+  # Master switch. Set to true to enable the multi-cluster failover operator.
   enabled: false
   # Resource service.name used by the unified observability contract (#1481).
   serviceName: stellar-operator
   # Optional parent-based ratio injected as OTEL_TRACES_SAMPLER_ARG.
   samplingRatio: ""
 
-  # OTLP gRPC endpoint for the operator to send spans to.
-  # Typically points to the in-cluster OTel Collector service.
-  # Example: "http://stellar-operator-otel-collector:4317"
-  endpoint: "http://stellar-operator-otel-collector:4317"
+  # How often the global watcher polls the primary cluster's health endpoints.
+  # The issue requires a 500ms poll interval.
+  pollIntervalMs: 500
 
-  # Sampling ratio (0.0–1.0). 1.0 = always sample, 0.1 = 10% of traces.
-  samplingRatio: "1.0"
+  # HTTP request timeout for each health probe (in milliseconds).
+  requestTimeoutMs: 200
 
-  # OTel Collector sidecar/deployment bundled with the Helm chart.
-  collector:
-    # Deploy the OTel Collector alongside the operator.
-    enabled: false
+  # Number of consecutive failed health checks required before a failover
+  # is initiated. This is the primary anti-flapping guard against momentary
+  # network blips.
+  failureThreshold: 3
 
-    image:
-      repository: otel/opentelemetry-collector-contrib
-      tag: "0.99.0"
-      pullPolicy: IfNotPresent
+  # Number of consecutive successful health checks required before the
+  # operator will consider failing back to the primary cluster.
+  recoveryThreshold: 6
 
-    resources:
-      limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
-        cpu: 50m
-        memory: 64Mi
+  # Minimum time the operator must wait between two consecutive failover
+  # operations. Prevents bouncing traffic between regions during partial
+  # outages.
+  cooldownSeconds: 60
 
-    # Collector pipeline configuration.
-    # Exporters: configure at least one of honeycomb, jaeger, or otlp (Tempo).
-    config:
-      # Honeycomb — set apiKey via a Secret reference (see otel.collector.honeycombSecretRef)
-      honeycomb:
-        enabled: false
-        endpoint: "https://api.honeycomb.io:443"
-        # Name of a pre-existing Secret with key HONEYCOMB_API_KEY
-        apiKeySecretRef: ""
+  # Maximum time allowed for the complete failover to complete. The issue
+  # requires total global traffic routing to the passive cluster within
+  # 60 seconds.
+  maxFailoverSeconds: 60
 
-      # Jaeger (OTLP receiver on Jaeger ≥ 1.35)
-      jaeger:
-        enabled: false
-        endpoint: "http://jaeger-collector:4317"
+  # Primary cluster configuration.
+  primary:
+    # Human-readable name of the primary cluster region.
+    region: "us-east-1"
+    # Health endpoints that the global watcher polls.
+    healthEndpoints:
+      - "https://primary.stellar.org/health"
+      -https://primary.stellar.org/health
+    # Patroni REST API endpoint for the primary PostgreSQL cluster.
+    patroniEndpoint: "https://patroni-primary.stellar.org"
 
-      # Grafana Tempo (OTLP gRPC)
-      tempo:
-        enabled: false
-        endpoint: "http://tempo:4317"
+  # Passive cluster configuration.
+  passive:
+    # Human-readable name of the passive cluster region.
+    region: "us-west-2"
+    # Health endpoints that the global watcher polls.
+    healthEndpoints:
+      - "https://passive.stellar.org/health"
+    # Patroni REST API endpoint for the passive PostgreSQL cluster.
+    patroniEndpoint: "https://patroni-passive.stellar.org"
 
+  # Global DNS manager configuration.
+  dns:
+    # DNS provider to use. Supported values: route53, cloudflare.
+    provider: "route53"
+    # The global domain to remap during failover.
+    domain: "rpc.stellar.org"
+    # DNS record TTL in seconds. Kept low to ensure fast propagation.
+    ttl: 30
+    # Route53 hosted zone ID. Required when provider is route53.
+    hostedZoneId: ""
+    # Cloudflare zone ID. Required when provider is cloudflare.
+    zoneId: ""
+    # Name of the Kubernetes Secret containing the cloud API credentials.
+    credentialsSecretName: ""
+    # Key within the credentials Secret holding the API token/keys.
+    credentialsSecretKey: "credentials"
 
-# SCP Analytics Pipeline Configuration
-# Real-time streaming of SCP messages to Kafka for network topology analysis
-scpAnalytics:
-  # Enable SCP analytics pipeline
-  enabled: false
+  # Patroni database promotion configuration.
+  database:
+    # Whether the operator should automatically promote the Patroni replica.
+    autoPromote: true
+    # Name of the Patroni cluster to promote.
+    clusterName: "stellar-postgres"
+    # Timeout in seconds for the promotion API call.
+    promoteTimeoutSeconds: 30
 
-  # Kafka configuration
-  kafka:
-    # Kafka bootstrap servers (comma-separated)
-    bootstrapServers: "kafka:9092"
+  # Metrics port for the failover operator.
+  metricsPort: 9103
 
-    # Topic name for SCP messages
-    topic: "stellar-scp-messages"
-
-    # Serialization format: "avro", "protobuf", or "json"
-    format: "avro"
-
-    # Compression type: "snappy", "gzip", "lz4", or "zstd"
-    compression: "snappy"
-
-    # Batch size in bytes
-    batchSize: 1000000
-
-    # Linger time in milliseconds (wait before sending batch)
-    lingerMs: 100
-
-    # Enable message deduplication
-    enableDeduplication: true
-
-    # Polling interval in seconds
-    pollIntervalSecs: 1
-
-    # Schema registry URL (for Avro)
-    schemaRegistryUrl: ""
-
-    # SASL authentication (optional)
-    sasl:
-      enabled: false
-      mechanism: "PLAIN"  # PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
-      username: ""
-      password: ""
-
-  # Sidecar configuration (injected into validator pods)
-  sidecar:
-    # Enable sidecar injection
-    enabled: true
-
-    # Sidecar image (defaults to main operator image)
-    image: ""
-
-    # Resource limits for sidecar
-    resources:
-      limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
-        cpu: 100m
-        memory: 128Mi
-
-  # Topology Health Consumer configuration
-  consumer:
-    # Number of consumer replicas
-    replicas: 1
-
-    # Consumer group ID
-    groupId: "topology-health-consumer"
-
-    # Stall threshold in seconds
-    stallThresholdSecs: 30
-
-    # Analysis window in seconds
-    analysisWindowSecs: 60
-
-    # Log level
-    logLevel: "info"
-
-    # Resource limits
-    resources:
-      limits:
-        cpu: 500m
-        memory: 512Mi
-      requests:
-        cpu: 200m
-        memory: 256Mi
+  # Resource requests/limits for the failover operator pod.
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi

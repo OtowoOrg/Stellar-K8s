@@ -2,6 +2,18 @@
 # `introduced_caps` lists CAPs named in the release's protocol section.
 
 [[releases]]
+version = "v29.0.0"
+protocol = 29
+xdr_version = 29
+introduced_caps = []
+
+[[releases]]
+version = "v29.0.0-internal"
+protocol = 29
+xdr_version = 29
+introduced_caps = []
+
+[[releases]]
 version = "v28.0.1"
 protocol = 28
 xdr_version = 28
@@ -45,18 +57,6 @@ introduced_caps = ["CAP-0073", "CAP-0077"]
 
 [[releases]]
 version = "v25.2.2-external"
-protocol = 25
-xdr_version = 25
-introduced_caps = []
-
-[[releases]]
-version = "v25.2.1-external"
-protocol = 25
-xdr_version = 25
-introduced_caps = []
-
-[[releases]]
-version = "v25.2.0"
 protocol = 25
 xdr_version = 25
 introduced_caps = []

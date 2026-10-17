@@ -66,7 +66,7 @@ IMAGE_NAME := stellar-operator
 IMAGE_TAG ?= latest
 
 # Bundle variables
-VERSION ?= 0.1.0
+VERSION ?= 0.2.0
 BUNDLE_IMG ?= $(IMAGE_NAME)-bundle:v$(VERSION)
 CHANNELS ?= "alpha"
 DEFAULT_CHANNEL ?= "alpha"

@@ -1,6 +1,6 @@
 [package]
 name = "stellar-k8s"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Stellar K8s Contributors"]
 description = "Cloud-Native Kubernetes Operator for Stellar Infrastructure"

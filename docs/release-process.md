@@ -173,6 +173,23 @@ To update `CHANGELOG.md` with all history:
 git cliff -o CHANGELOG.md
 ```
 
+### Previewing the release notes
+
+The `release` job publishes a changelog excerpt (not the full file) as the
+GitHub Release body. Preview exactly that excerpt before tagging:
+
+```bash
+bash scripts/generate-release-notes.sh
+# or write it to a file for review
+bash scripts/generate-release-notes.sh --output /tmp/release-notes.md
+```
+
+The script runs `git cliff --latest --strip header`, mirroring the
+`orhun/git-cliff-action` step in `.github/workflows/release.yml`. If the
+preview looks wrong (missing section, mis-grouped commit), fix the commit
+messages or `cliff.toml` first — the tag, and therefore the published
+notes, cannot be edited without re-tagging.
+
 ---
 
 ## Hotfix Releases
@@ -208,7 +225,8 @@ If the automated release pipeline fails partway through:
 |---|---|---|
 | Main CI (incl. multi-arch Docker) | `.github/workflows/ci.yml` | Push / PR to `main` |
 | Release | `.github/workflows/release.yml` | Push `v*.*.*` tag |
-| Security scan (Trivy/Checkov) | `.github/workflows/security-scan.yml` | Push to `main`, schedule |
+| Vulnerability scan (Trivy fs/IaC) | `.github/workflows/vulnerability-scan.yml` | Push to `main`, schedule |
+| Container image security (Trivy/Grype) | `.github/workflows/container-image-security.yml` | Push to `main`, schedule |
 | Security audit (cargo-audit/deny) | `.github/workflows/security-audit.yml` | Schedule, manual |
 | Performance | `.github/workflows/performance.yml` | Push to `main`, schedule |
 | Chaos tests | `.github/workflows/chaos-tests.yml` | Schedule |

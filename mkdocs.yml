@@ -155,6 +155,7 @@ nav:
     - Security Compliance Guide: security/compliance-guide.md
     - Security Review: security/security-review.md
     - Container Image Security: container-image-security.md
+    - Vulnerability Scanning: security/vulnerability-scan.md
     - Credentials & Secrets: security/credentials-and-secrets.md
     - Pod Security Standards: security/pss.md
     - Automated Dependency Updates: security/dependency-updates.md

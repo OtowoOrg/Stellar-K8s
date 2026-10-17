@@ -349,8 +349,10 @@ cargo audit  # Uses .cargo/audit.toml config
   (`make test-db-migrations`). Uses isolated `stellar_migration_test` credentials only.
 
 ### Security scanning (Trivy / Checkov)
-- **Canonical workflow:** `.github/workflows/security-scan.yml` (push to `main`,
-  schedule, `workflow_dispatch`). Uses `.github/actions/security-scan` for image scans.
+- **Canonical workflows:** `.github/workflows/vulnerability-scan.yml` (Trivy filesystem +
+  IaC scans; push to `main`, schedule, `workflow_dispatch`) and
+  `.github/workflows/container-image-security.yml` (Trivy + Grype image scans).
+  Uses `.github/actions/security-scan` for image scans.
 - **CI image scan after publish:** `ci.yml` `security-scan` job (same composite action).
 
 ### Maintenance workflow

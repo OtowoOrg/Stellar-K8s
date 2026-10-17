@@ -554,7 +554,7 @@ Use the following evidence for internal reviews or external audits:
 - `docs/secret-management-kms.md` and `docs/secret-rotation.md` for secret lifecycle controls.
 - `docs/compliance-reporting.md` for supported framework reporting.
 - `monitoring/security-alerts.yaml` and `monitoring/grafana-security.json` for runtime monitoring evidence.
-- `.github/workflows/security-scan.yml` for CI scanning evidence.
+- `.github/workflows/vulnerability-scan.yml` for CI scanning evidence.
 - `SECURITY.md` for disclosure process and scanning posture.
 
 ## Security Scanning Procedures
@@ -563,7 +563,7 @@ Security scanning should happen before merge, before release, and on a productio
 
 ### 1. CI security scans
 
-The repository already defines CI security scanning in `.github/workflows/security-scan.yml`.
+The repository already defines CI security scanning in `.github/workflows/vulnerability-scan.yml`.
 
 Required CI gates:
 
@@ -767,4 +767,4 @@ Before production cutover, verify all of the following:
 - `src/rest_api/auth.rs`
 - `charts/stellar-operator/templates/rbac.yaml`
 - `charts/stellar-operator/templates/network-isolation.yaml`
-- `.github/workflows/security-scan.yml`
+- `.github/workflows/vulnerability-scan.yml`

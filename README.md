@@ -78,6 +78,18 @@
 
 Designed for high availability, type safety, and minimal footprint.
 
+## Documentation map
+
+| Topic | Where to start |
+| ----- | -------------- |
+| Full docs index | [docs/README.md](docs/README.md) |
+| Install and quick start | [Installation](docs/getting-started/installation.md), [Quick start](docs/getting-started/quick-start.md) |
+| Local development | [DEVELOPMENT.md](DEVELOPMENT.md) |
+| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Product storyboards | [docs/pitch-storyboards.md](docs/pitch-storyboards.md) |
+| Example manifests | [examples/](examples/) |
+| Security disclosures | [SECURITY.md](SECURITY.md) |
+| CI pipeline | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
 Want the problem statement, users, and journeys in one place? See the **[PITCH storyboards](docs/pitch-storyboards.md)** (implemented vs proposed capabilities are labeled there).
 
 ---
@@ -150,13 +162,10 @@ See the [Docker Compose → Kubernetes Migration Guide](docs/docker-compose-to-k
 
 ### 1. Install the Operator via Helm
 
-```bash
-# Add the helm repo (example)
-helm repo add stellar-k8s https://stellar.github.io/stellar-k8s
-helm repo update
+Install from the chart in this repository (`charts/stellar-operator`). See the [Installation Guide](docs/getting-started/installation.md) for additional options.
 
-# Install the operator
-helm install stellar-operator stellar-k8s/stellar-operator \
+```bash
+helm install stellar-operator ./charts/stellar-operator \
   --namespace stellar-system \
   --create-namespace
 ```
@@ -757,6 +766,8 @@ See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes and releases.
 <!-- handsoff-issue-1705 -->
 - #1705: [EPIC] bats coverage — added scripts/tests/secret-rotation-check.bats covering dry-run, argument parsing, error cases, and kubectl rotation flows.
 
+<!-- handsoff-issue-1762 -->
+- #1762: [EPIC] README update — added a documentation map, linked CONTRIBUTING and PITCH storyboards, corrected Helm install to the in-repo `charts/stellar-operator` chart, and kept the CI badge pointed at `.github/workflows/ci.yml`.
 <!-- handsoff-issue-1761 -->
 - #1761: [EPIC] CI badge status — README CI badge uses the official GitHub Actions URL for `.github/workflows/ci.yml` (default branch) and links to that workflow's runs page.
 

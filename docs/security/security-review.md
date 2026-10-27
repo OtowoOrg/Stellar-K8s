@@ -1,6 +1,6 @@
 # Security Review
 
-> **Issue #1713** — Adds an automated security-review CI workflow and a local `make` target that consolidates dependency auditing, container scanning, and Helm security linting into a single gate.
+> **Issues #1713, #1815** — Automated security-review CI workflow and local `make security-review` target consolidating dependency auditing, container scanning, and Helm security linting into a single gate.
 
 ## Overview
 
@@ -21,11 +21,21 @@ SARIF results from Trivy are uploaded to the repository's **Security → Code sc
 # Full security review (audit + deny + report written to security/reports/review.md)
 make security-review
 
+# Custom report path or skip Helm lint when helm is not installed locally
+make security-review SECURITY_REVIEW_REPORT=security/reports/custom-review.md SECURITY_REVIEW_SKIP_HELM=1
+
 # Individual checks
 make audit          # cargo-audit + cargo-deny via scripts/dep-gate.sh
 make security-scan  # audit + shellcheck + shell safety
 make security-all   # audit + shellcheck + SBOM generation
 ```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `SECURITY_REVIEW_REPORT` | `security/reports/review.md` | Output path for the consolidated Markdown review report |
+| `SECURITY_REVIEW_SKIP_HELM` | `0` | Set to `1` to skip the `helm lint --strict` section during local runs |
 
 ## CI Behaviour
 
@@ -58,5 +68,7 @@ Security findings that cannot be remediated immediately must be tracked via a Gi
 - CI workflow: [`.github/workflows/security-review.yml`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/.github/workflows/security-review.yml)
 - Existing audit workflow: [`.github/workflows/security-audit.yml`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/.github/workflows/security-audit.yml)
 - Compliance guide: [`compliance-guide.md`](compliance-guide.md)
+- Dependency audit: [`dependency-audit.md`](dependency-audit.md)
+- Vulnerability scanning: [`vulnerability-scan.md`](vulnerability-scan.md)
 - Dependency policy: [`dependency-updates.md`](dependency-updates.md)
 - Incident response: [`incident-response-playbook.md`](incident-response-playbook.md)

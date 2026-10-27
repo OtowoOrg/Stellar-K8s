@@ -133,5 +133,5 @@ async fn main() -> Result<()> {
         metrics_bind_addr: args.metrics_bind,
     };
 
-    run_watcher(config).await
+    Ok(run_watcher(config).await?)
 }

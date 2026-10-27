@@ -162,7 +162,7 @@ pub fn build_router(state: Arc<ControllerState>) -> Router {
     let protected = Router::new()
         .route("/leader", get(handlers::leader_status))
         .route("/api/v1/nodes", get(handlers::list_nodes))
-        .route("/api/v1/nodes/:namespace/:name", get(handlers::get_node))
+        .route("/api/v1/nodes/{namespace}/{name}", get(handlers::get_node))
 
         .route(
             "/config/log-level",
@@ -243,23 +243,23 @@ pub fn build_router(state: Arc<ControllerState>) -> Router {
             get(dashboard_handlers::traffic_dashboard),
         )
         .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/logs",
+            "/api/v1/dashboard/nodes/{namespace}/{name}/logs",
             get(dashboard_handlers::get_node_logs),
         )
         .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/conditions",
+            "/api/v1/dashboard/nodes/{namespace}/{name}/conditions",
             get(dashboard_handlers::get_node_conditions),
         )
         .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/dr",
+            "/api/v1/dashboard/nodes/{namespace}/{name}/dr",
             get(dashboard_handlers::get_dr_status),
         )
         .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/metrics",
+            "/api/v1/dashboard/nodes/{namespace}/{name}/metrics",
             get(dashboard_handlers::get_node_metrics),
         )
         .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/actions",
+            "/api/v1/dashboard/nodes/{namespace}/{name}/actions",
             axum::routing::post(dashboard_handlers::execute_node_action)
                 .route_layer(middleware::from_fn(auth::api_admin)),
         )
@@ -304,17 +304,17 @@ pub fn build_router(state: Arc<ControllerState>) -> Router {
             get(stellar_metrics_server::api_discovery),
         )
         .route(
-            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric",
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/{namespace}/pods/{name}/{metric}",
             get(stellar_metrics_server::get_pod_stellar_metric),
         )
         .route(
-            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/stellarnodes.stellar.org/:name/:metric",
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/{namespace}/stellarnodes.stellar.org/{name}/{metric}",
             get(stellar_metrics_server::get_stellarnode_metric),
         )
         .layer(middleware::from_fn_with_state(state.clone(), auth::api_reader))
         // Horizon-specific convenience endpoint (legacy path kept for compatibility)
         .route(
-            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/horizons.stellar.org/:name/:metric",
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/{namespace}/horizons.stellar.org/{name}/{metric}",
             get(custom_metrics::get_horizon_metric),
         )
         .layer(middleware::from_fn(crate::telemetry::http_trace_middleware))

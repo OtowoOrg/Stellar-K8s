@@ -130,11 +130,20 @@ lint-strict: ## Run clippy (adds complexity checks on top of lint; same base exc
 
 # ── Security ──────────────────────────────────────────────────────────────────
 
+AUDIT_QUICK ?= 0
+
 audit: ## Security audit (cargo audit + deny) via consolidated lockfile gate
 	@bash scripts/dep-gate.sh
 
 audit-quick: ## Fast dependency audit (cargo audit + cargo deny only, no license/build gates)
 	@bash scripts/dep-gate.sh --quick
+
+dependency-audit: ## Run dependency audit gate (pass AUDIT_QUICK=1 for fast mode) (#1816)
+	@if [ "$(AUDIT_QUICK)" = "1" ]; then \
+		bash scripts/dep-gate.sh --quick; \
+	else \
+		bash scripts/dep-gate.sh; \
+	fi
 
 verify-mtls: ## Verify mTLS inter-service encryption and rotation readiness (skips gracefully without a cluster)
 	@bash scripts/verify-mtls.sh

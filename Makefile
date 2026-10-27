@@ -463,23 +463,28 @@ link-integrity-full: ## Check all links (internal + external) — slower, requir
 	@python3 scripts/check-links.py --dir docs/ --check-external
 	@echo "✓ All links are valid"
 
-# ── Issue #1713: Security review ─────────────────────────────────────────────
+# ── Issue #1713 / #1815: Security review ─────────────────────────────────────
 
-security-review: ## Run the full security review gate (audit + deny + report) (#1713)
+SECURITY_REVIEW_REPORT ?= security/reports/review.md
+SECURITY_REVIEW_SKIP_HELM ?= 0
+
+security-review: ## Run the full security review gate (audit + deny + report) (#1713, #1815)
 	@echo "→ Running security review..."
 	$(MAKE) audit
 	$(MAKE) security-scan
-	@echo "→ Generating security review report..."
-	@mkdir -p security/reports
-	@printf '# Security Review — %s\n\n' "$$(date)" > security/reports/review.md
-	@printf '## cargo-audit\n\n' >> security/reports/review.md
-	@$(CARGO) audit 2>&1 | tee -a security/reports/review.md || true
-	@printf '\n## cargo-deny\n\n' >> security/reports/review.md
-	@$(CARGO) deny check 2>&1 | tee -a security/reports/review.md || true
-	@printf '\n## Helm lint\n\n' >> security/reports/review.md
-	@helm lint charts/stellar-operator --strict 2>&1 | tee -a security/reports/review.md || true
+	@echo "→ Generating security review report at $(SECURITY_REVIEW_REPORT)..."
+	@mkdir -p "$$(dirname "$(SECURITY_REVIEW_REPORT)")"
+	@printf '# Security Review — %s\n\n' "$$(date)" > "$(SECURITY_REVIEW_REPORT)"
+	@printf '## cargo-audit\n\n' >> "$(SECURITY_REVIEW_REPORT)"
+	@$(CARGO) audit 2>&1 | tee -a "$(SECURITY_REVIEW_REPORT)" || true
+	@printf '\n## cargo-deny\n\n' >> "$(SECURITY_REVIEW_REPORT)"
+	@$(CARGO) deny check 2>&1 | tee -a "$(SECURITY_REVIEW_REPORT)" || true
+	@if [ "$(SECURITY_REVIEW_SKIP_HELM)" != "1" ] && command -v helm >/dev/null 2>&1; then \
+		printf '\n## Helm lint\n\n' >> "$(SECURITY_REVIEW_REPORT)"; \
+		helm lint charts/stellar-operator --strict 2>&1 | tee -a "$(SECURITY_REVIEW_REPORT)" || true; \
+	fi
 	@echo ""
-	@echo "✓ Security review complete — report at security/reports/review.md"
+	@echo "✓ Security review complete — report at $(SECURITY_REVIEW_REPORT)"
 
 # ── Kubernetes ────────────────────────────────────────────────────────────────
 

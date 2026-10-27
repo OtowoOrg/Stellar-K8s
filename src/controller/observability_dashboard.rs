@@ -71,13 +71,13 @@ pub fn create_dashboard_router(pipeline: Arc<ObservabilityPipeline>) -> Router {
         .route("/api/summary", get(get_summary))
         .route("/api/anomalies", get(get_anomalies))
         .route("/api/alerts", get(get_alerts))
-        .route("/api/alerts/:id/acknowledge", post(acknowledge_alert))
-        .route("/api/alerts/:id/resolve", post(resolve_alert))
+        .route("/api/alerts/{id}/acknowledge", post(acknowledge_alert))
+        .route("/api/alerts/{id}/resolve", post(resolve_alert))
         .route("/api/predictive", get(get_predictive_alerts))
         .route("/api/correlations", get(get_correlations))
         .route("/api/incidents", get(get_incidents))
-        .route("/api/incidents/:id", get(get_incident_detail))
-        .route("/api/incidents/:id/rca", get(get_root_cause_analysis))
+        .route("/api/incidents/{id}", get(get_incident_detail))
+        .route("/api/incidents/{id}/rca", get(get_root_cause_analysis))
         .with_state(state)
 }
 

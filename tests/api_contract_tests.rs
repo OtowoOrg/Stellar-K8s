@@ -519,7 +519,7 @@ fn build_mock_router() -> Router {
             get(|| async { axum::Json(mock_node_list()) }),
         )
         .route(
-            "/api/v1/nodes/:namespace/:name",
+            "/api/v1/nodes/{namespace}/{name}",
             get(|| async { axum::Json(mock_node_detail()) }),
         )
         .route(
@@ -575,19 +575,19 @@ fn build_mock_router() -> Router {
             get(|| async { axum::Json(json!({})) }),
         )
         .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/logs",
+            "/api/v1/dashboard/nodes/{namespace}/{name}/logs",
             get(|| async { axum::Json(mock_node_logs()) }),
         )
         .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/conditions",
+            "/api/v1/dashboard/nodes/{namespace}/{name}/conditions",
             get(|| async { axum::Json(mock_node_conditions()) }),
         )
         .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/dr",
+            "/api/v1/dashboard/nodes/{namespace}/{name}/dr",
             get(|| async { axum::Json(mock_dr_status()) }),
         )
         .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/metrics",
+            "/api/v1/dashboard/nodes/{namespace}/{name}/metrics",
             get(|| async { axum::Json(mock_metrics_summary()) }),
         )
         .route(

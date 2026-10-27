@@ -1562,7 +1562,7 @@ async fn show_leaderboard(
         let nodes_api: Api<StellarNode> = Api::all(client.clone());
         if let Ok(nodes) = nodes_api.list(&ListParams::default()).await {
             for (i, node) in nodes.items.into_iter().enumerate() {
-                if matches!(node.spec.node_type, crate::crd::types::NodeType::Validator) {
+                if matches!(node.spec.node_type, stellar_k8s::crd::types::NodeType::Validator) {
                     let vname = node.name_any();
                     let vns = node.namespace().unwrap_or_default();
                     entries.push(stellar_k8s::crd::LeaderboardEntry {

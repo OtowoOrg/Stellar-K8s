@@ -280,7 +280,7 @@ All workflows now use consistent, security-hardened action versions:
 |--------|---------|----------------|
 | `actions/checkout` | `@v7` | Latest with security patches |
 | `actions/setup-node` | `@v4` | Stable, consistent |
-| `actions/setup-python` | `@v6` | **Fixed inconsistency** (was mixed v5/v6) |
+| `actions/setup-python` | `@v7` | **Standardized across all workflows** |
 | `actions/upload-artifact` | `@v4` | Consistent across all workflows |
 | `actions/download-artifact` | `@v4` | Consistent across all workflows |
 | `actions/cache` | `@v4` | Stable caching |

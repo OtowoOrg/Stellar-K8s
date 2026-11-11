@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Persistent volume utilization & I/O benchmark explorer (#95)",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "node init && vite",
+    "build": "node init && tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

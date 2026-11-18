@@ -4,8 +4,8 @@
   "type": "module",
   "description": "Standalone quota calculator (web UI + CLI) anchored to GCP pricing samples.",
   "scripts": {
-    "start": "node init && node cli.mjs --help",
+    "start": "node cli.mjs --help",
     "serve": "npx http-server public -c-1 -p 8080",
-    "build": "node init && echo 'No build step; pure ESM modules.'"
+    "build": "echo 'No build step; pure ESM modules.'"
   }
 }

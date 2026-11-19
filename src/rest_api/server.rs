@@ -37,6 +37,7 @@ use super::audit_handlers;
 use super::alert_test;
 use super::auth;
 use super::compliance_handlers;
+use super::config_rollout_handlers;
 use super::custom_metrics;
 use super::dashboard_handlers;
 use super::handlers;
@@ -44,6 +45,7 @@ use super::health_summary;
 use super::horizon_cache_handlers;
 use super::job_handlers;
 use super::profiling;
+use super::registry_gate_handlers;
 use super::resource_optimization_handlers;
 use super::scp_topology;
 use super::stellar_metrics_server;
@@ -279,6 +281,38 @@ pub fn build_router(state: Arc<ControllerState>) -> Router {
         // Background job monitoring dashboard
         .route("/api/v1/jobs", get(job_handlers::list_jobs))
         .route("/api/v1/jobs/stats", get(job_handlers::job_stats))
+        // Progressive config rollouts and component config versions (#1998)
+        .route(
+            "/api/v1/config/rollouts",
+            get(config_rollout_handlers::list_rollouts),
+        )
+        .route(
+            "/api/v1/config/rollouts/:id",
+            get(config_rollout_handlers::get_rollout),
+        )
+        .route(
+            "/api/v1/config/versions",
+            get(config_rollout_handlers::list_versions),
+        )
+        .route(
+            "/api/v1/config/versions/:namespace/:node",
+            get(config_rollout_handlers::get_version),
+        )
+        // Registry pull-path vulnerability gate (#2000)
+        .route(
+            "/api/v1/registry/:namespace/:name/pull-gate/:digest",
+            get(registry_gate_handlers::authorize_pull),
+        )
+        .route(
+            "/api/v1/registry/scan-reports/:digest",
+            get(registry_gate_handlers::get_scan_report),
+        )
+        // Scans a pushed digest before the push is acknowledged; Admin only.
+        .route(
+            "/api/v1/registry/:namespace/:name/push",
+            axum::routing::post(registry_gate_handlers::handle_push)
+                .route_layer(middleware::from_fn(auth::api_admin)),
+        )
         // Audit log
         .route("/api/v1/audit-log", get(audit_handlers::list_audit_log))
         .route(

@@ -67,6 +67,7 @@ mod audit_handlers;
 mod alert_test;
 mod auth;
 mod compliance_handlers;
+mod config_rollout_handlers;
 pub mod custom_metrics;
 mod dashboard_dto;
 mod dashboard_handlers;
@@ -78,6 +79,7 @@ mod job_handlers;
 pub mod metrics_store;
 mod oidc;
 mod profiling;
+mod registry_gate_handlers;
 mod resource_optimization_handlers;
 #[cfg(feature = "rest-api")]
 pub mod schema_validation;

@@ -179,6 +179,27 @@ impl PullGate {
         self.reports.read().await.get(digest).cloned()
     }
 
+    /// Every stored scan report. Used to carry reports across a policy
+    /// change, which builds a new gate.
+    pub async fn export_reports(&self) -> Vec<ScanReport> {
+        self.reports.read().await.values().cloned().collect()
+    }
+
+    /// Adopt reports from a previous gate. Existing reports win, and each
+    /// imported report's link is rewritten to this gate's report base URL.
+    pub async fn import_reports(&self, reports: Vec<ScanReport>) {
+        let mut stored = self.reports.write().await;
+        for mut report in reports {
+            report.report_url = self.report_url(&report.digest);
+            stored.entry(report.digest.clone()).or_insert(report);
+        }
+    }
+
+    /// Number of digests with a stored scan report.
+    pub async fn report_count(&self) -> usize {
+        self.reports.read().await.len()
+    }
+
     /// Decide whether a manifest pull by `digest` may proceed. Tag pulls must
     /// be resolved to a digest by the caller first.
     pub async fn authorize_pull(&self, digest: &str) -> PullDecision {

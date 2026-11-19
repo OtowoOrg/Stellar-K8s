@@ -1,0 +1,190 @@
+name: Reproducible Build Verification
+
+# Verifies that a release rebuilds bit for bit from source (#1997).
+#
+# Two independent pipelines build the same revision with scripts/reproducible-build.sh
+# (pinned timestamps, path prefixes, locale and build id). `verify-reproducible-build`
+# then compares the outputs byte for byte, attributes any mismatch to the build
+# step that produced it, and appends the result to the release audit log.
+#
+#   release published   verify that release and attach the report to it
+#   pull request        catch changes that break determinism before they ship
+#   workflow_dispatch   verify any tag or ref on demand
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/reproducible-build.sh"
+      - "src/reproducible_build.rs"
+      - "src/bin/verify-reproducible-build.rs"
+      - "Dockerfile"
+      - "Cargo.lock"
+      - ".github/workflows/reproducible-build.yml"
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Tag or ref to verify (default: the selected ref)"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reproducible-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  resolve:
+    name: Resolve revision
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ref: ${{ steps.pick.outputs.ref }}
+    steps:
+      - id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_RELEASE: ${{ inputs.release }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          case "${EVENT}" in
+            release) ref="${RELEASE_TAG}" ;;
+            pull_request) ref="${PR_SHA}" ;;
+            *) ref="${INPUT_RELEASE:-${SHA}}" ;;
+          esac
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          echo "Verifying ${ref}"
+
+  release-build:
+    name: Release pipeline build
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "reproducible-build-release"
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          scripts/reproducible-build.sh --output-dir build-out --pipeline release-pipeline
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-release
+          path: build-out/
+          if-no-files-found: error
+
+  independent-rebuild:
+    name: Independent rebuild
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          fetch-depth: 0
+
+      # No shared cache with the release build: the rebuild starts from source.
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "reproducible-build-rebuild"
+
+      - name: Rebuild
+        run: |
+          set -euo pipefail
+          scripts/reproducible-build.sh --output-dir build-out --pipeline independent-rebuild
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-rebuild
+          path: build-out/
+          if-no-files-found: error
+
+  verify:
+    name: Compare builds and record audit
+    needs: [resolve, release-build, independent-rebuild]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # attaches the report to the release on `release` events
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "reproducible-build-verify"
+
+      - name: Build the verifier
+        run: cargo build --release --locked --bin verify-reproducible-build
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-release
+          path: build-release
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-rebuild
+          path: build-rebuild
+
+      - name: Verify reproducibility
+        id: verify
+        env:
+          RELEASE: ${{ needs.resolve.outputs.ref }}
+        run: |
+          set -uo pipefail
+          mkdir -p release-audit
+          ./target/release/verify-reproducible-build \
+            --release "${RELEASE}" \
+            --release-dir build-release \
+            --rebuild-dir build-rebuild \
+            --audit-log release-audit/reproducibility.jsonl \
+            --report-json release-audit/reproducibility-report.json \
+            --report-md release-audit/reproducibility-report.md
+          rc=$?
+          echo "exit_code=${rc}" >> "$GITHUB_OUTPUT"
+          if [ -f release-audit/reproducibility-report.md ]; then
+            cat release-audit/reproducibility-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "${rc}"
+
+      - name: Upload the audit record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reproducibility-audit
+          path: release-audit/
+          if-no-files-found: ignore
+
+      - name: Attach the report to the release
+        if: always() && github.event_name == 'release' && hashFiles('release-audit/reproducibility-report.json') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          gh release upload "${TAG}" \
+            release-audit/reproducibility-report.json \
+            release-audit/reproducibility-report.md \
+            release-audit/reproducibility.jsonl \
+            --clobber

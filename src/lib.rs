@@ -130,6 +130,7 @@ pub mod delegation;
 pub mod db_migrations;
 pub mod degradation;
 pub mod dependency_contract;
+pub mod dependency_scan;
 pub mod deployment_strategy;
 pub mod error;
 
@@ -162,6 +163,7 @@ pub mod preflight;
 pub mod protocol_compatibility;
 #[path = "profiling/mod.rs"]
 pub mod profiling;
+pub mod config_rollout_registry;
 pub mod progressive_config;
 pub mod provenance;
 // pub mod replica_quotas; // TODO: restore when module is implemented

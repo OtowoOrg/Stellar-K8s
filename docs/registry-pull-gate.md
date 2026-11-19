@@ -44,6 +44,41 @@ A denial is returned as an OCI distribution error, `403`:
             "detail":{"digest":"sha256:…","reportUrl":"https://…/reports/sha256:…"}}]}
 ```
 
+## Serving the gate (#2000)
+
+The registry reconciler builds the gate from the `StellarRegistry` CR on every
+reconcile and keeps it in a process-wide registry (`controller::registry_gate_registry`).
+A policy change (`pullGate`, `maxCriticalCves`) takes effect on the next
+reconcile and keeps the scan reports already stored. The operator's REST API
+(behind the usual `api_reader` auth) serves the gate:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/registry/:namespace/:name/pull-gate/:digest` | Authorize a manifest pull: `200` with the decision, or `403` with the OCI distribution error above |
+| GET | `/api/v1/registry/scan-reports/:digest` | The scan report for a digest. This is the `reportUrl` in a denial |
+| POST | `/api/v1/registry/:namespace/:name/push` | Admin only. Scan a pushed digest before the push is acknowledged and store its report. Body `{"repository":"app","digest":"sha256:…"}` |
+
+```bash
+curl -i https://operator:9090/api/v1/registry/stellar/main/pull-gate/sha256:<64 hex>
+```
+
+`reportUrl` is built from `REGISTRY_REPORT_BASE_URL` (default
+`http://stellar-operator.stellar-system.svc:9090/api/v1/registry/scan-reports`),
+so set it to an address clients can reach. Digests must look like
+`sha256:<64 hex>`; resolve tags first. An unknown registry is `404`, a malformed
+digest `400`.
+
+A digest only has a report once it has been scanned, and `enforce` denies digests
+without one. So point the registry's push notification (or a sidecar) at the
+`push` endpoint: it scans through the scanner in `spec.scanning.endpoint` and
+returns the report. If the scanner fails it returns `502` and stores nothing, so
+the digest stays unscanned and is denied rather than waved through. With
+`spec.scanning.enabled: false` it returns `503` for the same reason.
+
+A registry front end or sidecar enforces the gate by asking the pull-gate
+endpoint before serving a manifest and relaying a `403` unchanged. The endpoint
+decides; it does not sit in the data path itself.
+
 ## Local serving
 
 - `rewrite_to_local` rewrites every image reference to the pull-through

@@ -138,7 +138,7 @@ gh run download <run-id>
 
 ### Current Pinned Versions (Updated 2026-07-28)
 - `actions/checkout`: `@v7`
-- `actions/setup-python`: `@v6`  
+- `actions/setup-python`: `@v7`  
 - `docker/build-push-action`: `@v7`
 - `aquasecurity/trivy-action`: `@v0.36.0`
 - `Swatinem/rust-cache`: `@v2`

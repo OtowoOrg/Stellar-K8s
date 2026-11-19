@@ -56,7 +56,6 @@ requirements.md
 CI_CD_REVIEW.md
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -95,3 +94,5 @@ starfield.html
 # mkdocs build output from `make docs-build`
 /site/
 
+config.bat
+node_modules

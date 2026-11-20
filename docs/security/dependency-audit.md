@@ -1,6 +1,6 @@
 # Dependency Audit
 
-*Addresses issue #1714.*
+*Addresses issues #1714, #1816.*
 
 This document describes how to run the dependency audit for Stellar-K8s,
 what each gate checks, and where the results are enforced in CI.
@@ -10,8 +10,10 @@ what each gate checks, and where the results are enforced in CI.
 ## Quick start
 
 ```bash
-make audit          # full lockfile gate (audit + deny + licenses + locked build)
-make audit-quick    # fast gate (audit + deny only, for day-to-day use)
+make dependency-audit               # full lockfile gate (audit + deny + licenses + locked build)
+make dependency-audit AUDIT_QUICK=1 # fast gate (audit + deny only, for day-to-day use)
+make audit                          # alias for full dependency audit
+make audit-quick                    # alias for fast dependency audit
 ```
 
 Both targets wrap [`scripts/dep-gate.sh`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/scripts/dep-gate.sh), the single
@@ -59,7 +61,9 @@ verified in seconds without a full release build.
 | [`dep-auto-merge.yml`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/.github/workflows/dep-auto-merge.yml) | Dependabot PRs | Auto-merge when gates pass |
 
 See also [Automated Dependency Updates](dependency-updates.md) for how
-Dependabot PRs are identified and merged, and the
+Dependabot PRs are identified and merged, [Security Review](security-review.md)
+and [Vulnerability Scanning](vulnerability-scan.md) for container and Helm
+scanning gates, and the
 [Security Compliance Guide](compliance-guide.md) for the wider policy context.
 
 ---

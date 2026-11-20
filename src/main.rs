@@ -143,7 +143,12 @@ async fn main() -> Result<(), Error> {
         }
         Commands::Webhook(webhook_args) => return run_webhook(webhook_args).await,
         Commands::Doctor(doctor_args) => return run_doctor(doctor_args).await,
-        Commands::SchemaCompat(args) => return run_schema_compat(args),
+        Commands::SchemaCompat(args) => {
+            return run_schema_compat(args).await.map_err(|e| {
+                eprintln!("schema-compat: {e}");
+                Error::ConfigError(e.to_string())
+            });
+        }
         Commands::HealthCheck(hc_args) => return run_health_check(hc_args),
         Commands::Benchmark(benchmark_args) => {
             return run_benchmark_controller_cmd(benchmark_args).await;

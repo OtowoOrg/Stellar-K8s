@@ -407,6 +407,11 @@ pub struct RegistrySnapshot {
     pub overrides: Vec<RegistryOverride>,
     #[serde(default)]
     pub audit: Vec<AuditEntry>,
+    /// subject -> consumer name -> pinned version. Persisted so the
+    /// compatibility engine can diff a candidate against every registered
+    /// consumer without scanning the full consumer table.
+    #[serde(default)]
+    pub consumer_index: BTreeMap<String, BTreeMap<String, u32>>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuditEntry {
@@ -423,6 +428,21 @@ impl Default for RegistrySnapshot {
             consumers: BTreeMap::new(),
             overrides: vec![],
             audit: vec![],
+            consumer_index: BTreeMap::new(),
+        }
+    }
+}
+impl RegistrySnapshot {
+    /// Rebuild the consumer index from the authoritative consumer table.
+    pub fn rebuild_consumer_index(&mut self) {
+        self.consumer_index.clear();
+        for (name, consumer) in &self.consumers {
+            for (subject, version) in &consumer.pinned_versions {
+                self.consumer_index
+                    .entry(subject.clone())
+                    .or_default()
+                    .insert(name.clone(), *version);
+            }
         }
     }
 }
@@ -436,7 +456,10 @@ impl SchemaRegistry {
             state: RegistrySnapshot::default(),
         }
     }
-    pub fn from_snapshot(s: RegistrySnapshot) -> Self {
+    pub fn from_snapshot(mut s: RegistrySnapshot) -> Self {
+        // The persisted index is a cache; always reconcile it with the
+        // consumer table so hand-edited snapshots cannot drift.
+        s.rebuild_consumer_index();
         Self { state: s }
     }
     pub fn snapshot(&self) -> &RegistrySnapshot {
@@ -487,7 +510,35 @@ impl SchemaRegistry {
             }
         }
         self.state.consumers.insert(consumer.name.clone(), consumer);
+        self.state.rebuild_consumer_index();
         Ok(())
+    }
+
+    /// Consumers pinned to a given subject, as `(consumer name, pinned version)`.
+    pub fn consumers_for_subject(&self, subject: &str) -> Vec<(&str, u32)> {
+        self.state
+            .consumer_index
+            .get(subject)
+            .map(|m| m.iter().map(|(k, v)| (k.as_str(), *v)).collect())
+            .unwrap_or_default()
+    }
+
+    /// Every subject that has at least one registered consumer.
+    pub fn consumed_subjects(&self) -> Vec<&str> {
+        self.state
+            .consumer_index
+            .keys()
+            .map(String::as_str)
+            .collect()
+    }
+
+    /// Registered versions for a subject, in ascending version order.
+    pub fn versions_for_subject(&self, subject: &str) -> Vec<u32> {
+        self.state
+            .subjects
+            .get(subject)
+            .map(|s| s.versions.iter().map(|v| v.version).collect())
+            .unwrap_or_default()
     }
 
     pub fn add_override(&mut self, mut o: RegistryOverride) -> Result<String, String> {
@@ -519,20 +570,18 @@ impl SchemaRegistry {
         if let Some(old) = &latest {
             let base = check_compatibility(&old.definition, &definition, &subject.compatibility);
             let mut impacts = vec![];
-            for c in self.state.consumers.values() {
-                if let Some(pin) = c.pinned_versions.get(subject_name) {
-                    let prior = self.state.subjects[subject_name]
-                        .get_version(*pin)
-                        .ok_or("pinned consumer version missing")?;
-                    let r =
-                        check_compatibility(&prior.definition, &definition, &subject.compatibility);
-                    impacts.push(ConsumerImpact {
-                        consumer: c.name.clone(),
-                        pinned_version: *pin,
-                        compatible: r.compatible,
-                        issues: r.issues,
-                    });
-                }
+            for (name, pin) in self.consumers_for_subject(subject_name) {
+                let prior = self.state.subjects[subject_name]
+                    .get_version(pin)
+                    .ok_or("pinned consumer version missing")?;
+                let r =
+                    check_compatibility(&prior.definition, &definition, &subject.compatibility);
+                impacts.push(ConsumerImpact {
+                    consumer: name.to_string(),
+                    pinned_version: pin,
+                    compatible: r.compatible,
+                    issues: r.issues,
+                });
             }
             let breaking = !base.compatible || impacts.iter().any(|i| !i.compatible);
             if breaking {
@@ -743,17 +792,15 @@ impl SchemaRegistry {
         let mode = s.compatibility.clone();
         let from = old.map(|v| v.version).unwrap_or(0);
         let mut consumers = vec![];
-        for c in self.state.consumers.values() {
-            if let Some(p) = c.pinned_versions.get(subject) {
-                if let Some(v) = s.get_version(*p) {
-                    let r = check_compatibility(&v.definition, definition, &mode);
-                    consumers.push(ConsumerImpact {
-                        consumer: c.name.clone(),
-                        pinned_version: *p,
-                        compatible: r.compatible,
-                        issues: r.issues,
-                    });
-                }
+        for (name, pin) in self.consumers_for_subject(subject) {
+            if let Some(v) = s.get_version(pin) {
+                let r = check_compatibility(&v.definition, definition, &mode);
+                consumers.push(ConsumerImpact {
+                    consumer: name.to_string(),
+                    pinned_version: pin,
+                    compatible: r.compatible,
+                    issues: r.issues,
+                });
             }
         }
         let breaking = old
@@ -1044,5 +1091,36 @@ mod tests {
         let decoded = SchemaRegistry::from_json(&encoded).unwrap();
         assert_eq!(decoded.snapshot().subjects, registry.snapshot().subjects);
         assert_eq!(decoded.snapshot().consumers, registry.snapshot().consumers);
+        assert_eq!(
+            decoded.snapshot().consumer_index,
+            registry.snapshot().consumer_index
+        );
+    }
+    #[test]
+    fn consumer_index_tracks_pins() {
+        let mut r = SchemaRegistry::new();
+        r.create_subject(SchemaSubject::new("events", "internal"));
+        r.register_version("events", s(), SchemaFormat::JsonSchema, "a")
+            .unwrap();
+        r.approve_version("events", 1, "a");
+        r.register_consumer(Consumer {
+            name: "horizon".into(),
+            owner: "team".into(),
+            pinned_versions: [("events".into(), 1)].into_iter().collect(),
+            generated_client: None,
+        })
+        .unwrap();
+        assert_eq!(r.consumers_for_subject("events"), vec![("horizon", 1)]);
+        assert_eq!(r.consumed_subjects(), vec!["events"]);
+        assert_eq!(r.versions_for_subject("events"), vec![1]);
+        assert!(r.consumers_for_subject("unknown").is_empty());
+    }
+    #[test]
+    fn committed_registry_index_matches_consumers() {
+        let registry = SchemaRegistry::from_json(include_str!("../schemas/registry.json")).unwrap();
+        let mut expected = RegistrySnapshot::default();
+        expected.consumers = registry.snapshot().consumers.clone();
+        expected.rebuild_consumer_index();
+        assert_eq!(registry.snapshot().consumer_index, expected.consumer_index);
     }
 }

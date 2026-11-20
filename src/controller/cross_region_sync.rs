@@ -61,6 +61,228 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tracing::{debug, info, warn};
 
+// ── Failover plan (health-gated traffic shift) ────────────────────────────────
+
+/// Direction of a traffic shift orchestrated by a [`FailoverPlan`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShiftDirection {
+    /// Shift traffic away from the primary toward the secondary (failover).
+    Failover,
+    /// Shift traffic back toward the primary once it has recovered (failback).
+    Failback,
+}
+
+/// A single incremental traffic-shift step in a [`FailoverPlan`].
+///
+/// Each step moves a percentage of weighted DNS traffic to the target region.
+/// Steps are applied in ascending `weight` order and are only applied when the
+/// health gate passes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShiftStep {
+    /// Percentage of traffic (0-100) routed to the target region at this step.
+    pub weight: u8,
+    /// Minimum time to wait after applying this step before evaluating health.
+    pub soak_secs: u64,
+}
+
+/// Health evidence collected before and during a traffic shift.
+///
+/// The same evidence structure is required for both failover and failback so
+/// that a recovered primary must prove itself exactly like a promoted replica.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HealthEvidence {
+    /// Region the evidence was collected for.
+    pub region: String,
+    /// Whether the region's health checks currently pass.
+    pub healthy: bool,
+    /// Number of consecutive successful health checks observed.
+    pub consecutive_successes: u32,
+    /// Replication lag in ledgers at the time of collection.
+    pub replication_lag_ledgers: i64,
+    /// UTC timestamp (Unix seconds) when the evidence was collected.
+    pub observed_at: i64,
+}
+
+impl HealthEvidence {
+    /// Returns true when this evidence satisfies the plan's health gate.
+    pub fn satisfies(&self, gate: &HealthGate) -> bool {
+        self.healthy
+            && self.consecutive_successes >= gate.min_consecutive_successes
+            && self.replication_lag_ledgers <= gate.max_replication_lag_ledgers as i64
+    }
+}
+
+/// Health gate that must be satisfied before a shift step is applied.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HealthGate {
+    /// Consecutive successful health checks required.
+    pub min_consecutive_successes: u32,
+    /// Maximum replication lag (in ledgers) tolerated.
+    pub max_replication_lag_ledgers: u64,
+    /// Error-budget breach threshold (0-100). If the observed error rate
+    /// exceeds this value the shift is paused and rolled back.
+    pub error_budget_breach_percent: u8,
+}
+
+impl Default for HealthGate {
+    fn default() -> Self {
+        Self {
+            min_consecutive_successes: 3,
+            max_replication_lag_ledgers: 100,
+            error_budget_breach_percent: 5,
+        }
+    }
+}
+
+/// Declarative failover plan owned by the controller.
+///
+/// The plan declares the primary and secondary regions, the RTO/RPO targets,
+/// the health gate and the ordered list of weighted traffic-shift steps. The
+/// controller reconciles the plan by updating weighted DNS records through the
+/// load balancer and recording each step in the plan status.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailoverPlanSpec {
+    /// Primary region name.
+    pub primary_region: String,
+    /// Secondary (failover) region name.
+    pub secondary_region: String,
+    /// Recovery Time Objective in seconds.
+    pub rto_seconds: u64,
+    /// Recovery Point Objective in seconds.
+    pub rpo_seconds: u64,
+    /// Health gate applied to every step.
+    pub health_gate: HealthGate,
+    /// Ordered traffic-shift steps (ascending weight).
+    pub steps: Vec<ShiftStep>,
+}
+
+impl Default for FailoverPlanSpec {
+    fn default() -> Self {
+        Self {
+            primary_region: String::new(),
+            secondary_region: String::new(),
+            rto_seconds: 900,
+            rpo_seconds: 30,
+            health_gate: HealthGate::default(),
+            steps: vec![
+                ShiftStep {
+                    weight: 10,
+                    soak_secs: 60,
+                },
+                ShiftStep {
+                    weight: 50,
+                    soak_secs: 60,
+                },
+                ShiftStep {
+                    weight: 100,
+                    soak_secs: 0,
+                },
+            ],
+        }
+    }
+}
+
+/// Outcome of a single applied shift step, recorded in the plan status.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StepOutcome {
+    /// Step applied and health gate passed.
+    Applied,
+    /// Step applied but health gate failed; shift paused.
+    Paused,
+    /// Step applied but error budget breached; shift rolled back.
+    RolledBack,
+}
+
+/// Operator-readable record of one applied shift step.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShiftStepRecord {
+    /// Direction of the shift this step belongs to.
+    pub direction: ShiftDirection,
+    /// Weight applied at this step.
+    pub weight: u8,
+    /// Outcome of the step.
+    pub outcome: StepOutcome,
+    /// Health evidence collected for the step.
+    pub evidence: HealthEvidence,
+    /// UTC timestamp (Unix seconds) when the step was applied.
+    pub applied_at: i64,
+}
+
+/// Operator-readable status of a [`FailoverPlan`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailoverPlanStatus {
+    /// Current direction of the shift, if any.
+    pub direction: Option<ShiftDirection>,
+    /// Weight currently routed to the secondary region.
+    pub current_secondary_weight: u8,
+    /// Ordered record of every applied shift step.
+    pub steps: Vec<ShiftStepRecord>,
+    /// Whether the plan has completed (traffic fully shifted).
+    pub completed: bool,
+    /// Human-readable message describing the current state.
+    pub message: String,
+}
+
+impl Default for FailoverPlanStatus {
+    fn default() -> Self {
+        Self {
+            direction: None,
+            current_secondary_weight: 0,
+            steps: Vec::new(),
+            completed: false,
+            message: String::new(),
+        }
+    }
+}
+
+/// Result of evaluating a single shift step.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StepEvaluation {
+    /// The step that was evaluated.
+    pub step: ShiftStep,
+    /// Outcome of the step.
+    pub outcome: StepOutcome,
+    /// Health evidence used for the decision.
+    pub evidence: HealthEvidence,
+}
+
+/// Evaluate a single shift step against the plan's health gate.
+///
+/// This is a pure function so that the same logic is used for both failover
+/// and failback, guaranteeing that failback requires the same health evidence
+/// as failover.
+pub fn evaluate_step(
+    step: &ShiftStep,
+    evidence: &HealthEvidence,
+    gate: &HealthGate,
+    observed_error_percent: u8,
+) -> StepEvaluation {
+    let outcome = if observed_error_percent > gate.error_budget_breach_percent {
+        StepOutcome::RolledBack
+    } else if evidence.satisfies(gate) {
+        StepOutcome::Applied
+    } else {
+        StepOutcome::Paused
+    };
+
+    StepEvaluation {
+        step: step.clone(),
+        outcome,
+        evidence: evidence.clone(),
+    }
+}
+
+/// Compute the weight routed to the secondary region for a given direction.
+///
+/// For a failover the secondary weight equals the step weight; for a failback
+/// the secondary weight is the complement (traffic returning to the primary).
+pub fn secondary_weight_for(direction: ShiftDirection, step_weight: u8) -> u8 {
+    match direction {
+        ShiftDirection::Failover => step_weight.min(100),
+        ShiftDirection::Failback => 100u8.saturating_sub(step_weight.min(100)),
+    }
+}
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /// Annotation placed on pods to activate the state-sync sidecar.
@@ -492,6 +714,80 @@ impl CrossRegionSyncController {
         Ok(compliant)
     }
 
+    /// Reconcile a [`FailoverPlanSpec`] by applying its weighted traffic-shift
+    /// steps in order, gated on health evidence.
+    ///
+    /// Each step is evaluated with [`evaluate_step`]; on `Paused` the shift
+    /// stops and the plan status records the pause, on `RolledBack` the shift
+    /// is reverted to the previous weight and recorded. Every applied step is
+    /// appended to the returned status so the shift is fully auditable.
+    ///
+    /// The same routine drives both failover and failback; the caller supplies
+    /// the direction and the health evidence for the target region.
+    pub fn reconcile_failover_plan(
+        &self,
+        spec: &FailoverPlanSpec,
+        direction: ShiftDirection,
+        evidence: &HealthEvidence,
+        observed_error_percent: u8,
+    ) -> FailoverPlanStatus {
+        let mut status = FailoverPlanStatus {
+            direction: Some(direction),
+            ..Default::default()
+        };
+
+        let mut steps = spec.steps.clone();
+        steps.sort_by_key(|s| s.weight);
+
+        let mut last_good_weight = status.current_secondary_weight;
+
+        for step in &steps {
+            let eval = evaluate_step(step, evidence, &spec.health_gate, observed_error_percent);
+            let weight = secondary_weight_for(direction, step.weight);
+
+            let record = ShiftStepRecord {
+                direction,
+                weight,
+                outcome: eval.outcome.clone(),
+                evidence: eval.evidence.clone(),
+                applied_at: chrono::Utc::now().timestamp(),
+            };
+            status.steps.push(record);
+
+            match eval.outcome {
+                StepOutcome::Applied => {
+                    last_good_weight = weight;
+                    status.current_secondary_weight = weight;
+                }
+                StepOutcome::Paused => {
+                    status.message = format!(
+                        "Shift paused at weight {} for region {}: health gate not satisfied",
+                        step.weight, evidence.region
+                    );
+                    return status;
+                }
+                StepOutcome::RolledBack => {
+                    status.current_secondary_weight = last_good_weight;
+                    status.message = format!(
+                        "Shift rolled back to weight {}: error budget breached ({}% > {}%)",
+                        last_good_weight,
+                        observed_error_percent,
+                        spec.health_gate.error_budget_breach_percent
+                    );
+                    return status;
+                }
+            }
+        }
+
+        status.completed = true;
+        status.message = format!(
+            "Shift {:?} completed: {}% traffic on secondary region {}",
+            direction, status.current_secondary_weight, spec.secondary_region
+        );
+        info!("{}", status.message);
+        status
+    }
+
     /// Perform automated failover: promote the replica with the highest synced
     /// ledger to primary. Returns the name of the promoted region.
     pub async fn automated_failover(&self, namespace: &str, primary_ledger: u64) -> Result<String> {
@@ -597,5 +893,91 @@ mod tests {
     fn failover_policy_debug() {
         assert_eq!(format!("{:?}", FailoverPolicy::Automated), "Automated");
         assert_eq!(format!("{:?}", FailoverPolicy::Manual), "Manual");
+    }
+
+    fn healthy_evidence(region: &str) -> HealthEvidence {
+        HealthEvidence {
+            region: region.to_string(),
+            healthy: true,
+            consecutive_successes: 5,
+            replication_lag_ledgers: 10,
+            observed_at: 0,
+        }
+    }
+
+    #[test]
+    fn failover_plan_default_is_sane() {
+        let spec = FailoverPlanSpec::default();
+        assert_eq!(spec.rto_seconds, 900);
+        assert_eq!(spec.rpo_seconds, 30);
+        assert!(!spec.steps.is_empty());
+        assert!(spec.steps.windows(2).all(|w| w[0].weight <= w[1].weight));
+    }
+
+    #[test]
+    fn secondary_weight_complement_for_failback() {
+        assert_eq!(secondary_weight_for(ShiftDirection::Failover, 30), 30);
+        assert_eq!(secondary_weight_for(ShiftDirection::Failback, 30), 70);
+        assert_eq!(secondary_weight_for(ShiftDirection::Failback, 100), 0);
+    }
+
+    #[test]
+    fn evaluate_step_pauses_on_unhealthy() {
+        let gate = HealthGate::default();
+        let step = ShiftStep {
+            weight: 50,
+            soak_secs: 0,
+        };
+        let mut evidence = healthy_evidence("eu-west-1");
+        evidence.healthy = false;
+        let eval = evaluate_step(&step, &evidence, &gate, 0);
+        assert_eq!(eval.outcome, StepOutcome::Paused);
+    }
+
+    #[test]
+    fn evaluate_step_rolls_back_on_error_budget_breach() {
+        let gate = HealthGate::default();
+        let step = ShiftStep {
+            weight: 50,
+            soak_secs: 0,
+        };
+        let evidence = healthy_evidence("eu-west-1");
+        let eval = evaluate_step(&step, &evidence, &gate, 50);
+        assert_eq!(eval.outcome, StepOutcome::RolledBack);
+    }
+
+    #[test]
+    fn reconcile_plan_completes_failover() {
+        let client = Client::try_default();
+        // Pure logic path does not touch the API server; construct a controller
+        // only when a client is available.
+        if let Ok(client) = client {
+            let ctrl = CrossRegionSyncController::new(client, CrossRegionSyncConfig::default());
+            let spec = FailoverPlanSpec::default();
+            let status = ctrl.reconcile_failover_plan(
+                &spec,
+                ShiftDirection::Failover,
+                &healthy_evidence("eu-west-1"),
+                0,
+            );
+            assert!(status.completed);
+            assert_eq!(status.current_secondary_weight, 100);
+            assert_eq!(status.steps.len(), spec.steps.len());
+        }
+    }
+
+    #[test]
+    fn failback_requires_same_health_evidence() {
+        let client = Client::try_default();
+        if let Ok(client) = client {
+            let ctrl = CrossRegionSyncController::new(client, CrossRegionSyncConfig::default());
+            let spec = FailoverPlanSpec::default();
+            let mut evidence = healthy_evidence("us-east-1");
+            evidence.healthy = false;
+            let status =
+                ctrl.reconcile_failover_plan(&spec, ShiftDirection::Failback, &evidence, 0);
+            assert!(!status.completed);
+            assert_eq!(status.steps[0].outcome, StepOutcome::Paused);
+        }
     }
 }

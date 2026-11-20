@@ -15,6 +15,7 @@
 | Secrets and least privilege | [secrets-access-control.md](secrets-access-control.md) | Minimized blast radius and secure rotation |
 | Incident response playbook | [incident-response-playbook.md](incident-response-playbook.md) | Fast containment and forensic continuity |
 | Automated dependency updates | [dependency-updates.md](dependency-updates.md) | Dependabot PR review, CI gates, and merge process |
+| Security review gate | [security-review.md](security-review.md) | Consolidated dependency audit, Trivy scan, and Helm security gate |
 
 ## Security Principles for Stellar Core Workloads
 

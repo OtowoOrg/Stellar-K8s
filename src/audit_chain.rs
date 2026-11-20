@@ -66,6 +66,8 @@ pub enum AuditEventType {
     SecurityScan,
     PolicyEvaluation,
     OperatorStartup,
+    /// Feature-flag evaluation decision affecting user-visible behavior (Epic #1984).
+    FeatureFlagEvaluation,
     Custom(String),
 }
 
@@ -602,6 +604,54 @@ impl AuditPipeline {
         let chain = self.chain.read().await;
         chain.create_checkpoint()
     }
+
+    /// Record a feature-flag evaluation decision that affects user-visible behavior.
+    ///
+    /// Every evaluation routed through this method becomes part of the
+    /// tamper-evident chain, satisfying the "every user-affecting decision
+    /// auditable" acceptance criterion of Epic #1984.
+    pub async fn record_flag_evaluation(
+        &self,
+        flag_key: &str,
+        variant: &str,
+        reason: &str,
+        targeting_key: Option<&str>,
+        details: Value,
+    ) -> AuditRecord {
+        let mut merged = details;
+        if let Value::Object(ref mut map) = merged {
+            map.insert("flagKey".to_string(), Value::String(flag_key.to_string()));
+            map.insert("variant".to_string(), Value::String(variant.to_string()));
+            map.insert("reason".to_string(), Value::String(reason.to_string()));
+            if let Some(tk) = targeting_key {
+                map.insert("targetingKey".to_string(), Value::String(tk.to_string()));
+            }
+        } else {
+            merged = serde_json::json!({
+                "flagKey": flag_key,
+                "variant": variant,
+                "reason": reason,
+                "targetingKey": targeting_key,
+                "details": merged,
+            });
+        }
+
+        self.record(
+            AuditEventType::FeatureFlagEvaluation,
+            AuditSeverity::Info,
+            AuditActor::system("feature-flags"),
+            TargetResource {
+                kind: "FeatureFlag".to_string(),
+                name: flag_key.to_string(),
+                namespace: None,
+                tenant_id: None,
+            },
+            "evaluate",
+            AuditOutcome::Success,
+            merged,
+        )
+        .await
+    }
 }
 
 #[cfg(test)]
@@ -688,6 +738,35 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.error_type, TamperType::SequenceMismatch);
+    }
+
+    #[tokio::test]
+    async fn test_flag_evaluation_is_audited() {
+        let pipeline = AuditPipeline::new("cluster-test".to_string(), Some("key".to_string()));
+
+        pipeline
+            .record_flag_evaluation(
+                "checkout.new-flow",
+                "on",
+                "targeting_match",
+                Some("user-42"),
+                serde_json::json!({ "bundleVersion": 7 }),
+            )
+            .await;
+
+        let records = pipeline
+            .query(None, 10, Some(AuditEventType::FeatureFlagEvaluation), None)
+            .await;
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.event.target.kind, "FeatureFlag");
+        assert_eq!(record.event.target.name, "checkout.new-flow");
+        assert_eq!(record.event.details["variant"], "on");
+        assert_eq!(record.event.details["targetingKey"], "user-42");
+        assert_eq!(record.event.details["bundleVersion"], 7);
+
+        let summary = pipeline.verify().await.expect("chain must verify");
+        assert_eq!(summary.total_records, 1);
     }
 
     #[test]

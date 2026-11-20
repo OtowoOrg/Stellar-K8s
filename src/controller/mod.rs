@@ -19,6 +19,7 @@ pub mod horizon_metrics_collector;
 pub mod horizon_scaler;
 pub mod job_orphan_reconciler;
 pub mod jurisdiction;
+pub mod retention_policy;
 pub mod label_propagation;
 pub mod leader;
 pub mod maintenance;
@@ -208,6 +209,11 @@ pub use job_orphan_reconciler::{
     classify_job, classify_pod, plan_reclaim, reconcile_job_retention, ArtifactId, ArtifactKind,
     Classification, ClusterView, JobObservation, JobPhase, OrphanClass, OwnerRefSnapshot,
     PodObservation, PodPhase, ReclaimAction, ReclaimOutcome, ReclaimPlan, ReclaimTarget,
+};
+pub use retention_policy::{
+    reconcile_retention_policies, register_orphan_reconciler, run_namespace_orphan_reconciler,
+    NamespaceReclaimReport, RetentionPolicy, RetentionPolicySpec, RetentionPolicyStatus,
+    DEFAULT_RETENTION_SECONDS,
 };
 pub use jurisdiction::{
     build_jurisdiction_node_affinity, compliance_report, merge_jurisdiction_tolerations,

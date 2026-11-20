@@ -34,6 +34,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::ConfigMap;
@@ -44,6 +45,22 @@ use kube::{
 };
 use tokio::sync::RwLock;
 use tracing::{info, warn};
+
+/// Interval at which the async bundle refresher re-fetches the signed bundle.
+///
+/// Kept well under the 10s cluster-wide propagation target so that a bundle
+/// published to the flag platform is observed by every operator replica
+/// within the acceptance window.
+pub const BUNDLE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Name of the ConfigMap key carrying the signed flag bundle payload.
+pub const BUNDLE_CONFIGMAP_KEY: &str = "flag_bundle";
+
+/// Name of the ConfigMap key carrying the kill-switch override.
+///
+/// When set to a truthy value the kill-switch forces all flags to their safe
+/// defaults regardless of the bundle contents or bundle delivery health.
+pub const KILL_SWITCH_CONFIGMAP_KEY: &str = "kill_switch";
 
 /// Name of the feature-flags ConfigMap the operator watches.
 pub const FEATURE_FLAGS_CONFIGMAP: &str = "stellar-operator-config";
@@ -136,12 +153,144 @@ pub fn new_shared() -> SharedFeatureFlags {
     Arc::new(RwLock::new(FeatureFlags::default()))
 }
 
+/// In-process cache of the last-known-good signed flag bundle.
+///
+/// Evaluation reads exclusively from this cache so the hot path never touches
+/// the network. The cache is refreshed asynchronously by
+/// [`refresh_bundle_cache`] and survives bundle-delivery outages: when a
+/// refresh fails the previously cached bundle is retained.
+#[derive(Debug, Clone, Default)]
+pub struct BundleCache {
+    /// Last-known-good bundle payload, if any has been successfully applied.
+    pub last_known_good: Option<String>,
+    /// Whether the kill-switch override is currently engaged.
+    pub kill_switch: bool,
+}
+
+impl BundleCache {
+    /// Effective flags derived from the cached bundle, honouring the
+    /// kill-switch override.
+    ///
+    /// When the kill-switch is engaged the safe defaults are returned so that
+    /// user-visible behaviour is disabled even if bundle delivery is down.
+    pub fn effective_flags(&self) -> FeatureFlags {
+        if self.kill_switch {
+            return FeatureFlags::default();
+        }
+        match &self.last_known_good {
+            Some(payload) => FeatureFlags::from_config_map_data(&parse_bundle_payload(payload)),
+            None => FeatureFlags::default(),
+        }
+    }
+}
+
+/// Shared, live-reloadable bundle cache handle.
+pub type SharedBundleCache = Arc<RwLock<BundleCache>>;
+
+/// Create a new `SharedBundleCache` with no last-known-good bundle.
+pub fn new_shared_bundle_cache() -> SharedBundleCache {
+    Arc::new(RwLock::new(BundleCache::default()))
+}
+
+/// Parse a signed bundle payload into a flag map.
+///
+/// The payload is expected to be a simple `key=value` line-oriented document
+/// as emitted by the bundle signer. Malformed lines are ignored so a partial
+/// bundle never panics the evaluator.
+fn parse_bundle_payload(payload: &str) -> BTreeMap<String, String> {
+    payload
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            line.split_once('=')
+                .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        })
+        .collect()
+}
+
+/// Apply a freshly fetched bundle payload to the cache.
+///
+/// Returns `true` when the cached bundle changed. The kill-switch state is
+/// applied independently of bundle delivery so it keeps working during
+/// outages.
+pub async fn apply_bundle(
+    cache: &SharedBundleCache,
+    payload: Option<String>,
+    kill_switch: bool,
+) -> bool {
+    let mut current = cache.write().await;
+    let mut changed = false;
+
+    if current.kill_switch != kill_switch {
+        current.kill_switch = kill_switch;
+        changed = true;
+    }
+
+    if let Some(payload) = payload {
+        if current.last_known_good.as_deref() != Some(payload.as_str()) {
+            current.last_known_good = Some(payload);
+            changed = true;
+        }
+    }
+
+    changed
+}
+
+/// Asynchronously refresh the bundle cache from the watched ConfigMap.
+///
+/// This is the network-touching half of the design: it runs on its own task
+/// and never blocks in-process evaluation. On failure the last-known-good
+/// bundle is retained so the kill-switch and cached flags keep functioning.
+pub async fn refresh_bundle_cache(
+    cache: SharedBundleCache,
+    flags: SharedFeatureFlags,
+    payload: Option<String>,
+    kill_switch: bool,
+) {
+    let changed = apply_bundle(&cache, payload, kill_switch).await;
+    if !changed {
+        return;
+    }
+
+    let effective = cache.read().await.effective_flags();
+    let mut current = flags.write().await;
+    if *current != effective {
+        *current = effective;
+    }
+}
+
 /// Watch the `stellar-operator-config` ConfigMap in `namespace` and update
 /// `flags` whenever it changes. Runs until the task is cancelled.
 pub async fn watch_feature_flags(
     client: Client,
     namespace: String,
     flags: SharedFeatureFlags,
+    audit_recorder: Option<Arc<crate::controller::audit_recorder::AuditRecorder>>,
+) {
+    watch_feature_flags_with_bundle(
+        client,
+        namespace,
+        flags,
+        new_shared_bundle_cache(),
+        audit_recorder,
+    )
+    .await
+}
+
+/// Watch the `stellar-operator-config` ConfigMap and drive the signed bundle
+/// cache, keeping in-process evaluation off the network hot path.
+///
+/// The watcher feeds [`refresh_bundle_cache`] so the cached bundle (and the
+/// kill-switch override) propagate to every replica within
+/// [`BUNDLE_REFRESH_INTERVAL`].
+pub async fn watch_feature_flags_with_bundle(
+    client: Client,
+    namespace: String,
+    flags: SharedFeatureFlags,
+    bundle_cache: SharedBundleCache,
     audit_recorder: Option<Arc<crate::controller::audit_recorder::AuditRecorder>>,
 ) {
     let api: Api<ConfigMap> = Api::namespaced(client, &namespace);
@@ -170,7 +319,24 @@ pub async fn watch_feature_flags(
                     );
                 }
 
-                let new_flags = FeatureFlags::from_config_map_data(&data);
+                let bundle_payload = data.get(BUNDLE_CONFIGMAP_KEY).cloned();
+                let kill_switch = data
+                    .get(KILL_SWITCH_CONFIGMAP_KEY)
+                    .map(|v| matches!(v.to_lowercase().as_str(), "true" | "1" | "yes"))
+                    .unwrap_or(false);
+
+                let new_flags = if bundle_payload.is_some() {
+                    let mut cache = bundle_cache.write().await;
+                    if let Some(payload) = &bundle_payload {
+                        cache.last_known_good = Some(payload.clone());
+                    }
+                    cache.kill_switch = kill_switch;
+                    cache.effective_flags()
+                } else {
+                    let mut cache = bundle_cache.write().await;
+                    cache.kill_switch = kill_switch;
+                    cache.effective_flags()
+                };
 
                 let mut current = flags.write().await;
                 if *current != new_flags {
@@ -213,8 +379,10 @@ pub async fn watch_feature_flags(
                     recorder.record(entry).await;
                 }
 
+                // Retain the last-known-good bundle so the kill-switch and
+                // cached flags keep functioning while delivery is down.
                 let mut current = flags.write().await;
-                *current = FeatureFlags::default();
+                *current = bundle_cache.read().await.effective_flags();
             }
             Ok(Event::Init) | Ok(Event::InitDone) => {}
             Err(e) => {
@@ -410,5 +578,63 @@ mod tests {
         let s = w2.to_string();
         assert!(s.contains("enable_dr"));
         assert!(s.contains("enabled"));
+    }
+
+    #[test]
+    fn bundle_cache_defaults_to_safe_flags() {
+        let cache = BundleCache::default();
+        assert_eq!(cache.effective_flags(), FeatureFlags::default());
+    }
+
+    #[test]
+    fn bundle_cache_parses_last_known_good() {
+        let cache = BundleCache {
+            last_known_good: Some("enable_dr=true".to_string()),
+            kill_switch: false,
+        };
+        assert!(cache.effective_flags().enable_dr);
+    }
+
+    #[test]
+    fn bundle_cache_kill_switch_overrides_bundle() {
+        let cache = BundleCache {
+            last_known_good: Some("enable_dr=true".to_string()),
+            kill_switch: true,
+        };
+        assert!(!cache.effective_flags().enable_dr);
+    }
+
+    #[test]
+    fn parse_bundle_payload_ignores_comments_and_blank_lines() {
+        let parsed = parse_bundle_payload("# signed bundle\n\nenable_dr=yes\n");
+        assert_eq!(parsed.get("enable_dr").map(String::as_str), Some("yes"));
+        assert_eq!(parsed.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn apply_bundle_retains_last_known_good_on_missing_payload() {
+        let cache = new_shared_bundle_cache();
+        assert!(apply_bundle(&cache, Some("enable_dr=true".to_string()), false).await);
+        // A refresh with no payload (delivery down) must not clear the cache.
+        assert!(!apply_bundle(&cache, None, false).await);
+        assert!(cache.read().await.effective_flags().enable_dr);
+    }
+
+    #[tokio::test]
+    async fn refresh_bundle_cache_updates_shared_flags() {
+        let cache = new_shared_bundle_cache();
+        let flags = new_shared();
+        refresh_bundle_cache(
+            cache.clone(),
+            flags.clone(),
+            Some("enable_dr=true".to_string()),
+            false,
+        )
+        .await;
+        assert!(flags.read().await.enable_dr);
+
+        // Kill-switch engaged: flags revert to safe defaults even with a bundle.
+        refresh_bundle_cache(cache, flags.clone(), None, true).await;
+        assert!(!flags.read().await.enable_dr);
     }
 }

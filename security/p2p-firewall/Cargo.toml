@@ -27,7 +27,7 @@ async-trait = "0.1"
 
 # Kubernetes client for NetworkPolicy management
 kube = { version = "0.94", features = ["runtime", "derive", "client"] }
-k8s-openapi = { version = "0.22", default-features = false, features = ["v1_30"] }
+k8s-openapi = { version = "0.26", default-features = false, features = ["v1_30"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

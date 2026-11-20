@@ -59,9 +59,9 @@ pub fn gateway_routes<S>(state: Arc<GatewayState>) -> Router<S> {
         .route("/api/v1/gateway/quota", post(set_quota))
         // Plugin management
         .route("/api/v1/gateway/plugins", get(list_plugins))
-        .route("/api/v1/gateway/plugins/:name/enable", post(enable_plugin))
+        .route("/api/v1/gateway/plugins/{name}/enable", post(enable_plugin))
         .route(
-            "/api/v1/gateway/plugins/:name/disable",
+            "/api/v1/gateway/plugins/{name}/disable",
             post(disable_plugin),
         )
         // OpenAPI documentation
@@ -72,7 +72,7 @@ pub fn gateway_routes<S>(state: Arc<GatewayState>) -> Router<S> {
         // Router management
         .route("/api/v1/gateway/routes", get(list_routes))
         .route("/api/v1/gateway/routes", post(add_route))
-        .route("/api/v1/gateway/routes/:path", delete(remove_route))
+        .route("/api/v1/gateway/routes/{path}", delete(remove_route))
         .with_state(state)
 }
 

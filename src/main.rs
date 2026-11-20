@@ -21,6 +21,7 @@ use stellar_k8s::{incident, Error};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let args = Args::parse();
 
     let offline = args.offline;

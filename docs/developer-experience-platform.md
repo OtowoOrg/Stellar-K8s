@@ -25,7 +25,7 @@ Tilt and `make run-dev` use `cargo watch` for sub-5-second iteration cycles.
 
 | Service | Local Port |
 |---------|------------|
-| Operator REST API | 8080 |
+| Operator REST API | 9090 (override via `REST_API_PORT`, e.g. `8080`) |
 | Prometheus metrics | 9090 |
 | Horizon (sample) | 8000 |
 

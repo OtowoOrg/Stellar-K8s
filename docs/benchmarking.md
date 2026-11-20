@@ -319,8 +319,8 @@ export const options = {
 # Ensure operator is running
 cargo run &
 
-# Check health endpoint
-curl http://localhost:8080/healthz
+# Check health endpoint (default REST_API_PORT=9090, or 8080 when REST_API_PORT=8080)
+curl http://localhost:9090/healthz
 ```
 
 ### "k6 not found"

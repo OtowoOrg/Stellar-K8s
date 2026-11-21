@@ -124,6 +124,8 @@ pub mod spot_drain;
 pub mod storage_migration;
 pub(crate) mod sync_scale;
 pub(crate) mod sync_state_monitor;
+pub mod namespace_teardown;
+pub mod tenant_isolation;
 pub mod tenant_reconciler;
 pub mod testnet_compliance;
 

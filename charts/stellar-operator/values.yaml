@@ -22,6 +22,16 @@ hooks:
 
 webhook:
   enabled: false
+  # Sidecar that pre-validates the serving certificate and gates readiness
+  # (only rendered when certManager.enabled is true).
+  certHealth:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
 
 mtls:
   enabled: false

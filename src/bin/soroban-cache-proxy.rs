@@ -22,6 +22,7 @@ use std::{
         Arc,
     },
 };
+use stellar_k8s::config_reload::ConfigReloader;
 use stellar_wasm_cache::{CacheConfig, StateCache};
 use tokio::sync::Mutex;
 use tracing::{info, warn};
@@ -53,13 +54,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .trim_end_matches('/')
         .to_string();
     let config = load_config();
-    let cache = StateCache::new(config).unwrap_or_else(|error| {
+    let cache = StateCache::new(config.clone()).unwrap_or_else(|error| {
         warn!(?error, "Invalid cache configuration; using safe defaults");
         StateCache::new(CacheConfig::default()).expect("default cache configuration is valid")
     });
+    let cache = Arc::new(Mutex::new(cache));
+
+    // Hot-reload the cache config from the mounted file (#1977): a valid new
+    // config swaps in a fresh cache; an invalid one is rejected and the live
+    // cache keeps serving.
+    let reloader = ConfigReloader::install(config, |c: &CacheConfig| {
+        c.validate().map_err(|e| format!("{e:?}"))
+    });
+    let config_path = std::env::var("SOROBAN_CACHE_CONFIG")
+        .unwrap_or_else(|_| "/config/soroban-cache.json".into());
+    tokio::spawn(reloader.clone().watch_file(
+        config_path,
+        |bytes: &[u8]| {
+            serde_json::from_slice::<CacheFile>(bytes)
+                .map(|f| f.cache)
+                .map_err(|e| e.to_string())
+        },
+        std::time::Duration::from_secs(5),
+    ));
+    {
+        let reloader = reloader.clone();
+        let cache = cache.clone();
+        let mut events = reloader.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match events.recv().await {
+                    Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+                let new_config = (*reloader.get_arc().await).clone();
+                match StateCache::new(new_config) {
+                    Ok(fresh) => {
+                        *cache.lock().await = fresh;
+                        info!("Soroban cache config reloaded");
+                    }
+                    Err(error) => {
+                        warn!(?error, "Reloaded cache config unusable; keeping live cache")
+                    }
+                }
+            }
+        });
+    }
 
     let state = AppState {
-        cache: Arc::new(Mutex::new(cache)),
+        cache,
         client: reqwest::Client::new(),
         upstream,
         upstream_requests: Arc::new(AtomicU64::new(0)),

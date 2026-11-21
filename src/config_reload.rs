@@ -26,9 +26,13 @@
 //! ```ignore
 //! use stellar_k8s::config_reload::ConfigReloader;
 //! let reloader = ConfigReloader::new(initial, validate);
-//! tokio::spawn(reloader.clone().watch_file("/etc/agent/config.yaml", parse, std::time::Duration::from_secs(1)));
-//! let cfg: std::sync::Arc<MyConfig> = reloader.get();
+//! tokio::spawn(reloader.clone().watch_file("/etc/agent/config.yaml".into(), parse, std::time::Duration::from_secs(1)));
+//! let cfg: std::sync::Arc<MyConfig> = reloader.get_arc().await;
 //! ```
+//!
+//! First-party agents on this library: `soroban-cache-proxy` (the only
+//! agent with a file-based config; the others are configured purely through
+//! environment variables, which cannot change under a running process).
 
 use std::collections::VecDeque;
 use std::sync::Arc;

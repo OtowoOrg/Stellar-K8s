@@ -56,8 +56,6 @@ ignore = [
     "RUSTSEC-2026-0049",
     # wasmtime-wasi 24.x – Winch backend only; Cranelift path unaffected
     "RUSTSEC-2026-0182",
-    # quinn-proto – remote memory exhaustion; transitive via reqwest HTTP/3
-    "RUSTSEC-2026-0185",
 
     # ── Added 2026-07-03: feat/stale-docs-detector new advisories ──────────────
 
@@ -82,16 +80,13 @@ ignore = [
     "RUSTSEC-2026-0104",
 
     # ── wasmtime-wasi 24.0.7 – WASI file-permission bypasses ───────────────────
-    # Both advisories need wasmtime-wasi >=24.0.11 (0149) or >=24.0.11 / >=36.x
-    # (0188). `cargo update -p wasmtime-wasi` yields 0 packages updated — the
+    # RUSTSEC-2026-0188 needs wasmtime-wasi >=24.0.11 / >=36.x.
+    # `cargo update -p wasmtime-wasi` yields 0 packages updated — the
     # resolver cannot advance within 24.x due to other wasmtime-* crates locked to
     # 24.0.7. These bugs affect WASI filesystem host-restriction enforcement; this
     # project uses Wasmtime only for the Wasm webhook validator with trusted,
     # operator-supplied policies — not arbitrary user input. Re-evaluate when the
     # full wasmtime-* pin set can be advanced together.
-    #
-    # WASI path_open(TRUNCATE) bypasses FilePerms::WRITE
-    "RUSTSEC-2026-0149",
     # WASI hard links and renames bypass FilePerms for destination
     "RUSTSEC-2026-0188",
 
@@ -110,9 +105,8 @@ ignore = [
     # Transitive via backoff → kube-runtime. No patched version available in our
     # pinned dependency chain.
     "RUSTSEC-2020-0071",
-    # wasmtime 24.0.7 – multiple Winch-backend CVEs (RUSTSEC-2026-0085/0087/0091).
+    # wasmtime 24.0.7 – multiple Winch-backend CVEs (RUSTSEC-2026-0087/0091).
     # Same scope as existing Winch entries at lines 34-47: Cranelift backend unaffected.
-    "RUSTSEC-2026-0085",
     "RUSTSEC-2026-0087",
     "RUSTSEC-2026-0091",
     # wasmtime-wasi 24.0.7 – WASI path_open/symlink advisory (RUSTSEC-2026-0204).

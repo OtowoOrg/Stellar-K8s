@@ -103,20 +103,8 @@ jobs:
         with:
           cache: true
 
-      - name: Setup Kind cluster (K8s ${{ matrix.k8s_version }})
-        uses: helm/kind-action@v1.15.1
-        with:
-          version: "v0.22.0"
-          config: |
-            kind: Cluster
-            apiVersion: kind.x-k8s.io/v1alpha4
-            nodes:
-              - role: control-plane
-                image: kindest/node:v${{ matrix.k8s_version }}
-              - role: worker
-                image: kindest/node:v${{ matrix.k8s_version }}
-              - role: worker
-                image: kindest/node:v${{ matrix.k8s_version }}
+      - name: Provision ephemeral cluster via Cluster-API wrapper (K8s ${{ matrix.k8s_version }})
+        run: bash scripts/ci/capi-cluster.sh create ${{ matrix.k8s_version }}.0 stellar-capi-${{ matrix.k8s_version }}
 
       - name: Install Stellar Operator via Helm
         run: |
@@ -296,9 +284,15 @@ jobs:
             echo "Found upstream pre-releases:"
             echo "$PRERELEASE"
             echo "prerelease_found=true" >> $GITHUB_OUTPUT
+            {
+              echo "prerelease<<EOF"
+              echo "$PRERELEASE"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
           else
             echo "No new pre-releases found"
             echo "prerelease_found=false" >> $GITHUB_OUTPUT
+            echo "prerelease=" >> $GITHUB_OUTPUT
           fi
 
       - name: Create issue if new pre-release detected
@@ -317,26 +311,25 @@ jobs:
               });
             }
 
-# ──────────────────────────────────────────────────────────────────────────
-# Job result aggregation
-# ──────────────────────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job result aggregation
+  # ──────────────────────────────────────────────────────────────────────────
+  summary:
+    name: Compatibility Matrix Summary
+    runs-on: ubuntu-latest
+    needs:
+      - publish-compatibility-results
+    if: always()
+    steps:
+      - name: Download compatibility results
+        uses: actions/download-artifact@v8
+        with:
+          name: compatibility-matrix-artifacts
 
-summary:
-  name: Compatibility Matrix Summary
-  runs-on: ubuntu-latest
-  needs:
-    - publish-compatibility-results
-  if: always()
-  steps:
-    - name: Download compatibility results
-      uses: actions/download-artifact@v8
-      with:
-        name: compatibility-matrix-artifacts
-
-    - name: Print final results
-      run: |
-        echo "## Stellar-K8s Compatibility Matrix"
-        echo ""
-        cat conformance-summary.md
-        echo ""
-        echo "Badge: ![Compatibility](compat-badge.svg)"
+      - name: Print final results
+        run: |
+          echo "## Stellar-K8s Compatibility Matrix"
+          echo ""
+          cat conformance-summary.md
+          echo ""
+          echo "Badge: ![Compatibility](compat-badge.svg)"

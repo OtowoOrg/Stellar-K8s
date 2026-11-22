@@ -497,7 +497,10 @@ crd-gen: ## Generate CRDs
 	@$(CARGO) run --bin contract-crdgen | python3 scripts/sort-manifests.py > config/crd/contractdeployment-crd.yaml
 	@echo "✓ CRD written to config/crd/stellarnode-crd.yaml (deterministic order)"
 
-regenerate: crd-gen generate-api-docs bundle ## Regenerate all derived artifacts (CRDs, API docs, OLM bundle)
+conversion-gen: ## Generate CRD conversion webhook manifests from the migration graph
+	@python3 scripts/generate-conversion-webhooks.py
+
+regenerate: crd-gen conversion-gen generate-api-docs bundle ## Regenerate all derived artifacts (CRDs, API docs, OLM bundle)
 	@echo "✓ All generated artifacts are up to date"
 	@echo "  See docs/development/regeneration-guide.md for details"
 

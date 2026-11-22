@@ -236,6 +236,17 @@ path = "src/bin/conventional-commit-check.rs"
 name = "backup-verify"
 path = "src/bin/backup-verify.rs"
 
+# Offline verifier / exporter for tamper-evident audit ledgers (#1958).
+[[bin]]
+name = "stellar-audit-verify"
+path = "src/bin/stellar-audit-verify.rs"
+
+# Out-of-process Kubernetes audit webhook sink writing the hash-chained ledger (#1958).
+[[bin]]
+name = "stellar-audit-sink"
+path = "src/bin/stellar-audit-sink.rs"
+required-features = ["rest-api"]
+
 # Lifecycle hooks runner — installed into workload pods to run ordered
 # setup / readiness / teardown hooks (#1525).
 [[bin]]

@@ -1,0 +1,121 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Tamper-evident audit ledger alerts (#1958).
+#
+# Detection latency budget for a chain gap (target < 60s):
+#   monitor scan interval (default 10s) + Prometheus scrape (15s) + rule eval (15s) = ~40s
+# `for: 0m` is deliberate: an integrity violation latches and must page immediately.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-ledger-alerts
+  namespace: monitoring
+  labels:
+    app: prometheus
+    component: alerting-rules
+data:
+  audit-ledger-alerts.yaml: |
+    groups:
+    - name: audit-ledger
+      interval: 15s
+      rules:
+      - alert: AuditLedgerChainBroken
+        expr: stellar_audit_ledger_chain_valid == 0
+        for: 0m
+        labels:
+          severity: critical
+          component: audit-ledger
+        annotations:
+          summary: "Audit ledger integrity violation (gap, modification, reorder or truncation)"
+          description: >-
+            The incremental monitor latched a violation. Run
+            `stellar-audit-verify verify <ledger>` against a copy of the store to get the exact
+            sequence number, then follow docs/audit-ledger.md#incident-response.
+      - alert: AuditLedgerSequenceGap
+        expr: increase(stellar_audit_ledger_chain_gaps_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: audit-ledger
+        annotations:
+          summary: "Audit ledger sequence gap detected (missing or truncated entries)"
+      - alert: AuditLedgerVerificationFailures
+        expr: increase(stellar_audit_ledger_verification_failures_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: audit-ledger
+        annotations:
+          summary: "Audit ledger hash verification failed"
+      - alert: AuditLedgerSinkDown
+        expr: stellar_audit_ledger_sink_up == 0 or absent(stellar_audit_ledger_sink_up)
+        for: 1m
+        labels:
+          severity: critical
+          component: audit-ledger
+        annotations:
+          summary: "Audit sink cannot persist events; the apiserver will retry and may drop after its buffer fills"
+      - alert: AuditLedgerDeliveryFailures
+        expr: increase(stellar_audit_ledger_write_failures_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          component: audit-ledger
+        annotations:
+          summary: "Audit batches failed to persist"
+      - alert: AuditLedgerBackpressure
+        expr: increase(stellar_audit_ledger_requests_backpressured_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: audit-ledger
+        annotations:
+          summary: "Audit sink queue is full; apiserver is being asked to retry"
+      - alert: AuditLedgerInvalidEvents
+        expr: increase(stellar_audit_ledger_events_invalid_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          component: audit-ledger
+        annotations:
+          summary: "Audit sink rejected malformed events (they are logged, not stored)"
+      - alert: AuditLedgerMonitorStalled
+        expr: time() - stellar_audit_ledger_last_scan_timestamp_seconds > 60
+        for: 0m
+        labels:
+          severity: critical
+          component: audit-ledger
+        annotations:
+          summary: "Integrity monitor has not completed a scan for over 60s (gap detection is blind)"
+      - alert: AuditLedgerSlowAcknowledgements
+        expr: |
+          histogram_quantile(0.99, sum(rate(stellar_audit_ledger_processing_latency_seconds_bucket[5m])) by (le)) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: audit-ledger
+        annotations:
+          summary: "p99 audit acknowledgement latency above 1s"
+      - alert: AuditLedgerNoEvents
+        expr: rate(stellar_audit_ledger_events_appended_total[15m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          component: audit-ledger
+        annotations:
+          summary: "No mutating audit events recorded for 30m (apiserver webhook may be disconnected)"
+    - name: audit-ledger-throughput
+      interval: 30s
+      rules:
+      - record: stellar:audit_ledger_events_per_second
+        expr: rate(stellar_audit_ledger_events_appended_total[1m])

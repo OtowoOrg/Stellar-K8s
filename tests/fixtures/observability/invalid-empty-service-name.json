@@ -1,0 +1,13 @@
+{
+  "description": "invalid empty service name",
+  "expect": "invalid",
+  "resource": {
+    "service.name": "",
+    "service.instance.id": "11111111-2222-3333-4444-555555555555",
+    "k8s.pod.name": "stellar-golden-path-0",
+    "k8s.namespace.name": "stellar-system",
+    "k8s.node.name": "kind-control-plane",
+    "stellar.observability.contract.version": "1.0.0"
+  },
+  "reason": "service.name"
+}

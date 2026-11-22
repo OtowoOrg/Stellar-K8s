@@ -97,11 +97,29 @@ data:
       # backend configured (useful for local development).
       debug:
         verbosity: basic
+      # #1960: expose dead-letter volume so the ratio is observable and alertable.
+      prometheus/deadletter:
+        endpoint: 0.0.0.0:8889
+        resource_to_telemetry_conversion:
+          enabled: false
       file/deadletter:
         path: /var/lib/otel/deadletter/quarantine.json
         rotation:
           max_megabytes: 100
           max_days: 7
+
+    connectors:
+      # Counts every quarantined span / metric / log record (dead-letter volume).
+      count/deadletter:
+        spans:
+          stellar.otel.deadletter.spans:
+            description: Spans quarantined for violating the observability contract.
+        metrics:
+          stellar.otel.deadletter.metrics:
+            description: Metrics quarantined for violating the observability contract.
+        logs:
+          stellar.otel.deadletter.logs:
+            description: Log records quarantined for violating the observability contract.
 
     extensions:
       health_check:
@@ -132,6 +150,7 @@ data:
           processors: [transform/contract, filter/keep_invalid, batch]
           exporters:
             - file/deadletter
+            - count/deadletter
         metrics:
           receivers: [otlp]
           processors: [memory_limiter, transform/contract, filter/drop_invalid, batch]
@@ -142,6 +161,7 @@ data:
           processors: [transform/contract, filter/keep_invalid, batch]
           exporters:
             - file/deadletter
+            - count/deadletter
         logs:
           receivers: [otlp]
           processors: [memory_limiter, transform/contract, filter/drop_invalid, batch]
@@ -158,6 +178,11 @@ data:
           processors: [transform/contract, filter/keep_invalid, batch]
           exporters:
             - file/deadletter
+            - count/deadletter
+        metrics/deadletter-counts:
+          receivers: [count/deadletter]
+          exporters:
+            - prometheus/deadletter
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -218,6 +243,9 @@ spec:
             - name: metrics
               containerPort: 8888
               protocol: TCP
+            - name: dl-metrics
+              containerPort: 8889
+              protocol: TCP
           volumeMounts:
             - name: config
               mountPath: /conf
@@ -264,5 +292,9 @@ spec:
     - name: metrics
       port: 8888
       targetPort: metrics
+      protocol: TCP
+    - name: dl-metrics
+      port: 8889
+      targetPort: dl-metrics
       protocol: TCP
 {{- end }}

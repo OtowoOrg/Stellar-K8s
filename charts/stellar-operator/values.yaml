@@ -495,6 +495,17 @@ otel:
         enabled: false
         endpoint: "http://tempo:4317"
 
+      # Grafana Loki (logs). Required for the Loki -> Tempo one-click pivot (#1960).
+      loki:
+        enabled: false
+        endpoint: "http://loki:3100/loki/api/v1/push"
+
+      # Elasticsearch (logs)
+      elasticsearch:
+        enabled: false
+        endpoint: "http://elasticsearch:9200"
+        index: "stellar-logs"
+
 
 # SCP Analytics Pipeline Configuration
 # Real-time streaming of SCP messages to Kafka for network topology analysis

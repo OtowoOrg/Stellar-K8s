@@ -168,6 +168,7 @@ nav:
       - Backup and DR Runbook: backup-disaster-recovery-runbook.md
       - Backup Consistency Groups: backup-consistency-groups.md
       - Backup Verification Automation: operations/backup-verification.md
+      - Hierarchical Fair-Share Quotas: fair-share-scheduling.md
       - Chaos Drills: chaos-drills.md
       - DR Drill Results: dr-results-template.md
   - Configuration:

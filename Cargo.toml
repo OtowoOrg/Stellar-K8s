@@ -236,6 +236,12 @@ path = "src/bin/conventional-commit-check.rs"
 name = "backup-verify"
 path = "src/bin/backup-verify.rs"
 
+# Hierarchical fair-share kube-scheduler extender (#1959).
+[[bin]]
+name = "stellar-fairshare-extender"
+path = "src/bin/stellar-fairshare-extender.rs"
+required-features = ["rest-api"]
+
 # Lifecycle hooks runner — installed into workload pods to run ordered
 # setup / readiness / teardown hooks (#1525).
 [[bin]]

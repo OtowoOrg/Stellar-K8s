@@ -273,6 +273,13 @@ pub struct MaintenancePlanStatus {
     /// Index into `resolved_nodes` currently being processed.
     #[serde(default)]
     pub cursor: u32,
+    /// Unix time post-drain verification began (0 = not started); bounds the verification wait.
+    #[serde(default)]
+    pub post_verify_started_unix: i64,
+    /// Workloads that had pods on the target nodes when the plan started; readiness, SLO and
+    /// post-drain checks are scoped to these so unrelated unhealthy workloads cannot block a plan.
+    #[serde(default)]
+    pub affected_workloads: Vec<String>,
     #[serde(default)]
     pub nodes_completed: Vec<String>,
     #[serde(default)]

@@ -486,6 +486,26 @@ pub fn quarter_cycle_id(at: DateTime<Utc>) -> String {
     format!("{}-Q{}", at.year(), at.month0() / 3 + 1)
 }
 
+/// Name of the `CapacityRecommendationReport` for a cycle, e.g. `capacity-2026-q3`.
+pub fn report_name(cycle_id: &str) -> String {
+    format!("capacity-{}", cycle_id.to_lowercase())
+}
+
+/// Runs the recommendation cycle for the quarter containing `now` and
+/// publishes it, with its backtest, as that quarter's report CR.
+pub async fn run_quarterly_cycle(
+    engine: &CapacityForecastEngine,
+    client: kube::Client,
+    namespace: &str,
+    now: DateTime<Utc>,
+    series: &[UtilizationSeries],
+    incidents: &[CapacityIncident],
+) -> Result<CapacityRecommendationReport, kube::Error> {
+    let cycle_id = quarter_cycle_id(now);
+    let spec = engine.run_cycle(&cycle_id, now, series, incidents);
+    publish_report(client, namespace, &report_name(&cycle_id), spec).await
+}
+
 // ---------------------------------------------------------------------------
 // Model selection, ranking and exhaustion
 // ---------------------------------------------------------------------------
@@ -1091,6 +1111,11 @@ mod tests {
             quarter_cycle_id(Utc.with_ymd_and_hms(2026, 12, 31, 0, 0, 0).unwrap()),
             "2026-Q4"
         );
+    }
+
+    #[test]
+    fn report_name_is_a_valid_object_name() {
+        assert_eq!(report_name("2026-Q3"), "capacity-2026-q3");
     }
 
     #[test]

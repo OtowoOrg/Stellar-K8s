@@ -164,6 +164,14 @@ spec:
                     type: string
                 cursor:
                   type: integer
+                postVerifyStartedUnix:
+                  type: integer
+                  description: Unix time post-drain verification began (0 = not started); bounds the verification wait.
+                affectedWorkloads:
+                  type: array
+                  description: Workloads with pods on the target nodes when the plan started; readiness/SLO/post-drain checks are scoped to these.
+                  items:
+                    type: string
                 nodesCompleted:
                   type: array
                   items:

@@ -428,11 +428,13 @@ check-openapi-spec: ## Fail if OpenAPI spec is missing required operator routes
 # ── Documentation Site ────────────────────────────────────────────────────────
 
 docs-build: ## Build the documentation site into site/
+	@python3 -m mkdocs --version >/dev/null 2>&1 || (echo "✗ mkdocs not installed. Run: pip install -r requirements.txt" && exit 1)
 	@echo "→ Building documentation site (mkdocs)..."
 	@python3 -m mkdocs build
 	@echo "✓ Documentation site written to site/"
 
 docs-serve: ## Serve the documentation site locally (http://127.0.0.1:8000)
+	@python3 -m mkdocs --version >/dev/null 2>&1 || (echo "✗ mkdocs not installed. Run: pip install -r requirements.txt" && exit 1)
 	@echo "→ Serving documentation at http://127.0.0.1:8000 (Ctrl+C to stop)"
 	@python3 -m mkdocs serve
 

@@ -413,6 +413,7 @@ nav:
     - Development Setup: contributing/development-setup.md
     - Documentation Testing: contributing/testing.md
     - Documentation Standards: contributing/code-standards.md
+    - Scripts Conventions: contributing/scripts-conventions.md
     - Developer Onboarding: developer-onboarding/index.md
     - Report an Issue: issue-reporting.md
     - First-Class Issue Types: first-class-issues.md

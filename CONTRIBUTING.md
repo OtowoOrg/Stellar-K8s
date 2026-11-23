@@ -298,6 +298,9 @@ assertion style to follow when adding new suites.
 
 ### Operational scripts index
 
+The layout, naming, and required-header rules for `scripts/` are summarized in
+[`docs/contributing/scripts-conventions.md`](docs/contributing/scripts-conventions.md).
+
 [`scripts/README.md`](scripts/README.md) indexes every operational script in the
 repository: what it does, the canonical invocation (and the `make` target that
 wraps it, where one exists), and the suite in `scripts/tests/` that covers it. It

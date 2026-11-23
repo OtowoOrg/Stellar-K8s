@@ -1,4 +1,4 @@
-﻿// Copyright 2024 Stellar-K8s Contributors
+// Copyright 2024 Stellar-K8s Contributors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -63,7 +63,9 @@
 mod blue_green_schema_test;
 #[cfg(test)]
 mod secret_rotation_schema_test;
+pub mod backup_plan;
 pub mod capacity_forecast;
+pub mod config_snapshot;
 pub mod contract_deployment;
 mod cnpg;
 pub mod control_plane_health;

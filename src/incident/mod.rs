@@ -12,6 +12,7 @@
 // limitations under the License.
 //! Incident management system with automated response workflows.
 
+pub mod correlation;
 pub mod detector;
 pub mod manager;
 pub mod metrics;
@@ -19,6 +20,12 @@ pub mod notification;
 pub mod partition_detector;
 pub mod playbook;
 pub mod rca;
+
+pub use correlation::{
+    AlertStreamSource, CorrelatedIncident, CorrelationDecision, CorrelationMetrics,
+    CorrelationReason, CorrelationReplayReport, IncidentCorrelator, NormalizedEntityKey,
+    ReplayIncidentCase, UnifiedAlert,
+};
 
 pub use manager::{Incident, IncidentDashboard, IncidentManager, IncidentSeverity, IncidentStatus};
 pub use metrics::{IncidentMetrics, SlaTracker};

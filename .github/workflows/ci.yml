@@ -747,6 +747,9 @@ jobs:
       - name: Strict lint chart (default values)
         run: make helm-lint
 
+      - name: Helm lint operator chart
+        run: helm lint charts/stellar-operator --strict
+
       - name: Schema rejects invalid logLevel
         run: |
           printf 'operator:\n  logLevel: verbose\n' > /tmp/bad-loglevel.yaml

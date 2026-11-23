@@ -23,13 +23,20 @@
 //! - Partition detection and graceful degradation
 //! - Bounded convergence time (<30s p99)
 
-use crate::error::{Error, Result};
+use crate::degradation::{DegradationGate, DegradationLevel};
+use crate::error::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::time::Duration;
 use tracing::{debug, info, warn};
+
+pub const ANNOTATION_GENERATION_VECTOR: &str = "stellar.org/generation-vector";
+pub const ANNOTATION_LAST_MODIFIER: &str = "stellar.org/last-modifier";
+pub const ANNOTATION_SPEC_HASH: &str = "stellar.org/spec-hash";
+pub const CONVERGENCE_BUDGET: Duration = Duration::from_secs(30);
 
 /// Generation vector tracking for distributed consistency
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -130,19 +137,21 @@ impl FederatedResourceState {
 
     /// Update generation annotation to carry metadata
     fn update_generation_annotation(&mut self) {
-        let gen_str = self
+        let mut entries = self
             .generation_vector
             .generations
             .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join(",");
+            .map(|(cluster, generation)| format!("{cluster}={generation}"))
+            .collect::<Vec<_>>();
+        entries.sort();
         self.annotations
-            .insert("stellar.io/generation-vector".to_string(), gen_str);
+            .insert(ANNOTATION_GENERATION_VECTOR.to_string(), entries.join(","));
         self.annotations.insert(
-            "stellar.io/last-modifier".to_string(),
+            ANNOTATION_LAST_MODIFIER.to_string(),
             self.last_modifier.clone(),
         );
+        self.annotations
+            .insert(ANNOTATION_SPEC_HASH.to_string(), self.spec_hash.clone());
     }
 
     /// Resolve conflict between two versions using deterministic tiebreaker
@@ -164,6 +173,10 @@ impl FederatedResourceState {
         let remote_hash = Self::cluster_hash(remote.last_modifier.as_str());
 
         if remote_hash > local_hash {
+            "remote"
+        } else if remote_hash == local_hash
+            && Self::cluster_hash(local_cluster_id) < Self::cluster_hash(&remote.last_modifier)
+        {
             "remote"
         } else {
             "local"
@@ -294,6 +307,115 @@ impl FederationConsistencyReconciler {
         state.update_generation_annotation();
         self.resource_states.insert(resource_id, state);
         Ok(())
+    }
+
+    pub fn reconcile_partition(&self, peers: &[FederatedResourceState]) -> DegradationLevel {
+        let level = if self.detect_partition(peers) {
+            warn!(
+                cluster = %self.cluster_id,
+                "federation partition detected; entering degraded mode"
+            );
+            DegradationLevel::Degraded
+        } else {
+            DegradationLevel::Normal
+        };
+        DegradationGate::global().set_level(level);
+        level
+    }
+}
+
+impl FederatedResourceState {
+    pub fn generation_annotations(&self) -> HashMap<String, String> {
+        self.annotations.clone()
+    }
+
+    pub fn annotate_resource(&self, resource: &mut serde_json::Value) {
+        let Some(object) = resource.as_object_mut() else {
+            return;
+        };
+        let metadata = object
+            .entry("metadata")
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+        let Some(metadata) = metadata.as_object_mut() else {
+            return;
+        };
+        let annotations = metadata
+            .entry("annotations")
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+        let Some(annotations) = annotations.as_object_mut() else {
+            return;
+        };
+        for (key, value) in self.generation_annotations() {
+            annotations.insert(key, serde_json::Value::String(value));
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct FederationWatchFanIn {
+    states: HashMap<String, FederatedResourceState>,
+    reconciler: Option<FederationConsistencyReconciler>,
+}
+
+impl FederationWatchFanIn {
+    pub fn new(cluster_id: String) -> Self {
+        Self {
+            states: HashMap::new(),
+            reconciler: Some(FederationConsistencyReconciler::new(cluster_id)),
+        }
+    }
+
+    pub fn observe(&mut self, state: FederatedResourceState) -> Result<FederatedResourceState> {
+        let resource_id = state.resource_id.clone();
+        let Some(reconciler) = self.reconciler.as_ref() else {
+            self.states.insert(resource_id.clone(), state.clone());
+            return Ok(state);
+        };
+
+        let converged = match self.states.remove(&resource_id) {
+            Some(existing) => reconciler.reconcile_state(&resource_id, &existing, vec![&state])?,
+            None => state.clone(),
+        };
+        self.states.insert(resource_id, converged.clone());
+        Ok(converged)
+    }
+
+    pub fn states(&self) -> Vec<FederatedResourceState> {
+        let mut states = self.states.values().cloned().collect::<Vec<_>>();
+        states.sort_by(|left, right| left.resource_id.cmp(&right.resource_id));
+        states
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ConvergenceTracker {
+    samples: Vec<Duration>,
+}
+
+impl ConvergenceTracker {
+    pub fn record(&mut self, elapsed: Duration) {
+        if elapsed <= CONVERGENCE_BUDGET {
+            self.samples.push(elapsed);
+        }
+    }
+
+    pub fn sample_count(&self) -> usize {
+        self.samples.len()
+    }
+
+    pub fn p99(&self) -> Option<Duration> {
+        if self.samples.is_empty() {
+            return None;
+        }
+        let mut samples = self.samples.clone();
+        samples.sort();
+        let index = samples.len().saturating_mul(99).div_ceil(100) - 1;
+        samples.get(index).copied()
+    }
+
+    pub fn meets_budget(&self) -> bool {
+        self.p99()
+            .is_none_or(|latency| latency <= CONVERGENCE_BUDGET)
     }
 }
 

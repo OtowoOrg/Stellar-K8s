@@ -26,7 +26,28 @@
 
 use crate::error::{Error, Result};
 use chrono::{DateTime, Utc};
+use k8s_openapi::api::batch::v1::Job;
+use kube::api::{Api, PostParams};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet, VecDeque};
+use tracing::{debug, info, warn};
+
+pub const STORAGE_VERSION_MIGRATOR_JOB: &str = "stellar-storage-version-migrator";
+pub const DEFAULT_MIGRATION_CONFIG: &str = include_str!("../config/schema-migrations.json");
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ConversionWebhookConfig {
+    pub name: String,
+    pub namespace: String,
+    pub path: String,
+    pub port: i32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct MigrationGraphConfig {
+    pub webhook: ConversionWebhookConfig,
+    pub graphs: Vec<SchemaMigrationGraph>,
+}
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -142,6 +163,10 @@ impl ConversionAuditRingBuffer {
             .cloned()
             .collect()
     }
+
+    pub fn audit_events(&self) -> Vec<ConversionAuditEvent> {
+        self.get_events()
+    }
 }
 
 /// Schema version converter
@@ -161,9 +186,18 @@ impl SchemaVersionConverter {
 
     /// Register a migration graph
     pub fn register_migration_graph(&mut self, graph: SchemaMigrationGraph) -> Result<()> {
-        // Validate graph
         self.validate_migration_graph(&graph)?;
         self.graphs.insert(graph.crd_kind.clone(), graph);
+        Ok(())
+    }
+
+    pub fn register_migration_graphs(
+        &mut self,
+        graphs: impl IntoIterator<Item = SchemaMigrationGraph>,
+    ) -> Result<()> {
+        for graph in graphs {
+            self.register_migration_graph(graph)?;
+        }
         Ok(())
     }
 
@@ -249,11 +283,11 @@ impl SchemaVersionConverter {
         }
 
         // Simple BFS to find conversion path
-        let mut queue = vec![vec![from.to_string()]];
-        let mut visited = std::collections::HashSet::new();
+        let mut queue = VecDeque::from([vec![from.to_string()]]);
+        let mut visited = HashSet::new();
         visited.insert(from.to_string());
 
-        while let Some(path) = queue.pop() {
+        while let Some(path) = queue.pop_front() {
             let current = path.last().unwrap();
 
             if current == to {
@@ -261,7 +295,7 @@ impl SchemaVersionConverter {
             }
 
             // Find migrations from current version
-            for (key, migration) in &graph.migrations {
+            for migration in graph.migrations.values() {
                 if migration.from_version == *current && !visited.contains(&migration.to_version) {
                     visited.insert(migration.to_version.clone());
                     let mut new_path = path.clone();
@@ -425,6 +459,21 @@ impl SchemaVersionConverter {
             }
         }
 
+        for version in &graph.supported_versions {
+            if self
+                .find_conversion_path(graph, version, &graph.current_storage_version)
+                .is_err()
+                || self
+                    .find_conversion_path(graph, &graph.current_storage_version, version)
+                    .is_err()
+            {
+                return Err(Error::validation_step(
+                    "validate round-trip paths",
+                    format!("No round-trip conversion path for {version}"),
+                ));
+            }
+        }
+
         Ok(())
     }
 
@@ -434,6 +483,138 @@ impl SchemaVersionConverter {
     }
 }
 
+pub fn load_migration_config() -> Result<MigrationGraphConfig> {
+    serde_json::from_str(DEFAULT_MIGRATION_CONFIG)
+        .map_err(|error| Error::validation_step("parse migration graph config", error.to_string()))
+}
+
+pub fn boot_validate_schema_evolution() -> Result<Vec<SchemaMigrationGraph>> {
+    let config = load_migration_config()?;
+    let mut converter = SchemaVersionConverter::new(1024);
+    converter.register_migration_graphs(config.graphs.clone())?;
+    info!(
+        graphs = config.graphs.len(),
+        "validated schema migration graphs at startup"
+    );
+    Ok(config.graphs)
+}
+
+pub fn conversion_webhook_configuration(config: &MigrationGraphConfig) -> serde_json::Value {
+    let webhooks = config
+        .graphs
+        .iter()
+        .map(|graph| {
+            serde_json::json!({
+                "apiVersion": "apiextensions.k8s.io/v1",
+                "kind": "CustomResourceDefinition",
+                "metadata": {
+                    "name": format!("{}s.stellar.org", graph.crd_kind.to_lowercase())
+                },
+                "spec": {
+                    "conversion": {
+                        "strategy": "Webhook",
+                        "webhook": {
+                            "clientConfig": {
+                                "service": {
+                                    "name": config.webhook.name,
+                                    "namespace": config.webhook.namespace,
+                                    "path": config.webhook.path,
+                                    "port": config.webhook.port
+                                }
+                            },
+                            "conversionReviewVersions": ["v1", "v1beta1"]
+                        }
+                    }
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({ "apiVersion": "v1", "kind": "List", "items": webhooks })
+}
+
+pub fn storage_version_migrator_job(
+    namespace: &str,
+    image: &str,
+    kinds: &[String],
+) -> serde_json::Value {
+    let args = kinds
+        .iter()
+        .map(|kind| format!("--crd-kind={kind}"))
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {
+            "name": STORAGE_VERSION_MIGRATOR_JOB,
+            "namespace": namespace,
+            "labels": {
+                "app.kubernetes.io/name": STORAGE_VERSION_MIGRATOR_JOB,
+                "app.kubernetes.io/managed-by": "stellar-operator"
+            }
+        },
+        "spec": {
+            "backoffLimit": 3,
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app.kubernetes.io/name": STORAGE_VERSION_MIGRATOR_JOB
+                    }
+                },
+                "spec": {
+                    "restartPolicy": "Never",
+                    "serviceAccountName": "stellar-operator",
+                    "containers": [{
+                        "name": "storage-version-migrator",
+                        "image": image,
+                        "args": args,
+                        "command": ["stellar-operator", "migrate-storage-version"]
+                    }]
+                }
+            }
+        }
+    })
+}
+
+pub async fn ensure_storage_version_migrator(
+    client: &kube::Client,
+    namespace: &str,
+    image: &str,
+    kinds: &[String],
+) -> Result<()> {
+    let jobs: Api<Job> = Api::namespaced(client.clone(), namespace);
+    match jobs.get(STORAGE_VERSION_MIGRATOR_JOB).await {
+        Ok(_) => {
+            info!(
+                job = STORAGE_VERSION_MIGRATOR_JOB,
+                "storage version migrator already present"
+            );
+            return Ok(());
+        }
+        Err(kube::Error::Api(error)) if error.code == 404 => {}
+        Err(error) => return Err(Error::KubeError(error)),
+    }
+
+    let job: Job = serde_json::from_value(storage_version_migrator_job(namespace, image, kinds))
+        .map_err(|error| {
+            Error::validation_step("build storage version migrator", error.to_string())
+        })?;
+    match jobs.create(&PostParams::default(), &job).await {
+        Ok(_) => info!(
+            job = STORAGE_VERSION_MIGRATOR_JOB,
+            "storage version migrator job created"
+        ),
+        Err(kube::Error::Api(error)) if error.code == 409 => {
+            debug!(
+                job = STORAGE_VERSION_MIGRATOR_JOB,
+                "storage version migrator job already created"
+            );
+        }
+        Err(error) => {
+            warn!(job = STORAGE_VERSION_MIGRATOR_JOB, %error, "could not create storage version migrator");
+            return Err(Error::KubeError(error));
+        }
+    }
+    Ok(())
 /// A single field in a schema definition used for compatibility diffing.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SchemaField {

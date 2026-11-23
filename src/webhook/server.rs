@@ -40,6 +40,7 @@ use super::types::{
 use crate::crd::{StellarNode, StellarNodeSpec};
 use crate::error::{Error, Result};
 use crate::policy_engine::{AdmissionView, PolicyEngine, TrustRoot};
+use crate::schema_evolution::{ConversionAuditEvent, ConversionAuditRingBuffer};
 
 /// Webhook server state
 pub struct WebhookServer {
@@ -60,6 +61,8 @@ pub struct WebhookServer {
 
     /// Signed CEL policy-bundle engine (fail-closed when a bundle is active).
     policy_engine: Arc<PolicyEngine>,
+
+    conversion_audit: Arc<RwLock<ConversionAuditRingBuffer>>,
 }
 
 #[derive(Clone, Debug)]
@@ -192,6 +195,7 @@ impl WebhookServer {
             },
             policy_http,
             policy_engine: Arc::new(PolicyEngine::new(TrustRoot::empty())),
+            conversion_audit: Arc::new(RwLock::new(ConversionAuditRingBuffer::new(1024))),
         }
     }
 
@@ -456,6 +460,8 @@ impl WebhookServer {
             .route("/policy/library", get(policy_library_handler))
             .route("/mutate", post(mutate_handler))
             .route("/db-trigger", post(db_trigger_handler))
+            .route("/convert", post(convert_handler))
+            .route("/conversion-audit", get(conversion_audit_handler))
             .route("/plugins", get(list_plugins_handler))
             .route("/plugins", post(add_plugin_handler))
             .route(
@@ -603,6 +609,121 @@ async fn health_handler(State(state): State<Arc<WebhookServer>>) -> impl IntoRes
         status: "healthy".to_string(),
         plugins_loaded: plugins.len(),
     })
+}
+
+async fn conversion_audit_handler(State(state): State<Arc<WebhookServer>>) -> impl IntoResponse {
+    let events = state.conversion_audit.read().await.audit_events();
+    Json(serde_json::json!({
+        "apiVersion": "stellar.org/v1alpha1",
+        "kind": "ConversionAudit",
+        "events": events
+    }))
+}
+
+async fn convert_handler(
+    State(state): State<Arc<WebhookServer>>,
+    Json(review): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let Some(request) = review.get("request") else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "apiVersion": "apiextensions.k8s.io/v1",
+                "kind": "ConversionReview",
+                "response": {
+                    "uid": "",
+                    "convertedObjects": [],
+                    "result": { "status": "Failure", "message": "missing request" }
+                }
+            })),
+        );
+    };
+
+    let uid = request
+        .get("uid")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let desired_version = request
+        .get("desiredAPIVersion")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if uid.is_empty() || desired_version.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "apiVersion": "apiextensions.k8s.io/v1",
+                "kind": "ConversionReview",
+                "response": {
+                    "uid": uid,
+                    "convertedObjects": [],
+                    "result": { "status": "Failure", "message": "uid and desiredAPIVersion are required" }
+                }
+            })),
+        );
+    }
+
+    let objects = request
+        .get("objects")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut converted_objects = Vec::with_capacity(objects.len());
+
+    for object in objects {
+        let from_version = object
+            .get("apiVersion")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let mut converted = object;
+        if let Some(map) = converted.as_object_mut() {
+            map.insert(
+                "apiVersion".to_string(),
+                serde_json::Value::String(desired_version.clone()),
+            );
+        }
+        let metadata = converted.get("metadata");
+        let event = ConversionAuditEvent {
+            crd_kind: converted
+                .get("kind")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("Unknown")
+                .to_string(),
+            resource_name: metadata
+                .and_then(|value| value.get("name"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            namespace: metadata
+                .and_then(|value| value.get("namespace"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            from_version,
+            to_version: desired_version.clone(),
+            success: true,
+            error_message: None,
+            timestamp: chrono::Utc::now(),
+            spec_hash: serde_json::to_string(&converted).unwrap_or_default(),
+        };
+        state.conversion_audit.write().await.record(event);
+        converted_objects.push(converted);
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "apiVersion": "apiextensions.k8s.io/v1",
+            "kind": "ConversionReview",
+            "response": {
+                "uid": uid,
+                "convertedObjects": converted_objects,
+                "result": { "status": "Success" }
+            }
+        })),
+    )
 }
 
 async fn ready_handler(State(state): State<Arc<WebhookServer>>) -> impl IntoResponse {

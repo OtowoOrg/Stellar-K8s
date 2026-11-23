@@ -75,7 +75,7 @@ the workflow run and can be used for:
 ## Image Signing (Cosign)
 
 Images published from `main` are signed keylessly via
-[Sigstore Cosign](https://docs.sigstore.dev/cosign/overview/).
+[Sigstore Cosign](https://docs.sigstore.dev/cosign/signing/overview/).
 
 ### Why keyless signing?
 

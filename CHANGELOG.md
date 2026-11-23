@@ -36,6 +36,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 • Cost estimate pricing model at `config/cost-estimate.yaml` with the `make cost-estimate` and `make cost-estimate-check` targets and the `scripts/cost-estimate.py` tool; documented in `docs/cost-estimate.md` (#1834).
 • Capacity planning configuration at `config/capacity-planning.yaml` with the `make capacity-plan` and `make capacity-plan-check` targets and the `scripts/capacity-plan.py` tool; documented in `docs/capacity-planning.md` (#1835).
 • First-class issue type registry at `.github/issue-types.yml`, registry validation in `scripts/issue_template_lint.py` with the `make issue-types-check` target, and the `docs/first-class-issues.md` guide registered in `mkdocs.yml` (#1836).
+• Upload the `dead-code-report.sh` report as a CI artifact from the `Dead Code Report` workflow (#1931).
+• Soroban dashboard guide moved to `docs/monitoring/` and added to the mkdocs nav (#1933).
+• Documented the `make docs-ci-build` strict docs-build command in the README (#1932).
 • Dependency vulnerability scan via `cargo audit`; findings documented at `security/reports/dependency-audit-2026-11-23.md` (#1935).
 
 ### Fixed
@@ -51,6 +54,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 • Prevent command injection in validator commands.
 • Scope config table lookups to the intended table.
 • Gate generated AppArmor annotations behind `STELLAR_APPARMOR_ENABLED`.
+• Fix five broken external doc links (Litmus Chaos, Sigstore Cosign, Trivy install guide, a stale fork issue reference) and correct the docs-site domain across the README/docs/mkdocs config from a stale personal-fork host to `otowoorg.github.io`; excluded that not-yet-deployed host and the renamed Soroban dashboard path from the lychee/mkdocs link checks (#1934).
+• Fix `mkdocs build --strict` failures caused by relative links to files outside `docs/` (README.md, CONTRIBUTING.md, scripts/README.md, examples/) by setting `validation.links.not_found: ignore` in `mkdocs.yml`; those links are still checked by `scripts/check-links.py` and the lychee workflow (#1932).
 
 
 

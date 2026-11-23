@@ -73,4 +73,4 @@ jobs:
       - name: Verify deployment
         run: |
           echo "Documentation deployed successfully!"
-          echo "Site should be available at: https://m1s0g1.github.io/Stellar-K8s/"
+          echo "Site should be available at: https://otowoorg.github.io/Stellar-K8s/"

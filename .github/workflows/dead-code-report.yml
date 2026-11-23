@@ -20,3 +20,10 @@ jobs:
 
       - name: Generate dead code report
         run: bash scripts/dead-code-report.sh
+
+      - name: Upload dead code report
+        uses: actions/upload-artifact@v7
+        with:
+          name: dead-code-report-${{ github.sha }}
+          path: target/reports/dead-code-report.md
+          retention-days: 14

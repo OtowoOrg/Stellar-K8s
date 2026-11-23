@@ -225,5 +225,5 @@ If a drill fails or reveals critical issues:
 ## References
 
 - [Chaos Engineering Principles](https://principlesofchaos.org/)
-- [Litmus Chaos Documentation](https://litmuschaos.io/docs/)
+- [Litmus Chaos Documentation](https://docs.litmuschaos.io/)
 - [Stellar Network DR Plan](./dr-failover.md)

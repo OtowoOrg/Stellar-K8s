@@ -1,6 +1,6 @@
 # P2P Gossip Network Threat Detection Firewall
 
-**Issue:** [#221 — \[Enhancement\] P2P Gossip Network Threat Detection Firewall](https://github.com/agnesnaomiolim-cloud/Stellar-K8s/issues/221)
+**Issue:** [#221 — \[Enhancement\] P2P Gossip Network Threat Detection Firewall](https://github.com/OtowoOrg/Stellar-K8s/commit/c0e4444c72e15095c750ecc4c1f340c315037194)
 
 ## Overview
 

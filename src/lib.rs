@@ -139,6 +139,7 @@ pub mod error;
 pub mod error_budget;
 pub mod egress_synthesis;
 pub mod event_processing;
+pub mod fair_share;
 pub mod fair_share_rate_limiter;
 pub mod fair_share_scheduler;
 pub mod feature_flags;

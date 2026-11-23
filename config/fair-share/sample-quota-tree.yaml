@@ -1,0 +1,55 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Example quota tree: 3 groups, 7 tenant leaves, 20 namespaces' worth of structure in miniature (#1959).
+# Guarantees are protected from preemption; usage above them is elastic up to `max` and reclaimable.
+apiVersion: stellar.org/v1alpha1
+kind: TenantQuota
+metadata: {name: platform}
+spec:
+  guaranteed: {cpu: "80", memory: 320Gi}
+  max: {cpu: "140", memory: 560Gi}
+---
+apiVersion: stellar.org/v1alpha1
+kind: TenantQuota
+metadata: {name: platform-core}
+spec:
+  parent: platform
+  namespaces: [core-validators, core-horizon]
+  weight: 2
+  guaranteed: {cpu: "30", memory: 120Gi}
+  max: {cpu: "100", memory: 400Gi}
+---
+apiVersion: stellar.org/v1alpha1
+kind: TenantQuota
+metadata: {name: platform-apps}
+spec:
+  parent: platform
+  namespaces: [apps]
+  guaranteed: {cpu: "50", memory: 200Gi}
+  max: {cpu: "80", memory: 320Gi}
+---
+apiVersion: stellar.org/v1alpha1
+kind: TenantQuota
+metadata: {name: partners}
+spec:
+  guaranteed: {cpu: "40", memory: 160Gi}
+  max: {cpu: "100", memory: 400Gi}
+---
+apiVersion: stellar.org/v1alpha1
+kind: TenantQuota
+metadata: {name: partner-x}
+spec:
+  parent: partners
+  namespaces: [partner-x]
+  guaranteed: {cpu: "40", memory: 160Gi}
+  max: {cpu: "70", memory: 280Gi}

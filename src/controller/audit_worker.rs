@@ -27,6 +27,7 @@ use crate::controller::audit_log::{AdminAction, AuditEntry};
 use crate::controller::audit_recorder::AuditRecorder;
 use crate::crd::StellarNode;
 use crate::error::Result;
+use crate::feature_flags::audit::EvaluationAuditRecord;
 
 /// Worker that watches for StellarNode changes and emits audit logs.
 pub struct AuditWorker {
@@ -119,6 +120,29 @@ impl AuditWorker {
         }
 
         Ok(())
+    }
+
+    /// Persist a batch of feature-flag evaluation-decision audit records emitted
+    /// by the in-process evaluator.
+    ///
+    /// Each record captures a user-affecting flag decision (flag key, resolved
+    /// variant, targeting reason, and the bundle revision used) so that every
+    /// decision is auditable. Records are written through the same
+    /// [`AuditRecorder`] used for node lifecycle events, keeping a single,
+    /// ordered audit trail.
+    pub async fn record_evaluations(&self, records: Vec<EvaluationAuditRecord>) {
+        for record in records {
+            let entry = AuditEntry::new(
+                AdminAction::FeatureFlagEvaluation,
+                record.actor.clone(),
+                record.flag_key.clone(),
+                record.namespace.clone().unwrap_or_default(),
+                Some(&record.reason),
+            )
+            .with_diff(serde_json::to_value(&record).unwrap_or_default());
+
+            self.recorder.record(entry).await;
+        }
     }
 
     fn extract_actor(&self, node: &StellarNode) -> String {

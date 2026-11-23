@@ -143,6 +143,17 @@ pub enum Error {
     /// A security policy violation detected at runtime.
     #[error("[SK8S-025] Security violation: {0}")]
     SecurityViolation(String),
+
+    /// The signed feature-flag bundle failed signature verification (bad
+    /// signature, unknown/expired signer key, or tampered payload). The
+    /// previously cached last-known-good bundle must be retained.
+    #[error("[SK8S-026] Feature-flag bundle signature verification failed: {0}")]
+    BundleSignatureError(String),
+
+    /// A kill-switch override could not be applied, e.g. the override
+    /// references an unknown flag or conflicts with the signed bundle.
+    #[error("[SK8S-027] Feature-flag kill-switch override error: {0}")]
+    KillSwitchError(String),
 }
 
 /// Result type alias for operator operations
@@ -308,7 +319,10 @@ impl Error {
             | Error::KubeconfigError(_)
             | Error::FinalizerError(_)
             | Error::NotFound { .. } => 3,
-            Error::ConfigError(_) | Error::MaintenanceError(_) | Error::CertificateError(_) => 4,
+            Error::ConfigError(_)
+            | Error::MaintenanceError(_)
+            | Error::CertificateError(_)
+            | Error::BundleSignatureError(_) => 4,
             _ => 1,
         }
     }
@@ -325,6 +339,9 @@ impl Error {
             | Error::MissingRequiredField { .. }
             | Error::SerializationError(_) => ApiErrorCode::ErrBadRequest,
             Error::PhaseTransitionError(_) => ApiErrorCode::ErrReconcileStalled,
+            Error::BundleSignatureError(_) | Error::KillSwitchError(_) => {
+                ApiErrorCode::ErrForbidden
+            }
             Error::KubeError(_)
             | Error::HttpError(_)
             | Error::NetworkError(_)
@@ -355,6 +372,11 @@ impl Error {
             // never the caller's fault, but it is also not a transient
             // upstream failure, so it is reported as a conflict.
             Error::PhaseTransitionError(_) => StatusCode::CONFLICT,
+
+            // The flag bundle failed verification or a kill-switch override
+            // was rejected; the request is refused rather than served with
+            // untrusted flag state.
+            Error::BundleSignatureError(_) | Error::KillSwitchError(_) => StatusCode::FORBIDDEN,
 
             // Upstream / dependency unavailable — safe to retry.
             Error::KubeError(_)
@@ -647,6 +669,34 @@ mod tests {
             Error::CertificateError(rcgen::Error::UnsupportedSignatureAlgorithm).api_error_code(),
             ApiErrorCode::ErrInternalServerError
         );
+
+        assert_eq!(
+            Error::BundleSignatureError("bad signature".into()).api_error_code(),
+            ApiErrorCode::ErrForbidden
+        );
+        assert_eq!(
+            Error::KillSwitchError("unknown flag".into()).api_error_code(),
+            ApiErrorCode::ErrForbidden
+        );
+    }
+
+    #[test]
+    fn test_bundle_and_kill_switch_error_display() {
+        let bundle_err = Error::BundleSignatureError("signer key expired".to_string());
+        assert_eq!(
+            bundle_err.to_string(),
+            "[SK8S-026] Feature-flag bundle signature verification failed: signer key expired"
+        );
+        assert_eq!(bundle_err.exit_code(), 4);
+        assert!(!bundle_err.is_retriable());
+
+        let kill_switch_err = Error::KillSwitchError("unknown flag".to_string());
+        assert_eq!(
+            kill_switch_err.to_string(),
+            "[SK8S-027] Feature-flag kill-switch override error: unknown flag"
+        );
+        assert_eq!(kill_switch_err.exit_code(), 1);
+        assert!(!kill_switch_err.is_retriable());
     }
 
     #[cfg(any(feature = "rest-api", feature = "admission-webhook"))]
@@ -691,6 +741,15 @@ mod tests {
         assert_eq!(
             Error::ConfigError("bad config".into()).status_code(),
             StatusCode::INTERNAL_SERVER_ERROR
+        );
+
+        assert_eq!(
+            Error::BundleSignatureError("bad signature".into()).status_code(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            Error::KillSwitchError("unknown flag".into()).status_code(),
+            StatusCode::FORBIDDEN
         );
     }
 

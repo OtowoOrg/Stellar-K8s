@@ -20,10 +20,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 try:
     import yaml
@@ -33,6 +36,18 @@ except ImportError:
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SPEC = REPO_ROOT / "docs" / "api" / "openapi.yaml"
+
+# ── Schema registry / compatibility CLI (Issue #1981) ─────────────────────────
+# The `schema-compat` CLI diffs a PR's schema against every registered consumer
+# and emits a consumer impact report. It is invoked from CI so that breaking
+# changes cannot be merged without an explicit, auditable override.
+SCHEMA_COMPAT_BIN = os.environ.get("SCHEMA_COMPAT_BIN", "schema-compat")
+DEFAULT_REGISTRY = REPO_ROOT / "schemas" / "registry.yaml"
+DEFAULT_IMPACT_REPORT = REPO_ROOT / "artifacts" / "schema-impact-report.json"
+# Override file: presence of a matching entry permits a breaking change.
+DEFAULT_OVERRIDE_FILE = REPO_ROOT / "schemas" / "compat-overrides.yaml"
+# Hard budget for the compatibility check (acceptance: < 30s in CI).
+COMPAT_TIMEOUT_SECONDS = 30
 
 # ── Known API routes from src/rest_api/server.rs ──────────────────────────────
 # This is the canonical set of implemented endpoints.
@@ -520,6 +535,177 @@ def _extract_response_schema(response: dict) -> dict | None:
     return json_content.get("schema")
 
 
+# ── Schema registry compatibility (Issue #1981) ───────────────────────────────
+
+
+@dataclass
+class ConsumerImpact:
+    """Impact of a schema change on a single registered consumer."""
+
+    consumer: str
+    schema: str
+    breaking: bool
+    changes: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "consumer": self.consumer,
+            "schema": self.schema,
+            "breaking": self.breaking,
+            "changes": self.changes,
+        }
+
+
+@dataclass
+class CompatResult:
+    """Aggregated result of a schema compatibility run."""
+
+    passed: bool
+    impacts: list[ConsumerImpact] = field(default_factory=list)
+    overridden: list[str] = field(default_factory=list)
+    error: str | None = None
+
+    @property
+    def breaking_impacts(self) -> list[ConsumerImpact]:
+        return [i for i in self.impacts if i.breaking]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "passed": self.passed,
+            "error": self.error,
+            "overridden": self.overridden,
+            "breaking_count": len(self.breaking_impacts),
+            "affected_consumers": sorted({i.consumer for i in self.breaking_impacts}),
+            "impacts": [i.to_dict() for i in self.impacts],
+        }
+
+
+def _load_overrides(path: Path) -> set[str]:
+    """Load the set of consumer/schema pairs explicitly allowed to break."""
+    if not path.is_file():
+        return set()
+    with path.open(encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) or {}
+    allowed: set[str] = set()
+    for entry in data.get("overrides", []) or []:
+        consumer = entry.get("consumer", "")
+        schema = entry.get("schema", "")
+        if consumer and schema:
+            allowed.add(f"{consumer}::{schema}")
+    return allowed
+
+
+def run_schema_compat(
+    registry: Path,
+    base_ref: str,
+    head_ref: str,
+    override_file: Path,
+    timeout: int = COMPAT_TIMEOUT_SECONDS,
+) -> CompatResult:
+    """Invoke the `schema-compat` CLI against every registered consumer.
+
+    The CLI is expected to emit a JSON document on stdout describing the
+    per-consumer impact of the schema diff between ``base_ref`` and
+    ``head_ref``. Breaking impacts are only tolerated when an explicit
+    override exists for that consumer/schema pair.
+    """
+    if shutil.which(SCHEMA_COMPAT_BIN) is None:
+        return CompatResult(
+            passed=False,
+            error=(
+                f"`{SCHEMA_COMPAT_BIN}` CLI not found on PATH. "
+                "Install the schema registry tooling before running this check."
+            ),
+        )
+
+    cmd = [
+        SCHEMA_COMPAT_BIN,
+        "diff",
+        "--registry",
+        str(registry),
+        "--base",
+        base_ref,
+        "--head",
+        head_ref,
+        "--all-consumers",
+        "--format",
+        "json",
+    ]
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return CompatResult(
+            passed=False,
+            error=f"Compatibility check exceeded {timeout}s budget",
+        )
+
+    # Exit code 0 = compatible, 1 = breaking changes, >1 = tooling error.
+    if proc.returncode > 1:
+        return CompatResult(
+            passed=False,
+            error=f"schema-compat failed (exit {proc.returncode}): {proc.stderr.strip()}",
+        )
+
+    try:
+        payload = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        return CompatResult(passed=False, error=f"Invalid schema-compat output: {exc}")
+
+    overrides = _load_overrides(override_file)
+    impacts: list[ConsumerImpact] = []
+    overridden: list[str] = []
+
+    for raw in payload.get("impacts", []) or []:
+        impact = ConsumerImpact(
+            consumer=raw.get("consumer", "<unknown>"),
+            schema=raw.get("schema", "<unknown>"),
+            breaking=bool(raw.get("breaking", False)),
+            changes=list(raw.get("changes", []) or []),
+        )
+        if impact.breaking and f"{impact.consumer}::{impact.schema}" in overrides:
+            overridden.append(f"{impact.consumer}::{impact.schema}")
+            impact.breaking = False
+        impacts.append(impact)
+
+    passed = not any(i.breaking for i in impacts)
+    return CompatResult(passed=passed, impacts=impacts, overridden=overridden)
+
+
+def write_impact_report(result: CompatResult, path: Path) -> None:
+    """Persist the consumer impact report as a CI artifact."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+
+
+def print_impact_report(result: CompatResult) -> None:
+    """Render a human-readable consumer impact report to stdout."""
+    print("\nSchema Consumer Impact Report")
+    print("=" * 60)
+    if result.error:
+        print(f"  ✗ {result.error}")
+        return
+    if not result.impacts:
+        print("  No registered consumers affected.")
+        return
+    for impact in result.impacts:
+        status = "✗ BREAKING" if impact.breaking else "✓ compatible"
+        print(f"  {status}  {impact.consumer} ← {impact.schema}")
+        for change in impact.changes:
+            print(f"      - {change}")
+    if result.overridden:
+        print(f"\n  Overrides applied: {', '.join(sorted(result.overridden))}")
+    affected = sorted({i.consumer for i in result.breaking_impacts})
+    if affected:
+        print(f"\n  Affected consumers ({len(affected)}): {', '.join(affected)}")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="OpenAPI contract validation for Stellar-K8s"
@@ -541,6 +727,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     break_p = sub.add_parser("breaking", help="Detect breaking changes between specs")
     break_p.add_argument("--base", type=Path, required=True, help="Base (before) spec")
     break_p.add_argument("--head", type=Path, required=True, help="Head (after) spec")
+
+    # Compat command (Issue #1981): diff against every registered consumer
+    compat_p = sub.add_parser(
+        "compat",
+        help="Check schema compatibility against all registered consumers",
+    )
+    compat_p.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
+    compat_p.add_argument("--base", required=True, help="Base git ref / schema revision")
+    compat_p.add_argument("--head", required=True, help="Head git ref / schema revision")
+    compat_p.add_argument("--override-file", type=Path, default=DEFAULT_OVERRIDE_FILE)
+    compat_p.add_argument("--report", type=Path, default=DEFAULT_IMPACT_REPORT,
+                          help="Path to write the consumer impact report artifact")
+    compat_p.add_argument("--timeout", type=int, default=COMPAT_TIMEOUT_SECONDS)
 
     # Legacy --check mode (backward compatible)
     parser.add_argument("--spec", type=Path, default=DEFAULT_SPEC)
@@ -638,6 +837,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"  ✗ {change}")
             return 1
         print("✓ No breaking changes detected")
+        return 0
+
+    if args.command == "compat":
+        result = run_schema_compat(
+            registry=args.registry,
+            base_ref=args.base,
+            head_ref=args.head,
+            override_file=args.override_file,
+            timeout=args.timeout,
+        )
+        write_impact_report(result, args.report)
+        print_impact_report(result)
+        print(f"\n  Impact report written to: {args.report}")
+        if not result.passed:
+            print("\n✗ Schema compatibility check FAILED — breaking change(s) without override")
+            return 1
+        print("\n✓ Schema compatibility check passed")
         return 0
 
     parser.print_help()

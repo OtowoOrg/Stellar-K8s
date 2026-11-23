@@ -52,11 +52,27 @@ pub fn run_schema_compat(args: SchemaCompatArgs) -> Result<(), Error> {
         });
         if !authorized {
             eprintln!("{report_json}");
-            return Err(Error::validation_step(
-                "schema compatibility",
-                "breaking change rejected; an explicit unconsumed registry override is required",
-            ));
+            let consumers: Vec<String> = impact
+                .consumers
+                .iter()
+                .filter(|c| c.affected)
+                .map(|c| c.consumer.clone())
+                .collect();
+            let detail = if consumers.is_empty() {
+                "breaking change rejected; an explicit unconsumed registry override is required"
+                    .to_string()
+            } else {
+                format!(
+                    "breaking change rejected; affected consumers: {}; an explicit unconsumed registry override is required",
+                    consumers.join(", ")
+                )
+            };
+            return Err(Error::validation_step("schema compatibility", detail));
         }
+        eprintln!(
+            "schema compatibility: proceeding with override '{}'",
+            args.override_id.as_deref().unwrap_or_default()
+        );
     }
     println!("{report_json}");
     Ok(())

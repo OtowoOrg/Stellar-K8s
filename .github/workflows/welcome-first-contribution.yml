@@ -6,10 +6,10 @@ on:
   pull_request_target:
     types: [opened]
 
-# Minimal permissions: only what is needed to post a comment.
+# Minimal permissions: PR conversation comments go through the issues API,
+# so issues: write covers posting; contents: read fetches the template.
 permissions:
   issues: write
-  pull-requests: write
   contents: read
 
 jobs:
@@ -27,34 +27,20 @@ jobs:
             const repo   = context.repo.repo;
 
             // ── Duplicate-guard ──────────────────────────────────────────────
-            // Collect all issues AND pull requests already opened by this author.
-            // If more than one exists the current event is not their first, so
-            // we skip the comment to prevent duplicate greetings.
+            // issues.listForRepo returns issues AND PRs by this creator, including
+            // the item that just opened. More than one hit means not their first.
+            // (Single call: pulls.list is capped at the newest 100 PRs and would
+            // miss older contributions.)
+            const { data: prior } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              creator: author,
+              state: 'all',
+              per_page: 2,            // we only need to know if count > 1
+            });
 
-            const [issuesResult, prsResult] = await Promise.all([
-              github.rest.issues.listForRepo({
-                owner,
-                repo,
-                creator: author,
-                state: 'all',
-                per_page: 2,          // we only need to know if count > 1
-              }),
-              github.rest.pulls.list({
-                owner,
-                repo,
-                state: 'all',
-                per_page: 100,
-              }),
-            ]);
-
-            // issues.listForRepo returns both issues and PRs; filter to real issues.
-            const authorIssues = issuesResult.data.filter(i => !i.pull_request);
-            const authorPRs    = prsResult.data.filter(pr => pr.user.login === author);
-
-            const totalContributions = authorIssues.length + authorPRs.length;
-
-            if (totalContributions > 1) {
-              core.info(`${author} has ${totalContributions} prior contributions — skipping welcome.`);
+            if (prior.length > 1) {
+              core.info(`${author} has prior contributions — skipping welcome.`);
               return;
             }
 

@@ -1,0 +1,24 @@
+# Staging profile for #1980: 1 hour serving certificates renewed every ~30
+# minutes. Run for 48h and confirm zero admission rejections and that
+# stellar_webhook_certificate_valid stays 1 across every renewal.
+webhook:
+  enabled: true
+  certManager:
+    enabled: true
+    duration: 1h
+    renewBefore: 30m
+    caDuration: 24h
+    caRenewBefore: 12h
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+  podMonitor:
+    enabled: false
+  grafanaDashboards:
+    enabled: false
+  prometheusRule:
+    enabled: true
+    certAlerts:
+      webhookWarningRatio: 0.5
+      webhookCriticalRatio: 0.25

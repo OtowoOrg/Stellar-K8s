@@ -43,6 +43,22 @@ pub async fn reconcile_stellar_registry(
         return Ok(failed_status(e));
     }
 
+    // Keep the pull-path gate in step with the CR's policy (#2000). Stored scan
+    // reports survive a policy change.
+    let gate = crate::controller::registry_gate_registry::global()
+        .sync(
+            registry,
+            &crate::controller::registry_gate_registry::report_base_url(),
+        )
+        .await;
+    info!(
+        registry = %name,
+        namespace = %namespace,
+        mode = ?gate.mode,
+        max_critical_cves = gate.max_critical_cves,
+        "registry pull gate synced"
+    );
+
     let mut status = registry.status.clone().unwrap_or_default();
 
     status.phase = RegistryPhase::Scanning;

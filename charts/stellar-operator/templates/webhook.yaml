@@ -242,8 +242,8 @@ webhooks:
     timeoutSeconds: {{ .Values.webhook.timeoutSeconds | default 10 }}
     {{- /* Permissive mode (#1494): a webhook outage never blocks admission. */}}
     failurePolicy: {{ if eq (.Values.webhook.mode | default "strict") "permissive" }}Ignore{{ else }}{{ .Values.webhook.failurePolicy | default "Fail" }}{{ end }}
-    # Certificate verification, endpoint, and timeout errors block admission.
-    failurePolicy: Fail
+    # Certificate verification, endpoint, and timeout errors block admission
+    # unless the operator explicitly opted into permissive mode above.
     matchPolicy: Equivalent
     namespaceSelector:
       matchExpressions:

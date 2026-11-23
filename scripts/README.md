@@ -45,6 +45,8 @@ Related documentation:
 | [`repo-health.sh`](repo-health.sh) | Single entry point for repository health gates: fmt, clippy, test, API docs, shellcheck, issue templates, links, audit, helm. | `make health`, `make health-fast`, `make health-full`, `bash scripts/repo-health.sh [--fast|--with-audit|--with-links|--with-helm]` | — |
 | [`cleanup.sh`](cleanup.sh) | The single supported cleanup entrypoint: removes scratch artifacts and fails if obsolete archive helpers reappear. | `make cleanup`, `make cleanup DRY_RUN=1`, `./scripts/cleanup.sh [--dry-run]` | [`tests/cleanup.bats`](tests/cleanup.bats) |
 | [`dep-gate.sh`](dep-gate.sh) | Consolidated dependency gate: `cargo audit` + `cargo deny` + license and build checks. | `make audit` (`bash scripts/dep-gate.sh`), `bash scripts/dep-gate.sh --quick`, `--audit-only` | [`tests/dep-gate.bats`](tests/dep-gate.bats) |
+| [`dependency-upgrades.py`](dependency-upgrades.py) | Lists the direct dependencies whose locked version changed against a base ref, for the dependency upgrade gate (#1999). | `python3 scripts/dependency-upgrades.py origin/main`; used by `.github/workflows/dependency-contract-gate.yml` | [`tests/test_dependency_upgrades.py`](tests/test_dependency_upgrades.py) |
+| [`reproducible-build.sh`](reproducible-build.sh) | Builds the release artifacts with pinned timestamps, path prefixes, locale and build id, and writes `build-manifest.json` for `verify-reproducible-build` (#1997). | `make reproducible-build`, `scripts/reproducible-build.sh --output-dir DIR --pipeline NAME` | n/a (verified end to end by `.github/workflows/reproducible-build.yml`) |
 | [`generate-third-party-licenses.sh`](generate-third-party-licenses.sh) | Regenerates `THIRD_PARTY_LICENSES.md` from the Cargo dependency tree; `--check` fails when the file is stale. | `make third-party-licenses`, `make check-third-party-licenses` | — |
 | [`create-argocd-branch.sh`](create-argocd-branch.sh) | One-off helper that creates a branch, commits the Argo CD GitOps docs/examples, and pushes to `origin` or the given remote URL. | `./scripts/create-argocd-branch.sh [remote-url] [branch-name]` | — |
 
@@ -184,6 +186,7 @@ Python suites use `unittest` and are run individually, e.g.
 | [`tests/failure-diagnostics.bats`](tests/failure-diagnostics.bats) | `ci/collect-failure-diagnostics.sh` bundle layout |
 | [`tests/shell-script-coverage.bats`](tests/shell-script-coverage.bats) | Comprehensive coverage for health-check, repo-health, tag-release, validate-metrics, and other critical shell scripts (#1702) |
 | [`tests/test_check_shell_safety.py`](tests/test_check_shell_safety.py) | `check-shell-safety.py` rules (both positive and negative cases) |
+| [`tests/test_dependency_upgrades.py`](tests/test_dependency_upgrades.py) | `dependency-upgrades.py` lockfile comparison and direct-dependency detection |
 | [`tests/test_validate_yaml_manifests.py`](tests/test_validate_yaml_manifests.py) | `validate-yaml-manifests.py` validation layers |
 | [`tests/test_crd_migration_lint.py`](tests/test_crd_migration_lint.py) | `crd_migration_lint.py` backward-compatibility rules |
 | [`tests/test_semver_gate.py`](tests/test_semver_gate.py) | `semver_gate.py` required-bump and release checks |

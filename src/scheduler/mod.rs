@@ -24,4 +24,5 @@ pub mod prometheus;
 pub mod savings;
 pub mod scoring;
 pub mod simulation;
+pub mod spot_placement;
 pub mod visualization;

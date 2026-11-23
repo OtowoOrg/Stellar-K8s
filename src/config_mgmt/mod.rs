@@ -18,6 +18,7 @@
 pub mod drift;
 pub mod impact;
 pub mod rollback;
+pub mod snapshot_distributor;
 pub mod validation;
 pub mod versioning;
 

@@ -43,6 +43,8 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
+use tokio::sync::watch;
+
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
@@ -465,6 +467,119 @@ impl BundleStore {
 /// Shared ownership helper for background refresh tasks.
 pub type SharedStore = Arc<BundleStore>;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Async bundle loader and refresher
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Default refresh cadence; well inside the 10s cluster-wide propagation SLO.
+pub const DEFAULT_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Source of signed bundles (a flag-management platform endpoint).
+///
+/// Implementations fetch the latest [`SignedBundle`]; the refresher verifies
+/// the signature and version before installing it, so a misbehaving source
+/// cannot change behavior.
+#[async_trait::async_trait]
+pub trait BundleSource: Send + Sync {
+    /// Fetch the latest signed bundle.
+    async fn fetch(&self) -> Result<SignedBundle, String>;
+}
+
+/// Fetches, verifies, and caches signed bundles in-process.
+///
+/// The loader owns a [`BundleStore`] and an async refresher task. On every
+/// tick it fetches from the [`BundleSource`], verifies the signature, and
+/// installs the bundle when it is newer. Any failure (network down, bad
+/// signature, stale version) leaves the last-known-good bundle untouched, so
+/// evaluation and the kill-switch keep working while delivery is down.
+#[derive(Debug)]
+pub struct BundleLoader {
+    store: SharedStore,
+    signing_key: Vec<u8>,
+    interval: Duration,
+    last_error: RwLock<Option<String>>,
+    shutdown: watch::Sender<bool>,
+}
+
+impl BundleLoader {
+    /// Create a loader over a fresh store with the default refresh interval.
+    pub fn new(signing_key: impl Into<Vec<u8>>) -> Self {
+        Self::with_interval(signing_key, DEFAULT_REFRESH_INTERVAL)
+    }
+
+    /// Create a loader with an explicit refresh interval.
+    pub fn with_interval(signing_key: impl Into<Vec<u8>>, interval: Duration) -> Self {
+        let (shutdown, _) = watch::channel(false);
+        Self {
+            store: Arc::new(BundleStore::new()),
+            signing_key: signing_key.into(),
+            interval,
+            last_error: RwLock::new(None),
+            shutdown,
+        }
+    }
+
+    /// The store shared with evaluation call sites.
+    pub fn store(&self) -> SharedStore {
+        Arc::clone(&self.store)
+    }
+
+    /// Fetch once, verify, and install. Returns the installed version.
+    ///
+    /// On failure the last-known-good bundle is retained and the error is
+    /// recorded for observability.
+    pub async fn refresh_once(&self, source: &dyn BundleSource) -> Result<u64, String> {
+        let result = match source.fetch().await {
+            Ok(signed) => self.store.install(&signed, &self.signing_key),
+            Err(e) => Err(format!("bundle fetch failed: {e}")),
+        };
+        if let Ok(mut last) = self.last_error.write() {
+            *last = result.as_ref().err().cloned();
+        }
+        result
+    }
+
+    /// Spawn the background refresher task.
+    ///
+    /// The task ticks every `interval`, calling [`BundleLoader::refresh_once`].
+    /// Failures are swallowed (last-known-good is kept); the task stops when
+    /// the returned handle is dropped or [`BundleLoader::shutdown`] is called.
+    pub fn spawn_refresher(
+        self: &Arc<Self>,
+        source: Arc<dyn BundleSource>,
+    ) -> tokio::task::JoinHandle<()> {
+        let loader = Arc::clone(self);
+        let mut shutdown = self.shutdown.subscribe();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(loader.interval);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tokio::select! {
+                    _ = ticker.tick() => {
+                        // Errors are recorded in `last_error`; keep last-known-good.
+                        let _ = loader.refresh_once(source.as_ref()).await;
+                    }
+                    _ = shutdown.changed() => {
+                        if *shutdown.borrow() {
+                            break;
+                        }
+                    }
+                }
+            }
+        })
+    }
+
+    /// Signal the refresher task to stop.
+    pub fn shutdown(&self) {
+        let _ = self.shutdown.send(true);
+    }
+
+    /// The most recent refresh error, if the last attempt failed.
+    pub fn last_error(&self) -> Option<String> {
+        self.last_error.read().ok().and_then(|e| e.clone())
+    }
+}
+
 /// Build the evaluation [`FlagSet`] for a bundle.
 ///
 /// Each variant's `rule_json` is parsed as a
@@ -661,5 +776,100 @@ mod tests {
             assert_eq!(audit.for_flag("a").len(), 2);
             assert_eq!(audit.for_flag("b").len(), 1);
         });
+    }
+
+    /// Test source that returns a fixed result.
+    struct FixedSource {
+        result: Result<SignedBundle, String>,
+    }
+
+    #[async_trait::async_trait]
+    impl BundleSource for FixedSource {
+        async fn fetch(&self) -> Result<SignedBundle, String> {
+            self.result.clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn loader_installs_verified_bundle() {
+        let loader = BundleLoader::new(TEST_KEY);
+        let source = FixedSource {
+            result: Ok(SignedBundle::sign(
+                bundle_with(1, "f", &FlagRule::on(), "on"),
+                TEST_KEY,
+            )),
+        };
+        assert_eq!(loader.refresh_once(&source).await, Ok(1));
+        assert_eq!(loader.store().version(), Some(1));
+        assert!(loader.last_error().is_none());
+    }
+
+    #[tokio::test]
+    async fn loader_rejects_bad_signature_and_keeps_last_good() {
+        let loader = BundleLoader::new(TEST_KEY);
+        let good = FixedSource {
+            result: Ok(SignedBundle::sign(
+                bundle_with(1, "f", &FlagRule::on(), "on"),
+                TEST_KEY,
+            )),
+        };
+        loader.refresh_once(&good).await.unwrap();
+
+        let mut forged = SignedBundle::sign(bundle_with(2, "f", &FlagRule::off(), "off"), TEST_KEY);
+        forged.signature = "00".repeat(32);
+        let bad = FixedSource { result: Ok(forged) };
+        assert!(loader.refresh_once(&bad).await.is_err());
+        assert_eq!(loader.store().version(), Some(1));
+        assert!(loader.last_error().is_some());
+    }
+
+    #[tokio::test]
+    async fn loader_keeps_last_good_when_delivery_is_down() {
+        let loader = BundleLoader::new(TEST_KEY);
+        let good = FixedSource {
+            result: Ok(SignedBundle::sign(
+                bundle_with(1, "f", &FlagRule::on(), "on"),
+                TEST_KEY,
+            )),
+        };
+        loader.refresh_once(&good).await.unwrap();
+        loader.store().kill("f", "incident");
+
+        let down = FixedSource {
+            result: Err("connection refused".to_string()),
+        };
+        assert!(loader.refresh_once(&down).await.is_err());
+        // Last-known-good bundle retained; kill-switch still applies.
+        assert_eq!(loader.store().version(), Some(1));
+        let decision = loader
+            .store()
+            .evaluate_audited("f", &EvaluationContext::new("s"));
+        assert!(!decision.enabled);
+        assert_eq!(decision.reason, "kill-switch");
+    }
+
+    #[tokio::test]
+    async fn refresher_propagates_new_bundle() {
+        let loader = Arc::new(BundleLoader::with_interval(
+            TEST_KEY,
+            Duration::from_millis(10),
+        ));
+        let source = Arc::new(FixedSource {
+            result: Ok(SignedBundle::sign(
+                bundle_with(1, "f", &FlagRule::on(), "on"),
+                TEST_KEY,
+            )),
+        });
+        let handle = loader.spawn_refresher(source);
+        // Wait for the first tick to install the bundle.
+        for _ in 0..100 {
+            if loader.store().version() == Some(1) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(loader.store().version(), Some(1));
+        loader.shutdown();
+        let _ = handle.await;
     }
 }

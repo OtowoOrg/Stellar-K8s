@@ -246,6 +246,18 @@ path = "src/bin/stellar-audit-verify.rs"
 name = "stellar-audit-sink"
 path = "src/bin/stellar-audit-sink.rs"
 required-features = ["rest-api"]
+# Dependency upgrade gate: scans call sites, generates consumer contract tests
+# and blocks incompatible upgrades with consumer attribution (#1999).
+[[bin]]
+name = "dependency-upgrade-gate"
+path = "src/bin/dependency-upgrade-gate.rs"
+
+# Release reproducibility verifier: compares a release build with an independent
+# rebuild bit for bit, localizes mismatches to a build step and records the
+# result in the release audit log (#1997).
+[[bin]]
+name = "verify-reproducible-build"
+path = "src/bin/verify-reproducible-build.rs"
 
 # Lifecycle hooks runner — installed into workload pods to run ordered
 # setup / readiness / teardown hooks (#1525).

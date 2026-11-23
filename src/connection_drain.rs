@@ -27,6 +27,11 @@
 //! exposes drain duration per deployment, and [`prestop_hook_yaml`] renders
 //! the matching `preStop` hook template.
 //!
+//! The same controller doubles as reusable middleware: [`DrainController::track`]
+//! wraps any future so it is admitted, tracked, and released automatically, and
+//! [`DrainController::render_prometheus`] exposes the draining state and drain
+//! metrics for scraping.
+//!
 //! # Example
 //!
 //! ```no_run
@@ -44,6 +49,7 @@
 //! # }
 //! ```
 
+use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -182,6 +188,12 @@ impl DrainController {
         self.phase() == DrainPhase::Active
     }
 
+    /// Whether the instance is currently draining (intake stopped, work
+    /// still finishing). Useful for readiness bodies and dashboards.
+    pub fn is_draining(&self) -> bool {
+        matches!(self.phase(), DrainPhase::StopIntake | DrainPhase::Draining)
+    }
+
     /// Number of connections or requests currently in flight.
     pub fn in_flight(&self) -> usize {
         self.shared.in_flight.load(Ordering::SeqCst)
@@ -218,6 +230,30 @@ impl DrainController {
         Some(StreamGuard {
             shared: Arc::clone(&self.shared),
         })
+    }
+
+    /// Reusable middleware: admit `future` as one unit of in-flight work.
+    ///
+    /// The work is tracked for the whole lifetime of the future and released
+    /// when it completes or is dropped. Returns `None` once intake has stopped,
+    /// so callers can fail fast instead of starting work a shutdown would reset.
+    pub async fn track<F>(&self, future: F) -> Option<F::Output>
+    where
+        F: Future,
+    {
+        let _guard = self.acquire()?;
+        Some(future.await)
+    }
+
+    /// Reusable middleware for long-lived streams: admit `future` as a stream.
+    ///
+    /// Streams get the bounded stream grace period during draining.
+    pub async fn track_stream<F>(&self, future: F) -> Option<F::Output>
+    where
+        F: Future,
+    {
+        let _guard = self.open_stream()?;
+        Some(future.await)
     }
 
     /// Steps 2–3: drain in-flight work, then exit.
@@ -268,6 +304,40 @@ impl DrainController {
             }
             self.shared.notify.notified().await;
         }
+    }
+
+    /// Render the draining state and metrics in Prometheus text format.
+    ///
+    /// Exposes readiness (`stellar_drain_ready`), the draining flag
+    /// (`stellar_drain_draining`), in-flight gauges, and the outcome of the
+    /// last drain cycle so operators can observe draining per deployment.
+    pub fn render_prometheus(&self) -> String {
+        let ready = usize::from(self.is_ready());
+        let draining = usize::from(self.is_draining());
+        let in_flight = self.shared.in_flight.load(Ordering::SeqCst);
+        let streams = self.shared.streams.load(Ordering::SeqCst);
+        let peak = self.peak_in_flight.load(Ordering::SeqCst);
+        let interrupted = self.streams_interrupted.load(Ordering::SeqCst);
+        format!(
+            "# HELP stellar_drain_ready Whether the instance accepts new work (1 = ready).\n\
+             # TYPE stellar_drain_ready gauge\n\
+             stellar_drain_ready {ready}\n\
+             # HELP stellar_drain_draining Whether the instance is draining (1 = draining).\n\
+             # TYPE stellar_drain_draining gauge\n\
+             stellar_drain_draining {draining}\n\
+             # HELP stellar_drain_in_flight Connections or requests currently in flight.\n\
+             # TYPE stellar_drain_in_flight gauge\n\
+             stellar_drain_in_flight {in_flight}\n\
+             # HELP stellar_drain_streams Long-lived streams currently open.\n\
+             # TYPE stellar_drain_streams gauge\n\
+             stellar_drain_streams {streams}\n\
+             # HELP stellar_drain_peak_in_flight Peak in-flight work observed.\n\
+             # TYPE stellar_drain_peak_in_flight gauge\n\
+             stellar_drain_peak_in_flight {peak}\n\
+             # HELP stellar_drain_streams_interrupted Streams closed at the stream grace boundary.\n\
+             # TYPE stellar_drain_streams_interrupted counter\n\
+             stellar_drain_streams_interrupted {interrupted}\n"
+        )
     }
 }
 
@@ -432,5 +502,72 @@ mod tests {
             .with_stream_grace_period(Duration::from_secs(20));
         assert_eq!(config.drain_timeout, Duration::from_secs(60));
         assert_eq!(config.stream_grace_period, Duration::from_secs(20));
+    }
+
+    #[test]
+    fn draining_state_is_visible_in_readiness_and_metrics() {
+        let controller = DrainController::new(DrainConfig::default());
+        let active = controller.render_prometheus();
+        assert!(active.contains("stellar_drain_ready 1"));
+        assert!(active.contains("stellar_drain_draining 0"));
+
+        controller.stop_intake();
+        assert!(!controller.is_ready());
+        assert!(controller.is_draining());
+        let draining = controller.render_prometheus();
+        assert!(draining.contains("stellar_drain_ready 0"));
+        assert!(draining.contains("stellar_drain_draining 1"));
+    }
+
+    #[tokio::test]
+    async fn track_middleware_admits_and_releases_work() {
+        let controller = DrainController::new(fast_config());
+        let out = controller.track(async { 42 }).await;
+        assert_eq!(out, Some(42));
+        assert_eq!(controller.in_flight(), 0);
+
+        controller.stop_intake();
+        assert!(controller.track(async { 1 }).await.is_none());
+        assert!(controller.track_stream(async { 1 }).await.is_none());
+    }
+
+    /// Soak test: 50 consecutive rollouts with continuous long-lived
+    /// connections must produce zero connection resets.
+    #[tokio::test]
+    async fn soak_fifty_rollouts_zero_resets() {
+        const ROLLOUTS: usize = 50;
+        const CONNECTIONS: usize = 8;
+
+        let mut total_resets = 0usize;
+        for _ in 0..ROLLOUTS {
+            let controller = DrainController::new(DrainConfig {
+                drain_timeout: Duration::from_millis(500),
+                stream_grace_period: Duration::from_millis(200),
+                prestop_sleep: Duration::from_millis(10),
+            });
+
+            // Long-lived connections that finish on their own shortly after
+            // intake stops: a correct drain never resets them.
+            let mut handles = Vec::new();
+            for _ in 0..CONNECTIONS {
+                let guard = controller.acquire().expect("admitted while active");
+                handles.push(tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    drop(guard);
+                }));
+            }
+
+            controller.stop_intake();
+            let metrics = controller.drain().await;
+            for handle in handles {
+                handle.await.unwrap();
+            }
+
+            total_resets += metrics.forced_terminations;
+            assert!(metrics.completed_without_force());
+            assert_eq!(metrics.streams_interrupted, 0);
+        }
+
+        assert_eq!(total_resets, 0, "rolling updates must not reset connections");
     }
 }

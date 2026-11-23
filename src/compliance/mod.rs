@@ -31,6 +31,9 @@ pub mod report;
 pub mod soc2_iso;
 
 pub use evidence::{EvidenceCollector, EvidenceItem};
+pub use evidence_schedule::{
+    ControlProbe, CoverageFinding, EvidencePackage, ScheduledCollector,
+};
 pub use export::{export_csv, export_json, export_pdf, ComplianceExportFormat};
 pub use frameworks::{ComplianceFramework, ComplianceRule, RuleResult, ValidationPipeline};
 pub use monitor::{ComplianceMonitor, ComplianceStatus, DriftFinding};

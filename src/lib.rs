@@ -102,6 +102,7 @@ pub mod api_gateway;
 // pub mod namespace_security;
 pub mod adaptive_hpa;
 pub mod audit_chain;
+pub mod audit_ledger;
 pub mod backup;
 pub mod benchmark_bisect;
 pub mod benchmark_compare;

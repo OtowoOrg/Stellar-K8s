@@ -16,6 +16,7 @@
 //! StellarNode and Operator configurations.
 
 pub mod drift;
+pub mod gitops_drift;
 pub mod impact;
 pub mod rollback;
 pub mod validation;

@@ -1,0 +1,68 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Observability-contract dead-letter alerts (#1960).
+#
+# Source metrics come from the collector (charts/stellar-operator/templates/otel-collector.yaml):
+#   * stellar_otel_deadletter_{spans,metrics,logs}  - count connector, port 8889
+#   * otelcol_receiver_accepted_{spans,metric_points,log_records} - collector self-telemetry, port 8888
+# Regexes tolerate the `_total` suffix some collector/exporter versions append.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-contract-alerts
+  namespace: monitoring
+  labels:
+    app: prometheus
+    component: alerting-rules
+data:
+  otel-contract-alerts.yaml: |
+    groups:
+    - name: otel-contract-recording
+      interval: 30s
+      rules:
+      - record: stellar:otel_deadletter_records:rate5m
+        expr: sum(rate({__name__=~"stellar_otel_deadletter_(spans|metrics|logs)(_total)?"}[5m]))
+      - record: stellar:otel_accepted_records:rate5m
+        expr: sum(rate({__name__=~"otelcol_receiver_accepted_(spans|metric_points|log_records)(_total)?"}[5m]))
+      - record: stellar:otel_deadletter_ratio:rate5m
+        expr: stellar:otel_deadletter_records:rate5m / clamp_min(stellar:otel_accepted_records:rate5m, 1e-9)
+    - name: otel-contract
+      rules:
+      # Acceptance criterion: dead-letter rate < 0.01% (1e-4) after stabilization.
+      - alert: OtelContractDeadLetterRateHigh
+        expr: stellar:otel_deadletter_ratio:rate5m > 0.0001 and stellar:otel_accepted_records:rate5m > 0
+        for: 30m
+        labels:
+          severity: warning
+          component: otel-collector
+        annotations:
+          summary: "More than 0.01% of telemetry is being quarantined for contract violations"
+          description: >-
+            Inspect /var/lib/otel/deadletter/quarantine.json in the collector pod and run
+            scripts/ci/lint-observability-contract.py to find the emitter missing required attributes.
+      - alert: OtelContractDeadLetterSpike
+        expr: stellar:otel_deadletter_records:rate5m > 1
+        for: 5m
+        labels:
+          severity: critical
+          component: otel-collector
+        annotations:
+          summary: "Dead-letter stream receiving >1 record/s: an emitter is violating the contract"
+      - alert: OtelContractDeadLetterMetricsMissing
+        expr: absent({__name__=~"stellar_otel_deadletter_(spans|metrics|logs)(_total)?"}) and on() (stellar:otel_accepted_records:rate5m > 0)
+        for: 1h
+        labels:
+          severity: info
+          component: otel-collector
+        annotations:
+          summary: "No dead-letter counters yet (normal until the first violation, then they appear)"

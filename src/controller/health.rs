@@ -27,7 +27,7 @@
 //! - `message` - Human-readable status message
 //! - `ledger_sequence` - Current ledger number (if available)
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use k8s_openapi::api::core::v1::Pod;
 use kube::{api::Api, Client, ResourceExt};
@@ -142,6 +142,169 @@ impl HealthCheckResult {
             message,
             ledger_sequence: None,
         }
+    }
+}
+
+/// Decision produced by evaluating a health gate during a traffic shift.
+///
+/// The failover plan controller uses this to decide whether to advance to the
+/// next traffic weight, hold the current weight (waiting for more evidence), or
+/// roll back to the previous weight because the target region is unhealthy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GateDecision {
+    /// Health evidence is sufficient; advance to the next traffic weight.
+    Advance,
+    /// Not enough evidence yet (or transient failure); hold the current weight.
+    Pause,
+    /// Health evidence indicates regression; roll back the traffic shift.
+    Rollback,
+}
+
+impl GateDecision {
+    /// Returns `true` if the decision allows traffic to move forward.
+    pub fn is_advance(&self) -> bool {
+        matches!(self, GateDecision::Advance)
+    }
+
+    /// Returns `true` if the decision requires reverting the shift.
+    pub fn is_rollback(&self) -> bool {
+        matches!(self, GateDecision::Rollback)
+    }
+}
+
+/// Configuration for a health gate evaluation.
+///
+/// A gate requires a minimum number of consecutive healthy observations before
+/// traffic is allowed to advance, and tolerates a bounded number of consecutive
+/// failures before rolling back. This provides hysteresis so that a single
+/// transient blip does not abort an in-progress failover.
+#[derive(Debug, Clone)]
+pub struct HealthGateConfig {
+    /// Number of consecutive healthy observations required to advance.
+    pub required_consecutive_healthy: u32,
+
+    /// Number of consecutive unhealthy observations that triggers a rollback.
+    pub max_consecutive_unhealthy: u32,
+
+    /// Maximum age of the most recent observation before it is considered stale.
+    pub max_observation_age: Duration,
+}
+
+impl Default for HealthGateConfig {
+    fn default() -> Self {
+        Self {
+            required_consecutive_healthy: 3,
+            max_consecutive_unhealthy: 2,
+            max_observation_age: Duration::from_secs(60),
+        }
+    }
+}
+
+/// A single health observation recorded during a traffic shift.
+#[derive(Debug, Clone)]
+pub struct HealthObservation {
+    /// Whether the observed node was healthy and synced.
+    pub healthy: bool,
+
+    /// When the observation was taken.
+    pub observed_at: Instant,
+}
+
+impl HealthObservation {
+    /// Record a new observation from a [`HealthCheckResult`].
+    pub fn from_result(result: &HealthCheckResult) -> Self {
+        Self {
+            healthy: result.healthy && result.synced,
+            observed_at: Instant::now(),
+        }
+    }
+
+    /// Record a new observation with an explicit timestamp.
+    pub fn new(healthy: bool, observed_at: Instant) -> Self {
+        Self {
+            healthy,
+            observed_at,
+        }
+    }
+
+    /// Returns `true` if the observation is older than `max_age`.
+    pub fn is_stale(&self, max_age: Duration) -> bool {
+        self.observed_at.elapsed() > max_age
+    }
+}
+
+/// Evaluate a health gate from a window of recent observations.
+///
+/// The most recent observations are examined (newest last). Stale observations
+/// are ignored. The decision is:
+///
+/// - [`GateDecision::Rollback`] if the trailing run of unhealthy observations
+///   reaches `config.max_consecutive_unhealthy`.
+/// - [`GateDecision::Advance`] if the trailing run of healthy observations
+///   reaches `config.required_consecutive_healthy`.
+/// - [`GateDecision::Pause`] otherwise (insufficient or stale evidence).
+///
+/// This same function is used for both failover and failback so that failback
+/// requires the same health evidence as failover.
+pub fn evaluate_health_gate(
+    observations: &[HealthObservation],
+    config: &HealthGateConfig,
+) -> GateDecision {
+    let fresh: Vec<&HealthObservation> = observations
+        .iter()
+        .filter(|obs| !obs.is_stale(config.max_observation_age))
+        .collect();
+
+    if fresh.is_empty() {
+        return GateDecision::Pause;
+    }
+
+    // Count the trailing run of identical outcomes (newest observations last).
+    let mut trailing_healthy = 0u32;
+    let mut trailing_unhealthy = 0u32;
+
+    for obs in fresh.iter().rev() {
+        if obs.healthy {
+            if trailing_unhealthy > 0 {
+                break;
+            }
+            trailing_healthy += 1;
+        } else {
+            if trailing_healthy > 0 {
+                break;
+            }
+            trailing_unhealthy += 1;
+        }
+    }
+
+    if config.max_consecutive_unhealthy > 0
+        && trailing_unhealthy >= config.max_consecutive_unhealthy
+    {
+        return GateDecision::Rollback;
+    }
+
+    if config.required_consecutive_healthy > 0
+        && trailing_healthy >= config.required_consecutive_healthy
+    {
+        return GateDecision::Advance;
+    }
+
+    GateDecision::Pause
+}
+
+/// Evaluate a health gate from a single fresh [`HealthCheckResult`].
+///
+/// Convenience wrapper for callers that only have the latest probe result.
+/// A healthy, synced result yields [`GateDecision::Advance`]; an unhealthy
+/// result yields [`GateDecision::Rollback`]; anything else (pending/syncing)
+/// yields [`GateDecision::Pause`].
+pub fn evaluate_single_result(result: &HealthCheckResult) -> GateDecision {
+    if result.healthy && result.synced {
+        GateDecision::Advance
+    } else if !result.healthy {
+        GateDecision::Rollback
+    } else {
+        GateDecision::Pause
     }
 }
 
@@ -406,5 +569,77 @@ async fn check_soroban_health(
                 "Cannot reach health endpoint: {e}"
             )))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn obs(healthy: bool) -> HealthObservation {
+        HealthObservation::new(healthy, Instant::now())
+    }
+
+    #[test]
+    fn advances_after_required_consecutive_healthy() {
+        let config = HealthGateConfig::default();
+        let observations = vec![obs(true), obs(true), obs(true)];
+        assert_eq!(
+            evaluate_health_gate(&observations, &config),
+            GateDecision::Advance
+        );
+    }
+
+    #[test]
+    fn pauses_with_insufficient_evidence() {
+        let config = HealthGateConfig::default();
+        let observations = vec![obs(true), obs(true)];
+        assert_eq!(
+            evaluate_health_gate(&observations, &config),
+            GateDecision::Pause
+        );
+    }
+
+    #[test]
+    fn rolls_back_after_consecutive_unhealthy() {
+        let config = HealthGateConfig::default();
+        let observations = vec![obs(true), obs(false), obs(false)];
+        assert_eq!(
+            evaluate_health_gate(&observations, &config),
+            GateDecision::Rollback
+        );
+    }
+
+    #[test]
+    fn stale_observations_are_ignored() {
+        let config = HealthGateConfig {
+            max_observation_age: Duration::from_millis(1),
+            ..HealthGateConfig::default()
+        };
+        let stale = HealthObservation::new(
+            true,
+            Instant::now() - Duration::from_secs(10),
+        );
+        let observations = vec![stale];
+        assert_eq!(
+            evaluate_health_gate(&observations, &config),
+            GateDecision::Pause
+        );
+    }
+
+    #[test]
+    fn single_result_mapping() {
+        assert_eq!(
+            evaluate_single_result(&HealthCheckResult::synced(Some(1))),
+            GateDecision::Advance
+        );
+        assert_eq!(
+            evaluate_single_result(&HealthCheckResult::unhealthy("down".into())),
+            GateDecision::Rollback
+        );
+        assert_eq!(
+            evaluate_single_result(&HealthCheckResult::pending("wait".into())),
+            GateDecision::Pause
+        );
     }
 }

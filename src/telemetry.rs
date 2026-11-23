@@ -22,6 +22,7 @@
 //! `trace_id` and `span_id` W3C hex fields to every log event.  This lets
 //! operators correlate log lines with traces in Honeycomb / Jaeger / Tempo.
 
+use opentelemetry::metrics::{Counter, Meter, UpDownCounter};
 use opentelemetry::trace::TraceResult;
 use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
@@ -410,6 +411,192 @@ pub fn shutdown_telemetry() {
     global::shutdown_tracer_provider();
 }
 
+// ---------------------------------------------------------------------------
+// Job/CronJob orphan reconciliation metrics (issue #1982)
+// ---------------------------------------------------------------------------
+
+/// Metric name for resources reclaimed by the orphan reconciler, labelled by
+/// namespace and orphan class.
+pub const METRIC_ORPHANS_RECLAIMED: &str = "stellar.job_orphans.reclaimed";
+/// Metric name for orphaned artifacts currently observed but not yet reclaimed.
+pub const METRIC_ORPHANS_PENDING: &str = "stellar.job_orphans.pending";
+
+/// Orphan classes seeded by the reconciliation test strategy (issue #1982).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrphanClass {
+    /// Pods/jobs whose owning CronJob no longer exists.
+    DeletedCronJob,
+    /// Artifacts with a dangling or malformed ownerReference.
+    BrokenOwnerRef,
+    /// Jobs stuck in a failed state past the retention window.
+    StuckFailedJob,
+    /// Completed pods retained beyond the retention window.
+    CompletedPod,
+    /// Remnants left behind after a namespace move.
+    NamespaceMove,
+}
+
+impl OrphanClass {
+    /// Stable label value used in metric attributes.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OrphanClass::DeletedCronJob => "deleted_cronjob",
+            OrphanClass::BrokenOwnerRef => "broken_owner_ref",
+            OrphanClass::StuckFailedJob => "stuck_failed_job",
+            OrphanClass::CompletedPod => "completed_pod",
+            OrphanClass::NamespaceMove => "namespace_move",
+        }
+    }
+}
+
+/// Per-namespace instruments for orphan reconciliation reporting.
+///
+/// Cheap to clone; the underlying OTel instruments are handles to the global
+/// meter provider, so constructing this once per reconcile loop is fine.
+#[derive(Clone)]
+pub struct OrphanReconcilerMetrics {
+    reclaimed: Counter<u64>,
+    pending: UpDownCounter<i64>,
+}
+
+impl OrphanReconcilerMetrics {
+    /// Build the instruments from the global meter provider.
+    pub fn new() -> Self {
+        Self::with_meter(&global::meter("stellar-operator"))
+    }
+
+    /// Build the instruments from an explicit meter (used in tests).
+    pub fn with_meter(meter: &Meter) -> Self {
+        OrphanReconcilerMetrics {
+            reclaimed: meter
+                .u64_counter(METRIC_ORPHANS_RECLAIMED)
+                .with_description("Job/CronJob artifacts reclaimed by the orphan reconciler")
+                .init(),
+            pending: meter
+                .i64_up_down_counter(METRIC_ORPHANS_PENDING)
+                .with_description("Orphaned Job/CronJob artifacts observed but not yet reclaimed")
+                .init(),
+        }
+    }
+
+    /// Record `count` reclaimed artifacts in `namespace` for `class`.
+    pub fn record_reclaimed(&self, namespace: &str, class: OrphanClass, count: u64) {
+        if count == 0 {
+            return;
+        }
+        self.reclaimed.add(
+            count,
+            &[
+                KeyValue::new("namespace", namespace.to_string()),
+                KeyValue::new("orphan_class", class.as_str()),
+            ],
+        );
+    }
+
+    /// Adjust the observed-but-unreclaimed gauge for `namespace` / `class`.
+    pub fn set_pending(&self, namespace: &str, class: OrphanClass, delta: i64) {
+        if delta == 0 {
+            return;
+        }
+        self.pending.add(
+            delta,
+            &[
+                KeyValue::new("namespace", namespace.to_string()),
+                KeyValue::new("orphan_class", class.as_str()),
+            ],
+        );
+    }
+}
+
+impl Default for OrphanReconcilerMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Multi-region failover metrics (issue #1983)
+// ---------------------------------------------------------------------------
+
+/// Metric name for completed traffic-shift steps during failover/failback.
+pub const METRIC_FAILOVER_SHIFT: &str = "stellar.failover.traffic_shift";
+/// Metric name for the current weighted traffic percentage per region.
+pub const METRIC_FAILOVER_WEIGHT: &str = "stellar.failover.region_weight";
+
+/// Direction of a traffic shift.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShiftDirection {
+    /// Shifting traffic away from the primary region.
+    Failover,
+    /// Shifting traffic back to the recovered primary region.
+    Failback,
+}
+
+impl ShiftDirection {
+    /// Stable label value used in metric attributes.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ShiftDirection::Failover => "failover",
+            ShiftDirection::Failback => "failback",
+        }
+    }
+}
+
+/// Instruments recording health-gated traffic shifts for failover drills.
+#[derive(Clone)]
+pub struct FailoverMetrics {
+    shifts: Counter<u64>,
+    weights: UpDownCounter<i64>,
+}
+
+impl FailoverMetrics {
+    /// Build the instruments from the global meter provider.
+    pub fn new() -> Self {
+        Self::with_meter(&global::meter("stellar-operator"))
+    }
+
+    /// Build the instruments from an explicit meter (used in tests).
+    pub fn with_meter(meter: &Meter) -> Self {
+        FailoverMetrics {
+            shifts: meter
+                .u64_counter(METRIC_FAILOVER_SHIFT)
+                .with_description("Health-gated regional traffic shift steps completed")
+                .init(),
+            weights: meter
+                .i64_up_down_counter(METRIC_FAILOVER_WEIGHT)
+                .with_description("Current weighted traffic percentage per region")
+                .init(),
+        }
+    }
+
+    /// Record a completed shift step of `weight_percent` toward `region`.
+    pub fn record_shift(&self, region: &str, direction: ShiftDirection, weight_percent: u8) {
+        self.shifts.add(
+            1,
+            &[
+                KeyValue::new("region", region.to_string()),
+                KeyValue::new("direction", direction.as_str()),
+                KeyValue::new("weight_percent", i64::from(weight_percent)),
+            ],
+        );
+    }
+
+    /// Adjust the recorded weight for `region` by `delta` percentage points.
+    pub fn set_region_weight(&self, region: &str, delta: i64) {
+        if delta == 0 {
+            return;
+        }
+        self.weights
+            .add(delta, &[KeyValue::new("region", region.to_string())]);
+    }
+}
+
+impl Default for FailoverMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// In-memory span capture used by propagation tests (no OTLP, no Jaeger).
 #[derive(Clone, Debug)]
 pub struct CapturedSpan {
@@ -642,5 +829,41 @@ mod tests {
         let id = CorrelationId("abc-123".to_string());
         assert_eq!(id.as_str(), "abc-123");
         assert_eq!(id.to_string(), "abc-123");
+    }
+
+    #[test]
+    fn orphan_class_labels_are_stable() {
+        assert_eq!(OrphanClass::DeletedCronJob.as_str(), "deleted_cronjob");
+        assert_eq!(OrphanClass::BrokenOwnerRef.as_str(), "broken_owner_ref");
+        assert_eq!(OrphanClass::StuckFailedJob.as_str(), "stuck_failed_job");
+        assert_eq!(OrphanClass::CompletedPod.as_str(), "completed_pod");
+        assert_eq!(OrphanClass::NamespaceMove.as_str(), "namespace_move");
+    }
+
+    #[test]
+    fn shift_direction_labels_are_stable() {
+        assert_eq!(ShiftDirection::Failover.as_str(), "failover");
+        assert_eq!(ShiftDirection::Failback.as_str(), "failback");
+    }
+
+    #[test]
+    fn orphan_reconciler_metrics_construct_and_record() {
+        let meter = global::meter("stellar-test");
+        let metrics = OrphanReconcilerMetrics::with_meter(&meter);
+        // Zero counts are no-ops and must not panic.
+        metrics.record_reclaimed("default", OrphanClass::CompletedPod, 0);
+        metrics.set_pending("default", OrphanClass::CompletedPod, 0);
+        metrics.record_reclaimed("default", OrphanClass::CompletedPod, 3);
+        metrics.set_pending("default", OrphanClass::CompletedPod, 3);
+        metrics.set_pending("default", OrphanClass::CompletedPod, -3);
+    }
+
+    #[test]
+    fn failover_metrics_construct_and_record() {
+        let meter = global::meter("stellar-test");
+        let metrics = FailoverMetrics::with_meter(&meter);
+        metrics.record_shift("us-east-1", ShiftDirection::Failover, 25);
+        metrics.set_region_weight("us-east-1", -25);
+        metrics.set_region_weight("us-east-1", 0);
     }
 }

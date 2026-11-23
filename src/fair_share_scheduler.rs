@@ -41,7 +41,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::time::{Duration, Instant};
+use tokio::sync::{watch, RwLock};
 use tracing::{debug, info, warn};
 
 use crate::error::{Error, Result};
@@ -356,6 +357,234 @@ impl MultiTenantSchedulerManager {
     }
 }
 
+/// Dynamic per-consumer rate limit pushed to the edge proxy.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumerRateLimit {
+    pub consumer_id: String,
+    /// Requests per second allowed for this consumer.
+    pub requests_per_second: f64,
+    /// Burst allowance (token bucket capacity).
+    pub burst: u32,
+    /// Weight applied when computing the fair share.
+    pub weight: f64,
+}
+
+/// Snapshot of the dynamic limit configuration, versioned for the edge proxy.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RateLimitConfig {
+    /// Monotonically increasing version, bumped on every publish.
+    pub version: u64,
+    /// Total shared capacity (requests per second) to be divided.
+    pub total_capacity_rps: f64,
+    /// Per-consumer dynamic limits keyed by consumer id.
+    pub limits: HashMap<String, ConsumerRateLimit>,
+    /// Instant the config was produced (used for propagation measurement).
+    #[serde(skip, default = "Instant::now")]
+    pub generated_at: Instant,
+}
+
+impl RateLimitConfig {
+    /// Look up the limit for a consumer, if present.
+    pub fn limit_for(&self, consumer_id: &str) -> Option<&ConsumerRateLimit> {
+        self.limits.get(consumer_id)
+    }
+}
+
+/// Observed demand for a single consumer over the last sampling window.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumerDemand {
+    /// Observed request rate (requests per second).
+    pub observed_rps: f64,
+    /// Priority weight for this consumer (defaults to 1.0).
+    pub weight: f64,
+}
+
+/// Fair-share controller that computes dynamic per-consumer limits from
+/// observed demand and publishes them to the edge proxy via a `watch` channel.
+///
+/// The hot path in the proxy only reads the latest [`RateLimitConfig`] from
+/// memory; the controller recomputes limits on demand changes and pushes a new
+/// version. Propagation is bounded by the `watch` channel's in-memory handoff,
+/// which is well under the 1s target.
+pub struct FairShareController {
+    total_capacity_rps: f64,
+    demands: HashMap<String, ConsumerDemand>,
+    tx: watch::Sender<Arc<RateLimitConfig>>,
+    version: u64,
+}
+
+impl FairShareController {
+    /// Create a controller with the given shared capacity (requests per second).
+    pub fn new(total_capacity_rps: f64) -> Self {
+        let initial = Arc::new(RateLimitConfig {
+            version: 0,
+            total_capacity_rps,
+            limits: HashMap::new(),
+            generated_at: Instant::now(),
+        });
+        let (tx, _rx) = watch::channel(initial);
+        Self {
+            total_capacity_rps,
+            demands: HashMap::new(),
+            tx,
+            version: 0,
+        }
+    }
+
+    /// Subscribe to config updates. The receiver always sees the latest config.
+    pub fn subscribe(&self) -> watch::Receiver<Arc<RateLimitConfig>> {
+        self.tx.subscribe()
+    }
+
+    /// Current published config.
+    pub fn current(&self) -> Arc<RateLimitConfig> {
+        self.tx.borrow().clone()
+    }
+
+    /// Record observed demand for a consumer and recompute limits.
+    pub fn observe_demand(&mut self, consumer_id: &str, observed_rps: f64, weight: f64) {
+        self.demands.insert(
+            consumer_id.to_string(),
+            ConsumerDemand {
+                observed_rps: observed_rps.max(0.0),
+                weight: if weight > 0.0 { weight } else { 1.0 },
+            },
+        );
+        self.recompute_and_publish();
+    }
+
+    /// Remove a consumer (e.g. it went idle) and recompute limits.
+    pub fn remove_consumer(&mut self, consumer_id: &str) {
+        if self.demands.remove(consumer_id).is_some() {
+            self.recompute_and_publish();
+        }
+    }
+
+    /// Compute the fair-share limits without publishing.
+    ///
+    /// Each consumer receives a share of total capacity proportional to its
+    /// weight, but never more than its observed demand (so well-behaved
+    /// consumers are not throttled). Unused capacity from low-demand consumers
+    /// is redistributed to consumers that are saturating their share.
+    pub fn compute_limits(&self) -> HashMap<String, ConsumerRateLimit> {
+        let mut limits = HashMap::new();
+        if self.demands.is_empty() || self.total_capacity_rps <= 0.0 {
+            return limits;
+        }
+
+        // Iteratively allocate capacity: consumers whose demand is below their
+        // weighted share are satisfied fully; the remainder is redistributed
+        // among the still-saturated consumers.
+        let mut remaining_capacity = self.total_capacity_rps;
+        let mut active: Vec<(&String, &ConsumerDemand)> = self.demands.iter().collect();
+        let mut satisfied: HashMap<String, f64> = HashMap::new();
+
+        loop {
+            let total_weight: f64 = active.iter().map(|(_, d)| d.weight).sum();
+            if total_weight <= 0.0 || active.is_empty() {
+                break;
+            }
+
+            let mut progressed = false;
+            let mut still_active = Vec::new();
+            for (id, demand) in active {
+                let share = remaining_capacity * (demand.weight / total_weight);
+                if demand.observed_rps <= share {
+                    satisfied.insert(id.clone(), demand.observed_rps);
+                    remaining_capacity -= demand.observed_rps;
+                    progressed = true;
+                } else {
+                    still_active.push((id, demand));
+                }
+            }
+
+            if !progressed {
+                // Everyone remaining is saturated: split remaining capacity by weight.
+                let total_weight: f64 = still_active.iter().map(|(_, d)| d.weight).sum();
+                for (id, demand) in still_active {
+                    let share = remaining_capacity * (demand.weight / total_weight);
+                    satisfied.insert(id.clone(), share);
+                }
+                break;
+            }
+            active = still_active;
+        }
+
+        for (id, demand) in &self.demands {
+            let rps = satisfied.get(id).copied().unwrap_or(0.0);
+            // Burst is one second's worth of the limit, with a small floor so
+            // well-behaved consumers are never starved by rounding.
+            let burst = (rps.ceil() as u32).max(1);
+            limits.insert(
+                id.clone(),
+                ConsumerRateLimit {
+                    consumer_id: id.clone(),
+                    requests_per_second: rps,
+                    burst,
+                    weight: demand.weight,
+                },
+            );
+        }
+
+        limits
+    }
+
+    fn recompute_and_publish(&mut self) {
+        let limits = self.compute_limits();
+        self.version += 1;
+        let config = Arc::new(RateLimitConfig {
+            version: self.version,
+            total_capacity_rps: self.total_capacity_rps,
+            limits,
+            generated_at: Instant::now(),
+        });
+        // `send_replace` never fails and always stores the latest value, so the
+        // edge proxy observes the newest config on its next read.
+        self.tx.send_replace(config);
+        debug!(version = self.version, "Published dynamic rate limit config");
+    }
+}
+
+/// Shared, cloneable handle to the fair-share controller.
+#[derive(Clone)]
+pub struct FairShareControllerHandle {
+    inner: Arc<RwLock<FairShareController>>,
+}
+
+impl FairShareControllerHandle {
+    pub fn new(total_capacity_rps: f64) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(FairShareController::new(total_capacity_rps))),
+        }
+    }
+
+    /// Subscribe to config updates for the edge proxy hot path.
+    pub async fn subscribe(&self) -> watch::Receiver<Arc<RateLimitConfig>> {
+        self.inner.read().await.subscribe()
+    }
+
+    /// Current published config.
+    pub async fn current(&self) -> Arc<RateLimitConfig> {
+        self.inner.read().await.current()
+    }
+
+    /// Record observed demand and publish updated limits.
+    pub async fn observe_demand(&self, consumer_id: &str, observed_rps: f64, weight: f64) {
+        self.inner
+            .write()
+            .await
+            .observe_demand(consumer_id, observed_rps, weight);
+    }
+
+    /// Remove a consumer and publish updated limits.
+    pub async fn remove_consumer(&self, consumer_id: &str) {
+        self.inner.write().await.remove_consumer(consumer_id);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -487,5 +716,81 @@ mod tests {
 
         let jain = engine.jain_fairness_index();
         assert!((jain - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_fair_share_limits_contain_noisy_consumer() {
+        let mut controller = FairShareController::new(100.0);
+
+        // One abusive consumer demanding far more than its share.
+        controller.observe_demand("abusive", 10_000.0, 1.0);
+        // 20 well-behaved consumers each demanding a modest rate.
+        for i in 0..20 {
+            controller.observe_demand(&format!("normal-{i}"), 1.0, 1.0);
+        }
+
+        let limits = controller.compute_limits();
+
+        // Well-behaved consumers are fully satisfied (no induced throttling).
+        for i in 0..20 {
+            let limit = limits.get(&format!("normal-{i}")).unwrap();
+            assert!(
+                limit.requests_per_second >= 1.0,
+                "normal consumer throttled: {}",
+                limit.requests_per_second
+            );
+        }
+
+        // The abusive consumer is capped to roughly its fair share.
+        let abusive = limits.get("abusive").unwrap();
+        assert!(abusive.requests_per_second < 10_000.0);
+        assert!(abusive.requests_per_second <= 100.0);
+    }
+
+    #[test]
+    fn test_fair_share_redistributes_unused_capacity() {
+        let mut controller = FairShareController::new(100.0);
+        // Consumer A only wants 10 rps; consumer B is saturating.
+        controller.observe_demand("a", 10.0, 1.0);
+        controller.observe_demand("b", 1_000.0, 1.0);
+
+        let limits = controller.compute_limits();
+        assert!((limits.get("a").unwrap().requests_per_second - 10.0).abs() < 1e-9);
+        // B receives the remaining 90 rps.
+        assert!((limits.get("b").unwrap().requests_per_second - 90.0).abs() < 1e-6);
+    }
+
+    #[tokio::test]
+    async fn test_config_propagation_under_one_second() {
+        let handle = FairShareControllerHandle::new(100.0);
+        let mut rx = handle.subscribe().await;
+
+        let publish_start = Instant::now();
+        handle.observe_demand("consumer-x", 50.0, 1.0).await;
+
+        // Wait for the new config to arrive on the watch channel.
+        rx.changed().await.expect("config channel closed");
+        let received = rx.borrow().clone();
+        let elapsed = publish_start.elapsed();
+
+        assert_eq!(received.version, 1);
+        assert!(received.limit_for("consumer-x").is_some());
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "config propagation took {:?}",
+            elapsed
+        );
+        // The config's own generation timestamp should also be recent.
+        assert!(received.generated_at.elapsed() < Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn test_config_version_increments() {
+        let handle = FairShareControllerHandle::new(100.0);
+        handle.observe_demand("a", 10.0, 1.0).await;
+        handle.observe_demand("b", 10.0, 1.0).await;
+        let config = handle.current().await;
+        assert_eq!(config.version, 2);
+        assert_eq!(config.limits.len(), 2);
     }
 }

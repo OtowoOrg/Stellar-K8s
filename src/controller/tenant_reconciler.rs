@@ -183,8 +183,9 @@ async fn apply_network_policies(tenant_spec: &TenantSpec, client: &Client) -> Re
         from: Some(vec![NetworkPolicyPeer {
             namespace_selector: Some(LabelSelector {
                 match_labels: Some({
+                    let (key, value) = tenant_spec.network_label();
                     let mut labels = BTreeMap::new();
-                    labels.insert("tenant.stellar.org/id".to_string(), tenant_id.clone());
+                    labels.insert(key, value);
                     labels
                 }),
                 match_expressions: None,
@@ -232,21 +233,30 @@ async fn apply_network_policies(tenant_spec: &TenantSpec, client: &Client) -> Re
 
 /// Set up RBAC: create tenant-scoped role and rolebinding
 async fn setup_rbac(tenant_spec: &TenantSpec, client: &Client) -> Result<()> {
-    // TODO(exempt: tenant-rbac): Implement role and rolebinding creation per tenant
-    // This will:
-    // 1. Create a Role scoped to tenant resources
-    // 2. Create a RoleBinding for tenant service accounts
-    // 3. Restrict permissions to namespace and tenant labels
+    use k8s_openapi::api::rbac::v1::{Role, RoleBinding};
+
+    let (role, binding) = crate::controller::tenant_isolation::tenant_rbac_manifests(tenant_spec);
+    let params = PatchParams::apply("stellar-operator").force();
+
+    let roles: Api<Role> = Api::namespaced(client.clone(), &tenant_spec.namespace);
+    let role_name = format!("{}-tenant", tenant_spec.tenant_id);
+    roles
+        .patch(&role_name, &params, &Patch::Apply(&role))
+        .await?;
+
+    let bindings: Api<RoleBinding> = Api::namespaced(client.clone(), &tenant_spec.namespace);
+    bindings
+        .patch(&role_name, &params, &Patch::Apply(&binding))
+        .await?;
+
     info!(
         tenant = %tenant_spec.tenant_id,
         namespace = %tenant_spec.namespace,
-        "RBAC setup placeholder (full implementation pending)"
+        "Applied namespace-scoped tenant Role and RoleBinding"
     );
-
     Ok(())
 }
 
-/// Clean up tenant when deleted (cascade delete namespace and policies)
 pub async fn cleanup_tenant(tenant_spec: &TenantSpec, client: &Client) -> Result<()> {
     let ns_api: Api<Namespace> = Api::all(client.clone());
 

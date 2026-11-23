@@ -16,6 +16,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub mod consistency_group;
+pub mod pitr_orchestrator;
 pub mod providers;
 pub mod scheduler;
 pub mod secret_rotation;

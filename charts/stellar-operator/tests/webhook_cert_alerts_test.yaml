@@ -1,0 +1,52 @@
+suite: webhook certificate alerts
+templates:
+  - templates/monitoring/prometheusrule.yaml
+tests:
+  - it: fires at the default warning and critical horizons
+    set:
+      monitoring.enabled: true
+      monitoring.prometheusRule.enabled: true
+      monitoring.prometheusRule.certAlerts.warningDays: 30
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-stellar-operator-cert-expiry
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: "<= 0\\.25$"
+      - matchRegex:
+          path: spec.groups[0].rules[1].expr
+          pattern: "<= 0\\.1$"
+
+  - it: honours configured horizons
+    set:
+      monitoring.enabled: true
+      monitoring.prometheusRule.enabled: true
+      monitoring.prometheusRule.certAlerts.webhookWarningRatio: 0.5
+      monitoring.prometheusRule.certAlerts.webhookCriticalRatio: 0.2
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-stellar-operator-cert-expiry
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: "<= 0\\.5$"
+      - matchRegex:
+          path: spec.groups[0].rules[1].expr
+          pattern: "<= 0\\.2$"
+
+  - it: alerts when the cert-health sidecar stops reporting
+    set:
+      monitoring.enabled: true
+      monitoring.prometheusRule.enabled: true
+      monitoring.prometheusRule.certAlerts.warningDays: 30
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-stellar-operator-cert-expiry
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[2].alert
+          value: WebhookCertHealthMissing
+      - equal:
+          path: spec.groups[0].rules[2].expr
+          value: absent(stellar_webhook_certificate_valid)

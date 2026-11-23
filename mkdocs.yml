@@ -169,6 +169,7 @@ nav:
       - Backup Consistency Groups: backup-consistency-groups.md
       - Backup Verification Automation: operations/backup-verification.md
       - Hierarchical Fair-Share Quotas: fair-share-scheduling.md
+      - Immutable Audit Ledger: audit-ledger.md
       - Chaos Drills: chaos-drills.md
       - DR Drill Results: dr-results-template.md
   - Configuration:
@@ -310,6 +311,7 @@ nav:
     - P2P Threat Detection Firewall: p2p-firewall.md
     - Registry Management: registry-management.md
     - Registry Pull-Path Gate: registry-pull-gate.md
+    - Progressive Config Rollout: progressive-config-rollout.md
     - Post-Quantum Readiness: PQC_READINESS.md
     - Multi-Tenancy:
       - Tenant Isolation: multi-tenancy.md
@@ -383,9 +385,11 @@ nav:
     - Validation Pipelines: validation-pipelines.md
     - CI Failure Diagnostics: ci-failure-diagnostics.md
     - Reproducible Docker Build: docker_build.md
+    - Reproducible Builds and Verification: reproducible-builds.md
     - Docker Build Optimization: docker-build-optimization.md
     - Reconciler Fuzzing: fuzzing.md
     - Dependency Update Process: dependency-update-process.md
+    - Dependency Upgrade Validation: dependency-upgrade-validation.md
     - Release Process: release-process.md
     - Developer Experience Platform: developer-experience-platform.md
     - Service Ownership Registry: service-ownership-registry.md

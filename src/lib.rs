@@ -94,6 +94,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[export_name = "malloc_conf"]
 static MALLOC_CONF: &[u8] = b"prof:true,prof_active:false,lg_prof_sample:19\0";
 
+pub mod api_deprecation;
 pub mod api_gateway;
 // pub mod approval;
 // pub mod cardinality;
@@ -101,6 +102,7 @@ pub mod api_gateway;
 // pub mod namespace_security;
 pub mod adaptive_hpa;
 pub mod audit_chain;
+pub mod audit_ledger;
 pub mod backup;
 pub mod benchmark_bisect;
 pub mod benchmark_compare;
@@ -130,6 +132,7 @@ pub mod delegation;
 pub mod db_migrations;
 pub mod degradation;
 pub mod dependency_contract;
+pub mod dependency_scan;
 pub mod deployment_strategy;
 pub mod error;
 
@@ -163,6 +166,7 @@ pub mod preflight;
 pub mod protocol_compatibility;
 #[path = "profiling/mod.rs"]
 pub mod profiling;
+pub mod config_rollout_registry;
 pub mod progressive_config;
 pub mod provenance;
 // pub mod replica_quotas; // TODO: restore when module is implemented
@@ -172,6 +176,7 @@ pub mod runbook;
 pub mod scheduler;
 pub mod schema_evolution;
 pub mod schema_registry;
+pub mod schema_compatibility;
 pub mod registry_pruning;
 pub mod sdk;
 pub mod sla;

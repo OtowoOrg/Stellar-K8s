@@ -34,6 +34,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+/// Maximum time allowed to contain a noisy consumer after saturation onset.
+pub const CONTAINMENT_DEADLINE: Duration = Duration::from_secs(5);
+
 use crate::controller::retry_policy_tuner::{ErrorClass, RetryPolicy, RetryPolicyTuner};
 
 /// Consumer identity for rate limiting.
@@ -157,11 +160,58 @@ fn default_adaptive_refill() -> bool {
 
 /// Dynamic rate limiter with fair-share allocation.
 pub struct FairShareRateLimiter {
-    config: FairShareConfig,
+    config: Arc<RwLock<FairShareConfig>>,
     buckets: Arc<RwLock<HashMap<ConsumerId, RateLimitBucket>>>,
     global_usage: Arc<RwLock<GlobalUsageTracker>>,
     config_version: Arc<RwLock<u64>>,
     tuner: Arc<RwLock<RetryPolicyTuner>>, // Reuse for adaptive behavior
+    /// Per-consumer observed demand (requests/sec) over the last window.
+    demand: Arc<RwLock<HashMap<ConsumerId, DemandSample>>>,
+    /// When saturation was first observed (for containment latency tracking).
+    saturation_onset: Arc<RwLock<Option<Instant>>>,
+    /// Metrics for containment latency and induced 429s.
+    metrics: Arc<RwLock<LimiterMetrics>>,
+}
+
+/// Observed demand for a consumer over a rolling window.
+#[derive(Debug, Clone)]
+struct DemandSample {
+    /// Requests observed since the window started.
+    requests: u64,
+    /// When the current demand window started.
+    window_start: Instant,
+    /// Smoothed demand estimate (requests/sec), EWMA.
+    smoothed_rps: f64,
+    /// Whether this consumer has been flagged as noisy.
+    noisy: bool,
+}
+
+impl DemandSample {
+    fn new(now: Instant) -> Self {
+        Self {
+            requests: 0,
+            window_start: now,
+            smoothed_rps: 0.0,
+            noisy: false,
+        }
+    }
+}
+
+/// Metrics exposed for observability of the fair-share limiter.
+#[derive(Debug, Default, Clone)]
+pub struct LimiterMetrics {
+    /// Number of consumers currently flagged as noisy.
+    pub noisy_consumers: u64,
+    /// Total requests rejected due to fair-share limits.
+    pub total_rejected: u64,
+    /// Total requests allowed.
+    pub total_allowed: u64,
+    /// Rejections attributed to well-behaved consumers (induced 429s).
+    pub induced_429s: u64,
+    /// Last observed containment latency (ms) from saturation onset to containment.
+    pub last_containment_latency_ms: Option<u64>,
+    /// Number of times a noisy consumer was contained.
+    pub containment_events: u64,
 }
 
 #[derive(Debug)]
@@ -194,11 +244,14 @@ struct ConsumerUsage {
 impl FairShareRateLimiter {
     pub fn new(config: FairShareConfig) -> Self {
         Self {
-            config,
+            config: Arc::new(RwLock::new(config)),
             buckets: Arc::new(RwLock::new(HashMap::new())),
             global_usage: Arc::new(RwLock::new(GlobalUsageTracker::default())),
             config_version: Arc::new(RwLock::new(1)),
             tuner: Arc::new(RwLock::new(RetryPolicyTuner::new())),
+            demand: Arc::new(RwLock::new(HashMap::new())),
+            saturation_onset: Arc::new(RwLock::new(None)),
+            metrics: Arc::new(RwLock::new(LimiterMetrics::default())),
         }
     }
 
@@ -206,12 +259,18 @@ impl FairShareRateLimiter {
     /// Returns (allowed, retry_after_ms, current_limit_info).
     pub async fn check_limit(&self, consumer: &ConsumerId, cost: u64) -> RateLimitDecision {
         let now_ms = current_time_ms();
+        let now = Instant::now();
+        let config = self.config.read().await.clone();
+
+        // Observe demand for this consumer before deciding.
+        self.observe_demand(consumer, now, &config).await;
+
+        // Compute fair share for this consumer (dynamic, based on observed demand).
+        let fair_share = self.compute_fair_share(consumer, &config).await;
+        let effective_capacity = ((fair_share * config.burst_multiplier) as u64).max(1);
+
         let mut buckets = self.buckets.write().await;
         let bucket = buckets.entry(consumer.clone()).or_default();
-
-        // Compute fair share for this consumer
-        let fair_share = self.compute_fair_share(consumer).await;
-        let effective_capacity = (fair_share * self.config.burst_multiplier) as u64;
 
         // Update bucket capacity if fair share changed
         if bucket.capacity != effective_capacity {
@@ -222,16 +281,31 @@ impl FairShareRateLimiter {
 
         let (allowed, remaining) = bucket.try_consume(cost, now_ms);
 
-        // Record usage
+        let retry_after_ms = if !allowed {
+            // Estimate time until next token
+            let deficit = cost as f64 - remaining;
+            ((deficit / bucket.refill_rate.max(f64::EPSILON)) * 1000.0).ceil() as u64
+        } else {
+            0
+        };
+
+        let reset_after_ms = ((bucket.capacity as f64 - remaining)
+            / bucket.refill_rate.max(f64::EPSILON)
+            * 1000.0)
+            .ceil() as u64;
+
+        drop(buckets);
+
+        // Record usage and update metrics.
         self.record_usage(consumer, allowed, now_ms).await;
+        self.update_metrics(consumer, allowed).await;
 
         // Update tuner for adaptive behavior
         if !allowed {
-            self.tuner.write().await.record(
-                &consumer.to_string(),
-                true,
-                Some(ErrorClass::RateLimit),
-            );
+            self.tuner
+                .write()
+                .await
+                .record(&consumer.to_string(), true, Some(ErrorClass::RateLimit));
         } else {
             self.tuner.write().await.record(
                 &consumer.to_string(),
@@ -240,39 +314,57 @@ impl FairShareRateLimiter {
             );
         }
 
-        let retry_after_ms = if !allowed {
-            // Estimate time until next token
-            let deficit = cost as f64 - remaining;
-            ((deficit / bucket.refill_rate) * 1000.0).ceil() as u64
-        } else {
-            0
-        };
-
         RateLimitDecision {
             allowed,
             retry_after_ms,
             limit: effective_capacity,
             remaining: remaining.max(0.0) as u64,
-            reset_after_ms: ((bucket.capacity as f64 - remaining) / bucket.refill_rate * 1000.0)
-                .ceil() as u64,
+            reset_after_ms,
             config_version: *self.config_version.read().await,
         }
     }
 
-    async fn compute_fair_share(&self, consumer: &ConsumerId) -> f64 {
-        let usage = self.global_usage.read().await;
-        let active_consumers = usage.per_consumer.len().max(1);
-        let total_capacity = self.config.total_capacity as f64;
+    /// Observe demand for a consumer, updating the smoothed rate estimate and
+    /// flagging noisy consumers when their demand exceeds their fair share.
+    async fn observe_demand(&self, consumer: &ConsumerId, now: Instant, config: &FairShareConfig) {
+        let window = Duration::from_secs(config.saturation_window_secs.max(1));
+        let mut demand = self.demand.write().await;
+        let sample = demand
+            .entry(consumer.clone())
+            .or_insert_with(|| DemandSample::new(now));
 
-        // Base fair share
+        sample.requests += 1;
+        let elapsed = now.saturating_duration_since(sample.window_start);
+        if elapsed >= window {
+            let observed_rps = sample.requests as f64 / elapsed.as_secs_f64().max(f64::EPSILON);
+            // EWMA smoothing so a single burst doesn't immediately flip the flag.
+            sample.smoothed_rps = if sample.smoothed_rps == 0.0 {
+                observed_rps
+            } else {
+                0.5 * sample.smoothed_rps + 0.5 * observed_rps
+            };
+            sample.requests = 0;
+            sample.window_start = now;
+        }
+    }
+
+    /// Compute the dynamic fair share for a consumer based on observed demand.
+    async fn compute_fair_share(&self, consumer: &ConsumerId, config: &FairShareConfig) -> f64 {
+        let usage = self.global_usage.read().await;
+        let demand = self.demand.read().await;
+
+        let active_consumers = usage.per_consumer.len().max(1);
+        let total_capacity = config.total_capacity as f64;
+
+        // Base fair share: equal split of total capacity among active consumers.
         let base_share = total_capacity / active_consumers as f64;
 
-        // Clamp to min/max
+        // Clamp to min/max.
         let share = base_share
-            .max(self.config.min_share_per_consumer)
-            .min(self.config.max_share_per_consumer);
+            .max(config.min_share_per_consumer)
+            .min(config.max_share_per_consumer);
 
-        // If consumer has been well-behaved (low error rate), allow more burst
+        // Well-behaved consumers (low error rate) get a burst bonus.
         let consumer_usage = usage.per_consumer.get(consumer);
         let bonus = consumer_usage.map_or(1.0, |u| {
             let error_rate = if u.requests > 0 {
@@ -287,10 +379,68 @@ impl FairShareRateLimiter {
             }
         });
 
-        (share * bonus).min(self.config.max_share_per_consumer)
+        // Noisy consumers are throttled down to their fair share (no bonus),
+        // while well-behaved consumers keep their bonus.
+        let is_noisy = demand.get(consumer).map_or(false, |d| d.noisy);
+        let effective_bonus = if is_noisy { 1.0 } else { bonus };
+
+        (share * effective_bonus).min(config.max_share_per_consumer)
     }
 
-    async fn record_usage(&self, consumer: &ConsumerId, allowed: bool, now_ms: u64) {
+    /// Re-evaluate noisy-consumer flags based on observed demand vs. fair share.
+    /// Called periodically by the controller to contain noisy consumers.
+    pub async fn reevaluate_noisy_consumers(&self) {
+        let config = self.config.read().await.clone();
+        let total_capacity = config.total_capacity as f64;
+        let mut demand = self.demand.write().await;
+        let active = demand.len().max(1) as f64;
+        let fair_share = (total_capacity / active)
+            .max(config.min_share_per_consumer)
+            .min(config.max_share_per_consumer);
+
+        let mut newly_noisy = 0u64;
+        for sample in demand.values_mut() {
+            // A consumer is noisy if its smoothed demand exceeds its fair share
+            // by more than the burst multiplier allows.
+            let threshold = fair_share * config.burst_multiplier;
+            let was_noisy = sample.noisy;
+            sample.noisy = sample.smoothed_rps > threshold;
+            if sample.noisy && !was_noisy {
+                newly_noisy += 1;
+            }
+        }
+
+        if newly_noisy > 0 {
+            let mut metrics = self.metrics.write().await;
+            metrics.noisy_consumers = demand.values().filter(|d| d.noisy).count() as u64;
+            metrics.containment_events += newly_noisy;
+
+            // Record containment latency from saturation onset.
+            let mut onset = self.saturation_onset.write().await;
+            if let Some(start) = *onset {
+                let latency = start.elapsed();
+                metrics.last_containment_latency_ms = Some(latency.as_millis() as u64);
+                if latency > CONTAINMENT_DEADLINE {
+                    warn!(
+                        "Noisy-consumer containment took {}ms (deadline {}ms)",
+                        latency.as_millis(),
+                        CONTAINMENT_DEADLINE.as_millis()
+                    );
+                }
+                *onset = None;
+            }
+        }
+    }
+
+    /// Mark saturation onset (called by the controller when capacity saturates).
+    pub async fn mark_saturation_onset(&self) {
+        let mut onset = self.saturation_onset.write().await;
+        if onset.is_none() {
+            *onset = Some(Instant::now());
+        }
+    }
+
+    async fn record_usage(&self, consumer: &ConsumerId, allowed: bool, _now_ms: u64) {
         let mut usage = self.global_usage.write().await;
         let entry = usage.per_consumer.entry(consumer.clone()).or_default();
         entry.requests += 1;
@@ -301,6 +451,27 @@ impl FairShareRateLimiter {
         if !allowed {
             usage.total_rejected += 1;
         }
+    }
+
+    async fn update_metrics(&self, consumer: &ConsumerId, allowed: bool) {
+        let mut metrics = self.metrics.write().await;
+        if allowed {
+            metrics.total_allowed += 1;
+        } else {
+            metrics.total_rejected += 1;
+            // A rejection for a consumer that is not flagged noisy is an
+            // "induced" 429 against a well-behaved consumer.
+            let demand = self.demand.read().await;
+            let is_noisy = demand.get(consumer).map_or(false, |d| d.noisy);
+            if !is_noisy {
+                metrics.induced_429s += 1;
+            }
+        }
+    }
+
+    /// Snapshot of the current limiter metrics.
+    pub async fn metrics(&self) -> LimiterMetrics {
+        self.metrics.read().await.clone()
     }
 
     /// Get current fair-share allocation for all consumers (for metrics/export).
@@ -354,9 +525,8 @@ impl FairShareRateLimiter {
 
     /// Force config reload (e.g., from config map watcher).
     pub async fn reload_config(&self, new_config: FairShareConfig) {
+        *self.config.write().await = new_config;
         *self.config_version.write().await += 1;
-        // Config is read on each check_limit, so just update
-        // In real impl, would need ArcSwap or similar for lock-free reads
         info!(
             "Fair-share config reloaded (version {})",
             *self.config_version.read().await
@@ -388,12 +558,56 @@ pub struct ConsumerAllocation {
 }
 
 /// Export Prometheus metrics for the rate limiter.
-pub fn export_metrics(limiter: &FairShareRateLimiter) -> String {
-    // Placeholder - real impl would use prometheus crate
+pub async fn export_metrics(limiter: &FairShareRateLimiter) -> String {
     let mut out = String::new();
+
     out.push_str("# HELP fair_share_allocated_rate Allocated rate per consumer\n");
     out.push_str("# TYPE fair_share_allocated_rate gauge\n");
-    // Would iterate limiter.get_allocations().await here
+    for alloc in limiter.get_allocations().await {
+        out.push_str(&format!(
+            "fair_share_allocated_rate{{consumer=\"{}\"}} {}\n",
+            alloc.consumer, alloc.allocated_rate
+        ));
+    }
+
+    let metrics = limiter.metrics().await;
+    out.push_str("# HELP fair_share_noisy_consumers Consumers currently flagged noisy\n");
+    out.push_str("# TYPE fair_share_noisy_consumers gauge\n");
+    out.push_str(&format!(
+        "fair_share_noisy_consumers {}\n",
+        metrics.noisy_consumers
+    ));
+
+    out.push_str("# HELP fair_share_induced_429s Rejections against well-behaved consumers\n");
+    out.push_str("# TYPE fair_share_induced_429s counter\n");
+    out.push_str(&format!(
+        "fair_share_induced_429s {}\n",
+        metrics.induced_429s
+    ));
+
+    out.push_str("# HELP fair_share_total_rejected Total rejected requests\n");
+    out.push_str("# TYPE fair_share_total_rejected counter\n");
+    out.push_str(&format!(
+        "fair_share_total_rejected {}\n",
+        metrics.total_rejected
+    ));
+
+    out.push_str("# HELP fair_share_containment_events Noisy-consumer containment events\n");
+    out.push_str("# TYPE fair_share_containment_events counter\n");
+    out.push_str(&format!(
+        "fair_share_containment_events {}\n",
+        metrics.containment_events
+    ));
+
+    out.push_str("# HELP fair_share_containment_latency_ms Last containment latency\n");
+    out.push_str("# TYPE fair_share_containment_latency_ms gauge\n");
+    if let Some(latency) = metrics.last_containment_latency_ms {
+        out.push_str(&format!(
+            "fair_share_containment_latency_ms {}\n",
+            latency
+        ));
+    }
+
     out
 }
 
@@ -533,5 +747,138 @@ mod tests {
         // Wait 2 seconds (simulated)
         assert!(bucket.try_consume(1, 2000).0); // Should have ~10 tokens after 2s refill
         assert_eq!(bucket.tokens, 10.0); // Capped at capacity
+    }
+
+    fn consumer(name: &str) -> ConsumerId {
+        ConsumerId {
+            tenant: name.into(),
+            workload: None,
+            api_key_hash: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_config_reload_propagates() {
+        let limiter = FairShareRateLimiter::new(FairShareConfig::default());
+        let before = *limiter.config_version.read().await;
+
+        limiter
+            .reload_config(FairShareConfig {
+                total_capacity: 500,
+                ..Default::default()
+            })
+            .await;
+
+        let after = *limiter.config_version.read().await;
+        assert!(after > before, "config version must advance on reload");
+        assert_eq!(limiter.config.read().await.total_capacity, 500);
+    }
+
+    #[tokio::test]
+    async fn test_noisy_consumer_flagged_and_contained() {
+        let config = FairShareConfig {
+            total_capacity: 100,
+            min_share_per_consumer: 5.0,
+            max_share_per_consumer: 20.0,
+            burst_multiplier: 1.5,
+            saturation_window_secs: 1,
+            ..Default::default()
+        };
+        let limiter = FairShareRateLimiter::new(config);
+
+        let noisy = consumer("noisy");
+        let quiet = consumer("quiet");
+
+        limiter.mark_saturation_onset().await;
+
+        // Drive the noisy consumer's observed demand above its fair share.
+        for _ in 0..200 {
+            limiter.check_limit(&noisy, 1).await;
+        }
+        // Give the demand window a chance to roll over.
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        for _ in 0..200 {
+            limiter.check_limit(&noisy, 1).await;
+        }
+
+        limiter.reevaluate_noisy_consumers().await;
+
+        let metrics = limiter.metrics().await;
+        assert!(
+            metrics.noisy_consumers >= 1,
+            "noisy consumer should be flagged"
+        );
+        assert!(
+            metrics.containment_events >= 1,
+            "containment should be recorded"
+        );
+        if let Some(latency) = metrics.last_containment_latency_ms {
+            assert!(
+                latency <= CONTAINMENT_DEADLINE.as_millis() as u64,
+                "containment latency {}ms exceeds deadline",
+                latency
+            );
+        }
+
+        // Quiet consumer should not be flagged.
+        let demand = limiter.demand.read().await;
+        assert!(!demand.get(&quiet).map_or(false, |d| d.noisy));
+    }
+
+    #[tokio::test]
+    async fn test_load_one_abusive_twenty_normal() {
+        // Load test: one abusive consumer and 20 normal consumers.
+        // Normal consumer success rate must stay at 100%.
+        let config = FairShareConfig {
+            total_capacity: 1000,
+            min_share_per_consumer: 20.0,
+            max_share_per_consumer: 100.0,
+            burst_multiplier: 2.0,
+            saturation_window_secs: 1,
+            ..Default::default()
+        };
+        let limiter = FairShareRateLimiter::new(config);
+
+        let abusive = consumer("abusive");
+        let normals: Vec<ConsumerId> = (0..20).map(|i| consumer(&format!("normal-{}", i))).collect();
+
+        limiter.mark_saturation_onset().await;
+
+        // Abusive consumer floods the limiter.
+        for _ in 0..500 {
+            limiter.check_limit(&abusive, 1).await;
+        }
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        for _ in 0..500 {
+            limiter.check_limit(&abusive, 1).await;
+        }
+        limiter.reevaluate_noisy_consumers().await;
+
+        // Normal consumers issue a modest, well-behaved load.
+        let mut normal_allowed = 0usize;
+        let mut normal_total = 0usize;
+        for _ in 0..10 {
+            for c in &normals {
+                normal_total += 1;
+                if limiter.check_limit(c, 1).await.allowed {
+                    normal_allowed += 1;
+                }
+            }
+        }
+
+        let success_rate = normal_allowed as f64 / normal_total as f64;
+        assert_eq!(
+            success_rate, 1.0,
+            "normal consumers must see 100% success, got {}",
+            success_rate
+        );
+
+        // Jain index should remain high under contention.
+        let jain = limiter.jain_index().await;
+        assert!(
+            jain >= 0.9,
+            "Jain index should be >= 0.9 under contention, got {}",
+            jain
+        );
     }
 }

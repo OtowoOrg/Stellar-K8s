@@ -1,0 +1,9 @@
+{
+  "_comment": "Known breaking changes per dependency, read by dependency-upgrade-gate (#1999). Keyed by crate name; each entry is {api, kind, detail} where kind is removed_api, changed_signature, changed_return_type, renamed_config_key or behavior_change. `api` is matched as a path prefix against the call sites found in src/, so `kube::runtime::Controller` also covers `kube::runtime::Controller::new`. Add an entry when an upgrade PR or changelog shows a break; a crate with no entry has no known breaks, and a major version bump with no call sites is still blocked by the gate.",
+  "kube": [],
+  "kube-runtime": [],
+  "k8s-openapi": [],
+  "serde_yaml": [],
+  "chrono": [],
+  "reqwest": []
+}

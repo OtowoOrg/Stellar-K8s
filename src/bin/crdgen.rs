@@ -11,8 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use kube::CustomResourceExt;
-use stellar_k8s::crd::StellarNode;
+use stellar_k8s::crd::{RetentionPolicy, StellarNode};
 
 fn main() {
     print!("{}", serde_yaml::to_string(&StellarNode::crd()).unwrap());
+    print!("---\n");
+    print!("{}", serde_yaml::to_string(&RetentionPolicy::crd()).unwrap());
 }

@@ -222,3 +222,41 @@ fn empty_resource_is_not_accepted() {
     let empty: HashMap<String, String> = HashMap::new();
     assert!(!validate_resource_attributes(&empty).is_accepted());
 }
+
+/// The CI lint (`scripts/ci/lint-observability-contract.py`) and the runtime
+/// validator must judge every shared fixture identically (#1960).
+#[test]
+fn runtime_validator_agrees_with_shared_ci_fixtures() {
+    use stellar_k8s::observability_contract::validate_resource_attributes;
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/observability");
+    let mut seen = 0;
+    for entry in std::fs::read_dir(&dir).expect("fixtures dir") {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let attrs: std::collections::HashMap<String, String> = doc["resource"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+            .collect();
+        let decision = validate_resource_attributes(&attrs);
+        // `runtime` overrides `expect` where ingest is intentionally more lenient than CI.
+        let expect_valid = match doc.get("runtime").and_then(|v| v.as_str()) {
+            Some("accepted") => true,
+            Some(other) => panic!("{}: unknown runtime expectation {other}", path.display()),
+            None => doc["expect"] == "valid",
+        };
+        assert_eq!(
+            decision.is_accepted(),
+            expect_valid,
+            "{}: runtime validator disagrees with fixture expectation ({decision:?})",
+            path.display()
+        );
+        seen += 1;
+    }
+    assert!(seen >= 10, "expected the shared fixture set, found {seen}");
+}

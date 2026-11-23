@@ -45,6 +45,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::{Mutex, OnceLock};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Inputs
@@ -428,6 +429,117 @@ fn xml_escape(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Schema snapshot cache
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Process-wide cache of production schema snapshots keyed by snapshot id.
+///
+/// Loading a snapshot can be expensive (it may be fetched from the snapshot
+/// store); caching keeps repeated gate runs well under the 60s CI budget.
+fn snapshot_cache() -> &'static Mutex<BTreeMap<String, ProductionSchema>> {
+    static CACHE: OnceLock<Mutex<BTreeMap<String, ProductionSchema>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+/// Return the cached snapshot for `snapshot_id`, loading it via `load` on a
+/// miss. The loader runs at most once per id per process.
+pub fn cached_snapshot<F>(snapshot_id: &str, load: F) -> ProductionSchema
+where
+    F: FnOnce() -> ProductionSchema,
+{
+    if let Ok(cache) = snapshot_cache().lock() {
+        if let Some(snapshot) = cache.get(snapshot_id) {
+            return snapshot.clone();
+        }
+    }
+    let snapshot = load();
+    if let Ok(mut cache) = snapshot_cache().lock() {
+        cache.insert(snapshot_id.to_string(), snapshot.clone());
+    }
+    snapshot
+}
+
+/// Drop all cached snapshots (useful in tests and long-lived processes).
+pub fn clear_snapshot_cache() {
+    if let Ok(mut cache) = snapshot_cache().lock() {
+        cache.clear();
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CI entrypoint
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Outcome of running the gates as a CI step.
+#[derive(Debug, Clone)]
+pub struct CiOutcome {
+    /// JUnit XML report covering every migration.
+    pub junit_xml: String,
+    /// Number of migrations that failed at least one gate.
+    pub failed_migrations: usize,
+    /// Total number of migrations analyzed.
+    pub total_migrations: usize,
+}
+
+impl CiOutcome {
+    /// Process exit code: `0` when every migration passed, `1` otherwise.
+    pub fn exit_code(&self) -> i32 {
+        if self.failed_migrations == 0 {
+            0
+        } else {
+            1
+        }
+    }
+}
+
+/// Run all gates for every migration and render a single JUnit report.
+///
+/// The returned [`CiOutcome`] carries the XML to write to the CI report path
+/// and the exit code the step should return (non-zero on any violation).
+pub fn run_ci_gates(
+    migrations: &[MigrationFile],
+    prod: &ProductionSchema,
+) -> CiOutcome {
+    let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    xml.push_str("<testsuites name=\"migration-safety\">\n");
+    let mut failed = 0usize;
+    for migration in migrations {
+        let report = run_gates(migration, prod);
+        if !report.passed() {
+            failed += 1;
+        }
+        // Reuse the per-migration suite, stripping its XML declaration.
+        let suite = report.to_junit_xml();
+        if let Some(idx) = suite.find("<testsuite") {
+            xml.push_str(&suite[idx..]);
+        }
+    }
+    xml.push_str("</testsuites>\n");
+    CiOutcome {
+        junit_xml: xml,
+        failed_migrations: failed,
+        total_migrations: migrations.len(),
+    }
+}
+
+/// CI entrypoint: analyze `migrations` against `prod`, write the JUnit XML to
+/// `report_path`, and return the process exit code (non-zero on violations).
+pub fn ci_main(
+    migrations: &[MigrationFile],
+    prod: &ProductionSchema,
+    report_path: &std::path::Path,
+) -> std::io::Result<i32> {
+    let outcome = run_ci_gates(migrations, prod);
+    if let Some(parent) = report_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    std::fs::write(report_path, &outcome.junit_xml)?;
+    Ok(outcome.exit_code())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -596,5 +708,91 @@ mod tests {
             "backward-compatibility"
         );
         assert_eq!(Gate::Rollback.to_string(), "rollback");
+    }
+
+    #[test]
+    fn all_five_anti_patterns_are_blocked() {
+        let anti_patterns = [
+            // no rollback
+            migration("ALTER TABLE ledger ADD COLUMN note TEXT;", ""),
+            // breaking column drop
+            migration(
+                "ALTER TABLE ledger DROP COLUMN hash;",
+                "ALTER TABLE ledger ADD COLUMN hash TEXT;",
+            ),
+            // long lock
+            migration(
+                "CREATE INDEX idx_ledger_hash ON ledger (hash);",
+                "DROP INDEX idx_ledger_hash;",
+            ),
+            // mismatched type
+            migration(
+                "ALTER TABLE ledger ALTER COLUMN seq TYPE INTEGER;",
+                "ALTER TABLE ledger ALTER COLUMN seq TYPE BIGINT;",
+            ),
+            // partial index
+            migration(
+                "CREATE INDEX CONCURRENTLY idx_partial ON ledger (seq) WHERE seq > 100;",
+                "DROP INDEX idx_partial;",
+            ),
+        ];
+        for m in &anti_patterns {
+            let report = run_gates(m, &prod());
+            assert!(!report.passed(), "anti-pattern not blocked: {m:?}");
+        }
+    }
+
+    #[test]
+    fn ci_outcome_exit_code_reflects_violations() {
+        let clean = run_ci_gates(
+            &[migration(
+                "CREATE INDEX CONCURRENTLY idx_ledger_seq ON ledger (seq);",
+                "DROP INDEX idx_ledger_seq;",
+            )],
+            &prod(),
+        );
+        assert_eq!(clean.exit_code(), 0);
+        assert_eq!(clean.failed_migrations, 0);
+        assert!(clean.junit_xml.contains("<testsuites"));
+
+        let dirty = run_ci_gates(&[migration("VACUUM FULL ledger;", "")], &prod());
+        assert_eq!(dirty.exit_code(), 1);
+        assert_eq!(dirty.failed_migrations, 1);
+        assert!(dirty.junit_xml.contains("<failure"));
+    }
+
+    #[test]
+    fn ci_main_writes_report_and_returns_code() {
+        let dir = std::env::temp_dir().join(format!(
+            "migration-safety-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = dir.join("report.xml");
+        let code = ci_main(&[migration("VACUUM FULL ledger;", "")], &prod(), &path).unwrap();
+        assert_eq!(code, 1);
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("<testsuites"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn snapshot_cache_loads_once() {
+        clear_snapshot_cache();
+        let calls = std::cell::Cell::new(0);
+        let first = cached_snapshot("prod-2026-01", || {
+            calls.set(calls.get() + 1);
+            prod()
+        });
+        let second = cached_snapshot("prod-2026-01", || {
+            calls.set(calls.get() + 1);
+            prod()
+        });
+        assert_eq!(calls.get(), 1);
+        assert_eq!(first, second);
+        clear_snapshot_cache();
     }
 }

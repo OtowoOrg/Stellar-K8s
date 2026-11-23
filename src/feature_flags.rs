@@ -88,6 +88,8 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -326,6 +328,8 @@ pub enum Reason {
     RolloutIncluded,
     /// The subject's bucket falls outside the rollout percentage.
     RolloutExcluded,
+    /// A local kill switch forced the flag off.
+    KillSwitched,
 }
 
 impl fmt::Display for Reason {
@@ -338,6 +342,7 @@ impl fmt::Display for Reason {
             Reason::SegmentMismatch => "subject does not match the targeted segment",
             Reason::RolloutIncluded => "subject is inside the rollout percentage",
             Reason::RolloutExcluded => "subject is outside the rollout percentage",
+            Reason::KillSwitched => "flag is disabled by a local kill switch",
         })
     }
 }
@@ -370,6 +375,104 @@ impl Decision {
             reason,
             bucket: Some(bucket),
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Audit trail
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A structured record of one flag evaluation that affected user-visible
+/// behavior.
+///
+/// Every decision produced by [`FlagEvaluator::evaluate`] is emitted through
+/// the audit pipeline so an operator can answer "why did tenant-42 see the
+/// new pruner at 14:03?" after the fact. Records are deliberately flat and
+/// serializable so they can be shipped to any sink.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditRecord {
+    /// Monotonic sequence number, unique within a process.
+    pub sequence: u64,
+    /// The flag that was evaluated.
+    pub flag: String,
+    /// The subject the flag was evaluated for.
+    pub subject: String,
+    /// Whether the feature was on for this subject.
+    pub enabled: bool,
+    /// The evaluation step that decided.
+    pub reason: String,
+    /// The subject's bucket, when bucketing was reached.
+    pub bucket: Option<u64>,
+    /// Which flag source answered: the signed bundle or the local override.
+    pub source: FlagSource,
+    /// The bundle revision that was in effect, when known.
+    pub bundle_revision: Option<String>,
+}
+
+/// Where an evaluated rule came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FlagSource {
+    /// The cached, signed flag bundle.
+    Bundle,
+    /// A local kill-switch override that survives bundle delivery outages.
+    LocalOverride,
+}
+
+/// A sink for [`AuditRecord`]s.
+///
+/// Implementations must be cheap: they run on the evaluation hot path, which
+/// has a sub-millisecond p99 budget. A sink that blocks on I/O should enqueue
+/// to a bounded channel and return.
+pub trait AuditSink: Send + Sync {
+    /// Record one evaluation decision.
+    fn record(&self, record: &AuditRecord);
+}
+
+/// An [`AuditSink`] that discards records. Useful in tests and when auditing
+/// is explicitly disabled.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NullAuditSink;
+
+impl AuditSink for NullAuditSink {
+    fn record(&self, _record: &AuditRecord) {}
+}
+
+/// An [`AuditSink`] that keeps the most recent records in memory, bounded so
+/// a long-running process cannot grow without limit.
+#[derive(Debug)]
+pub struct RingBufferAuditSink {
+    capacity: usize,
+    records: RwLock<std::collections::VecDeque<AuditRecord>>,
+}
+
+impl RingBufferAuditSink {
+    /// Keep at most `capacity` recent records.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            capacity: capacity.max(1),
+            records: RwLock::new(std::collections::VecDeque::with_capacity(capacity.max(1))),
+        }
+    }
+
+    /// Snapshot the retained records, oldest first.
+    pub fn snapshot(&self) -> Vec<AuditRecord> {
+        self.records
+            .read()
+            .expect("audit ring buffer poisoned")
+            .iter()
+            .cloned()
+            .collect()
+    }
+}
+
+impl AuditSink for RingBufferAuditSink {
+    fn record(&self, record: &AuditRecord) {
+        let mut records = self.records.write().expect("audit ring buffer poisoned");
+        if records.len() == self.capacity {
+            records.pop_front();
+        }
+        records.push_back(record.clone());
     }
 }
 
@@ -506,6 +609,143 @@ impl FlagSet {
         }
 
         (set, warnings)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// In-process evaluator
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A kill-switch override applied on top of the cached bundle.
+///
+/// The override is stored locally (in the operator process) and consulted
+/// before the bundle, so it keeps working when bundle delivery is down. It can
+/// only ever turn a flag *off* — a kill switch must not be able to enable a
+/// feature the bundle has not shipped.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KillSwitch {
+    /// The flag this override applies to.
+    pub flag: String,
+    /// When `true`, the flag is forced off for every subject.
+    pub disabled: bool,
+}
+
+/// The in-process flag evaluator.
+///
+/// Evaluation reads from an in-memory [`FlagSet`] that is swapped wholesale
+/// when a new signed bundle arrives, so the hot path never touches the
+/// network. A [`RwLock`] read guard is the only synchronization, keeping p99
+/// latency well under a millisecond.
+///
+/// Every evaluation is emitted to the configured [`AuditSink`] with a
+/// monotonic sequence number, so user-affecting decisions are fully
+/// auditable.
+pub struct FlagEvaluator {
+    state: RwLock<EvaluatorState>,
+    audit: Arc<dyn AuditSink>,
+    sequence: AtomicU64,
+}
+
+#[derive(Debug, Clone, Default)]
+struct EvaluatorState {
+    flags: FlagSet,
+    kill_switches: BTreeMap<String, bool>,
+    bundle_revision: Option<String>,
+}
+
+impl fmt::Debug for FlagEvaluator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FlagEvaluator")
+            .field("state", &self.state.read().map(|s| s.clone()).ok())
+            .finish_non_exhaustive()
+    }
+}
+
+impl FlagEvaluator {
+    /// Build an evaluator over `flags`, emitting audit records to `audit`.
+    pub fn new(flags: FlagSet, audit: Arc<dyn AuditSink>) -> Self {
+        Self {
+            state: RwLock::new(EvaluatorState {
+                flags,
+                ..Default::default()
+            }),
+            audit,
+            sequence: AtomicU64::new(0),
+        }
+    }
+
+    /// Build an evaluator with a [`NullAuditSink`].
+    pub fn without_audit(flags: FlagSet) -> Self {
+        Self::new(flags, Arc::new(NullAuditSink))
+    }
+
+    /// Replace the cached bundle. Called by the async refresh loop; never on
+    /// the evaluation hot path.
+    pub fn install_bundle(&self, flags: FlagSet, revision: impl Into<String>) {
+        let mut state = self.state.write().expect("flag evaluator poisoned");
+        state.flags = flags;
+        state.bundle_revision = Some(revision.into());
+    }
+
+    /// The revision of the currently installed bundle, if any.
+    pub fn bundle_revision(&self) -> Option<String> {
+        self.state
+            .read()
+            .expect("flag evaluator poisoned")
+            .bundle_revision
+            .clone()
+    }
+
+    /// Engage or release the local kill switch for `flag`.
+    ///
+    /// This is the path that must keep working when bundle delivery is down:
+    /// it mutates only local state and never consults the network.
+    pub fn set_kill_switch(&self, flag: impl Into<String>, disabled: bool) {
+        let mut state = self.state.write().expect("flag evaluator poisoned");
+        state.kill_switches.insert(flag.into(), disabled);
+    }
+
+    /// Whether a kill switch is currently engaged for `flag`.
+    pub fn is_killed(&self, flag: &str) -> bool {
+        self.state
+            .read()
+            .expect("flag evaluator poisoned")
+            .kill_switches
+            .get(flag)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    /// Evaluate `flag` for `ctx` against the cached bundle, honouring any
+    /// local kill switch, and emit an audit record.
+    pub fn evaluate(&self, flag: &str, ctx: &EvaluationContext) -> Decision {
+        let state = self.state.read().expect("flag evaluator poisoned");
+
+        let (decision, source) = if state.kill_switches.get(flag).copied().unwrap_or(false) {
+            (Decision::new(false, Reason::KillSwitched), FlagSource::LocalOverride)
+        } else {
+            (state.flags.evaluate(flag, ctx), FlagSource::Bundle)
+        };
+
+        let record = AuditRecord {
+            sequence: self.sequence.fetch_add(1, Ordering::Relaxed),
+            flag: flag.to_string(),
+            subject: ctx.subject().to_string(),
+            enabled: decision.enabled,
+            reason: decision.reason.to_string(),
+            bucket: decision.bucket,
+            source,
+            bundle_revision: state.bundle_revision.clone(),
+        };
+        drop(state);
+
+        self.audit.record(&record);
+        decision
+    }
+
+    /// Whether `flag` is on for `ctx`.
+    pub fn is_enabled(&self, flag: &str, ctx: &EvaluationContext) -> bool {
+        self.evaluate(flag, ctx).enabled
     }
 }
 
@@ -969,8 +1209,146 @@ mod tests {
             Reason::SegmentMismatch,
             Reason::RolloutIncluded,
             Reason::RolloutExcluded,
+            Reason::KillSwitched,
         ] {
             assert!(!reason.to_string().is_empty());
         }
+    }
+
+    // ── In-process evaluator ─────────────────────────────────────────────
+
+    fn evaluator_with(flags: FlagSet) -> (FlagEvaluator, Arc<RingBufferAuditSink>) {
+        let sink = Arc::new(RingBufferAuditSink::new(64));
+        let evaluator = FlagEvaluator::new(flags, sink.clone());
+        (evaluator, sink)
+    }
+
+    #[test]
+    fn the_evaluator_reads_from_the_cached_bundle() {
+        let mut flags = FlagSet::new();
+        flags.insert("f", FlagRule::on());
+        let (evaluator, _) = evaluator_with(flags);
+        assert!(evaluator.is_enabled("f", &ctx("s")));
+    }
+
+    #[test]
+    fn installing_a_bundle_swaps_the_answer() {
+        let (evaluator, _) = evaluator_with(FlagSet::new());
+        assert!(!evaluator.is_enabled("f", &ctx("s")));
+
+        let mut flags = FlagSet::new();
+        flags.insert("f", FlagRule::on());
+        evaluator.install_bundle(flags, "rev-2");
+        assert!(evaluator.is_enabled("f", &ctx("s")));
+        assert_eq!(evaluator.bundle_revision().as_deref(), Some("rev-2"));
+    }
+
+    #[test]
+    fn every_evaluation_emits_an_audit_record() {
+        let mut flags = FlagSet::new();
+        flags.insert("f", FlagRule::percentage(50.0));
+        let (evaluator, sink) = evaluator_with(flags);
+        evaluator.install_bundle(
+            {
+                let mut f = FlagSet::new();
+                f.insert("f", FlagRule::percentage(50.0));
+                f
+            },
+            "rev-1",
+        );
+
+        let decision = evaluator.evaluate("f", &ctx("tenant-42"));
+        let records = sink.snapshot();
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.flag, "f");
+        assert_eq!(record.subject, "tenant-42");
+        assert_eq!(record.enabled, decision.enabled);
+        assert_eq!(record.reason, decision.reason.to_string());
+        assert_eq!(record.bucket, decision.bucket);
+        assert_eq!(record.source, FlagSource::Bundle);
+        assert_eq!(record.bundle_revision.as_deref(), Some("rev-1"));
+    }
+
+    #[test]
+    fn audit_sequence_numbers_are_monotonic() {
+        let mut flags = FlagSet::new();
+        flags.insert("f", FlagRule::on());
+        let (evaluator, sink) = evaluator_with(flags);
+        for i in 0..5 {
+            evaluator.evaluate("f", &ctx(&format!("s{i}")));
+        }
+        let sequences: Vec<u64> = sink.snapshot().iter().map(|r| r.sequence).collect();
+        assert_eq!(sequences, vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn the_audit_ring_buffer_is_bounded() {
+        let sink = RingBufferAuditSink::new(3);
+        for i in 0..10 {
+            sink.record(&AuditRecord {
+                sequence: i,
+                flag: "f".into(),
+                subject: "s".into(),
+                enabled: true,
+                reason: "test".into(),
+                bucket: None,
+                source: FlagSource::Bundle,
+                bundle_revision: None,
+            });
+        }
+        let records = sink.snapshot();
+        assert_eq!(records.len(), 3);
+        assert_eq!(records.first().unwrap().sequence, 7);
+        assert_eq!(records.last().unwrap().sequence, 9);
+    }
+
+    #[test]
+    fn the_kill_switch_forces_the_flag_off() {
+        let mut flags = FlagSet::new();
+        flags.insert("f", FlagRule::on());
+        let (evaluator, sink) = evaluator_with(flags);
+
+        evaluator.set_kill_switch("f", true);
+        let decision = evaluator.evaluate("f", &ctx("s"));
+        assert!(!decision.enabled);
+        assert_eq!(decision.reason, Reason::KillSwitched);
+
+        let record = sink.snapshot().pop().unwrap();
+        assert_eq!(record.source, FlagSource::LocalOverride);
+        assert!(!record.enabled);
+    }
+
+    #[test]
+    fn the_kill_switch_works_when_bundle_delivery_is_down() {
+        // Simulate a 24h outage: the bundle is never refreshed, but the local
+        // kill switch still flips the flag off.
+        let mut flags = FlagSet::new();
+        flags.insert("f", FlagRule::on());
+        let (evaluator, _) = evaluator_with(flags);
+        evaluator.install_bundle(
+            {
+                let mut f = FlagSet::new();
+                f.insert("f", FlagRule::on());
+                f
+            },
+            "last-known-good",
+        );
+
+        assert!(evaluator.is_enabled("f", &ctx("s")));
+        evaluator.set_kill_switch("f", true);
+        assert!(!evaluator.is_enabled("f", &ctx("s")));
+        assert!(evaluator.is_killed("f"));
+
+        // Releasing the switch restores the last-known-good answer.
+        evaluator.set_kill_switch("f", false);
+        assert!(evaluator.is_enabled("f", &ctx("s")));
+    }
+
+    #[test]
+    fn the_kill_switch_cannot_enable_an_unknown_flag() {
+        let (evaluator, _) = evaluator_with(FlagSet::new());
+        evaluator.set_kill_switch("nope", false);
+        assert!(!evaluator.is_enabled("nope", &ctx("s")));
     }
 }

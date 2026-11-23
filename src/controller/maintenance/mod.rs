@@ -24,6 +24,7 @@ pub mod pruner;
 pub mod plan_controller;
 pub mod plan_engine;
 pub mod query_profiler;
+pub mod readiness;
 pub mod vacuum;
 
 pub use bloat::BloatDetector;

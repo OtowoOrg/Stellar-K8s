@@ -133,6 +133,108 @@ impl PolicyEngine {
     }
 }
 
+/// Outcome of evaluating a single declarative control probe.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeEvaluation {
+    /// Identifier of the probe (typically the framework control ID).
+    pub probe_id: String,
+    /// Whether the probe expression evaluated to `true` for the given inputs.
+    pub passed: bool,
+    /// Human-readable explanation of the outcome.
+    pub message: String,
+    /// Timestamp at which the probe was evaluated.
+    pub evaluated_at: DateTime<Utc>,
+}
+
+/// A declarative control probe (CEL/Kyverno-style) that can be evaluated
+/// against cluster resources and metrics to collect compliance evidence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControlProbe {
+    /// Stable identifier, usually the framework control ID (e.g. `SOC2-CC6.1`).
+    pub id: String,
+    /// The policy expression to evaluate, using the same syntax as policies.
+    pub expression: String,
+    /// Optional JSON path into the metrics document used as the probe input.
+    /// When `None`, the resource document is evaluated directly.
+    pub metrics_path: Option<String>,
+}
+
+impl ControlProbe {
+    pub fn new(id: impl Into<String>, expression: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            expression: expression.into(),
+            metrics_path: None,
+        }
+    }
+
+    pub fn with_metrics_path(mut self, path: impl Into<String>) -> Self {
+        self.metrics_path = Some(path.into());
+        self
+    }
+}
+
+/// Stable API used by the evidence collector to evaluate declarative probes.
+pub struct ProbeEvaluator;
+
+impl ProbeEvaluator {
+    /// Evaluate a probe against a resource document and an optional metrics
+    /// document. The probe passes only if the expression holds for both the
+    /// resource and (when configured) the referenced metrics value.
+    pub fn evaluate(
+        probe: &ControlProbe,
+        resource: &serde_json::Value,
+        metrics: Option<&serde_json::Value>,
+    ) -> ProbeEvaluation {
+        let resource_passed = evaluate_expression(&probe.expression, resource);
+
+        let metrics_passed = match (&probe.metrics_path, metrics) {
+            (Some(path), Some(metrics_doc)) => match json_path(metrics_doc, path) {
+                Some(value) => evaluate_expression(&probe.expression, value),
+                None => false,
+            },
+            (Some(_), None) => false,
+            (None, _) => true,
+        };
+
+        let passed = resource_passed && metrics_passed;
+        let message = if passed {
+            format!("Probe '{}' passed", probe.id)
+        } else if !resource_passed {
+            format!(
+                "Probe '{}' failed: expression '{}' not satisfied by resource",
+                probe.id, probe.expression
+            )
+        } else {
+            format!(
+                "Probe '{}' failed: expression '{}' not satisfied by metrics at '{}'",
+                probe.id,
+                probe.expression,
+                probe.metrics_path.as_deref().unwrap_or("")
+            )
+        };
+
+        ProbeEvaluation {
+            probe_id: probe.id.clone(),
+            passed,
+            message,
+            evaluated_at: Utc::now(),
+        }
+    }
+
+    /// Evaluate a batch of probes, returning one evaluation per probe.
+    pub fn evaluate_all(
+        probes: &[ControlProbe],
+        resource: &serde_json::Value,
+        metrics: Option<&serde_json::Value>,
+    ) -> Vec<ProbeEvaluation> {
+        probes
+            .iter()
+            .map(|probe| Self::evaluate(probe, resource, metrics))
+            .collect()
+    }
+}
+
 fn evaluate_expression(expr: &str, resource: &serde_json::Value) -> bool {
     // Simple evaluator: parse "path == value" or "path != null"
     if let Some((path, op_value)) = expr.split_once(" == ") {
@@ -184,5 +286,57 @@ fn remediation_hint(policy_id: &str) -> Option<String> {
         }
         "pci-encryption-at-rest" => Some("Set spec.storage.encrypted: true".to_string()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn probe_passes_when_expression_holds() {
+        let probe = ControlProbe::new("SOC2-CC6.1", "spec.tls.enabled == true");
+        let resource = json!({ "spec": { "tls": { "enabled": true } } });
+        let result = ProbeEvaluator::evaluate(&probe, &resource, None);
+        assert!(result.passed);
+        assert_eq!(result.probe_id, "SOC2-CC6.1");
+    }
+
+    #[test]
+    fn probe_fails_when_expression_does_not_hold() {
+        let probe = ControlProbe::new("SOC2-CC6.1", "spec.tls.enabled == true");
+        let resource = json!({ "spec": { "tls": { "enabled": false } } });
+        let result = ProbeEvaluator::evaluate(&probe, &resource, None);
+        assert!(!result.passed);
+        assert!(result.message.contains("failed"));
+    }
+
+    #[test]
+    fn probe_with_metrics_path_requires_metrics_value() {
+        let probe =
+            ControlProbe::new("PCI-10.2", "value == true").with_metrics_path("audit.enabled");
+        let resource = json!({ "value": true });
+        let metrics = json!({ "audit": { "enabled": true } });
+        assert!(ProbeEvaluator::evaluate(&probe, &resource, Some(&metrics)).passed);
+
+        let failing_metrics = json!({ "audit": { "enabled": false } });
+        assert!(!ProbeEvaluator::evaluate(&probe, &resource, Some(&failing_metrics)).passed);
+
+        // Missing metrics document must fail closed.
+        assert!(!ProbeEvaluator::evaluate(&probe, &resource, None).passed);
+    }
+
+    #[test]
+    fn evaluate_all_returns_one_result_per_probe() {
+        let probes = vec![
+            ControlProbe::new("A", "spec.enabled == true"),
+            ControlProbe::new("B", "spec.missing != null"),
+        ];
+        let resource = json!({ "spec": { "enabled": true } });
+        let results = ProbeEvaluator::evaluate_all(&probes, &resource, None);
+        assert_eq!(results.len(), 2);
+        assert!(results[0].passed);
+        assert!(!results[1].passed);
     }
 }

@@ -14,6 +14,7 @@ apiVersion: 1
 
 datasources:
   - name: Prometheus
+    uid: prometheus
     type: prometheus
     access: proxy
     url: http://prometheus:9090
@@ -22,9 +23,48 @@ datasources:
     version: 1
 
   - name: Loki
+    uid: loki
     type: loki
     access: proxy
     url: http://loki:3100
     isDefault: false
     editable: true
     version: 1
+    jsonData:
+      # #1960: one-click log -> trace pivot. Logs carry the W3C trace id as
+      # `trace_id` (see schemas/observability x-grafanaCorrelation.logToTraceField).
+      derivedFields:
+        - name: trace_id
+          datasourceUid: tempo
+          matcherRegex: '"?trace_?[iI]d"?\s*[=:]\s*"?([0-9a-fA-F]{32})'
+          url: '$${__value.raw}'
+          urlDisplayLabel: View trace in Tempo
+
+  # #1960: trace -> logs pivot using the canonical resource identity.
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    isDefault: false
+    editable: true
+    version: 1
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        filterByTraceID: true
+        filterBySpanID: false
+        # Canonical contract attributes -> Loki labels (same names after OTLP->Loki label mapping).
+        tags:
+          - key: k8s.pod.name
+            value: k8s_pod_name
+          - key: k8s.namespace.name
+            value: k8s_namespace_name
+          - key: service.name
+            value: service_name
+      tracesToMetrics:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true

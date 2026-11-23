@@ -19,6 +19,7 @@
 //! cached in-process by digest so the signature is re-checked only when the
 //! payload hash changes.
 
+pub mod admission_guard;
 pub mod cel;
 pub mod engine;
 

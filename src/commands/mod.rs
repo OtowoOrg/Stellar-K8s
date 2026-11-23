@@ -28,3 +28,54 @@ pub mod runbook;
 pub mod schema_compat;
 pub mod simulator;
 pub mod webhook;
+
+use clap::Subcommand;
+
+/// Top-level CLI subcommands supported by the operator binary.
+#[derive(Debug, Subcommand)]
+pub enum Commands {
+    /// Run the Stellar-K8s operator.
+    Operator(operator::OperatorArgs),
+    /// Run the cluster simulator.
+    Simulator(simulator::SimulatorArgs),
+    /// Generate operational runbooks.
+    Runbook(runbook::RunbookArgs),
+    /// Check CRD definitions for correctness.
+    CheckCrd(check_crd::CheckCrdArgs),
+    /// Run diagnostics against a cluster.
+    Doctor(doctor::DoctorArgs),
+    /// Export compliance reports.
+    ExportCompliance(export_compliance::ExportComplianceArgs),
+    /// Perform a health check.
+    HealthCheck(health_check::HealthCheckArgs),
+    /// Print build and version information.
+    Info(info::InfoArgs),
+    /// Create or restore backups.
+    Backup(backup::BackupArgs),
+    /// Run performance benchmarks.
+    Benchmark(benchmark::BenchmarkArgs),
+    /// Validate admission webhooks.
+    Webhook(webhook::WebhookArgs),
+    /// Check schema compatibility against registered consumers.
+    SchemaCompat(schema_compat::SchemaCompatArgs),
+}
+
+impl Commands {
+    /// Dispatch the selected subcommand to its implementation.
+    pub async fn run(self) -> anyhow::Result<()> {
+        match self {
+            Commands::Operator(args) => operator::run(args).await,
+            Commands::Simulator(args) => simulator::run(args).await,
+            Commands::Runbook(args) => runbook::run(args).await,
+            Commands::CheckCrd(args) => check_crd::run(args).await,
+            Commands::Doctor(args) => doctor::run(args).await,
+            Commands::ExportCompliance(args) => export_compliance::run(args).await,
+            Commands::HealthCheck(args) => health_check::run(args).await,
+            Commands::Info(args) => info::run(args).await,
+            Commands::Backup(args) => backup::run(args).await,
+            Commands::Benchmark(args) => benchmark::run(args).await,
+            Commands::Webhook(args) => webhook::run(args).await,
+            Commands::SchemaCompat(args) => schema_compat::run(args).await,
+        }
+    }
+}

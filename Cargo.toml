@@ -236,6 +236,34 @@ path = "src/bin/conventional-commit-check.rs"
 name = "backup-verify"
 path = "src/bin/backup-verify.rs"
 
+# Hierarchical fair-share kube-scheduler extender (#1959).
+[[bin]]
+name = "stellar-fairshare-extender"
+path = "src/bin/stellar-fairshare-extender.rs"
+required-features = ["rest-api"]
+# Offline verifier / exporter for tamper-evident audit ledgers (#1958).
+[[bin]]
+name = "stellar-audit-verify"
+path = "src/bin/stellar-audit-verify.rs"
+
+# Out-of-process Kubernetes audit webhook sink writing the hash-chained ledger (#1958).
+[[bin]]
+name = "stellar-audit-sink"
+path = "src/bin/stellar-audit-sink.rs"
+required-features = ["rest-api"]
+# Dependency upgrade gate: scans call sites, generates consumer contract tests
+# and blocks incompatible upgrades with consumer attribution (#1999).
+[[bin]]
+name = "dependency-upgrade-gate"
+path = "src/bin/dependency-upgrade-gate.rs"
+
+# Release reproducibility verifier: compares a release build with an independent
+# rebuild bit for bit, localizes mismatches to a build step and records the
+# result in the release audit log (#1997).
+[[bin]]
+name = "verify-reproducible-build"
+path = "src/bin/verify-reproducible-build.rs"
+
 # Lifecycle hooks runner — installed into workload pods to run ordered
 # setup / readiness / teardown hooks (#1525).
 [[bin]]

@@ -1,0 +1,59 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fairshare-alerts
+  namespace: monitoring
+  labels: {app: prometheus, component: alerting-rules}
+data:
+  fairshare-alerts.yaml: |
+    groups:
+    - name: fairshare
+      rules:
+      - alert: FairShareConfigRejected
+        expr: stellar_fairshare_config_valid == 0
+        for: 1m
+        labels: {severity: warning, component: fairshare}
+        annotations:
+          summary: "A TenantQuota change was rejected; the last known good tree is still enforced"
+      - alert: FairShareFairnessLow
+        expr: stellar_fairshare_jain_index < 0.95 and stellar_fairshare_cluster_used_ratio > 0.95
+        for: 15m
+        labels: {severity: warning, component: fairshare}
+        annotations:
+          summary: "Jain fairness index below 0.95 while the cluster is saturated"
+      - alert: FairShareGuaranteeUnderused
+        expr: stellar_fairshare_guaranteed_utilization_ratio < 0.5 and on(tenant, resource) stellar_fairshare_entitlement > stellar_fairshare_allocated
+        for: 10m
+        labels: {severity: info, component: fairshare}
+        annotations:
+          summary: "Tenant is entitled to more than it holds for 10m (preemption may be blocked by fragmentation)"
+      - alert: FairShareQuotaSaturated
+        expr: stellar_fairshare_quota_saturation_ratio > 0.95
+        for: 15m
+        labels: {severity: info, component: fairshare}
+        annotations:
+          summary: "Tenant is at >95% of its max; new elastic pods are denied"
+      - alert: FairSharePreemptionRefusals
+        expr: increase(stellar_fairshare_preemption_total{decision=~"refused.*"}[15m]) > 20
+        for: 0m
+        labels: {severity: info, component: fairshare}
+        annotations:
+          summary: "Many preemptions refused (protected victims / insufficient reclaimable capacity)"
+      - alert: FairShareSchedulingDelayHigh
+        expr: histogram_quantile(0.95, rate(stellar_fairshare_scheduling_delay_seconds_bucket[10m])) > 60
+        for: 10m
+        labels: {severity: warning, component: fairshare}
+        annotations:
+          summary: "p95 pod creation to first admission above 60s"

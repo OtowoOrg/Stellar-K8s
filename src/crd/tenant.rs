@@ -249,6 +249,21 @@ impl TenantSpecCrd {
 }
 
 impl TenantSpec {
+    /// Namespace label (key, value) that identifies this tenant's namespaces.
+    pub fn network_label(&self) -> (String, String) {
+        let key = self
+            .network
+            .as_ref()
+            .map(|n| n.label_key.clone())
+            .unwrap_or_else(|| "tenant.stellar.org/id".to_string());
+        let value = self
+            .network
+            .as_ref()
+            .map(|n| n.label_value.clone())
+            .unwrap_or_else(|| self.tenant_id.clone());
+        (key, value)
+    }
+
     /// Build the namespace labels required for tenant-aware selectors.
     pub fn namespace_labels(&self) -> BTreeMap<String, String> {
         let mut labels = BTreeMap::new();

@@ -48,6 +48,10 @@ pub struct MigrationGraphConfig {
     pub webhook: ConversionWebhookConfig,
     pub graphs: Vec<SchemaMigrationGraph>,
 }
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tracing::{debug, error, info, warn};
 
 /// Declarative schema migration graph
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -611,6 +615,322 @@ pub async fn ensure_storage_version_migrator(
         }
     }
     Ok(())
+/// A single field in a schema definition used for compatibility diffing.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SchemaField {
+    /// Dotted field path (e.g. "spec.replicas")
+    pub path: String,
+    /// Logical type name (e.g. "string", "int32", "message:Foo")
+    pub field_type: String,
+    /// Whether the field is required
+    pub required: bool,
+}
+
+/// A versioned schema registered in the registry.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RegisteredSchema {
+    /// Schema identifier (e.g. "stellar-node.v1beta1")
+    pub schema_id: String,
+    /// Version string
+    pub version: String,
+    /// Fields in this schema version
+    pub fields: Vec<SchemaField>,
+}
+
+/// A consumer that pins a specific schema version.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SchemaConsumer {
+    /// Consumer service name
+    pub consumer: String,
+    /// Schema identifier the consumer depends on
+    pub schema_id: String,
+    /// Version the consumer is pinned to
+    pub pinned_version: String,
+}
+
+/// Classification of a schema change.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChangeKind {
+    /// Safe change (additive, optional)
+    NonBreaking,
+    /// Change that breaks at least one consumer
+    Breaking,
+}
+
+/// A single detected difference between two schema versions.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SchemaChange {
+    /// Field path affected
+    pub path: String,
+    /// Classification of the change
+    pub kind: ChangeKind,
+    /// Human readable description
+    pub description: String,
+}
+
+/// Impact of a candidate schema on a single consumer.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ConsumerImpact {
+    /// Consumer name
+    pub consumer: String,
+    /// Version the consumer is pinned to
+    pub pinned_version: String,
+    /// Changes that affect this consumer
+    pub changes: Vec<SchemaChange>,
+    /// Whether any change is breaking for this consumer
+    pub breaking: bool,
+}
+
+/// Full impact report for a candidate schema change.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CompatibilityReport {
+    /// Schema identifier being changed
+    pub schema_id: String,
+    /// Candidate version
+    pub candidate_version: String,
+    /// All detected changes vs every registered consumer
+    pub changes: Vec<SchemaChange>,
+    /// Per-consumer impact
+    pub consumer_impacts: Vec<ConsumerImpact>,
+    /// Whether the change is breaking for any consumer
+    pub breaking: bool,
+    /// Time taken to produce the report
+    pub elapsed_ms: u64,
+}
+
+impl CompatibilityReport {
+    /// Returns true if the change is blocked (breaking with no override).
+    pub fn is_blocked(&self, override_allowed: bool) -> bool {
+        self.breaking && !override_allowed
+    }
+
+    /// Enumerate consumers affected by breaking changes.
+    pub fn affected_consumers(&self) -> Vec<String> {
+        self.consumer_impacts
+            .iter()
+            .filter(|i| i.breaking)
+            .map(|i| i.consumer.clone())
+            .collect()
+    }
+}
+
+/// Cached diff result keyed by (old schema, new schema) fingerprints.
+#[derive(Clone)]
+struct CachedDiff {
+    changes: Vec<SchemaChange>,
+    inserted_at: Instant,
+}
+
+/// Compatibility engine that diffs a candidate schema against every
+/// registered consumer's pinned version.
+pub struct CompatibilityEngine {
+    schemas: HashMap<String, RegisteredSchema>,
+    consumers: Vec<SchemaConsumer>,
+    cache: Arc<Mutex<HashMap<String, CachedDiff>>>,
+    cache_ttl: Duration,
+}
+
+impl CompatibilityEngine {
+    /// Create a new compatibility engine.
+    pub fn new() -> Self {
+        Self {
+            schemas: HashMap::new(),
+            consumers: Vec::new(),
+            cache: Arc::new(Mutex::new(HashMap::new())),
+            cache_ttl: Duration::from_secs(300),
+        }
+    }
+
+    /// Override the cache TTL (useful for tests).
+    pub fn with_cache_ttl(mut self, ttl: Duration) -> Self {
+        self.cache_ttl = ttl;
+        self
+    }
+
+    /// Register a schema version.
+    pub fn register_schema(&mut self, schema: RegisteredSchema) {
+        let key = format!("{}@{}", schema.schema_id, schema.version);
+        self.schemas.insert(key, schema);
+    }
+
+    /// Register a consumer pinning a schema version.
+    pub fn register_consumer(&mut self, consumer: SchemaConsumer) {
+        self.consumers.push(consumer);
+    }
+
+    /// Look up a registered schema by id and version.
+    fn lookup(&self, schema_id: &str, version: &str) -> Option<&RegisteredSchema> {
+        self.schemas.get(&format!("{}@{}", schema_id, version))
+    }
+
+    /// Diff two schema versions, using the cache when possible.
+    fn diff_cached(&self, old: &RegisteredSchema, new: &RegisteredSchema) -> Vec<SchemaChange> {
+        let key = format!(
+            "{}@{}->{}@{}",
+            old.schema_id, old.version, new.schema_id, new.version
+        );
+
+        if let Ok(cache) = self.cache.lock() {
+            if let Some(entry) = cache.get(&key) {
+                if entry.inserted_at.elapsed() < self.cache_ttl {
+                    return entry.changes.clone();
+                }
+            }
+        }
+
+        let changes = Self::diff(old, new);
+
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.insert(
+                key,
+                CachedDiff {
+                    changes: changes.clone(),
+                    inserted_at: Instant::now(),
+                },
+            );
+        }
+
+        changes
+    }
+
+    /// Compute the raw diff between two schema versions.
+    fn diff(old: &RegisteredSchema, new: &RegisteredSchema) -> Vec<SchemaChange> {
+        let mut changes = Vec::new();
+
+        let old_fields: HashMap<&str, &SchemaField> =
+            old.fields.iter().map(|f| (f.path.as_str(), f)).collect();
+        let new_fields: HashMap<&str, &SchemaField> =
+            new.fields.iter().map(|f| (f.path.as_str(), f)).collect();
+
+        // Removed fields are breaking.
+        for (path, field) in &old_fields {
+            if !new_fields.contains_key(path) {
+                changes.push(SchemaChange {
+                    path: (*path).to_string(),
+                    kind: ChangeKind::Breaking,
+                    description: format!("field '{}' removed", path),
+                });
+            } else {
+                let new_field = new_fields[path];
+                if field.field_type != new_field.field_type {
+                    changes.push(SchemaChange {
+                        path: (*path).to_string(),
+                        kind: ChangeKind::Breaking,
+                        description: format!(
+                            "field '{}' type changed from '{}' to '{}'",
+                            path, field.field_type, new_field.field_type
+                        ),
+                    });
+                }
+                if !field.required && new_field.required {
+                    changes.push(SchemaChange {
+                        path: (*path).to_string(),
+                        kind: ChangeKind::Breaking,
+                        description: format!("field '{}' became required", path),
+                    });
+                }
+            }
+        }
+
+        // Added fields: breaking only if required.
+        for (path, field) in &new_fields {
+            if !old_fields.contains_key(path) {
+                changes.push(SchemaChange {
+                    path: (*path).to_string(),
+                    kind: if field.required {
+                        ChangeKind::Breaking
+                    } else {
+                        ChangeKind::NonBreaking
+                    },
+                    description: format!(
+                        "field '{}' added ({})",
+                        path,
+                        if field.required { "required" } else { "optional" }
+                    ),
+                });
+            }
+        }
+
+        changes
+    }
+
+    /// Run a full compatibility check of a candidate schema against every
+    /// registered consumer's pinned version.
+    pub fn check(&self, candidate: &RegisteredSchema) -> Result<CompatibilityReport> {
+        let start = Instant::now();
+        let mut all_changes: Vec<SchemaChange> = Vec::new();
+        let mut consumer_impacts: Vec<ConsumerImpact> = Vec::new();
+
+        for consumer in self
+            .consumers
+            .iter()
+            .filter(|c| c.schema_id == candidate.schema_id)
+        {
+            let pinned = self
+                .lookup(&consumer.schema_id, &consumer.pinned_version)
+                .ok_or_else(|| {
+                    Error::validation_step(
+                        "lookup pinned schema",
+                        format!(
+                            "consumer '{}' pins unknown version '{}' of '{}'",
+                            consumer.consumer, consumer.pinned_version, consumer.schema_id
+                        ),
+                    )
+                })?;
+
+            let changes = self.diff_cached(pinned, candidate);
+            let breaking = changes.iter().any(|c| c.kind == ChangeKind::Breaking);
+
+            for change in &changes {
+                if !all_changes.iter().any(|c| c.path == change.path) {
+                    all_changes.push(change.clone());
+                }
+            }
+
+            consumer_impacts.push(ConsumerImpact {
+                consumer: consumer.consumer.clone(),
+                pinned_version: consumer.pinned_version.clone(),
+                changes,
+                breaking,
+            });
+        }
+
+        let breaking = consumer_impacts.iter().any(|i| i.breaking);
+
+        let report = CompatibilityReport {
+            schema_id: candidate.schema_id.clone(),
+            candidate_version: candidate.version.clone(),
+            changes: all_changes,
+            consumer_impacts,
+            breaking,
+            elapsed_ms: start.elapsed().as_millis() as u64,
+        };
+
+        if report.breaking {
+            warn!(
+                schema = %report.schema_id,
+                candidate = %report.candidate_version,
+                affected = ?report.affected_consumers(),
+                "Breaking schema change detected"
+            );
+        } else {
+            info!(
+                schema = %report.schema_id,
+                candidate = %report.candidate_version,
+                elapsed_ms = report.elapsed_ms,
+                "Schema change is compatible"
+            );
+        }
+
+        Ok(report)
+    }
+}
+
+impl Default for CompatibilityEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -659,5 +979,125 @@ mod tests {
         };
 
         assert!(converter.validate_migration_graph(&invalid_graph).is_err());
+    }
+
+    fn field(path: &str, ty: &str, required: bool) -> SchemaField {
+        SchemaField {
+            path: path.to_string(),
+            field_type: ty.to_string(),
+            required,
+        }
+    }
+
+    fn engine_with_consumers() -> CompatibilityEngine {
+        let mut engine = CompatibilityEngine::new();
+        engine.register_schema(RegisteredSchema {
+            schema_id: "stellar-node".to_string(),
+            version: "v1alpha1".to_string(),
+            fields: vec![field("spec.replicas", "int32", true)],
+        });
+        engine.register_schema(RegisteredSchema {
+            schema_id: "stellar-node".to_string(),
+            version: "v1beta1".to_string(),
+            fields: vec![
+                field("spec.replicas", "int32", true),
+                field("spec.region", "string", false),
+            ],
+        });
+        engine.register_consumer(SchemaConsumer {
+            consumer: "controller".to_string(),
+            schema_id: "stellar-node".to_string(),
+            pinned_version: "v1alpha1".to_string(),
+        });
+        engine.register_consumer(SchemaConsumer {
+            consumer: "operator".to_string(),
+            schema_id: "stellar-node".to_string(),
+            pinned_version: "v1beta1".to_string(),
+        });
+        engine
+    }
+
+    #[test]
+    fn test_compat_non_breaking_addition() {
+        let engine = engine_with_consumers();
+        let candidate = RegisteredSchema {
+            schema_id: "stellar-node".to_string(),
+            version: "v1gamma1".to_string(),
+            fields: vec![
+                field("spec.replicas", "int32", true),
+                field("spec.region", "string", false),
+                field("spec.zone", "string", false),
+            ],
+        };
+        let report = engine.check(&candidate).unwrap();
+        assert!(!report.breaking);
+        assert!(report.affected_consumers().is_empty());
+    }
+
+    #[test]
+    fn test_compat_breaking_removal_blocks() {
+        let engine = engine_with_consumers();
+        let candidate = RegisteredSchema {
+            schema_id: "stellar-node".to_string(),
+            version: "v1gamma1".to_string(),
+            fields: vec![field("spec.region", "string", false)],
+        };
+        let report = engine.check(&candidate).unwrap();
+        assert!(report.breaking);
+        assert!(report.is_blocked(false));
+        assert!(!report.is_blocked(true));
+        let affected = report.affected_consumers();
+        assert!(affected.contains(&"controller".to_string()));
+        assert!(affected.contains(&"operator".to_string()));
+    }
+
+    #[test]
+    fn test_compat_checks_every_consumer_not_just_previous() {
+        // Candidate is compatible with v1beta1 (previous) but breaks v1alpha1.
+        let mut engine = CompatibilityEngine::new();
+        engine.register_schema(RegisteredSchema {
+            schema_id: "stellar-node".to_string(),
+            version: "v1alpha1".to_string(),
+            fields: vec![field("spec.legacy", "string", false)],
+        });
+        engine.register_schema(RegisteredSchema {
+            schema_id: "stellar-node".to_string(),
+            version: "v1beta1".to_string(),
+            fields: vec![field("spec.replicas", "int32", true)],
+        });
+        engine.register_consumer(SchemaConsumer {
+            consumer: "legacy-client".to_string(),
+            schema_id: "stellar-node".to_string(),
+            pinned_version: "v1alpha1".to_string(),
+        });
+        engine.register_consumer(SchemaConsumer {
+            consumer: "modern-client".to_string(),
+            schema_id: "stellar-node".to_string(),
+            pinned_version: "v1beta1".to_string(),
+        });
+
+        let candidate = RegisteredSchema {
+            schema_id: "stellar-node".to_string(),
+            version: "v1gamma1".to_string(),
+            fields: vec![field("spec.replicas", "int32", true)],
+        };
+        let report = engine.check(&candidate).unwrap();
+        assert!(report.breaking);
+        let affected = report.affected_consumers();
+        assert_eq!(affected, vec!["legacy-client".to_string()]);
+    }
+
+    #[test]
+    fn test_compat_cache_returns_same_result() {
+        let engine = engine_with_consumers();
+        let candidate = RegisteredSchema {
+            schema_id: "stellar-node".to_string(),
+            version: "v1gamma1".to_string(),
+            fields: vec![field("spec.replicas", "int32", true)],
+        };
+        let first = engine.check(&candidate).unwrap();
+        let second = engine.check(&candidate).unwrap();
+        assert_eq!(first.changes.len(), second.changes.len());
+        assert_eq!(first.breaking, second.breaking);
     }
 }

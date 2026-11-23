@@ -94,6 +94,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[export_name = "malloc_conf"]
 static MALLOC_CONF: &[u8] = b"prof:true,prof_active:false,lg_prof_sample:19\0";
 
+pub mod api_deprecation;
 pub mod api_gateway;
 // pub mod approval;
 // pub mod cardinality;

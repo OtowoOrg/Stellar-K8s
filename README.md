@@ -52,7 +52,7 @@
 
 <!-- Documentation & Support -->
 <p align="center">
-  <a href="https://m1s0g1.github.io/Stellar-K8s/">
+  <a href="https://otowoorg.github.io/Stellar-K8s/">
     <img src="https://img.shields.io/badge/📖_Documentation-Online-blue?style=for-the-badge&logo=readthedocs" alt="Documentation Site" />
   </a>
   <a href="CONTRIBUTING.md">
@@ -61,15 +61,15 @@
   <a href="https://github.com/OtowoOrg/Stellar-K8s/issues/new/choose">
     <img src="https://img.shields.io/badge/🐛_Report_Issue-GitHub-orange?style=for-the-badge&logo=github" alt="Report Issue" />
   </a>
-  <a href="https://m1s0g1.github.io/Stellar-K8s/getting-started/testnet-onboarding/">
+  <a href="https://otowoorg.github.io/Stellar-K8s/getting-started/testnet-onboarding/">
     <img src="https://img.shields.io/badge/🚀_Testnet_Guide-Start_Here-brightgreen?style=for-the-badge" alt="Testnet Onboarding" />
   </a>
 </p>
 
 <p align="center">
-  <a href="https://m1s0g1.github.io/Stellar-K8s/"><strong>Read the full documentation</strong></a> •
-  <a href="https://m1s0g1.github.io/Stellar-K8s/getting-started/testnet-onboarding/"><strong>Deploy testnet validator</strong></a> •
-  <a href="https://m1s0g1.github.io/Stellar-K8s/issue-reporting/"><strong>Report a bug</strong></a>
+  <a href="https://otowoorg.github.io/Stellar-K8s/"><strong>Read the full documentation</strong></a> •
+  <a href="https://otowoorg.github.io/Stellar-K8s/getting-started/testnet-onboarding/"><strong>Deploy testnet validator</strong></a> •
+  <a href="https://otowoorg.github.io/Stellar-K8s/issue-reporting/"><strong>Report a bug</strong></a>
 </p>
 
 > **Production-grade Stellar infrastructure in one command.**
@@ -90,6 +90,7 @@ Designed for high availability, type safety, and minimal footprint.
 | Example manifests | [examples/](examples/) |
 | Security disclosures | [SECURITY.md](SECURITY.md) |
 | CI pipeline | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+| Build the docs site | `make docs-ci-build` (strict `mkdocs build`, same check as [`docs-build.yml`](.github/workflows/docs-build.yml)); `make docs-serve` to preview locally |
 Want the problem statement, users, and journeys in one place? See the **[PITCH storyboards](docs/pitch-storyboards.md)** (implemented vs proposed capabilities are labeled there).
 
 ---
@@ -139,7 +140,7 @@ Stellar-K8s follows the **Operator Pattern**, extending Kubernetes with a `Stell
 
 Get a Testnet node running in under 5 minutes.
 
-> 📖 **Full documentation:** this Quick Start is a condensed walkthrough — the [online documentation site](https://m1s0g1.github.io/Stellar-K8s/) has the complete guides (installation, configuration, networking, troubleshooting) for every node type.
+> 📖 **Full documentation:** this Quick Start is a condensed walkthrough — the [online documentation site](https://otowoorg.github.io/Stellar-K8s/) has the complete guides (installation, configuration, networking, troubleshooting) for every node type.
 
 ### Option 1: Docker Compose (No K8s Required)
 

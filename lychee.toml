@@ -44,6 +44,9 @@ exclude = [
   "^https://github\\.com/OtowoOrg/Stellar-K8s/(compare|releases|blob|tree|discussions|security|issues)(/|$)",
   # Project-controlled hosts that may not be reachable from CI
   "^https://stellar\\.github\\.io/stellar-k8s",
+  # GitHub Pages for this repo (mkdocs gh-deploy target) isn't enabled yet,
+  # so the docs site 404s until Pages is turned on for OtowoOrg/Stellar-K8s.
+  "^https://otowoorg\\.github\\.io/Stellar-K8s",
   "^https://otowo\\.org/",
   "^https://history\\.stellar\\.org/",
   "^https://dashboard\\.stellar\\.org",

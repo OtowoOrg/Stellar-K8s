@@ -8,7 +8,7 @@ Use the GitHub issue tracker:
 ## Quick Links
 
 - **Getting started?** See [Testnet Onboarding Guide](getting-started/testnet-onboarding.md) or [Quick Start](getting-started/quick-start.md)
-- **Documentation site:** [https://m1s0g1.github.io/Stellar-K8s/](https://m1s0g1.github.io/Stellar-K8s/)
+- **Documentation site:** [https://otowoorg.github.io/Stellar-K8s/](https://otowoorg.github.io/Stellar-K8s/)
 - **Testnet peer ports:** [Testnet Peer Configuration](configuration/testnet-peer-configuration.md)
 
 ## Issue templates

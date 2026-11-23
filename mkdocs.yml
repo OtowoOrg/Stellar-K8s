@@ -1,5 +1,5 @@
 site_name: Stellar-K8s Documentation
-site_url: https://m1s0g1.github.io/Stellar-K8s/
+site_url: https://otowoorg.github.io/Stellar-K8s/
 site_description: Comprehensive documentation for deploying and managing Stellar blockchain nodes on Kubernetes
 # Fail the build on any warning (missing nav targets, broken links, plugin
 # issues) so docs regressions are caught in CI (#1691).
@@ -20,6 +20,16 @@ exclude_docs: |
 not_in_nav: |
   /architecture/multi-cluster.md
   /operations/incident-response.md
+
+# Several docs pages intentionally link to repo files outside docs/ (README.md,
+# CONTRIBUTING.md, scripts/README.md, examples/**) so they resolve correctly
+# when browsed on GitHub. MkDocs can't resolve those against the built site
+# and otherwise fails `--strict` with "is not found among documentation
+# files"; internal docs-to-docs links are still checked by scripts/check-links.py
+# and the lychee link-integrity workflow.
+validation:
+  links:
+    not_found: ignore
 
 theme:
   name: material
@@ -244,6 +254,7 @@ nav:
       - Unified Observability Contract: observability/unified-contract.md
       - Stellar Metrics Guide: metrics/STELLAR_METRICS_GUIDE.md
       - Grafana Dashboard Guide: monitoring/GRAFANA_DASHBOARD_GUIDE.md
+      - Soroban Dashboard Guide: monitoring/SOROBAN_DASHBOARD_GUIDE.md
       - Horizon Dashboard: horizon-dashboard.md
       - Byzantine Monitoring: byzantine-monitoring.md
       - Composite SLOs: composite-slo.md

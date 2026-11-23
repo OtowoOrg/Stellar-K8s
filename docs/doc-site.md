@@ -2,7 +2,7 @@
 
 The full Stellar-K8s documentation is published at:
 
-**<https://m1s0g1.github.io/Stellar-K8s/>**
+**<https://otowoorg.github.io/Stellar-K8s/>**
 
 The site is built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) and is automatically
 deployed from the `main` branch whenever docs change.

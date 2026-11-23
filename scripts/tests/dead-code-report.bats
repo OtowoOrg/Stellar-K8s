@@ -74,4 +74,8 @@ EOF
   # A well-formed report is still produced even with no findings.
   run grep -qi "dead code" "$DEAD_CODE_REPORT_OUT"
   [ "$status" -eq 0 ]
+
+  # The empty-input path must say so explicitly rather than list findings.
+  run grep -q "No dead-code diagnostics reported" "$DEAD_CODE_REPORT_OUT"
+  [ "$status" -eq 0 ]
 }

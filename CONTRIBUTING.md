@@ -116,8 +116,11 @@ Before opening a PR, confirm the following:
 
 Reviewers are assigned automatically from [`.github/CODEOWNERS`](.github/CODEOWNERS)
 (last matching rule wins). Paths such as `src/webhook/`, `charts/`, and `docs/` route
-to specific teams, so expect those reviews when you touch them. Keep the file in sync
-when paths move or teams change.
+to specific teams, so expect those reviews when you touch them. Every Markdown file
+is also routed to `@docs-team` in addition to the owners of its directory. Because the
+last matching rule replaces earlier ones, a directory with its own owners needs a
+sibling `<dir>/**/*.md` line that repeats those owners and adds `@docs-team`. Keep the
+file in sync when paths move or teams change.
 
 ### Required checks
 

@@ -92,8 +92,10 @@ If your PR contains multiple logical changes, split it into separate branches an
 
 Changes to `main` must go through a pull request. The `main` branch protection rule should require:
 
-- A pull request before merging.
-- Passing status checks from the primary workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (`CI/CD Pipeline`). Common jobs include **Lint & Format** (`lint`), **Test** (`test`), and **Security Audit** (`security-audit`, skipped when dependency files are unchanged). Do not treat a job named `build` as required; that job is not defined in `ci.yml`.
+- A pull request before merging, with at least one approving review, and no force pushes or deletion of `main`.
+- Passing status checks. From the primary workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (`CI/CD Pipeline`): **Detect Changes**, **Preflight (toolchain versions)**, **Lint & Format** (`lint`), **Test** (`test`) and **Security Audit** (`security-audit`, skipped when dependency files are unchanged). From [`conventional-commits.yml`](.github/workflows/conventional-commits.yml): **Validate Conventional Commits**. Do not treat a job named `build` as required; that job is not defined in `ci.yml`.
+
+The rule is committed as [`.github/rulesets/main.json`](.github/rulesets/main.json) and applied by a maintainer with `scripts/apply-branch-protection.sh`; see [Branch Protection](docs/branch-protection.md).
 
 See [Dependency Update Process](docs/dependency-update-process.md#branch-protection-prerequisites) for the full list of settings that auto-merge depends on.
 

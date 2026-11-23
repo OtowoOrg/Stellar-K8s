@@ -33,6 +33,7 @@ pub mod pss;
 pub mod quota;
 pub mod registry_controller;
 pub mod registry_gate;
+pub mod registry_gate_registry;
 pub mod resource_meta;
 pub mod resource_optimization;
 

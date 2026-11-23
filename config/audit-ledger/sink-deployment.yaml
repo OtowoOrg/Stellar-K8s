@@ -1,0 +1,144 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Deployment of the out-of-process audit sink (#1958).
+#
+# Isolation properties:
+#  * dedicated namespace + service account that has NO Kubernetes API permissions
+#    and no mounted token, so a compromised operator or workload cannot use it;
+#  * only the apiserver/control-plane CIDR and Prometheus may reach the pod;
+#  * the ledger lives on its own PVC; nobody but the sink mounts it read-write.
+#    Harden the volume at the storage layer (see docs/audit-ledger.md#append-only-storage).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stellar-audit
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: stellar-audit-sink
+  namespace: stellar-audit
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stellar-audit-ledger
+  namespace: stellar-audit
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 100Gi
+  # storageClassName: <a class with retain policy / snapshots / WORM support>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stellar-audit-sink
+  namespace: stellar-audit
+spec:
+  replicas: 1          # single writer: sequence numbers are assigned by one process
+  strategy:
+    type: Recreate     # never two writers on the same ledger
+  selector:
+    matchLabels:
+      app: stellar-audit-sink
+  template:
+    metadata:
+      labels:
+        app: stellar-audit-sink
+    spec:
+      serviceAccountName: stellar-audit-sink
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sink
+          image: ghcr.io/otowoorg/stellar-k8s:latest   # pin by digest in production
+          command: ["/usr/local/bin/stellar-audit-sink"]
+          args:
+            - --chain-id=$(CHAIN_ID)
+            - --store=/var/lib/stellar-audit/ledger.ndjson
+            - --listen=0.0.0.0:8443
+            - --tls-cert=/tls/tls.crt
+            - --tls-key=/tls/tls.key
+            - --bearer-token-file=/token/token
+          env:
+            - name: CHAIN_ID
+              value: my-cluster          # part of the genesis hash; never change after first write
+          ports:
+            - name: https
+              containerPort: 8443
+          readinessProbe:
+            httpGet: {path: /healthz, port: https, scheme: HTTPS}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: ledger, mountPath: /var/lib/stellar-audit}
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: token, mountPath: /token, readOnly: true}
+      volumes:
+        - name: ledger
+          persistentVolumeClaim: {claimName: stellar-audit-ledger}
+        - name: tls
+          secret: {secretName: stellar-audit-sink-tls}
+        - name: token
+          secret: {secretName: stellar-audit-sink-token}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stellar-audit-sink
+  namespace: stellar-audit
+spec:
+  selector:
+    app: stellar-audit-sink
+  ports:
+    - {name: https, port: 8443, targetPort: https}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: stellar-audit-sink
+  namespace: stellar-audit
+spec:
+  podSelector:
+    matchLabels:
+      app: stellar-audit-sink
+  policyTypes: ["Ingress", "Egress"]
+  egress: []            # the sink makes no outbound connections
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8      # replace with the control-plane node CIDR
+      ports:
+        - {port: 8443, protocol: TCP}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - {port: 8443, protocol: TCP}

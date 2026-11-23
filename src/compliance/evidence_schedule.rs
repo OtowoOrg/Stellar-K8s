@@ -37,6 +37,7 @@
 //! ```
 
 use std::collections::BTreeMap;
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
@@ -48,6 +49,69 @@ type EvidenceHmac = Hmac<Sha256>;
 
 /// Maximum findings retained; the log is bounded by design.
 const MAX_FINDINGS: usize = 1_000;
+
+/// Default overhead budget: collection must stay under 1% of cluster capacity.
+pub const DEFAULT_OVERHEAD_BUDGET_PERCENT: f64 = 1.0;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Configuration loading (adding coverage is config, not code)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Declarative configuration for the evidence collector, loaded from YAML/JSON.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvidenceScheduleConfig {
+    /// In-scope control probes.
+    #[serde(default)]
+    pub probes: Vec<ControlProbe>,
+}
+
+impl EvidenceScheduleConfig {
+    /// Parse a configuration document (YAML or JSON).
+    pub fn from_str_auto(text: &str) -> Result<Self, String> {
+        serde_yaml::from_str(text).map_err(|e| format!("invalid evidence schedule config: {e}"))
+    }
+
+    /// Build a collector from this configuration, signing with `signing_key`.
+    pub fn into_collector(self, signing_key: Vec<u8>) -> ScheduledCollector {
+        ScheduledCollector::new(self.probes, signing_key)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Overhead instrumentation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Cumulative collection overhead, used to keep cost under the capacity budget.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct CollectionOverhead {
+    /// Number of probe executions performed.
+    pub runs: u64,
+    /// Total wall-clock time spent collecting, in microseconds.
+    pub elapsed_micros: u64,
+    /// Peak number of retained results (proxy for memory footprint).
+    pub peak_results: usize,
+}
+
+impl CollectionOverhead {
+    /// Average collection time per run, in microseconds.
+    pub fn avg_micros_per_run(&self) -> f64 {
+        if self.runs == 0 {
+            0.0
+        } else {
+            self.elapsed_micros as f64 / self.runs as f64
+        }
+    }
+
+    /// Whether measured overhead stays within `budget_percent` of `capacity_units`
+    /// (capacity expressed in the same microsecond units as the elapsed time).
+    pub fn within_budget(&self, capacity_units: u64, budget_percent: f64) -> bool {
+        if capacity_units == 0 {
+            return true;
+        }
+        let used_percent = self.elapsed_micros as f64 / capacity_units as f64 * 100.0;
+        used_percent <= budget_percent
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Declarative probe definition (config, not code)
@@ -212,6 +276,7 @@ pub struct ScheduledCollector {
     results: BTreeMap<String, ProbeResult>,
     findings: Vec<CoverageFinding>,
     signing_key: Vec<u8>,
+    overhead: CollectionOverhead,
 }
 
 impl ScheduledCollector {
@@ -223,7 +288,26 @@ impl ScheduledCollector {
             results: BTreeMap::new(),
             findings: Vec::new(),
             signing_key,
+            overhead: CollectionOverhead::default(),
         }
+    }
+
+    /// Build a collector from a declarative configuration document.
+    pub fn from_config_str(
+        config: &str,
+        signing_key: Vec<u8>,
+    ) -> Result<Self, String> {
+        Ok(EvidenceScheduleConfig::from_str_auto(config)?.into_collector(signing_key))
+    }
+
+    /// Cumulative collection overhead instrumentation.
+    pub fn overhead(&self) -> &CollectionOverhead {
+        &self.overhead
+    }
+
+    /// Whether collection overhead stays under `budget_percent` of `capacity_units`.
+    pub fn within_overhead_budget(&self, capacity_units: u64, budget_percent: f64) -> bool {
+        self.overhead.within_budget(capacity_units, budget_percent)
     }
 
     /// Registered probes.
@@ -256,7 +340,13 @@ impl ScheduledCollector {
             .collect();
         for probe in due {
             self.last_run.insert(probe.key(), now_secs);
+            let started = Instant::now();
             let (satisfied, evidence) = runner.run(&probe);
+            self.overhead.runs = self.overhead.runs.saturating_add(1);
+            self.overhead.elapsed_micros = self
+                .overhead
+                .elapsed_micros
+                .saturating_add(started.elapsed().as_micros() as u64);
             if evidence == "__FAIL__" {
                 self.push_finding(CoverageFinding {
                     control_key: probe.key(),
@@ -278,6 +368,7 @@ impl ScheduledCollector {
                 });
             }
         }
+        self.overhead.peak_results = self.overhead.peak_results.max(self.results.len());
         self.prune_expired(now_secs);
     }
 
@@ -554,5 +645,39 @@ mod tests {
         assert!(collector.coverage_at(7_000).complete);
         // Past the 1h interval with no fresh collection: stale.
         assert_eq!(collector.coverage_gaps_at(7_000 + 7_200).len(), 2);
+    }
+
+    #[test]
+    fn collector_loads_probes_from_config() {
+        let config = r#"
+probes:
+  - framework: SOC2
+    control_id: CC6.1
+    description: RBAC enabled
+    expression: rbac == enabled
+    interval_secs: 60
+    retention_days: 90
+  - framework: ISO27001
+    control_id: A.12.4
+    description: Logging enabled
+    expression: logging == enabled
+    interval_secs: 120
+    retention_days: 90
+"#;
+        let mut collector =
+            ScheduledCollector::from_config_str(config, b"key".to_vec()).unwrap();
+        assert_eq!(collector.probes().len(), 2);
+        collector.collect_due(1_000);
+        assert!(collector.coverage().complete);
+    }
+
+    #[test]
+    fn overhead_is_instrumented_and_within_budget() {
+        let mut collector = ScheduledCollector::new(probes(), b"key".to_vec());
+        collector.collect_due(8_000);
+        assert_eq!(collector.overhead().runs, 2);
+        assert_eq!(collector.overhead().peak_results, 2);
+        // Generous capacity: collection must stay under the 1% budget.
+        assert!(collector.within_overhead_budget(1_000_000_000, DEFAULT_OVERHEAD_BUDGET_PERCENT));
     }
 }

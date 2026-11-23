@@ -14,6 +14,7 @@
 //!
 //! Provides automated scanning, runtime monitoring, and automated remediation.
 
+pub mod cert_lifecycle;
 pub mod cert_rotation;
 pub mod compliance;
 pub mod kms;

@@ -16,14 +16,24 @@
 #
 # Runs every lint gate in the correct order so developers and CI share one
 # entry point: shellcheck, shell-safety, scripts-convention, python-lint
-# (py_compile + tomllib), yamllint, then cargo fmt + clippy.
+# (py_compile + tomllib), yamllint, schema-compat, then cargo fmt + clippy.
 # Each step echoes a short header so failures are easy to locate
 # in long log streams.
+#
+# The schema-compat gate diffs the PR's schemas against every registered
+# consumer in the schema registry and blocks the merge on breaking changes
+# unless an explicit override is supplied (see scripts/ci/schema-compat.sh).
 #
 # Usage:
 #   bash scripts/ci/lint.sh              # full suite (default)
 #   bash scripts/ci/lint.sh --fast       # skip Rust lints (shell + YAML only)
 #   bash scripts/ci/lint.sh --rust-only  # skip shell / YAML lints
+#   bash scripts/ci/lint.sh --schema-only # run only the schema-compat gate
+#
+# Environment:
+#   SCHEMA_COMPAT_OVERRIDE  Set to a non-empty justification string to allow
+#                           a breaking schema change (recorded in the report).
+=======
 #
 # Exit codes:
 #   0  All lint checks passed
@@ -40,11 +50,13 @@ cd "$ROOT"
 # ── argument parsing ──────────────────────────────────────────────────────────
 FAST=false
 RUST_ONLY=false
+SCHEMA_ONLY=false
 
 for arg in "$@"; do
   case "$arg" in
-    --fast)      FAST=true ;;
-    --rust-only) RUST_ONLY=true ;;
+    --fast)        FAST=true ;;
+    --rust-only)   RUST_ONLY=true ;;
+    --schema-only) SCHEMA_ONLY=true ;;
     *) echo "Unknown flag: $arg" >&2; exit 1 ;;
   esac
 done
@@ -64,7 +76,7 @@ run_step() {
 }
 
 # ── Shell lints ───────────────────────────────────────────────────────────────
-if [[ "$RUST_ONLY" == "false" ]]; then
+if [[ "$RUST_ONLY" == "false" && "$SCHEMA_ONLY" == "false" ]]; then
   run_step "shellcheck" bash -c '
     mapfile -t shell_files < <(find scripts -type f -name "*.sh" 2>/dev/null || true)
     if [[ "${#shell_files[@]}" -eq 0 ]]; then
@@ -86,8 +98,17 @@ if [[ "$RUST_ONLY" == "false" ]]; then
   '
 fi
 
+# ── Schema compatibility gate ─────────────────────────────────────────────────
+# Diffs changed schemas against every registered consumer and fails on
+# breaking changes unless SCHEMA_COMPAT_OVERRIDE is set. Runs in the default
+# suite, in --fast mode, and standalone via --schema-only. Skipped only for
+# --rust-only runs.
+if [[ "$RUST_ONLY" == "false" ]]; then
+  run_step "schema-compat" bash scripts/ci/schema-compat.sh
+fi
+
 # ── Rust lints ────────────────────────────────────────────────────────────────
-if [[ "$FAST" == "false" ]]; then
+if [[ "$FAST" == "false" && "$SCHEMA_ONLY" == "false" ]]; then
   run_step "cargo fmt --check" bash -c '
     K8S_OPENAPI_ENABLED_VERSION=1.30 cargo fmt --all --check
   '

@@ -1,5 +1,16 @@
 # Release Notes
 
+## v2.0.0-pre (draft) - Milestone: v2.0.0
+
+### 🔒 Security Fixes
+
+- Deduplicated operator environment variables to prevent duplicate/conflicting entries being injected into managed pods.
+- Prevented command injection in validator commands (see `docs/operations/container-commands.md#command-injection`).
+
+See the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md) for the full list of changes targeted for this release.
+
+---
+
 ## Version 1.0.0 - [Date]
 
 ### ✨ New Features

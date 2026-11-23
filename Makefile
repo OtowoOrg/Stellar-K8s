@@ -276,6 +276,15 @@ build: ## Build release
 	@echo "→ Building release..."
 	@$(CARGO) build --release --locked
 
+.PHONY: reproducible-build dependency-gate
+
+reproducible-build: ## Build the release artifacts deterministically into build-out/ (#1997)
+	@scripts/reproducible-build.sh --output-dir build-out --pipeline local
+
+dependency-gate: ## Validate a dependency upgrade: make dependency-gate DEP=kube FROM=0.94.0 TO=0.95.0 (#1999)
+	@test -n "$(DEP)" && test -n "$(FROM)" && test -n "$(TO)" || { echo "usage: make dependency-gate DEP=<crate> FROM=<version> TO=<version>"; exit 2; }
+	@$(CARGO) run --quiet --locked --bin dependency-upgrade-gate -- --dependency "$(DEP)" --from "$(FROM)" --to "$(TO)" --breaking-changes config/dependency-breaking-changes.json
+
 cache-warm: ## Warm the Cargo cache: fetch locked deps and pre-compile the lib and bins
 	@echo "→ Fetching locked dependencies..."
 	@$(CARGO) fetch --locked
@@ -497,7 +506,10 @@ crd-gen: ## Generate CRDs
 	@$(CARGO) run --bin contract-crdgen | python3 scripts/sort-manifests.py > config/crd/contractdeployment-crd.yaml
 	@echo "✓ CRD written to config/crd/stellarnode-crd.yaml (deterministic order)"
 
-regenerate: crd-gen generate-api-docs bundle ## Regenerate all derived artifacts (CRDs, API docs, OLM bundle)
+conversion-gen: ## Generate CRD conversion webhook manifests from the migration graph
+	@python3 scripts/generate-conversion-webhooks.py
+
+regenerate: crd-gen conversion-gen generate-api-docs bundle ## Regenerate all derived artifacts (CRDs, API docs, OLM bundle)
 	@echo "✓ All generated artifacts are up to date"
 	@echo "  See docs/development/regeneration-guide.md for details"
 

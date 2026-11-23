@@ -106,3 +106,38 @@ Safety constraints enforced by the pruning worker:
 
 For security issues, follow the process in `SECURITY.md`.
 For production incidents, see `docs/operations/incident-response.md`.
+
+## Planned-maintenance orchestration: verification gates (#1961)
+
+The `MaintenancePlan` controller (`src/controller/maintenance/plan_engine.rs`, backend in `plan_controller.rs`)
+sequences `Planned → Prewarming → Verifying → Draining (→ Stalled) → Verifying → Completed`. Beyond the existing
+PDB-aware batching, SLO gate and stall recovery, these gates are enforced:
+
+| Gate | Behaviour |
+|---|---|
+| **Capacity pre-check** | Before anything is cordoned/evicted, the pods on the target nodes must fit the free capacity of the remaining schedulable nodes (CPU and memory requests; DaemonSet pods excluded). While short, the plan stays `Planned` (condition `CapacityAvailable=False`, so a cluster autoscaler can add nodes) and fails after `prewarm.readinessTimeoutSeconds` with an actionable message. |
+| **Observed prewarm readiness** | Requesting a surge is *not* readiness. The backend scales matching Deployments once (recording `stellar.org/maintenance-prewarm-base`) and reports ready only when `readyReplicas >= desired`. A wait longer than `prewarm.readinessTimeoutSeconds` fails the plan **before any node is cordoned**. Workloads not backed by a Deployment (e.g. StatefulSets) are not surged; replacement readiness is checked from pod placement (enough Ready replicas off the node for *all* pods on it). |
+| **Post-drain verification** | Before `Completed`: drained nodes hold no non-DaemonSet pods and are still cordoned; every affected workload has all desired replicas Ready; every PDB has `currentHealthy >= minAvailable`. Unresolved checks keep the plan in `Verifying` (condition `PostDrainVerified=False`, `status.message` lists them) and fail it after the timeout, **keeping** surge replicas to protect availability. |
+| **Surge release** | After verified completion, surge (and stall-recovery) replicas are scaled back to the recorded base and the annotation is removed (idempotent). Aborted plans keep any `autoRecover` surge by design. |
+| **Scope** | Readiness, SLO and verification are limited to `status.affectedWorkloads` (workloads that had pods on the target nodes), so an unrelated unhealthy Deployment cannot block or abort a plan. |
+
+Restart safety: all gate state lives in `status` (`postVerifyStartedUnix`, `affectedWorkloads`, `prewarmedWorkloads`, cursor);
+each reconcile is a pure function of `spec`, `status` and the observed cluster.
+
+### Metrics (per plan; derived from status on each reconcile)
+
+`stellar_maintenance_plan_phase{namespace,name,phase}`, `..._nodes_completed`, `..._nodes_failed`, `..._pdb_stalls`,
+`..._patch_cycle_ms`, `..._cold_window_ms`, `..._user_facing_errors`. Events: `Prewarmed`, `Cordoned`, `Evicted`, phase transitions.
+
+### Known limitations
+
+* `slo().errorRate` is **not measured** by the Kubernetes backend (no metrics source is wired) and reports 0; `availability`
+  is the real Ready/desired ratio of affected Deployments. `userFacingErrors` and `coldWindowMs` are likewise 0 outside the simulator.
+* Cordoning is per wave; pods rescheduled during a wave may land on later target nodes and be evicted again. Provide spare
+  schedulable capacity (or cordon targets in advance) to avoid churn.
+* The plan does not uncordon completed nodes (patching/uncordon is the operator's step); a full-cluster plan therefore needs spare capacity.
+* Surge uses Deployment `replicas`; it will fight an HPA that also manages the same Deployment.
+* Not implemented: drain/PDB-stall/prewarm duration histograms (only counts and patch-cycle time), and any autoscaler API integration
+  beyond waiting for capacity to appear.
+* Simulation (`SimulatedCluster`) models rescheduling only when `reschedule_evicted = true`; earlier behaviour (evicted pods never
+  return) cannot complete a large drain.

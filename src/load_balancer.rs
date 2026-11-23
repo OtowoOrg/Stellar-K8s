@@ -487,6 +487,167 @@ fn fnv1a(s: &str) -> u64 {
     hash
 }
 
+// ── Weighted DNS records (Issue #1983) ────────────────────────────────────────
+
+/// A single weighted DNS routing record. The failover plan controller owns the
+/// desired weights and applies them declaratively so every traffic shift is
+/// auditable and reversible.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WeightedDnsRecord {
+    /// DNS record name (e.g. `api.example.com`).
+    pub name: String,
+    /// Region / target this record points at.
+    pub region: String,
+    /// Relative weight (0–100). A weight of 0 removes the record from rotation.
+    pub weight: u8,
+}
+
+impl WeightedDnsRecord {
+    pub fn new(name: impl Into<String>, region: impl Into<String>, weight: u8) -> Self {
+        Self {
+            name: name.into(),
+            region: region.into(),
+            weight: weight.min(100),
+        }
+    }
+}
+
+/// A single applied step of a traffic shift, recorded for the plan status.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrafficShiftStep {
+    pub from_region: String,
+    pub to_region: String,
+    /// Weight moved to `to_region` by this step.
+    pub weight: u8,
+    /// Total weight now on `to_region`.
+    pub cumulative_weight: u8,
+    pub applied_at_secs: u64,
+    /// Whether the step was rolled back due to an error-budget breach.
+    pub rolled_back: bool,
+}
+
+/// Declarative, health-gated traffic shifter over weighted DNS records.
+///
+/// The controller computes a desired weight for the target region, applies it
+/// only when health evidence is sufficient, and rolls back to the previous
+/// weights if the error budget is breached.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WeightedDnsTrafficShifter {
+    records: Vec<WeightedDnsRecord>,
+    history: Vec<TrafficShiftStep>,
+}
+
+impl WeightedDnsTrafficShifter {
+    pub fn new(records: Vec<WeightedDnsRecord>) -> Self {
+        Self {
+            records,
+            history: vec![],
+        }
+    }
+
+    pub fn records(&self) -> &[WeightedDnsRecord] {
+        &self.records
+    }
+
+    pub fn history(&self) -> &[TrafficShiftStep] {
+        &self.history
+    }
+
+    /// Current weight for a region, or `None` if no record exists.
+    pub fn weight_for(&self, region: &str) -> Option<u8> {
+        self.records
+            .iter()
+            .find(|r| r.region == region)
+            .map(|r| r.weight)
+    }
+
+    /// Set the weight for a region, clamping to 0–100. Returns the previous
+    /// weight, or `None` if the region is not tracked.
+    pub fn set_weight(&mut self, region: &str, weight: u8) -> Option<u8> {
+        let record = self.records.iter_mut().find(|r| r.region == region)?;
+        let previous = record.weight;
+        record.weight = weight.min(100);
+        Some(previous)
+    }
+
+    /// Apply a single incremental shift of `step` weight from `from_region` to
+    /// `to_region`, gated on health evidence.
+    ///
+    /// The shift is only applied when both regions are healthy (failover and
+    /// failback require the same evidence). Returns the recorded step, or
+    /// `None` if the gate rejected the shift or the regions are unknown.
+    pub fn apply_gated_shift(
+        &mut self,
+        from_region: &str,
+        to_region: &str,
+        step: u8,
+        from_health: &BackendHealth,
+        to_health: &BackendHealth,
+        now_secs: u64,
+    ) -> Option<TrafficShiftStep> {
+        if from_health != &BackendHealth::Healthy || to_health != &BackendHealth::Healthy {
+            warn!(
+                "Rejecting traffic shift {} -> {}: health gate not satisfied ({:?}/{:?})",
+                from_region, to_region, from_health, to_health
+            );
+            return None;
+        }
+
+        let from_weight = self.weight_for(from_region)?;
+        let to_weight = self.weight_for(to_region)?;
+
+        let moved = step.min(from_weight);
+        if moved == 0 {
+            return None;
+        }
+
+        self.set_weight(from_region, from_weight - moved);
+        let cumulative = to_weight.saturating_add(moved).min(100);
+        self.set_weight(to_region, cumulative);
+
+        let recorded = TrafficShiftStep {
+            from_region: from_region.to_string(),
+            to_region: to_region.to_string(),
+            weight: moved,
+            cumulative_weight: cumulative,
+            applied_at_secs: now_secs,
+            rolled_back: false,
+        };
+        self.history.push(recorded.clone());
+        info!(
+            "Applied gated traffic shift {} -> {} (+{}), cumulative {}",
+            from_region, to_region, moved, cumulative
+        );
+        Some(recorded)
+    }
+
+    /// Roll back the most recent shift, restoring the previous weights.
+    /// Returns the rolled-back step, or `None` if there is no history.
+    pub fn rollback_last(&mut self) -> Option<TrafficShiftStep> {
+        let mut last = self.history.pop()?;
+        let from_weight = self.weight_for(&last.from_region).unwrap_or(0);
+        let to_weight = self.weight_for(&last.to_region).unwrap_or(0);
+        self.set_weight(&last.from_region, from_weight.saturating_add(last.weight));
+        self.set_weight(&last.to_region, to_weight.saturating_sub(last.weight));
+        last.rolled_back = true;
+        warn!(
+            "Rolled back traffic shift {} -> {} ({} weight)",
+            last.from_region, last.to_region, last.weight
+        );
+        Some(last)
+    }
+
+    /// Roll back every applied shift, returning the records to their original
+    /// weights. Used when an error-budget breach is detected mid-failover.
+    pub fn rollback_all(&mut self) -> usize {
+        let mut count = 0;
+        while self.rollback_last().is_some() {
+            count += 1;
+        }
+        count
+    }
+}
+
 // ── Shared handle ─────────────────────────────────────────────────────────────
 
 pub type SharedLoadBalancer = Arc<RwLock<LoadBalancer>>;
@@ -628,5 +789,88 @@ mod tests {
         }
         lb.record_result("b1", false);
         assert_eq!(lb.backends[0].health, BackendHealth::Unhealthy);
+    }
+
+    fn make_shifter() -> WeightedDnsTrafficShifter {
+        WeightedDnsTrafficShifter::new(vec![
+            WeightedDnsRecord::new("api.example.com", "primary", 100),
+            WeightedDnsRecord::new("api.example.com", "secondary", 0),
+        ])
+    }
+
+    #[test]
+    fn test_gated_shift_moves_weight_incrementally() {
+        let mut shifter = make_shifter();
+        let step = shifter
+            .apply_gated_shift(
+                "primary",
+                "secondary",
+                25,
+                &BackendHealth::Healthy,
+                &BackendHealth::Healthy,
+                1,
+            )
+            .unwrap();
+        assert_eq!(step.weight, 25);
+        assert_eq!(step.cumulative_weight, 25);
+        assert_eq!(shifter.weight_for("primary"), Some(75));
+        assert_eq!(shifter.weight_for("secondary"), Some(25));
+        assert_eq!(shifter.history().len(), 1);
+    }
+
+    #[test]
+    fn test_gated_shift_rejected_without_health_evidence() {
+        let mut shifter = make_shifter();
+        let step = shifter.apply_gated_shift(
+            "primary",
+            "secondary",
+            25,
+            &BackendHealth::Healthy,
+            &BackendHealth::Degraded,
+            1,
+        );
+        assert!(step.is_none());
+        assert_eq!(shifter.weight_for("primary"), Some(100));
+        assert!(shifter.history().is_empty());
+    }
+
+    #[test]
+    fn test_rollback_restores_previous_weights() {
+        let mut shifter = make_shifter();
+        shifter
+            .apply_gated_shift(
+                "primary",
+                "secondary",
+                40,
+                &BackendHealth::Healthy,
+                &BackendHealth::Healthy,
+                1,
+            )
+            .unwrap();
+        let rolled = shifter.rollback_last().unwrap();
+        assert!(rolled.rolled_back);
+        assert_eq!(shifter.weight_for("primary"), Some(100));
+        assert_eq!(shifter.weight_for("secondary"), Some(0));
+    }
+
+    #[test]
+    fn test_rollback_all_clears_history() {
+        let mut shifter = make_shifter();
+        for i in 0..3 {
+            shifter
+                .apply_gated_shift(
+                    "primary",
+                    "secondary",
+                    10,
+                    &BackendHealth::Healthy,
+                    &BackendHealth::Healthy,
+                    i,
+                )
+                .unwrap();
+        }
+        assert_eq!(shifter.rollback_all(), 3);
+        assert!(shifter.history().is_empty());
+        assert_eq!(shifter.weight_for("primary"), Some(100));
+        assert_eq!(shifter.weight_for("secondary"), Some(0));
     }
 }

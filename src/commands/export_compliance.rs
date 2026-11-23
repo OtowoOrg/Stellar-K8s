@@ -25,6 +25,7 @@ use kube::Client;
 use crate::cli::ExportComplianceArgs;
 use crate::controller::audit_log::AuditEntry;
 use crate::controller::compliance_export::{self, DRComplianceSummary};
+use crate::controller::evidence_collector::{self, EvidencePackage};
 use crate::crd::DisasterRecoveryPolicy;
 use crate::error::{Error, Result};
 
@@ -38,6 +39,13 @@ pub async fn run_export_compliance(args: ExportComplianceArgs) -> Result<()> {
 
     // Fetch DR compliance summary if possible
     let dr_summary = fetch_dr_summary(&args).await.ok();
+
+    // Evidence package mode: collect signed evidence and optionally verify it
+    // offline. This path is independent of the JSON/PDF report formats so that
+    // auditors can validate evidence without cluster access.
+    if args.evidence_package || args.verify_evidence {
+        return run_evidence_package(&args).await;
+    }
 
     match args.format.as_str() {
         "json" => {
@@ -55,6 +63,41 @@ pub async fn run_export_compliance(args: ExportComplianceArgs) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Handle the signed evidence package export and/or offline verification.
+///
+/// When `--verify-evidence` is set, the package is loaded from
+/// `--evidence-input` (or `--output`) and validated offline without touching
+/// the cluster. Otherwise a fresh package is collected, signed, and written to
+/// `--output` (or a timestamped file).
+async fn run_evidence_package(args: &ExportComplianceArgs) -> Result<()> {
+    if args.verify_evidence {
+        let path = args
+            .evidence_input
+            .as_deref()
+            .or(args.output.as_deref())
+            .ok_or_else(|| {
+                Error::ConfigError(
+                    "--verify-evidence requires --evidence-input or --output".to_string(),
+                )
+            })?;
+
+        let raw = fs::read(path)
+            .map_err(|e| Error::InternalError(format!("Failed to read {path}: {e}")))?;
+        let package: EvidencePackage = serde_json::from_slice(&raw)
+            .map_err(|e| Error::InternalError(format!("Failed to parse evidence package: {e}")))?;
+
+        evidence_collector::verify_package_offline(&package)?;
+        eprintln!("Evidence package {path} verified successfully.");
+        return Ok(());
+    }
+
+    let package = evidence_collector::collect_evidence_package(&args.namespace).await?;
+    let bytes = serde_json::to_vec_pretty(&package)
+        .map_err(|e| Error::InternalError(format!("Failed to serialize evidence package: {e}")))?;
+    write_output(bytes, args.output.as_deref(), "evidence.json")?;
     Ok(())
 }
 

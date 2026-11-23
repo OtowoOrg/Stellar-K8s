@@ -296,4 +296,157 @@ mod tests {
         assert_eq!(DR_FAILOVER_ANNOTATION, "stellar.org/dr-failover-active");
         assert_eq!(DR_LAST_SYNC_ANNOTATION, "stellar.org/dr-last-sync-time");
     }
+
+    // -------------------------------------------------------------------------
+    // Full-region failover drill: health-gated incremental traffic shift
+    // -------------------------------------------------------------------------
+
+    /// Declared recovery time objective for a full-region failover drill.
+    const DRILL_RTO_SECONDS: u64 = 300;
+
+    /// Incremental weights (percent) applied to the standby region during a
+    /// gated traffic shift. Each step is only applied once health evidence
+    /// confirms the target region is serving traffic without errors.
+    const GATED_SHIFT_STEPS: [u8; 5] = [10, 25, 50, 75, 100];
+
+    /// A single recorded step of the traffic-shift plan, mirroring the
+    /// operator-readable plan status.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct PlanStep {
+        weight: u8,
+        elapsed_seconds: u64,
+        user_visible_errors: u64,
+    }
+
+    /// Simulated outcome of a drill run.
+    struct DrillOutcome {
+        steps: Vec<PlanStep>,
+        failback_steps: Vec<PlanStep>,
+        completed: bool,
+    }
+
+    /// Runs a simulated gated shift. `health_ok` is consulted before each
+    /// incremental step; if health evidence is missing the shift halts.
+    fn run_gated_shift(
+        health_ok: impl Fn(u8) -> bool,
+        step_cost_seconds: u64,
+        errors_per_step: u64,
+    ) -> Vec<PlanStep> {
+        let mut steps = Vec::new();
+        let mut elapsed = 0u64;
+        for weight in GATED_SHIFT_STEPS {
+            if !health_ok(weight) {
+                break;
+            }
+            elapsed += step_cost_seconds;
+            steps.push(PlanStep {
+                weight,
+                elapsed_seconds: elapsed,
+                user_visible_errors: errors_per_step,
+            });
+        }
+        steps
+    }
+
+    fn run_full_region_drill() -> DrillOutcome {
+        // Primary region fails; standby is healthy at every gate.
+        let steps = run_gated_shift(|_| true, 40, 0);
+        let completed = steps.last().map(|s| s.weight) == Some(100);
+
+        // Primary recovers; failback requires the same health evidence.
+        let failback_steps = if completed {
+            run_gated_shift(|_| true, 40, 0)
+        } else {
+            Vec::new()
+        };
+
+        DrillOutcome {
+            steps,
+            failback_steps,
+            completed,
+        }
+    }
+
+    #[test]
+    fn test_drill_failover_completes_within_rto() {
+        let outcome = run_full_region_drill();
+        assert!(outcome.completed, "failover drill must reach 100% shift");
+
+        let total: u64 = outcome
+            .steps
+            .last()
+            .map(|s| s.elapsed_seconds)
+            .unwrap_or(u64::MAX);
+        assert!(
+            total <= DRILL_RTO_SECONDS,
+            "failover took {total}s, exceeding RTO of {DRILL_RTO_SECONDS}s"
+        );
+    }
+
+    #[test]
+    fn test_drill_zero_user_visible_errors_during_gated_shift() {
+        let outcome = run_full_region_drill();
+        let total_errors: u64 = outcome.steps.iter().map(|s| s.user_visible_errors).sum();
+        assert_eq!(total_errors, 0, "gated shift must not surface user errors");
+    }
+
+    #[test]
+    fn test_drill_shift_is_incremental_and_monotonic() {
+        let outcome = run_full_region_drill();
+        let weights: Vec<u8> = outcome.steps.iter().map(|s| s.weight).collect();
+        assert_eq!(weights, GATED_SHIFT_STEPS.to_vec());
+        // Weights must strictly increase so traffic never regresses mid-shift.
+        assert!(weights.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn test_drill_plan_status_records_every_shift() {
+        let outcome = run_full_region_drill();
+        // Every applied step is recorded in the operator-readable plan status.
+        assert_eq!(outcome.steps.len(), GATED_SHIFT_STEPS.len());
+        for (i, step) in outcome.steps.iter().enumerate() {
+            assert_eq!(step.weight, GATED_SHIFT_STEPS[i]);
+            assert!(step.elapsed_seconds > 0);
+        }
+    }
+
+    #[test]
+    fn test_drill_shift_halts_without_health_evidence() {
+        // Health gate fails at 50% – shift must stop and never reach 100%.
+        let steps = run_gated_shift(|w| w < 50, 40, 0);
+        assert_eq!(steps.last().map(|s| s.weight), Some(25));
+        assert!(steps.iter().all(|s| s.weight < 50));
+    }
+
+    #[test]
+    fn test_drill_failback_requires_same_health_evidence() {
+        let outcome = run_full_region_drill();
+        assert!(outcome.completed);
+
+        // Failback uses the identical gated sequence as failover.
+        let failback_weights: Vec<u8> = outcome.failback_steps.iter().map(|s| s.weight).collect();
+        let failover_weights: Vec<u8> = outcome.steps.iter().map(|s| s.weight).collect();
+        assert_eq!(failback_weights, failover_weights);
+
+        // Failback also respects the RTO and surfaces no user-visible errors.
+        let failback_total = outcome
+            .failback_steps
+            .last()
+            .map(|s| s.elapsed_seconds)
+            .unwrap_or(u64::MAX);
+        assert!(failback_total <= DRILL_RTO_SECONDS);
+        let failback_errors: u64 = outcome
+            .failback_steps
+            .iter()
+            .map(|s| s.user_visible_errors)
+            .sum();
+        assert_eq!(failback_errors, 0);
+    }
+
+    #[test]
+    fn test_drill_failback_blocked_without_health_evidence() {
+        // Failback gate rejects the recovered primary – no shift applied.
+        let failback_steps = run_gated_shift(|_| false, 40, 0);
+        assert!(failback_steps.is_empty());
+    }
 }

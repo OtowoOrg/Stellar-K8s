@@ -440,8 +440,19 @@ jobs:
       - name: Lint observability resource-attribute contract
         run: python3 scripts/ci/lint-observability-contract.py
 
-      - name: Run observability contract lint unit tests
-        run: python3 -m unittest scripts.tests.test_lint_observability_contract
+      - name: Check observability schema compatibility against the base branch
+        run: |
+          git fetch --no-tags --depth=1 origin main || true
+          python3 scripts/ci/check-observability-schema-compat.py --base-ref origin/main
+
+      - name: Run observability contract unit tests (lint, compat, Grafana, collector)
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 -m unittest \
+            scripts.tests.test_lint_observability_contract \
+            scripts.tests.test_observability_schema_compat \
+            scripts.tests.test_grafana_correlation \
+            scripts.tests.test_otel_collector_contract
 
       - name: Check formatting
         if: needs.changes.outputs.rust_core == 'true'
@@ -735,6 +746,9 @@ jobs:
 
       - name: Strict lint chart (default values)
         run: make helm-lint
+
+      - name: Helm lint operator chart
+        run: helm lint charts/stellar-operator --strict
 
       - name: Schema rejects invalid logLevel
         run: |

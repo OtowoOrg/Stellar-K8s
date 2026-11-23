@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+• Dependency upgrade gate: `dependency-upgrade-gate` scans the repository for real call sites of an upgraded crate, generates consumer contract tests from them and blocks incompatible upgrades with consumer and `file:line` attribution; CI job `Dependency Contract Gate`, `scripts/dependency-upgrades.py` and `config/dependency-breaking-changes.json` (#1999).
+• Registry pull gate serving: the `StellarRegistry` reconciler now installs the pull-path gate, with REST endpoints to authorize a pull (`403` OCI error with a scan report link), serve scan reports and scan a pushed digest before it is acknowledged (#2000).
+• Config rollout query API: `GET /api/v1/config/rollouts[/:id]` and `GET /api/v1/config/versions[/:namespace/:node]` backed by a rollout snapshot registry, so the config version of every component is queryable (#1998).
+• Deterministic builds: `scripts/reproducible-build.sh` and the Dockerfile builder pin timestamps, path prefixes, locale and build id; `verify-reproducible-build` compares a release with an independent rebuild, localizes mismatches to a build step and appends to a release audit log; CI workflow `Reproducible Build Verification` (#1997).
 • Dedicated `Codespell` CI job and `make codespell` target (#1682).
 • Pinned `Codespell` CI job and `make codespell` target for documentation and codebase spell checking (#1769).
 • Index the remaining scripts and the `dep-gate.bats` suite in `scripts/README.md` (#1684).
@@ -35,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 • Upload the `dead-code-report.sh` report as a CI artifact from the `Dead Code Report` workflow (#1931).
 • Soroban dashboard guide moved to `docs/monitoring/` and added to the mkdocs nav (#1933).
 • Documented the `make docs-ci-build` strict docs-build command in the README (#1932).
+• Dependency vulnerability scan via `cargo audit`; findings documented at `security/reports/dependency-audit-2026-11-23.md` (#1935).
 
 ### Fixed
 

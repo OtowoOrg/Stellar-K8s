@@ -61,6 +61,36 @@ pub static REACTIVE_STATUS_UPDATES_TOTAL: Lazy<Family<ReactiveLabels, Counter<u6
 pub static API_POLLS_AVOIDED_TOTAL: Lazy<Family<ReactiveLabels, Counter<u64, AtomicU64>>> =
     Lazy::new(Family::default);
 
+/// Labels for MaintenancePlan phase gauges (one series per plan x phase; bounded by plan count).
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct MaintenancePhaseLabels {
+    pub namespace: String,
+    pub name: String,
+    pub phase: String,
+}
+
+/// 1 for the plan's current phase, 0 for all others (#1961).
+pub static MAINTENANCE_PLAN_PHASE: Lazy<Family<MaintenancePhaseLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+/// Nodes fully drained and verified by a MaintenancePlan (#1961).
+pub static MAINTENANCE_NODES_COMPLETED: Lazy<Family<ReactiveLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+/// Nodes a MaintenancePlan failed or skipped (#1961).
+pub static MAINTENANCE_NODES_FAILED: Lazy<Family<ReactiveLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+/// PDB stall events encountered by a MaintenancePlan (#1961).
+pub static MAINTENANCE_PDB_STALLS: Lazy<Family<ReactiveLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+/// Elapsed milliseconds of the plan so far / total once terminal (#1961).
+pub static MAINTENANCE_PATCH_CYCLE_MS: Lazy<Family<ReactiveLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+/// Last measured post-drain cold window in ms (0 when the backend cannot measure it) (#1961).
+pub static MAINTENANCE_COLD_WINDOW_MS: Lazy<Family<ReactiveLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+/// User-facing errors attributed to the plan (0 when the backend cannot measure them) (#1961).
+pub static MAINTENANCE_USER_FACING_ERRORS: Lazy<Family<ReactiveLabels, Gauge<i64, AtomicI64>>> =
+    Lazy::new(Family::default);
+
 /// Labels for the ledger sequence metric
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct NodeLabels {
@@ -480,6 +510,21 @@ pub static CONTROL_PLANE_SUPPRESSED_ACTIONS: Lazy<
     Family<SuppressedActionLabels, Counter<u64, AtomicU64>>,
 > = Lazy::new(Family::default);
 
+/// Labels for async trace context extraction (#1971).
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct TraceExtractionLabels {
+    pub transport: String,
+    pub queue: String,
+    pub topic: String,
+    /// `stitched`, `missing` or `malformed`.
+    pub result: String,
+}
+
+/// Trace context extractions on message consume, by outcome.
+pub static TRACE_CONTEXT_EXTRACTIONS: Lazy<
+    Family<TraceExtractionLabels, Counter<u64, AtomicU64>>,
+> = Lazy::new(Family::default);
+
 /// Global metrics registry
 pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
     let mut registry = Registry::default();
@@ -527,6 +572,41 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_horizon_queue_length",
         "Pending Horizon request queue length",
         HORIZON_QUEUE_LENGTH.clone(),
+    );
+    registry.register(
+        "stellar_maintenance_plan_phase",
+        "MaintenancePlan phase: 1 for the current phase of a plan, 0 otherwise",
+        MAINTENANCE_PLAN_PHASE.clone(),
+    );
+    registry.register(
+        "stellar_maintenance_plan_nodes_completed",
+        "Nodes drained and verified by a MaintenancePlan",
+        MAINTENANCE_NODES_COMPLETED.clone(),
+    );
+    registry.register(
+        "stellar_maintenance_plan_nodes_failed",
+        "Nodes a MaintenancePlan failed or skipped",
+        MAINTENANCE_NODES_FAILED.clone(),
+    );
+    registry.register(
+        "stellar_maintenance_plan_pdb_stalls",
+        "PDB stalls encountered by a MaintenancePlan",
+        MAINTENANCE_PDB_STALLS.clone(),
+    );
+    registry.register(
+        "stellar_maintenance_plan_patch_cycle_ms",
+        "Elapsed milliseconds of a MaintenancePlan",
+        MAINTENANCE_PATCH_CYCLE_MS.clone(),
+    );
+    registry.register(
+        "stellar_maintenance_plan_cold_window_ms",
+        "Last measured post-drain cold window in ms (0 if not measurable by the backend)",
+        MAINTENANCE_COLD_WINDOW_MS.clone(),
+    );
+    registry.register(
+        "stellar_maintenance_plan_user_facing_errors",
+        "User-facing errors attributed to a MaintenancePlan (0 if not measurable by the backend)",
+        MAINTENANCE_USER_FACING_ERRORS.clone(),
     );
     registry.register(
         "stellar_node_active_connections",
@@ -945,6 +1025,11 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_control_plane_suppressed_actions",
         "Operator actions withheld because of control-plane degradation",
         CONTROL_PLANE_SUPPRESSED_ACTIONS.clone(),
+    );
+    registry.register(
+        "stellar_trace_context_extractions",
+        "Trace context extractions on message consume (result=stitched|missing|malformed)",
+        TRACE_CONTEXT_EXTRACTIONS.clone(),
     );
 
     registry.register(
@@ -2421,4 +2506,15 @@ pub fn inc_control_plane_suppressed_action(action: &str) {
     CONTROL_PLANE_SUPPRESSED_ACTIONS
         .get_or_create(&labels)
         .inc();
+}
+
+/// Count a trace context extraction on message consume.
+pub fn inc_trace_context_extraction(transport: &str, queue: &str, topic: &str, result: &str) {
+    let labels = TraceExtractionLabels {
+        transport: transport.to_string(),
+        queue: queue.to_string(),
+        topic: topic.to_string(),
+        result: result.to_string(),
+    };
+    TRACE_CONTEXT_EXTRACTIONS.get_or_create(&labels).inc();
 }

@@ -24,6 +24,19 @@ ARG TARGETPLATFORM
 ARG TARGETARCH
 ARG BUILDPLATFORM
 
+# Deterministic build inputs (#1997). Pass the commit time as
+#   --build-arg SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+# so embedded timestamps match across builds; the path prefixes and locale are
+# pinned here. scripts/reproducible-build.sh sets the same values outside Docker.
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
+    TZ=UTC \
+    LC_ALL=C \
+    LANG=C \
+    CARGO_INCREMENTAL=0 \
+    BUILD_PATH_PREFIX=/build
+ENV RUSTFLAGS="--remap-path-prefix=/app=/build --remap-path-prefix=/usr/local/cargo=/cargo --remap-path-prefix=/usr/local/rustup=/rustup -C link-arg=-Wl,--build-id=none"
+
 # Install cross-compilation toolchains when building for arm64 on amd64 host.
 RUN if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDPLATFORM" != "$TARGETPLATFORM" ]; then \
       apt-get update -qq && \
@@ -54,7 +67,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
   --mount=type=cache,target=/usr/local/cargo/git \
   --mount=type=cache,target=/app/target \
   if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDPLATFORM" != "$TARGETPLATFORM" ]; then \
-    cargo build --release --target aarch64-unknown-linux-gnu \
+    cargo build --release --locked --target aarch64-unknown-linux-gnu \
       --bin stellar-operator \
       --bin kubectl-stellar \
       --bin stellar-sidecar \
@@ -68,7 +81,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cp target/aarch64-unknown-linux-gnu/release/stellar-fork-detector target/release/ && \
     cp target/aarch64-unknown-linux-gnu/release/soroban-cache-proxy target/release/; \
   else \
-    cargo build --release \
+    cargo build --release --locked \
       --bin stellar-operator \
       --bin kubectl-stellar \
       --bin stellar-sidecar \
@@ -84,7 +97,7 @@ RUN strip /app/target/release/stellar-operator \
     && strip /app/target/release/stellar-watcher \
     && strip /app/target/release/stellar-fork-detector \
     && strip /app/target/release/soroban-cache-proxy
-  cargo build --release \
+  cargo build --release --locked \
     --bin stellar-operator \
     --bin kubectl-stellar \
     --bin stellar-sidecar \

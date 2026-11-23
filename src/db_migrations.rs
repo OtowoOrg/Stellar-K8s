@@ -21,6 +21,7 @@
 //! Migrations live in `db/migrations/` as paired `*.up.sql` / `*.down.sql`
 //! files and are executed with the existing `sqlx` PostgreSQL client.
 
+use crate::migration_safety::{MigrationPair, SchemaSnapshot};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Row};
 use std::collections::BTreeMap;
@@ -114,6 +115,74 @@ pub fn load_migrations(dir: impl AsRef<Path>) -> Result<Vec<Migration>, String> 
         });
     }
     Ok(migrations)
+}
+
+/// Load migrations as forward/rollback pairs for the safety gates.
+///
+/// This is the bridge between the on-disk migration runner and
+/// [`crate::migration_safety`]: every pair carries the version, name, and the
+/// exact SQL that the gates analyze for lock, compatibility, and rollback risk.
+pub fn load_migration_pairs(dir: impl AsRef<Path>) -> Result<Vec<MigrationPair>, String> {
+    let migrations = load_migrations(dir)?;
+    Ok(migrations
+        .into_iter()
+        .map(|m| MigrationPair {
+            version: m.version,
+            name: m.name,
+            up_sql: m.up_sql,
+            down_sql: m.down_sql,
+        })
+        .collect())
+}
+
+/// Load the production schema snapshot used by the compatibility gate.
+///
+/// The snapshot store is a directory of JSON files; the most recent snapshot
+/// (highest version) is returned. A missing store is an error so the gate
+/// fails closed rather than silently skipping the compatibility check.
+pub fn load_production_schema_snapshot(
+    store_dir: impl AsRef<Path>,
+) -> Result<SchemaSnapshot, String> {
+    let store_dir = store_dir.as_ref();
+    if !store_dir.is_dir() {
+        return Err(format!(
+            "production schema snapshot store not found: {}",
+            store_dir.display()
+        ));
+    }
+
+    let mut snapshots: BTreeMap<u32, PathBuf> = BTreeMap::new();
+    let entries = std::fs::read_dir(store_dir)
+        .map_err(|e| format!("failed to read {}: {e}", store_dir.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let stem = match path.file_stem().and_then(|s| s.to_str()) {
+            Some(stem) => stem,
+            None => continue,
+        };
+        let version_str = stem.split_once('_').map(|(v, _)| v).unwrap_or(stem);
+        if let Ok(version) = version_str.parse::<u32>() {
+            snapshots.insert(version, path);
+        }
+    }
+
+    let (_, latest) = snapshots
+        .into_iter()
+        .next_back()
+        .ok_or_else(|| format!("no schema snapshots found in {}", store_dir.display()))?;
+    let raw = std::fs::read_to_string(&latest)
+        .map_err(|e| format!("failed to read {}: {e}", latest.display()))?;
+    SchemaSnapshot::from_json(&raw)
+        .map_err(|e| format!("invalid schema snapshot {}: {e}", latest.display()))
+}
+
+/// Default on-disk location of the production schema snapshot store.
+pub fn default_schema_snapshot_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("db/schema_snapshots")
 }
 
 fn parse_migration_filename(file_name: &str) -> Result<(u32, String, &str), String> {
@@ -649,5 +718,22 @@ mod tests {
         let stmts = split_sql_statements("-- comment\nCREATE TABLE t (id INT);\nDROP TABLE t;");
         assert_eq!(stmts.len(), 2);
         assert!(stmts[0].starts_with("CREATE TABLE"));
+    }
+
+    #[test]
+    fn bundled_migrations_load_as_pairs() {
+        let pairs = load_migration_pairs(default_migrations_dir()).expect("load pairs");
+        assert!(!pairs.is_empty());
+        for pair in &pairs {
+            assert!(!pair.up_sql.trim().is_empty());
+            assert!(!pair.down_sql.trim().is_empty());
+        }
+    }
+
+    #[test]
+    fn missing_snapshot_store_fails_closed() {
+        let err = load_production_schema_snapshot("/nonexistent/schema/snapshots")
+            .expect_err("missing store must error");
+        assert!(err.contains("snapshot store not found"));
     }
 }

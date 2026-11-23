@@ -2059,7 +2059,18 @@ pub(crate) fn apply_stellar_node(
                 // rotation actually take effect without manual intervention;
                 // without it, pods keep serving with the stale in-memory cert
                 // even after the Secret contents change underneath them.
-                if let Err(e) =
+                // The rollout is withheld while the control plane is degraded;
+                // the rotation is picked up again once it recovers (#1973).
+                if let Err(level) = crate::degradation::DegradationGate::global()
+                    .check(crate::degradation::OperatorAction::Disruptive)
+                {
+                    info!(
+                        "Control plane is {:?}; withholding cert-rotation restart of {}/{}",
+                        level,
+                        namespace,
+                        node.name_any()
+                    );
+                } else if let Err(e) =
                     mtls::check_and_restart_on_cert_rotation(&client, &node, ctx.dry_run).await
                 {
                     warn!(
@@ -2573,7 +2584,15 @@ pub(crate) fn apply_stellar_node(
         // Checks whether any referenced secrets have been rotated since the last
         // reconciliation. If so, triggers a graceful rolling restart via pod template
         // annotations so pods pick up the new secret values without downtime.
+        // Withheld while the control plane is degraded (#1973).
+        if let Err(level) = crate::degradation::DegradationGate::global()
+            .check(crate::degradation::OperatorAction::Disruptive)
         {
+            info!(
+                "Control plane is {:?}; withholding secret-rotation restart of {}/{}",
+                level, namespace, name
+            );
+        } else {
             let dry_run = ctx.dry_run;
             if let Err(e) =
                 secret_watcher::handle_passphrase_secret_rotation(&client, &node, dry_run, &ctx.audit_log).await

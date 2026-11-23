@@ -150,6 +150,34 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
     let client_clone = client.clone();
     let namespace = args.namespace.clone();
 
+    {
+        use crate::schema_evolution::{
+            boot_validate_schema_evolution, ensure_storage_version_migrator,
+        };
+
+        let graphs = boot_validate_schema_evolution()?;
+        let migrator_enabled = std::env::var("SCHEMA_MIGRATOR_ENABLED")
+            .map(|value| !matches!(value.to_ascii_lowercase().as_str(), "0" | "false" | "no"))
+            .unwrap_or(true);
+        if migrator_enabled && !args.dry_run && !graphs.is_empty() {
+            let image = std::env::var("STELLAR_OPERATOR_IMAGE").unwrap_or_else(|_| {
+                format!("ghcr.io/stellar/stellar-k8s:{}", env!("CARGO_PKG_VERSION"))
+            });
+            let kinds = graphs
+                .iter()
+                .map(|graph| graph.crd_kind.clone())
+                .collect::<Vec<_>>();
+            if let Err(error) =
+                ensure_storage_version_migrator(&client, &namespace, &image, &kinds).await
+            {
+                warn!(
+                    ?error,
+                    "schema storage version migrator could not be started"
+                );
+            }
+        }
+    }
+
     let mtls_config = if args.enable_mtls {
         info!("Initializing mTLS for Operator...");
 
@@ -198,7 +226,8 @@ pub async fn run_operator(args: RunArgs) -> Result<(), Error> {
         tokio::spawn(
             async move {
                 let leader_flag = is_leader_bg.clone();
-                let election_task = run_leader_election(lease_client, &lease_ns, &identity, leader_flag);
+                let election_task =
+                    run_leader_election(lease_client, &lease_ns, &identity, leader_flag);
                 tokio::pin!(election_task);
                 tokio::select! {
                     _ = &mut election_task => {}

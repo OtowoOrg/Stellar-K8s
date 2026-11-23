@@ -58,6 +58,13 @@ pub struct SloSample {
     pub availability: f64,
 }
 
+/// Desired and ready replicas of one workload.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReplicaState {
+    pub desired: i32,
+    pub ready: i32,
+}
+
 /// Cluster mutations the engine is allowed to request.
 pub trait ClusterOps {
     fn list_nodes(&self) -> Vec<ClusterNode>;
@@ -76,6 +83,29 @@ pub trait ClusterOps {
     fn record_event(&mut self, reason: &str, message: &str);
     fn user_facing_errors(&self) -> u64;
     fn last_cold_window_ms(&self) -> u64;
+
+    // ── #1961: optional production checks. Defaults keep simulator behaviour unchanged. ──
+
+    /// Observed replica state of a workload, if the backend can see it. When present, prewarm is
+    /// only considered complete once `ready >= desired` (never merely because a scale-up was sent).
+    fn replica_state(&self, _workload: &str) -> Option<ReplicaState> {
+        None
+    }
+    /// `Some(reason)` if the pods on `targets` cannot be absorbed by the remaining schedulable nodes.
+    fn capacity_shortfall(&self, _targets: &[String]) -> Option<String> {
+        None
+    }
+    /// Outstanding post-drain checks (empty = verified). Maintenance is not declared complete while
+    /// any remain.
+    fn post_drain_issues(&self, _drained: &[String]) -> Vec<String> {
+        Vec::new()
+    }
+    /// Undo prewarm / recovery surge for `workload` (idempotent).
+    fn release_prewarm(&mut self, _workload: &str) -> Result<()> {
+        Ok(())
+    }
+    /// Restrict readiness / SLO / verification to the workloads affected by this plan.
+    fn scope_workloads(&mut self, _workloads: &[String]) {}
 }
 
 #[derive(Clone, Debug)]
@@ -133,9 +163,45 @@ pub fn reconcile_plan(
         }
     }
 
+    ops.scope_workloads(&st.affected_workloads);
     match st.phase {
         MaintenancePhase::Planned => {
+            if st.affected_workloads.is_empty() {
+                st.affected_workloads = workloads_on_remaining(&st, ops);
+            }
+            ops.scope_workloads(&st.affected_workloads);
+            if let Some(reason) = ops.capacity_shortfall(&st.resolved_nodes) {
+                // Wait (the cluster autoscaler may add nodes) but never disrupt without capacity.
+                let waited = ops.now_unix().saturating_sub(st.started_unix);
+                set_condition(
+                    &mut st.conditions,
+                    "CapacityAvailable",
+                    CONDITION_STATUS_FALSE,
+                    "InsufficientCapacity",
+                    &reason,
+                );
+                if waited >= spec.prewarm.readiness_timeout_seconds as i64 {
+                    return fail_plan(
+                        &mut st,
+                        ops,
+                        &format!("{reason} (waited {waited}s; scale the cluster or reduce the target set)"),
+                    );
+                }
+                st.message = Some(format!("waiting for capacity: {reason}"));
+                return Ok(ReconcileOutcome {
+                    status: st,
+                    requeue_seconds: 10,
+                });
+            }
+            set_condition(
+                &mut st.conditions,
+                "CapacityAvailable",
+                CONDITION_STATUS_TRUE,
+                "CapacityOk",
+                "replacement capacity available",
+            );
             if spec.prewarm.enabled {
+                st.last_progress_unix = ops.now_unix();
                 enter_phase(&mut st, MaintenancePhase::Prewarming, ops, "PrewarmStarted");
             } else {
                 enter_phase(
@@ -221,19 +287,33 @@ fn step_prewarm(
     ops: &mut impl ClusterOps,
 ) -> Result<()> {
     let workloads = workloads_on_remaining(st, ops);
-    let mut all_ready = true;
+    let mut not_ready: Vec<String> = Vec::new();
     for wl in &workloads {
-        let ready = ops.prewarm(wl, spec.prewarm.replica_buffer)?;
+        // Requesting capacity is not the same as having it: require observed Ready replicas.
+        let requested = ops.prewarm(wl, spec.prewarm.replica_buffer)?;
+        let observed = ops.replica_state(wl).map(|s| s.ready >= s.desired).unwrap_or(true);
+        let ready = requested && observed;
         if ready && !st.prewarmed_workloads.contains(wl) {
             st.prewarmed_workloads.push(wl.clone());
             ops.record_event("Prewarmed", &format!("workload {wl} replacements ready"));
         }
         if !ready {
-            all_ready = false;
+            not_ready.push(wl.clone());
         }
     }
-    if all_ready {
+    if not_ready.is_empty() {
         enter_phase(st, MaintenancePhase::Verifying, ops, "PrewarmReady");
+        return Ok(());
+    }
+    let waited = ops.now_unix().saturating_sub(st.last_progress_unix);
+    st.message = Some(format!("waiting for prewarmed replicas: {}", not_ready.join(", ")));
+    if waited >= spec.prewarm.readiness_timeout_seconds as i64 {
+        // No node has been cordoned or drained yet, so failing here is non-disruptive.
+        enter_phase(st, MaintenancePhase::Failed, ops, "PrewarmTimeout");
+        st.message = Some(format!(
+            "prewarm not ready after {waited}s for workloads: {} (no node was cordoned)",
+            not_ready.join(", ")
+        ));
     }
     Ok(())
 }
@@ -253,7 +333,7 @@ fn step_verify(
 
     let wave = wave_nodes(spec, st);
     if wave.is_empty() {
-        enter_phase(st, MaintenancePhase::Completed, ops, "AllNodesDrained");
+        complete_or_verify(spec, st, ops)?;
         st.progress = format!("{}/{}", st.resolved_nodes.len(), st.resolved_nodes.len());
         return Ok(());
     };
@@ -262,6 +342,7 @@ fn step_verify(
         for node in &wave {
             for wl in workloads_on_node(node, ops) {
                 if !ops.workload_ready_off_node(&wl, node) {
+                    st.last_progress_unix = ops.now_unix();
                     enter_phase(st, MaintenancePhase::Prewarming, ops, "PrewarmNotReady");
                     return Ok(());
                 }
@@ -290,7 +371,7 @@ fn step_drain(
 ) -> Result<()> {
     let wave = wave_nodes(spec, st);
     if wave.is_empty() {
-        enter_phase(st, MaintenancePhase::Completed, ops, "AllNodesDrained");
+        complete_or_verify(spec, st, ops)?;
         return Ok(());
     }
 
@@ -315,7 +396,7 @@ fn step_drain(
     if evictable.is_empty() {
         st.last_progress_unix = ops.now_unix();
         if st.cursor as usize >= st.resolved_nodes.len() {
-            enter_phase(st, MaintenancePhase::Completed, ops, "AllNodesDrained");
+            complete_or_verify(spec, st, ops)?;
         } else {
             enter_phase(st, MaintenancePhase::Verifying, ops, "NextWave");
         }
@@ -354,7 +435,7 @@ fn step_stalled(
 ) -> Result<()> {
     let wave = wave_nodes(spec, st);
     if wave.is_empty() {
-        enter_phase(st, MaintenancePhase::Completed, ops, "AllNodesDrained");
+        complete_or_verify(spec, st, ops)?;
         return Ok(());
     }
 
@@ -364,6 +445,10 @@ fn step_stalled(
                 for wl in workloads_on_node(node, ops) {
                     ops.prewarm(&wl, spec.prewarm.replica_buffer.max(1))?;
                     ops.recover_workload(&wl)?;
+                    // Remember the surge so it is released after verified completion.
+                    if !st.prewarmed_workloads.contains(&wl) {
+                        st.prewarmed_workloads.push(wl.clone());
+                    }
                 }
             }
             st.last_progress_unix = ops.now_unix();
@@ -383,6 +468,54 @@ fn step_stalled(
         StallRecovery::Abort => {
             abort_plan(spec, st, ops, "PdbStallAbort")?;
         }
+    }
+    Ok(())
+}
+
+/// Declare completion only when every post-drain check holds; otherwise keep verifying
+/// (bounded by `prewarm.readinessTimeoutSeconds`) and fail with the unresolved checks.
+fn complete_or_verify(
+    spec: &MaintenancePlanSpec,
+    st: &mut MaintenancePlanStatus,
+    ops: &mut impl ClusterOps,
+) -> Result<()> {
+    let now = ops.now_unix();
+    if st.post_verify_started_unix == 0 {
+        st.post_verify_started_unix = now;
+    }
+    let issues = ops.post_drain_issues(&st.nodes_completed);
+    if issues.is_empty() {
+        for wl in st.prewarmed_workloads.clone() {
+            ops.release_prewarm(&wl)?;
+        }
+        set_condition(
+            &mut st.conditions,
+            "PostDrainVerified",
+            CONDITION_STATUS_TRUE,
+            "AllChecksPassed",
+            "workloads rescheduled and Ready, PDBs satisfied, drained nodes cordoned and empty",
+        );
+        st.message = None;
+        enter_phase(st, MaintenancePhase::Completed, ops, "AllNodesDrained");
+        return Ok(());
+    }
+    let waited = now.saturating_sub(st.post_verify_started_unix);
+    let msg = format!("post-drain verification unresolved: {}", issues.join("; "));
+    set_condition(
+        &mut st.conditions,
+        "PostDrainVerified",
+        CONDITION_STATUS_FALSE,
+        "ChecksPending",
+        &msg,
+    );
+    if waited >= spec.prewarm.readiness_timeout_seconds as i64 {
+        enter_phase(st, MaintenancePhase::Failed, ops, "PostDrainVerificationFailed");
+        st.message = Some(format!("{msg} (after {waited}s; surge replicas were kept to protect availability)"));
+    } else {
+        if st.phase != MaintenancePhase::Verifying {
+            enter_phase(st, MaintenancePhase::Verifying, ops, "PostDrainVerification");
+        }
+        st.message = Some(msg);
     }
     Ok(())
 }
@@ -563,6 +696,14 @@ pub struct SimulatedCluster {
     pub cordon_before_verify: bool,
     pub force_pdb_zero: bool,
     pub recovered: BTreeSet<String>,
+    /// Model the workload controller: an evicted pod is recreated on a schedulable node. The
+    /// replacement is Ready immediately if a prewarmed surge replica exists (consumed), otherwise
+    /// after `baseline_start_ms`. Off by default so existing simulations are unchanged.
+    pub reschedule_evicted: bool,
+    /// (pod name, ready-at ms) for replacements still starting.
+    pub starting: Vec<(String, u64)>,
+    /// Cold window (ms) observed at every eviction, in order.
+    pub cold_windows: Vec<u64>,
 }
 
 impl SimulatedCluster {
@@ -615,10 +756,29 @@ impl SimulatedCluster {
             cordon_before_verify: false,
             force_pdb_zero: false,
             recovered: BTreeSet::new(),
+            reschedule_evicted: false,
+            starting: Vec::new(),
+            cold_windows: Vec::new(),
         }
     }
 
-    fn refresh_pdb_health(&mut self) {
+    /// Recompute PDB health (and mark replacements whose start-up finished as Ready).
+    pub fn refresh_pdb_health(&mut self) {
+        let now_ms = self.now_ms;
+        let due: Vec<String> = self
+            .starting
+            .iter()
+            .filter(|(_, t)| *t <= now_ms)
+            .map(|(n, _)| n.clone())
+            .collect();
+        if !due.is_empty() {
+            for p in &mut self.pods {
+                if due.contains(&p.name) {
+                    p.ready = true;
+                }
+            }
+            self.starting.retain(|(n, _)| !due.contains(n));
+        }
         for pdb in &mut self.pdbs {
             let healthy = self
                 .pods
@@ -705,7 +865,41 @@ impl ClusterOps for SimulatedCluster {
             // Replacement already Ready: residual failover only.
             self.last_cold_window_ms = self.baseline_start_ms / 10;
         }
+        self.cold_windows.push(self.last_cold_window_ms);
         self.pods.retain(|p| p.name != pod.name);
+        if self.reschedule_evicted {
+            let mut load: HashMap<String, usize> = HashMap::new();
+            for p in &self.pods {
+                *load.entry(p.node.clone()).or_insert(0) += 1;
+            }
+            // Replacement capacity: nodes labelled role=spare are preferred (models autoscaled /
+            // reserved capacity); otherwise any Ready, schedulable node.
+            let schedulable: Vec<&ClusterNode> = self.nodes.iter().filter(|n| n.ready && !n.cordoned).collect();
+            let spare: Vec<&ClusterNode> = schedulable
+                .iter()
+                .copied()
+                .filter(|n| n.labels.get("role").map(String::as_str) == Some("spare"))
+                .collect();
+            let pool = if spare.is_empty() { schedulable } else { spare };
+            let target = pool
+                .into_iter()
+                .min_by_key(|n| load.get(&n.name).copied().unwrap_or(0))
+                .map(|n| n.name.clone());
+            if let Some(node) = target {
+                let name = format!("{}-r{}", pod.name, self.evictions);
+                // The replacement always starts cold; a Ready surge replica (counted by the PDB
+                // health and by the cold window below) keeps serving capacity meanwhile.
+                self.starting.push((name.clone(), self.now_ms + self.baseline_start_ms));
+                self.pods.push(WorkloadPod {
+                    name,
+                    namespace: pod.namespace.clone(),
+                    node,
+                    workload: pod.workload.clone(),
+                    ready: false,
+                    daemon_set: false,
+                });
+            }
+        }
         self.evictions += 1;
         self.now += 1;
         self.now_ms += 50;
@@ -982,7 +1176,12 @@ mod tests {
     #[test]
     fn hundred_node_drains_zero_user_facing_errors() {
         const N: usize = 100;
-        let mut cluster = SimulatedCluster::patch_ring(N, 10, 4);
+        // 20 spare nodes stay schedulable and absorb the rescheduled pods.
+        let mut cluster = SimulatedCluster::patch_ring(N + 20, 10, 4);
+        cluster.reschedule_evicted = true;
+        for n in cluster.nodes.iter_mut().skip(N) {
+            n.labels.insert("role".into(), "spare".into());
+        }
         let spec = plan_for_nodes((0..N).map(|i| format!("node-{i:03}")).collect());
         let status = run_to_completion(&spec, &mut cluster, 20_000).unwrap();
         assert_eq!(status.phase, MaintenancePhase::Completed, "{status:?}");

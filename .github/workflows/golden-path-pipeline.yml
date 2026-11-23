@@ -1,0 +1,60 @@
+name: Golden Path Pipeline Check
+
+# Runs `make golden-path-pipeline` (scripts/golden-path-pipeline-check.sh, issue #1909)
+# on changes that affect the canonical repo commands it chains together.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/golden-path-pipeline-check.sh"
+      - "scripts/quickstart-golden-path.sh"
+      - "scripts/release-gate.sh"
+      - "scripts/issue_template_lint.py"
+      - "scripts/generate-api-docs.py"
+      - "Makefile"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "charts/stellar-operator/**"
+      - "config/crd/**"
+      - "docs/api-reference.md"
+      - ".github/workflows/golden-path-pipeline.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/golden-path-pipeline-check.sh"
+      - "scripts/quickstart-golden-path.sh"
+      - "scripts/release-gate.sh"
+      - "scripts/issue_template_lint.py"
+      - "scripts/generate-api-docs.py"
+      - "Makefile"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "charts/stellar-operator/**"
+      - "config/crd/**"
+      - "docs/api-reference.md"
+      - ".github/workflows/golden-path-pipeline.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  golden-path-pipeline:
+    name: Golden path pipeline (clean checkout)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "golden-path-pipeline"
+          components: "rustfmt clippy"
+
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+
+      - name: Run golden-path pipeline check
+        run: make golden-path-pipeline

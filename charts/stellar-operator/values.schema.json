@@ -308,6 +308,17 @@
           "type": "object",
           "description": "Resource requests and limits for the webhook server container"
         },
+        "certHealth": {
+          "type": "object",
+          "description": "Resources for the fail-closed certificate health sidecar paired with the webhook",
+          "additionalProperties": false,
+          "properties": {
+            "resources": {
+              "type": "object",
+              "description": "Sidecar container resource requests/limits"
+            }
+          }
+        },
         "certManager": {
           "type": "object",
           "description": "Declarative cert-manager webhook TLS: CA, serving certificate, trust-bundle injection and continuous renewal",

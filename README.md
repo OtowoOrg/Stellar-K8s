@@ -89,6 +89,7 @@ Designed for high availability, type safety, and minimal footprint.
 | Product storyboards | [docs/pitch-storyboards.md](docs/pitch-storyboards.md) |
 | Example manifests | [examples/](examples/) |
 | Security disclosures | [SECURITY.md](SECURITY.md) |
+| Dependabot alert monitoring | Alerts/PRs from [`.github/dependabot.yml`](.github/dependabot.yml) are reviewed per [`docs/security/dependency-updates.md`](docs/security/dependency-updates.md); see [SECURITY.md](SECURITY.md#dependency-security) for the full dependency security policy |
 | CI pipeline | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
 Want the problem statement, users, and journeys in one place? See the **[PITCH storyboards](docs/pitch-storyboards.md)** (implemented vs proposed capabilities are labeled there).
 

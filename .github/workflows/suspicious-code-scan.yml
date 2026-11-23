@@ -1,0 +1,50 @@
+name: Suspicious Code Scan
+
+# Blocks code that could breach GitHub's Acceptable Use Policies and get the
+# repository or account restricted: crypto miners, reverse shells/backdoors,
+# obfuscated payloads, data exfiltration endpoints, Actions abuse, GitHub API
+# spam (bulk issues/stars/follows), and committed executables.
+# Rules live in scripts/check-suspicious-code.py.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 1'   # weekly full scan, Mondays 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: suspicious-code-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Scan for policy-violating code
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # PRs: fail only on files the PR adds or changes.
+      - name: Scan changed files (PR)
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check-suspicious-code.py --base "origin/${{ github.base_ref }}"
+
+      # main / schedule / manual: scan the whole repository.
+      - name: Scan full repository
+        if: github.event_name != 'pull_request'
+        run: python3 scripts/check-suspicious-code.py

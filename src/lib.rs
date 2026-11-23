@@ -185,6 +185,7 @@ pub mod search;
 pub mod security;
 #[path = "telemetry.rs"]
 pub mod telemetry;
+pub mod trace_propagation;
 pub mod version_check;
 pub mod websocket_streaming;
 

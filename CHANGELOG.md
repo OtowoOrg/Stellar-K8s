@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 • Cost estimate pricing model at `config/cost-estimate.yaml` with the `make cost-estimate` and `make cost-estimate-check` targets and the `scripts/cost-estimate.py` tool; documented in `docs/cost-estimate.md` (#1834).
 • Capacity planning configuration at `config/capacity-planning.yaml` with the `make capacity-plan` and `make capacity-plan-check` targets and the `scripts/capacity-plan.py` tool; documented in `docs/capacity-planning.md` (#1835).
 • First-class issue type registry at `.github/issue-types.yml`, registry validation in `scripts/issue_template_lint.py` with the `make issue-types-check` target, and the `docs/first-class-issues.md` guide registered in `mkdocs.yml` (#1836).
+• Dependency vulnerability scan via `cargo audit`; findings documented at `security/reports/dependency-audit-2026-11-23.md` (#1935).
 
 ### Fixed
 

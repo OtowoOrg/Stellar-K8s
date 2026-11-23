@@ -110,6 +110,7 @@ make check-license-headers     # License header enforcement
 - **Non-Root Execution**: Containers run as non-root user
 - **Read-Only Root**: Immutable container filesystem
 - **Security Contexts**: Restricted security contexts
+- **CVE Scanning**: Operator images are scanned on every PR, every push to `main`, and nightly by the dual-scanner [`container-image-security.yml`](.github/workflows/container-image-security.yml) workflow (Trivy + Grype). CRITICAL/HIGH findings with an available fix fail the build; results are uploaded as SARIF to the repository's Security tab.
 
 ## Security Testing
 

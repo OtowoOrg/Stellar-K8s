@@ -480,6 +480,21 @@ pub static CONTROL_PLANE_SUPPRESSED_ACTIONS: Lazy<
     Family<SuppressedActionLabels, Counter<u64, AtomicU64>>,
 > = Lazy::new(Family::default);
 
+/// Labels for async trace context extraction (#1971).
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct TraceExtractionLabels {
+    pub transport: String,
+    pub queue: String,
+    pub topic: String,
+    /// `stitched`, `missing` or `malformed`.
+    pub result: String,
+}
+
+/// Trace context extractions on message consume, by outcome.
+pub static TRACE_CONTEXT_EXTRACTIONS: Lazy<
+    Family<TraceExtractionLabels, Counter<u64, AtomicU64>>,
+> = Lazy::new(Family::default);
+
 /// Global metrics registry
 pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
     let mut registry = Registry::default();
@@ -945,6 +960,11 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| {
         "stellar_control_plane_suppressed_actions",
         "Operator actions withheld because of control-plane degradation",
         CONTROL_PLANE_SUPPRESSED_ACTIONS.clone(),
+    );
+    registry.register(
+        "stellar_trace_context_extractions",
+        "Trace context extractions on message consume (result=stitched|missing|malformed)",
+        TRACE_CONTEXT_EXTRACTIONS.clone(),
     );
 
     registry.register(
@@ -2421,4 +2441,15 @@ pub fn inc_control_plane_suppressed_action(action: &str) {
     CONTROL_PLANE_SUPPRESSED_ACTIONS
         .get_or_create(&labels)
         .inc();
+}
+
+/// Count a trace context extraction on message consume.
+pub fn inc_trace_context_extraction(transport: &str, queue: &str, topic: &str, result: &str) {
+    let labels = TraceExtractionLabels {
+        transport: transport.to_string(),
+        queue: queue.to_string(),
+        topic: topic.to_string(),
+        result: result.to_string(),
+    };
+    TRACE_CONTEXT_EXTRACTIONS.get_or_create(&labels).inc();
 }

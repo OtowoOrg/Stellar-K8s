@@ -176,7 +176,7 @@ security-report: ## Generate comprehensive security report
 
 shellcheck: ## Run shellcheck on all shell scripts
 	@echo "→ Running shellcheck..."
-	@find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error || true
+	@find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error
 
 CODESPELL_SKIP ?= Cargo.lock,package-lock.json,target,node_modules,vendor,*-vendor,THIRD_PARTY_LICENSES.md
 

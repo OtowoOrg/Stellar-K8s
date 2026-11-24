@@ -415,6 +415,9 @@ jobs:
           [[ -n "${SHELLCHECK_EXCLUDES}" ]] && shellcheck_cmd+=(-e "${SHELLCHECK_EXCLUDES}")
           "${shellcheck_cmd[@]}" "${shell_files[@]}"
 
+      - name: Check shell script syntax (bash -n)
+        run: find scripts -type f -name "*.sh" -print0 | xargs -0 -n1 bash -n
+
       # ── Issue #1049: static analysis gate for unsafe shell patterns ────────
       # shellcheck -S error deliberately ignores patterns that are stylistic to
       # a linter but operational here (unguarded rm -rf paths, eval on

@@ -1,0 +1,150 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Certificate Expiry Monitoring Alerts
+# Prometheus alerting rules for certificate expiration
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cert-expiry-alerts
+  namespace: monitoring
+  labels:
+    app: prometheus
+    component: alerting-rules
+data:
+  cert-expiry-alerts.yaml: |
+    groups:
+    - name: certificate-expiry
+      rules:
+      # Admission webhook lifetime horizons (cert-manager rotates before these)
+      - alert: WebhookCertificateExpiring25Percent
+        expr: stellar_webhook_certificate_remaining_ratio > 0 and stellar_webhook_certificate_remaining_ratio <= 0.25
+        for: 1m
+        labels:
+          severity: warning
+          component: admission-webhook
+        annotations:
+          summary: "Admission webhook certificate has 25% or less lifetime remaining"
+          description: "The cert-health sidecar is validating renewal and trust-bundle propagation."
+      - alert: WebhookCertificateExpiring10Percent
+        expr: stellar_webhook_certificate_remaining_ratio > 0 and stellar_webhook_certificate_remaining_ratio <= 0.10
+        for: 1m
+        labels:
+          severity: critical
+          component: admission-webhook
+        annotations:
+          summary: "Admission webhook certificate has 10% or less lifetime remaining"
+          description: "Check cert-manager and cainjector immediately."
+      - alert: WebhookCertificateVerificationFailed
+        expr: stellar_webhook_certificate_valid == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: admission-webhook
+        annotations:
+          summary: "Admission webhook serving certificate failed verification"
+          description: "The pod is failing readiness closed until all certificate checks pass."
+
+      # Certificate expiring in 30 days
+      - alert: CertificateExpiringSoon
+        expr: |
+          (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < 30
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Certificate expiring soon"
+          description: |
+            Certificate {{ $labels.name }} in namespace {{ $labels.namespace }} 
+            expires in {{ $value | humanizeDuration }}.
+          runbook_url: "https://docs.stellar.org/runbooks/cert-expiry"
+      
+      # Certificate expiring in 7 days
+      - alert: CertificateExpiringCritical
+        expr: |
+          (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < 7
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Certificate expiring critically soon"
+          description: |
+            Certificate {{ $labels.name }} in namespace {{ $labels.namespace }} 
+            expires in {{ $value | humanizeDuration }}. Immediate action required.
+          runbook_url: "https://docs.stellar.org/runbooks/cert-expiry-critical"
+      
+      # Certificate expired
+      - alert: CertificateExpired
+        expr: |
+          certmanager_certificate_expiration_timestamp_seconds < time()
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Certificate has expired"
+          description: |
+            Certificate {{ $labels.name }} in namespace {{ $labels.namespace }} 
+            has expired. Service may be unavailable.
+          runbook_url: "https://docs.stellar.org/runbooks/cert-expired"
+      
+      # Certificate renewal failed
+      - alert: CertificateRenewalFailed
+        expr: |
+          certmanager_certificate_ready_status{condition="False"} == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Certificate renewal failed"
+          description: |
+            Certificate {{ $labels.name }} in namespace {{ $labels.namespace }} 
+            has failed to renew. Check cert-manager logs.
+          runbook_url: "https://docs.stellar.org/runbooks/cert-renewal-failed"
+      
+      # Certificate not ready
+      - alert: CertificateNotReady
+        expr: |
+          certmanager_certificate_ready_status{condition="False"} == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Certificate not ready"
+          description: |
+            Certificate {{ $labels.name }} in namespace {{ $labels.namespace }} 
+            is not ready. This may affect TLS termination.
+      
+      # ACME account registration failed
+      - alert: ACMEAccountRegistrationFailed
+        expr: |
+          certmanager_acme_account_registration_failed_total > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ACME account registration failed"
+          description: |
+            Failed to register ACME account. Certificate issuance may be affected.
+      
+      # Certificate count by issuer
+      - alert: HighCertificateCount
+        expr: |
+          count(certmanager_certificate_ready_status{condition="True"}) by (issuer_name) > 100
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "High certificate count"
+          description: |
+            Issuer {{ $labels.issuer_name }} has {{ $value }} certificates.
+            Consider reviewing certificate policies.

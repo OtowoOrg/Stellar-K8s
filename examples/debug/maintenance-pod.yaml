@@ -1,0 +1,122 @@
+# Maintenance Debug Pod for PVC corruption recovery.
+#
+# Usage:
+# 1. Suspend the affected StellarNode before applying this manifest.
+# 2. Set metadata.namespace, the PVC claimName, and the ConfigMap name.
+# 3. Apply with: kubectl apply -f examples/debug/maintenance-pod.yaml
+# 4. Delete this pod immediately after recovery.
+#
+# See docs/operations/pvc-troubleshooting.md for the full procedure.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: stellar-maintenance-debug
+  namespace: stellar
+  labels:
+    app.kubernetes.io/name: stellar-maintenance-debug
+    app.kubernetes.io/component: storage-recovery
+    app.kubernetes.io/part-of: stellar-k8s
+  annotations:
+    kubectl.kubernetes.io/default-container: core-tools
+spec:
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 5
+  securityContext:
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+  volumes:
+    - name: stellar-data
+      persistentVolumeClaim:
+        claimName: validator-primary-data
+    - name: stellar-core-config
+      configMap:
+        name: validator-primary-config
+        optional: true
+    - name: scratch
+      emptyDir: {}
+  containers:
+    - name: core-tools
+      image: docker.io/stellar/stellar-core:v21.3.0
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/bash
+        - -lc
+        - sleep infinity
+      env:
+        - name: STELLAR_CORE_CONFIG
+          value: /etc/stellar/stellar-core.cfg
+      volumeMounts:
+        - name: stellar-data
+          mountPath: /mnt/stellar-data
+        - name: stellar-core-config
+          mountPath: /etc/stellar
+          readOnly: true
+        - name: scratch
+          mountPath: /tmp/recovery
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "2"
+          memory: 2Gi
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: false
+        capabilities:
+          drop:
+            - ALL
+    - name: postgres-tools
+      image: docker.io/library/postgres:16
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/bash
+        - -lc
+        - sleep infinity
+      env:
+        - name: PGSSLMODE
+          value: prefer
+      volumeMounts:
+        - name: stellar-data
+          mountPath: /mnt/stellar-data
+        - name: scratch
+          mountPath: /tmp/recovery
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "2"
+          memory: 2Gi
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: false
+        capabilities:
+          drop:
+            - ALL
+    - name: filesystem-tools
+      image: docker.io/library/ubuntu:24.04
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/sh
+        - -c
+        - sleep infinity
+      volumeMounts:
+        - name: stellar-data
+          mountPath: /mnt/stellar-data
+        - name: scratch
+          mountPath: /tmp/recovery
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: false
+        capabilities:
+          drop:
+            - ALL

@@ -1,0 +1,154 @@
+name: Security Review
+
+# Issue #1713: Automated security-review gate that runs on every PR touching
+# source code, Helm charts, or dependency manifests.  Combines cargo-audit,
+# cargo-deny, Trivy image scan, and a SARIF upload to the GitHub Security tab.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'controller/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'deny.toml'
+      - 'charts/**'
+      - 'Dockerfile'
+      - '.github/workflows/security-review.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'controller/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'deny.toml'
+      - 'charts/**'
+      - 'Dockerfile'
+      - '.github/workflows/security-review.yml'
+  schedule:
+    # Daily at 03:00 UTC so advisories published overnight are caught.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # required for SARIF upload
+
+jobs:
+  dependency-audit:
+    name: Dependency Audit (cargo-audit + cargo-deny)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "security-review-audit"
+          extra-tools: "cargo-deny cargo-audit"
+
+      - name: Remove stale advisory cache
+        run: rm -rf "${CARGO_HOME:-$HOME/.cargo}/advisory-db"
+
+      - name: Run cargo-audit
+        run: cargo audit
+
+      - name: Run cargo-deny (licenses, bans, advisories, sources)
+        run: cargo deny check
+
+      - name: Generate SBOM snapshot
+        run: |
+          mkdir -p security/sbom
+          cargo tree --format "{p} {l}" > security/sbom/dependencies.txt
+          cargo deny list --format json > security/sbom/licenses.json 2>/dev/null || true
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom-${{ github.sha }}
+          path: security/sbom/
+          retention-days: 90
+
+  trivy-scan:
+    name: Trivy Container & Filesystem Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Run Trivy filesystem scan (SARIF)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'   # upload report even when vulnerabilities found
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+      - name: Trivy human-readable summary
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'   # fail the job when CRITICAL/HIGH findings exist
+
+  helm-security:
+    name: Helm Chart Security Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: 'v3.14.0'
+
+      - name: Helm lint (strict)
+        run: helm lint charts/stellar-operator --strict
+
+      - name: Run Trivy on rendered Helm chart
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'config'
+          scan-ref: 'charts/stellar-operator'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+  security-summary:
+    name: Security Review Summary
+    runs-on: ubuntu-latest
+    needs: [dependency-audit, trivy-scan, helm-security]
+    if: always()
+
+    steps:
+      - name: Write job summary
+        run: |
+          echo "## Security Review Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Dependency Audit (cargo-audit + deny) | ${{ needs.dependency-audit.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trivy Container & FS Scan | ${{ needs.trivy-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Helm Chart Security Lint  | ${{ needs.helm-security.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "SARIF results are available in the **Security** tab of this repository." >> $GITHUB_STEP_SUMMARY

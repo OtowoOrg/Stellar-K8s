@@ -1,0 +1,35 @@
+# Golden-path values for examples/argocd/v1.
+# Replace seedSecret.value through your approved secret-management workflow before
+# using a validator outside a disposable development cluster.
+nodeType: Validator
+network: testnet
+version: v21.0.0
+replicas: 1
+storageClass: stellar-local
+storageSize: 100Gi
+retentionPolicy: Delete
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+
+seedSecret:
+  enabled: true
+  name: validator-seed-testnet
+  key: STELLAR_CORE_SEED
+  # Development-only placeholder. A real Stellar validator secret must be
+  # supplied in Git using a secret-encryption system approved by your team.
+  value: REPLACE_WITH_A_TESTNET_VALIDATOR_SECRET_KEY
+
+soroban:
+  replicas: 2
+  minReplicas: 2
+  maxReplicas: 3
+  targetCPU: 70
+  stellarCoreUrl: http://validator-testnet:11626
+  maxEventsPerRequest: 10000
+  historyArchiveUrl: https://history.stellar.org/prd/core-testnet/core_testnet_001

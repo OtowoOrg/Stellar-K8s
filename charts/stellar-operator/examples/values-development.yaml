@@ -53,12 +53,7 @@ otel:
 
 # All feature flags enabled for testing
 featureFlags:
-  enableCveScanning: false
-  enableReadPool: true
   enableDr: false
-  enablePeerDiscovery: true
-  enableArchiveHealth: false
-  enableSorobanMetrics: true
 
 # No HPA in development
 horizonHpa:

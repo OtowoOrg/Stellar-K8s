@@ -1,0 +1,164 @@
+name: E2E Quickstart Verification
+
+# Verifies that the README Quick Start commands work end-to-end by running
+# scripts/quickstart-verify.sh in a real kind cluster.
+#
+# Addresses GitHub Issue #1120.
+#
+# When this runs:
+#   - On pushes to main that touch operator code, charts, or the README
+#   - On PRs that touch the same paths (as a required check)
+#   - Weekly on Sundays to catch environmental drift
+#   - Manually via workflow_dispatch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "charts/**"
+      - "config/crd/**"
+      - "config/samples/**"
+      - "Dockerfile"
+      - "Makefile"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "README.md"
+      - "scripts/quickstart-verify.sh"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "charts/**"
+      - "config/crd/**"
+      - "config/samples/**"
+      - "Dockerfile"
+      - "Makefile"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "README.md"
+      - "scripts/quickstart-verify.sh"
+  workflow_dispatch:
+    inputs:
+      skip_cleanup:
+        description: "Skip cluster cleanup after run (debugging)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-quickstart-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quickstart:
+    name: Quickstart E2E Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # ── Rust toolchain ───────────────────────────────────────────────────
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "verify-quickstart"
+
+      # ── Tool installs ────────────────────────────────────────────────────
+      - name: Install kind
+        uses: helm/kind-action@v1.15.1
+        with:
+          install_only: true
+          version: "v0.23.0"
+
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: "v3.16.0"
+
+      # ── README prerequisite check ────────────────────────────────────────
+      # Mirrors README section: "Prerequisites"
+      - name: Verify README prerequisites are available
+        run: |
+          echo "── Checking all prerequisites listed in README ──────────────────"
+          for cmd in kind kubectl helm docker cargo; do
+            if command -v "$cmd" >/dev/null 2>&1; then
+              echo "  ✓ $cmd: $(command -v $cmd)"
+            else
+              echo "  ✗ $cmd: NOT FOUND"
+              exit 1
+            fi
+          done
+          echo "✓ All README prerequisites are available"
+
+      # ── Run quickstart verification ──────────────────────────────────────
+      - name: Run quickstart verification script
+        env:
+          CLUSTER_NAME: stellar-e2e-${{ github.run_id }}
+          SKIP_CLEANUP: "0"
+          TIMEOUT: "180s"
+        run: |
+          chmod +x scripts/quickstart-verify.sh
+          bash scripts/quickstart-verify.sh
+
+      # ── Unified failure diagnostics bundle (issue #1151) ─────────────────
+      - name: Upload failure diagnostics bundle
+        if: failure()
+        uses: ./.github/actions/collect-failure-diagnostics
+        with:
+          artifact-name: ci-diagnostics-e2e-quickstart-${{ github.run_id }}
+          operator-namespace: stellar-system
+          extra-paths: |
+            /tmp/stellar-e2e-verify.log
+            /tmp/stellar-e2e-setup.log
+          retention-days: "14"
+
+  # ── README command smoke test (fast, no cluster required) ─────────────────
+  readme-commands-lint:
+    name: README Commands Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Shellcheck quickstart-verify.sh
+        run: shellcheck -S warning scripts/quickstart-verify.sh
+
+      - name: Verify Makefile quickstart target exists
+        run: |
+          if grep -q "^quickstart:" Makefile; then
+            echo "✓ Makefile 'quickstart' target exists"
+          else
+            echo "✗ Makefile 'quickstart' target is missing"
+            exit 1
+          fi
+
+      - name: Verify all README code-block commands exist in repo
+        run: |
+          # Extract shell commands from README fenced code blocks
+          # and verify that referenced Makefile targets and scripts exist.
+          echo "── Verifying README make targets exist in Makefile ─────────────"
+          MAKE_TARGETS=$(grep -oP "(?<=make )[a-z][a-z0-9_-]+" README.md | sort -u || true)
+          MISSING=0
+          for target in $MAKE_TARGETS; do
+            if grep -qE "^${target}:" Makefile; then
+              echo "  ✓ make $target"
+            else
+              echo "  ✗ make $target — target not found in Makefile"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [[ "$MISSING" -gt 0 ]]; then
+            echo "::error::${MISSING} Makefile target(s) referenced in README are missing"
+            exit 1
+          fi
+          echo "✓ All README make targets exist in Makefile"

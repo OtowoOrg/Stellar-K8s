@@ -1,0 +1,88 @@
+# Production-oriented Stellar Core Validator on Public Mainnet.
+# Fields are limited to the published stellarnodes.stellar.org/v1alpha1 OpenAPI schema.
+# kubectl apply --dry-run=client -f config/crd/stellarnode-crd.yaml
+# kubectl apply --dry-run=client -f docs/reference/examples/validator.yaml
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-mainnet
+  namespace: stellar
+  labels:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/component: validator
+    app.kubernetes.io/part-of: stellar
+spec:
+  # Validator runs stellar-core and participates in consensus.
+  nodeType: Validator
+
+  # Public network. Passphrase is implied by this enum value.
+  network: mainnet
+
+  # stellar-core image tag (stellar/stellar-core:<version>).
+  version: "v21.0.0"
+
+  # OpenAPI-required IntOrString PDB fields. The operator semantically requires
+  # replicas=1 for validators and rejects PDB configuration at reconcile time.
+  minAvailable: 1
+  maxUnavailable: 0
+
+  # OpenAPI-required. Empty list lets the operator apply its default spreading.
+  topologySpreadConstraints: []
+
+  # Semantic rule: Validator replicas must be exactly 1.
+  replicas: 1
+
+  # Full history is VSL-compatible archive mode (schema enum: Full | Recent).
+  historyMode: Full
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+
+  storage:
+    # PersistentVolume is the schema default and the production path for ledger data.
+    mode: PersistentVolume
+    # Cluster-specific StorageClass (gp3, premium-rwo, etc.).
+    storageClass: "ssd-premium"
+    # Mainnet ledger data is hundreds of GiB; size is required when storage is explicit.
+    size: "500Gi"
+    # Retain keeps the PVC if the StellarNode is deleted.
+    retentionPolicy: Retain
+
+  validatorConfig:
+    # Prefer seedSecretSource over deprecated seedSecretRef.
+    # localRef is schema-documented as development-only; use csiRef or vaultRef
+    # when an HSM is configured (semantic rule).
+    seedSecretSource:
+      localRef:
+        name: validator-seed-mainnet
+        key: STELLAR_CORE_SEED
+    enableHistoryArchive: true
+    # Semantic rule: required and non-empty when enableHistoryArchive is true.
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+      - "https://history.stellar.org/prd/core-live/core_live_002"
+    catchupComplete: false
+    # TOML quorum set consumed by stellar-core.
+    quorumSet: |
+      [QUORUM_SET]
+      THRESHOLD_PERCENT=67
+      VALIDATORS=[
+        "$sdf1", "$sdf2", "$sdf3"
+      ]
+
+  # RollingUpdate is the schema default; canary is semantically rejected on Validator.
+  strategy:
+    type: rollingUpdate
+
+  # Hard is the schema default: do not co-locate matching network/component pods.
+  podAntiAffinity: Hard
+
+  alerting: true
+  suspended: false
+  maintenanceMode: false

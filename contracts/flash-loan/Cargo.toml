@@ -1,0 +1,19 @@
+[package]
+name = "flash-loan"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = "22"
+
+[dev-dependencies]
+soroban-sdk = { version = "22", features = ["testutils"] }
+
+[[bench]]
+name = "flash_loan_bench"
+harness = false

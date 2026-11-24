@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Cloud cost estimation controller.
 //!
 //! Estimates the monthly USD cost of a StellarNode pod based on its
@@ -113,11 +125,6 @@ fn parse_memory_gib(s: &str) -> f64 {
     }
 }
 
-/// Parse a storage size string (e.g. "100Gi") into GiB.
-fn parse_storage_gib(s: &str) -> f64 {
-    parse_memory_gib(s)
-}
-
 // ---------------------------------------------------------------------------
 // Cost estimation
 // ---------------------------------------------------------------------------
@@ -131,7 +138,7 @@ pub fn estimate_monthly_cost(node: &StellarNode) -> f64 {
 
     let cpu_vcpu = parse_cpu(&node.spec.resources.requests.cpu);
     let ram_gib = parse_memory_gib(&node.spec.resources.requests.memory);
-    let storage_gib = parse_storage_gib(&node.spec.storage.size);
+    let storage_gib = parse_memory_gib(&node.spec.storage.size);
 
     let hours_per_month: f64 = 730.0;
     let replicas = node.spec.replicas as f64;
@@ -184,12 +191,6 @@ pub async fn annotate_node_cost(client: &Client, node: &StellarNode, cost: f64) 
         namespace, name
     );
     Ok(())
-}
-
-#[cfg(feature = "metrics")]
-pub fn report_cost_metric(_namespace: &str, _name: &str, _node_type: &str, _cost: f64) {
-    // Extend when a `set_estimated_monthly_cost` gauge is added to the metrics module.
-    // e.g.: super::metrics::set_estimated_monthly_cost(namespace, name, node_type, cost);
 }
 
 #[cfg(test)]

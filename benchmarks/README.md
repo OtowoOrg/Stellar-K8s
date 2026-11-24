@@ -161,26 +161,13 @@ cp results/webhook-benchmark.json benchmarks/baselines/webhook-v1.0.0.json
 
 ### GitHub Actions Workflows
 
-**Webhook Benchmark Workflow**: `.github/workflows/webhook-benchmark.yml`
+**Unified performance workflow**: `.github/workflows/performance.yml`
 
-Automatically runs on:
-- Pull requests that modify webhook code
-- Pushes to main branch
-- Manual trigger via workflow_dispatch
+The webhook suite runs as one matrix entry in the unified pipeline (along with
+operator and regression suites). Trigger via push to `main` (path-filtered) or
+`workflow_dispatch`.
 
-The workflow:
-1. Builds the webhook server in release mode
-2. Starts the server in the background
-3. Runs k6 benchmarks with 100+ concurrent requests
-4. Compares results against baseline
-5. Posts results as PR comment
-6. Fails if thresholds are exceeded or regressions detected
-
-**Artifacts**:
-- `webhook-benchmark.json` - Summary metrics
-- `webhook-benchmark-report.md` - Markdown report
-- `webhook-benchmark-full.json` - Complete k6 output
-- `regression-report.json` - Regression analysis
+See `.github/CI_COMMANDS.md` for the matrix layout and baseline comparison.
 
 ### Environment Variables
 

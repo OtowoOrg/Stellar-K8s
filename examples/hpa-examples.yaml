@@ -1,0 +1,49 @@
+# Example 1: Horizon node with CPU-based HPA.
+# Scales between 2 and 10 replicas targeting 60% average CPU utilisation.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-cpu-hpa
+  namespace: stellar-prod
+spec:
+  nodeType: Horizon
+  network: mainnet
+  version: "v21.0.0"
+  replicas: 2
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCpuUtilizationPercentage: 60
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+      scaleUp:
+        policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+---
+# Example 2: Soroban RPC node with memory-based HPA.
+# Scales between 3 and 20 replicas targeting 70% average memory utilisation.
+# Requires metrics-server to be installed in the cluster.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: soroban-rpc-memory-hpa
+  namespace: stellar-prod
+spec:
+  nodeType: SorobanRpc
+  network: mainnet
+  version: "v21.0.0"
+  replicas: 3
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 20
+    targetMemoryUtilizationPercentage: 70
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 600
+        policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

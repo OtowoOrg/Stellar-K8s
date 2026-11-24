@@ -1,37 +1,68 @@
-# =============================================================================
-# Stellar Operator — default Helm values
-# =============================================================================
-#
-# Override precedence (highest wins):
-#   1. Per-release `helm install -f` / `--set` overrides
-#   2. Nested keys in this file (e.g. operator.logLevel)
-#   3. Chart defaults (image.tag falls back to Chart.appVersion when empty)
-#
-# Component images inherit from `image.*` when their repository/tag are empty:
-#   sidecar, forkDetector, byzantineWatcher, scpAnalytics, otel.collector
-#
-# Preset profiles: examples/values-production.yaml, values-ha.yaml
-# =============================================================================
+# Default values for stellar-operator
+# This is a YAML-formatted file.
 
-# --- Core operator deployment ------------------------------------------------
-# For high availability, set to 3 or more.
-# Requires enabling leader election (configured automatically if replicaCount > 1).
-# With leader election enabled, only one replica processes reconciliation at a time,
-# and failover occurs automatically if the leader becomes unavailable.
 replicaCount: 1
 
 image:
-  # Primary operator image; sub-components inherit these when repository/tag are empty.
   repository: ghcr.io/stellar/stellar-k8s
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion
   tag: ""
-  # Optional image digest (use repository@sha256:... to pin exact image)
-  digest: ""
 
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
+
+hooks:
+  preInstall:
+    enabled: false
+  preUpgrade:
+    enabled: false
+    enableRollbackCheck: false
+
+webhook:
+  enabled: false
+  # Sidecar that pre-validates the serving certificate and gates readiness
+  # (only rendered when certManager.enabled is true).
+  certHealth:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+mtls:
+  enabled: false
+
+certManagement:
+  enabled: false
+
+horizonHpa:
+  enabled: false
+
+rateLimiting:
+  enabled: false
+  distributed:
+    enabled: false
+    failOpen: true
+  redis:
+    address: ""
+    poolSize: 10
+    timeoutMs: 1000
+    tls:
+      enabled: false
+    passwordSecretName: ""
+    passwordSecretKey: "password"
+  tiers: []
+  endpointTiers: {}
+
+prometheus:
+  enabled: false
+
+logShipper:
+  enabled: false
 
 serviceAccount:
   # Specifies whether a service account should be created
@@ -74,14 +105,6 @@ podAnnotations:
   prometheus.io/port: "9090"
   prometheus.io/path: "/metrics"
 
-# Custom annotations to apply to all resources (Deployment, Service, etc)
-# These annotations will be propagated to both resource metadata and pod spec template
-# Example:
-# extraAnnotations:
-#   custom.io/env: production
-#   custom.io/team: platform
-extraAnnotations: {}
-
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 65532
@@ -110,49 +133,6 @@ autoscaling:
     minReplicas: 1
     maxReplicas: 10
 
-# Stellar-native HPA for Horizon instances.
-#
-# Scales Horizon Deployment replicas based on two custom metrics exposed by the
-# operator's custom metrics API (custom.metrics.k8s.io/v1beta2):
-#
-#   stellar_horizon_tps         — transactions per second ingested by Horizon
-#   stellar_horizon_queue_length — pending transaction queue depth
-#
-# Requires the custom-metrics APIService to be registered first:
-#   kubectl apply -f config/custom-metrics-apiservice.yaml
-horizonHpa:
-  # Set to true to deploy the HPA for Horizon scaling.
-  enabled: false
-
-  # Kubernetes namespace where the Horizon Deployment lives.
-  # Defaults to the Helm release namespace.
-  namespace: ""
-
-  # Name of the Deployment to scale.
-  targetDeployment: "horizon"
-
-  # Name of the StellarNode CR used as the metric source.
-  stellarNodeName: "horizon"
-
-  # Minimum number of Horizon replicas.
-  minReplicas: 2
-
-  # Maximum number of Horizon replicas.
-  maxReplicas: 10
-
-  # Scale up when observed TPS exceeds this value × current replicas.
-  # E.g. 100 means each replica should handle at most 100 TPS.
-  tpsTargetPerReplica: 100
-
-  # Scale up when the pending transaction queue exceeds this absolute count.
-  queueLengthTarget: 500
-
-  # Seconds of high-load data required before scaling up (prevents flapping).
-  scaleUpStabilizationSeconds: 60
-
-  # Seconds of low-load data required before scaling down.
-  scaleDownStabilizationSeconds: 300
-
 nodeSelector: {}
 
 tolerations: []
@@ -176,19 +156,23 @@ arch: ""
 #     effect: "NoSchedule"
 
 # PodDisruptionBudget configuration for operator deployment
-# Recommended to enable when running multiple replicas for high availability.
-# This ensures at least one operator replica remains available during maintenance.
 podDisruptionBudget:
   enabled: false
-  # Minimum number of available pods (set to 1 for HA with 3+ replicas)
+  # Only takes effect once enabled: true. Without a default here, enabling
+  # the PDB would render neither minAvailable nor maxUnavailable, producing
+  # a no-op PodDisruptionBudget.
   minAvailable: 1
-  # Maximum number of unavailable pods
-  maxUnavailable: null
 
 # Operator configuration
 operator:
   # Log level: debug, info, warn, error
   logLevel: info
+  # Log format: json or pretty (empty uses operator default: json)
+  logFormat: ""
+  # Enable dry-run mode (simulates reconciliation without modifying cluster state)
+  dryRun: false
+  # Enables AppArmor annotations on operator-managed workload pods.
+  appArmorEnabled: false
   # Enable REST API
   restApiEnabled: true
   # REST API port
@@ -197,6 +181,8 @@ operator:
   metricsPort: 9090
   # Namespace to watch (empty = all namespaces)
   watchNamespace: ""
+  profiling:
+    enabled: false
 
 # Diagnostic sidecar configuration
 sidecar:
@@ -283,6 +269,29 @@ featureFlags:
   enableArchiveHealth: true
   enableSorobanMetrics: false
 
+costOptimization:
+  resourceTracking:
+    enabled: false
+    windowSize: "7d"
+    headroomFactor: 1.2
+  spot:
+    enabled: false
+    maxPricePerHourUsd: "0"
+    fallbackToOnDemand: true
+  monthlyBudgetUsd: 0
+
+# Validator key rotation daemon. Disabled by default; when enabled the operator
+# rotates only Validator seed sources backed by supported external Secret Managers.
+keyRotation:
+  enabled: false
+  intervalSecs: 86400
+  validationWindowSecs: 30
+  validationSampleIntervalSecs: 5
+  minAuthenticatedPeers: 1
+  maxUnhealthySamples: 0
+  rollbackOnFailure: true
+  awsRegion: ""
+
 security:
   audit:
     enabled: true
@@ -294,6 +303,13 @@ security:
     enabled: true
     ingress:
       namespaceSelector: true
+    # Blanket default-deny baseline applied to additional namespaces beyond the
+    # release namespace (which always gets a default-deny from networkpolicy.yaml).
+    # Any namespace hosting Stellar nodes or the operator's supporting services
+    # can be enumerated here so that pods in it may only reach explicitly allowed
+    # endpoints (zero-trust, issue #1320). The operator reconciler already emits
+    # per-node allow rules; this list provides the undifferentiated default.
+    defaultDenyNamespaces: []
   admissionWebhook:
     failurePolicy: Fail
   imagePolicy:
@@ -316,9 +332,6 @@ security:
 #        kubectl label namespace stellar-testnet stellar.org/network=testnet
 #   2. Set networkIsolation.enabled=true and list the namespaces below.
 #   3. Helm upgrade.
-#
-# Ready-to-apply policy templates and testing guidance are documented in
-# docs/network-policy-templates.md.
 networkIsolation:
   # Master switch. Set to true to deploy namespace-level isolation policies.
   enabled: false
@@ -377,8 +390,8 @@ byzantineWatcher:
   # Container image for the watcher binary.
   # Defaults to the same image as the operator (stellar-watcher binary is included).
   image:
-    repository: "" # defaults to .Values.image.repository
-    tag: "" # defaults to .Values.image.tag / chart appVersion
+    repository: ""   # defaults to .Values.image.repository
+    tag: ""          # defaults to .Values.image.tag / chart appVersion
     pullPolicy: IfNotPresent
 
   # Default Stellar network for all watchers (can be overridden per region).
@@ -441,6 +454,10 @@ otel:
   # Set to true to enable OTLP trace export from the operator.
   # When enabled, OTEL_EXPORTER_OTLP_ENDPOINT is injected into the operator pod.
   enabled: false
+  # Resource service.name used by the unified observability contract (#1481).
+  serviceName: stellar-operator
+  # Optional parent-based ratio injected as OTEL_TRACES_SAMPLER_ARG.
+  samplingRatio: ""
 
   # OTLP gRPC endpoint for the operator to send spans to.
   # Typically points to the in-cluster OTel Collector service.
@@ -488,16 +505,17 @@ otel:
         enabled: false
         endpoint: "http://tempo:4317"
 
-      # Grafana Loki (Loki receiver/exporter)
+      # Grafana Loki (logs). Required for the Loki -> Tempo one-click pivot (#1960).
       loki:
         enabled: false
         endpoint: "http://loki:3100/loki/api/v1/push"
 
-      # Elasticsearch (Elasticsearch exporter)
+      # Elasticsearch (logs)
       elasticsearch:
         enabled: false
         endpoint: "http://elasticsearch:9200"
         index: "stellar-logs"
+
 
 # SCP Analytics Pipeline Configuration
 # Real-time streaming of SCP messages to Kafka for network topology analysis
@@ -537,7 +555,7 @@ scpAnalytics:
     # SASL authentication (optional)
     sasl:
       enabled: false
-      mechanism: "PLAIN" # PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
+      mechanism: "PLAIN"  # PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
       username: ""
       password: ""
 
@@ -583,39 +601,3 @@ scpAnalytics:
       requests:
         cpu: 200m
         memory: 256Mi
-
-# --- Helm lifecycle hooks ----------------------------------------------------
-hooks:
-  # Pre-install hook — validation checks before first installation.
-  preInstall:
-    enabled: true
-
-  # Pre-upgrade hook — safety checks and upgrade checkpoint before chart upgrade.
-  preUpgrade:
-    enabled: true
-    # Verify a previous Helm revision exists so rollback remains possible.
-    enableRollbackCheck: true
-
-# --- High availability reference ---------------------------------------------
-# ============================================================================
-# HIGH AVAILABILITY CONFIGURATION EXAMPLE
-# ============================================================================
-# To deploy the operator in HA mode with leader election, use the following
-# configuration values in your values-ha.yaml or pass them to helm:
-#
-# replicaCount: 3
-# podDisruptionBudget:
-#   enabled: true
-#   minAvailable: 1
-#
-# This configuration will:
-# 1. Deploy 3 operator replicas
-# 2. Automatically enable leader election via Lease-based coordination
-# 3. Only one replica processes reconciliation at a time
-# 4. If the leader becomes unavailable, a follower takes over within ~20s
-# 5. PodDisruptionBudget ensures at least 1 replica remains during maintenance
-# 6. Pod anti-affinity spreads replicas across different nodes
-#
-# Deploy with:
-#   helm install stellar-operator ./charts/stellar-operator -f values-ha.yaml
-# ============================================================================

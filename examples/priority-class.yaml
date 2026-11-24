@@ -45,6 +45,16 @@ description: "Standard priority for Horizon and testnet nodes."
 # Step 2: Reference the PriorityClass in your StellarNode
 
 # Mainnet validator — critical priority
+#
+# Health sidecar image (#1552): omit `sidecarImage` to use the operator image
+# fallback (which contains the /stellar-health-sidecar binary), or pin it
+# explicitly to the published sidecar image:
+#   sidecarImage: "ghcr.io/stellar/stellar-k8s:v21.0.0"
+#
+# Seed secret (#1554): the secret must use the STELLAR_CORE_SEED key.
+# The legacy SEED key is deprecated but still honored during migration.
+#   kubectl create secret generic mainnet-validator-seed \
+#     --from-literal=STELLAR_CORE_SEED="<your-seed>" -n stellar
 apiVersion: stellar.org/v1alpha1
 kind: StellarNode
 metadata:
@@ -60,6 +70,7 @@ spec:
     size: "500Gi"
   validatorConfig:
     seedSecretRef: "mainnet-validator-seed"
+    # sidecarImage: "ghcr.io/stellar/stellar-k8s:v21.0.0"  # optional override
 
 ---
 # Soroban RPC — high priority

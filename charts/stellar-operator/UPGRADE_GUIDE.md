@@ -23,6 +23,7 @@ helm get values stellar-operator -n stellar-system > backup-values.yaml
 # Backup CRD definitions
 kubectl get crd stellarnodes.stellar.org -o yaml > backup-stellarnode-crd.yaml
 kubectl get crd stellarbenchmarks.stellar.org -o yaml > backup-benchmark-crd.yaml
+kubectl get crd benchmarkreports.stellar.org -o yaml > backup-benchmarkreport-crd.yaml
 
 # Backup all StellarNode resources
 kubectl get stellarnodes --all-namespaces -o yaml > backup-stellarnodes.yaml

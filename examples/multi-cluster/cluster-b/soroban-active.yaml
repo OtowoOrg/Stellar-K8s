@@ -1,0 +1,56 @@
+# Example: Active Soroban RPC node (Cluster B - Secondary)
+#
+# Soroban RPC runs ACTIVE in both clusters (Active-Active RPC topology).
+#
+# Apply to cluster-b:
+#   kubectl apply -f cluster-b/soroban-active.yaml --context=cluster-b
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: soroban-active
+  namespace: stellar-nodes
+  labels:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/instance: soroban-active
+    cluster: cluster-b
+    role: active
+spec:
+  nodeType: SorobanRpc
+  network: Mainnet
+  version: "v21.0.0"
+  replicas: 3
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "8"
+      memory: "16Gi"
+
+  storage:
+    storageClass: "fast-ssd"
+    size: "300Gi"
+
+  sorobanConfig:
+    stellarCoreUrl: "http://validator-standby:11626"
+    enablePreflight: true
+    maxEventsPerRequest: 50000
+
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 20
+    targetCpuUtilizationPercentage: 75
+
+  ingress:
+    className: "nginx"
+    hosts:
+      - host: "soroban.stellar.io"
+        paths:
+          - path: "/"
+            pathType: "Prefix"
+    certManagerClusterIssuer: "stellar-ca-issuer"
+    tlsSecretName: "soroban-tls-cert"
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"

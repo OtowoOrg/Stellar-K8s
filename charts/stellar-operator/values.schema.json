@@ -95,6 +95,19 @@
           "type": "string",
           "enum": ["trace", "debug", "info", "warn", "error"]
         },
+        "logFormat": {
+          "type": "string",
+          "enum": ["", "json", "pretty"],
+          "description": "Log output format (json or pretty; empty uses operator default)"
+        },
+        "dryRun": {
+          "type": "boolean",
+          "description": "Enable dry-run mode to simulate reconciliation without cluster writes"
+        },
+        "appArmorEnabled": {
+          "type": "boolean",
+          "description": "Enable AppArmor annotations on operator-managed workload pods"
+        },
         "restApiEnabled": {
           "type": "boolean"
         },
@@ -110,6 +123,14 @@
         },
         "watchNamespace": {
           "type": "string"
+        },
+        "profiling": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          }
         }
       }
     },
@@ -152,8 +173,191 @@
     "otel": {
       "type": "object"
     },
+    "logShipper": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When true, render the per-node Fluent Bit log shipper DaemonSet"
+        },
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "enum": ["Always", "IfNotPresent", "Never"]
+            }
+          }
+        },
+        "kubernetesFilter": {
+          "type": "boolean"
+        },
+        "jsonParsing": {
+          "type": "boolean"
+        },
+        "logLevel": {
+          "type": "string",
+          "enum": ["info", "warn", "error", "debug"]
+        },
+        "resources": {
+          "type": "object"
+        },
+        "loki": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "host": {
+              "type": "string"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "tenantId": {
+              "type": "string"
+            }
+          }
+        },
+        "elasticsearch": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "host": {
+              "type": "string"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "index": {
+              "type": "string"
+            }
+          }
+        },
+        "nodeSelector": {
+          "type": "object"
+        },
+        "tolerations": {
+          "type": "array"
+        },
+        "affinity": {
+          "type": "object"
+        }
+      }
+    },
     "scpAnalytics": {
       "type": "object"
+    },
+    "webhook": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When true, render admission webhook resources"
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of webhook server replicas"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Container port for the webhook HTTPS server"
+        },
+        "metricsPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Container port for the Prometheus metrics endpoint"
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30,
+          "description": "Admission review timeout in seconds (Kubernetes maximum is 30)"
+        },
+        "failurePolicy": {
+          "type": "string",
+          "enum": ["Fail", "Ignore"],
+          "description": "Action when webhook is unreachable: Fail blocks admission, Ignore allows it"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["strict", "permissive"],
+          "description": "Degradation mode for a webhook outage: permissive forces failurePolicy Ignore so admission is never blocked"
+        },
+        "resources": {
+          "type": "object",
+          "description": "Resource requests and limits for the webhook server container"
+        },
+        "certHealth": {
+          "type": "object",
+          "description": "Resources for the fail-closed certificate health sidecar paired with the webhook",
+          "additionalProperties": false,
+          "properties": {
+            "resources": {
+              "type": "object",
+              "description": "Sidecar container resource requests/limits"
+            }
+          }
+        },
+        "certManager": {
+          "type": "object",
+          "description": "Declarative cert-manager webhook TLS: CA, serving certificate, trust-bundle injection and continuous renewal",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "When true, render the cert-manager Issuer/Certificate chain and the certificate-health sidecar"
+            },
+            "duration": {
+              "type": "string",
+              "description": "Serving certificate lifetime as a Kubernetes duration (e.g. 2160h)"
+            },
+            "renewBefore": {
+              "type": "string",
+              "description": "How long before expiry the serving certificate is renewed (e.g. 720h)"
+            },
+            "caDuration": {
+              "type": "string",
+              "description": "Webhook CA lifetime as a Kubernetes duration (e.g. 8760h)"
+            },
+            "caRenewBefore": {
+              "type": "string",
+              "description": "How long before expiry the webhook CA is renewed (e.g. 2160h)"
+            },
+            "certHealth": {
+              "type": "object",
+              "description": "Certificate-health sidecar configuration",
+              "additionalProperties": false,
+              "properties": {
+                "resources": {
+                  "type": "object",
+                  "description": "Resource requests and limits for the certificate-health sidecar"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "additionalProperties": true

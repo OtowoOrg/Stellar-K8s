@@ -1,0 +1,25 @@
+name: Tenant Escape Paths
+
+# Release gate for per-tenant isolation (#1979): cross-tenant network, exec/volume
+# RBAC, audit-stream and node-attestation escape attempts must all stay blocked.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  escape-paths:
+    name: Tenant escape-path suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run escape-path suite
+        run: cargo test --test tenant_escape_paths -- --nocapture

@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Dual-Key mTLS Rotation Strategy for Zero-Downtime Key Rotation
 //!
 //! Implements automated mTLS key rotation with support for multiple valid keys
@@ -16,9 +28,10 @@ use kube::{
     api::{Api, ListParams, Patch, PatchParams},
     Client, ResourceExt,
 };
+use rcgen::string::Ia5String;
 use rcgen::{
-    CertificateParams, DistinguishedName, ExtendedKeyUsagePurpose, Ia5String, IsCa, KeyPair,
-    KeyUsagePurpose, SanType,
+    CertificateParams, DistinguishedName, ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose,
+    SanType,
 };
 use std::collections::BTreeMap;
 use tracing::{debug, info, warn};
@@ -146,8 +159,9 @@ pub async fn start_dual_key_rotation(
         .push(ExtendedKeyUsagePurpose::ClientAuth);
 
     let key_pair = KeyPair::generate().map_err(|e| Error::ConfigError(e.to_string()))?;
+    let issuer = rcgen::Issuer::from_params(&ca_params, &ca_key_pair);
     let cert = params
-        .signed_by(&key_pair, &ca_cert, &ca_key_pair)
+        .signed_by(&key_pair, &issuer)
         .map_err(|e| Error::ConfigError(e.to_string()))?;
 
     let new_cert_pem = cert.pem().into_bytes();

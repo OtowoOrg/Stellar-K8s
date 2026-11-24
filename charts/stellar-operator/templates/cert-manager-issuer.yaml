@@ -1,0 +1,40 @@
+{{- if .Values.certManagement.enabled }}
+{{- if eq .Values.certManagement.backend "cert-manager" }}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-letsencrypt-prod
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    component: cert-manager
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ .Values.certManagement.acmeEmail | default "admin@stellar.org" }}
+    privateKeySecretRef:
+      name: {{ include "stellar-operator.fullname" . }}-letsencrypt-prod-account-key
+    solvers:
+    - http01:
+        ingress:
+          class: {{ .Values.certManagement.ingressClass | default "nginx" }}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-letsencrypt-staging
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    component: cert-manager
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: {{ .Values.certManagement.acmeEmail | default "admin@stellar.org" }}
+    privateKeySecretRef:
+      name: {{ include "stellar-operator.fullname" . }}-letsencrypt-staging-account-key
+    solvers:
+    - http01:
+        ingress:
+          class: {{ .Values.certManagement.ingressClass | default "nginx" }}
+{{- end }}
+{{- end }}

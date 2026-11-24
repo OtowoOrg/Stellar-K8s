@@ -1,7 +1,7 @@
 ---
 # RBAC for the Stellar Operator
 # Grants permissions to watch/manage StellarNode CRDs and related resources
-{{- if .Values.watchNamespace }}
+#{{- if .Anders.watchNamespace }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -40,6 +40,14 @@ rules:
     resources: ["stellarbenchmarks/finalizers"]
     verbs: ["update"]
 
+  # Soroban contract deployment CRDs
+  - apiGroups: ["stellar.org"]
+    resources: ["contractwasms", "contractinstances"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["stellar.org"]
+    resources: ["contractwasms/status", "contractinstances/status"]
+    verbs: ["get", "update", "patch"]
+
   # BenchmarkReport CRD permissions
   - apiGroups: ["stellar.org"]
     resources: ["benchmarkreports"]
@@ -47,6 +55,22 @@ rules:
   - apiGroups: ["stellar.org"]
     resources: ["benchmarkreports/status"]
     verbs: ["get", "update", "patch"]
+
+  # MaintenancePlan CRD — planned drain / prewarm / SLO orchestrator
+  - apiGroups: ["stellar.org"]
+    resources: ["maintenanceplans"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["stellar.org"]
+    resources: ["maintenanceplans/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["stellar.org"]
+    resources: ["maintenanceplans/finalizers"]
+    verbs: ["update"]
+
+  # PDB-aware drain (read disruption budgets; never mutate them)
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
 
   # Core resources managed by the operator
   - apiGroups: [""]
@@ -76,11 +100,16 @@ rules:
     resources: ["statefulsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
-  # NetworkPolicy — operator creates per-node isolation policies.
+  # NetworkPolicy - operator creates per-node isolation policies.
   # Scoped to the watch namespace (or cluster-wide when watchNamespace is unset).
   # The operator NEVER reads NetworkPolicies from other namespaces.
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # PodDisruptionBudgets - operator manages PDBs to protect validator eviction
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
   # Events for status reporting
@@ -140,13 +169,13 @@ subjects:
     namespace: {{ .Release.Namespace }}
 
 ---
-# Namespace-reader ClusterRole — grants the operator read-only access to
+# Namespace-reader ClusterRole -- grants the operator read-only access to
 # Namespace objects so the network safety check (SK8S-021) can verify the
 # stellar.org/network label on the namespace hosting a StellarNode.
 #
-# This is intentionally a separate, minimal ClusterRole so that teams running
-# the operator with namespace-scoped RBAC (watchNamespace set) can grant only
-# this narrow cluster-level permission without elevating the main Role.
+ # This is intentionally a separate, minimal ClusterRole so that teams running
+# the operator with namespace-scoped RBAC (watchNamespace set) can grant
+# only this narrow cluster-level permission without evating the main Role.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -169,6 +198,72 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ include "stellar-operator.fullname" . }}-namespace-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "stellar-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+# Node-reader ClusterRole — grants the operator read-only access to Node
+# objects so the dynamic topology spread enforcer can inspect
+# topology.kubernetes.io/zone labels and decide whether strict
+# (hard) anti-affinity is achievable, falling back to soft/preferred
+# constraints on single-zone or single-node clusters.
+#
+# This is intentionally a separate, minimal ClusterRole so that teams running
+# the operator with namespace-scoped RBAC (watchNamespace set) can grant only
+# this narrow cluster-level permission without elevating the main Role.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-node-reader
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Control-plane health ClusterRole (graceful degradation, #1494) — lets the
+# operator probe etcd via the API server's /readyz/etcd check, read the
+# scheduler leader lease, publish the cluster-scoped ControlPlaneHealth status
+# and, in Permissive webhook mode, keep webhook failurePolicy at Ignore.
+# Separate from the main role so it also works with watchNamespace set.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-control-plane-health
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+rules:
+  - nonResourceURLs: ["/readyz", "/readyz/etcd"]
+    verbs: ["get"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get"]
+  - apiGroups: ["stellar.org"]
+    resources: ["controlplanehealths"]
+    verbs: ["get", "list", "watch", "create"]
+  - apiGroups: ["stellar.org"]
+    resources: ["controlplanehealths/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+    verbs: ["get", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-node-reader
+  name: {{ include "stellar-operator.fullname" . }}-control-plane-health
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "stellar-operator.fullname" . }}-node-reader
+  name: {{ include "stellar-operator.fullname" . }}-control-plane-health
 subjects:
   - kind: ServiceAccount
     name: {{ include "stellar-operator.serviceAccountName" . }}

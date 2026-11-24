@@ -1,0 +1,99 @@
+# Production-oriented Horizon API deployment on Public Mainnet.
+# Fields are limited to the published stellarnodes.stellar.org/v1alpha1 OpenAPI schema.
+# kubectl apply --dry-run=client -f config/crd/stellarnode-crd.yaml
+# kubectl apply --dry-run=client -f docs/reference/examples/horizon.yaml
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-mainnet
+  namespace: stellar
+  labels:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/component: horizon
+    app.kubernetes.io/part-of: stellar
+spec:
+  # Horizon serves the REST API and optional ledger ingestion.
+  nodeType: Horizon
+
+  network: mainnet
+
+  # Horizon image tag (stellar/horizon:<version>).
+  version: "2.30.0"
+
+  # Horizon is horizontally scalable. Semantic validation allows replicas > 1.
+  replicas: 3
+
+  # OpenAPI-required IntOrString PDB fields. Semantic validation forbids setting
+  # both minAvailable and maxUnavailable together; the API server still requires both.
+  minAvailable: 2
+  maxUnavailable: 1
+
+  topologySpreadConstraints: []
+
+  historyMode: Recent
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  storage:
+    mode: PersistentVolume
+    storageClass: "ssd-premium"
+    size: "200Gi"
+    retentionPolicy: Retain
+
+  # Semantically required when nodeType is Horizon.
+  # OpenAPI requires databaseSecretRef and stellarCoreUrl when this object is set.
+  horizonConfig:
+    # Secret must provide the Horizon DATABASE_URL (or equivalent connection string).
+    databaseSecretRef: "horizon-db-secret"
+    # stellar-core HTTP endpoint used for ingestion (typically the validator Service).
+    stellarCoreUrl: "http://validator-mainnet:11626"
+    enableIngest: true
+    # Parallel ingestion workers (schema default is 1).
+    ingestWorkers: 2
+    autoMigration: true
+    enableExperimentalIngestion: false
+
+  # Ingress is semantically supported for Horizon (rejected on Validator).
+  ingress:
+    className: "nginx"
+    hosts:
+      - host: "horizon.example.com"
+        paths:
+          - path: "/"
+            # Semantic rule: pathType must be Prefix or Exact when set.
+            pathType: Prefix
+    tlsSecretName: "horizon-tls-secret"
+
+  # HPA is semantically supported for Horizon. minReplicas >= 1, maxReplicas >= min.
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 12
+    targetCpuUtilizationPercentage: 70
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 60
+        policies:
+          - policyType: Percent
+            value: 50
+            periodSeconds: 60
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+          - policyType: Pods
+            value: 1
+            periodSeconds: 120
+
+  strategy:
+    type: rollingUpdate
+
+  podAntiAffinity: Soft
+  alerting: true
+  suspended: false
+  maintenanceMode: false

@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Database vacuum and maintenance scheduler.
 //!
 //! Monitors table bloat and dead-tuple ratios, triggering VACUUM ANALYZE
@@ -29,6 +41,17 @@ pub struct VacuumReport {
     pub alerts: Vec<DbAlert>,
 }
 
+/// Raw row shape from `pg_stat_user_tables`: (schema, table, live_tuples,
+/// dead_tuples, last_vacuum, last_analyze)
+type TableBloatRow = (
+    String,
+    String,
+    i64,
+    i64,
+    Option<DateTime<Utc>>,
+    Option<DateTime<Utc>>,
+);
+
 pub struct VacuumScheduler {
     bloat_threshold: f64,
 }
@@ -40,14 +63,7 @@ impl VacuumScheduler {
 
     /// Inspect table bloat and run VACUUM ANALYZE on tables above threshold.
     pub async fn run(&self, pool: &PgPool) -> crate::error::Result<VacuumReport> {
-        let rows: Vec<(
-            String,
-            String,
-            i64,
-            i64,
-            Option<DateTime<Utc>>,
-            Option<DateTime<Utc>>,
-        )> = sqlx::query_as(
+        let rows: Vec<TableBloatRow> = sqlx::query_as(
             r#"SELECT schemaname, relname,
                           n_live_tup, n_dead_tup,
                           last_vacuum, last_analyze

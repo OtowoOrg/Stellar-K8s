@@ -1,0 +1,20 @@
+[package]
+name = "fee-bumper-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Integration tests for fee-bumper: sponsorship authorize/settle/expire, rate limiting, and a 100-sponsorship relayer simulation"
+
+[dependencies]
+fee-bumper = { path = "../fee_bumper" }
+
+[dev-dependencies]
+soroban-sdk = { version = "23.5.0", features = ["testutils"] }
+# soroban-env-host 23.0.1 depends on `ed25519-dalek = ">=2.0.0"` (an
+# open-ended range). Left unpinned, Cargo resolves that to ed25519-dalek
+# 3.x, which upgrades its `rand_core` major version and no longer
+# implements the RNG trait soroban-env-host's own test utilities expect,
+# breaking the build. Pin to the 2.x line that is actually compatible
+# (see contracts/proxy-controller/proxy_controller_tests/Cargo.toml for
+# the same fix).
+ed25519-dalek = "=2.2.0"

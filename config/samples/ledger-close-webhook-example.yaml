@@ -1,0 +1,50 @@
+# Example LedgerCloseWebhook — delivers ledger-close events to an external
+# HTTP endpoint with HMAC-SHA256 signing and automatic retry.
+#
+# Issue: https://github.com/OtowoOrg/Stellar-K8s/issues/1577
+#
+# Apply with:
+#   kubectl apply -f ledger-close-webhook-example.yaml -n stellar
+---
+apiVersion: stellar.org/v1alpha1
+kind: LedgerCloseWebhook
+metadata:
+  name: my-ledger-hook
+  namespace: stellar
+  labels:
+    app.kubernetes.io/part-of: stellar-operator
+    stellar.org/feature: ledger-close-webhook
+spec:
+  # Target endpoint — must be reachable from the operator pod.
+  url: "https://example.com/hooks/stellar/ledger"
+
+  # Kubernetes Secret that holds the HMAC signing key.
+  # The operator reads Secret.data["value"] (base64-decoded).
+  secretRef: "ledger-webhook-hmac-secret"
+
+  # Subscribe to all ledger-close event types.
+  events:
+    - LedgerClose
+    - LedgerLag
+    - LedgerSync
+
+  # Retry policy: up to 5 retries with exponential back-off.
+  maxRetries: 5
+
+  # Per-attempt HTTP timeout (seconds).
+  timeoutSeconds: 5
+
+  # Set to false to pause without deleting.
+  enabled: true
+---
+# Secret holding the HMAC key used to sign webhook payloads.
+# Replace the base64-encoded value with your own secret.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ledger-webhook-hmac-secret
+  namespace: stellar
+type: Opaque
+data:
+  # echo -n "my-super-secret" | base64
+  value: bXktc3VwZXItc2VjcmV0

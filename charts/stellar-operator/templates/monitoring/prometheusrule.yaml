@@ -1,0 +1,306 @@
+{{- if (and .Values.monitoring .Values.monitoring.enabled .Values.monitoring.prometheusRule.enabled) }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-alerts
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: stellar-node-health
+      rules:
+        - alert: StellarNodeDown
+          expr: stellar_node_up == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: 'Stellar node {{ `{{ $labels.node_name }}` }} is down'
+            description: 'stellar_node_up has been 0 for more than 2 minutes.'
+        - alert: StellarNodeNotSyncing
+          expr: stellar_node_sync_status == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: 'Stellar node {{ `{{ $labels.node_name }}` }} is not synced'
+            description: 'stellar_node_sync_status has reported out-of-sync for more than 5 minutes.'
+        - alert: StellarNodeHighIngestionLag
+          expr: stellar_node_ingestion_lag > {{ .Values.monitoring.prometheusRule.ingestionLagThresholdSeconds }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Stellar node {{ `{{ $labels.node_name }}` }} ingestion lag is high'
+            description: 'Ingestion lag is {{ `{{ $value }}` }}s, above the {{ .Values.monitoring.prometheusRule.ingestionLagThresholdSeconds }}s threshold.'
+        - alert: StellarNodeSlowLedgerClose
+          expr: stellar_node_ledger_close_time_seconds > {{ .Values.monitoring.prometheusRule.ledgerCloseTimeThresholdSeconds }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Stellar node {{ `{{ $labels.node_name }}` }} ledger close time is high'
+            description: 'Ledger close time is {{ `{{ $value }}` }}s, above the {{ .Values.monitoring.prometheusRule.ledgerCloseTimeThresholdSeconds }}s threshold.'
+        - alert: StellarFeeMarketSpike
+          expr: stellar_fee_market_p95_stroops > stellar_fee_market_spike_threshold_stroops
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Stellar {{ `{{ $labels.fee_type }}` }} fees exceed the configured threshold'
+            description: 'P95 fee on {{ `{{ $labels.network }}` }} is {{ `{{ $value }}` }} stroops; review fee strategy and Soroban resource limits.'
+        - alert: StellarAssetLargeSupplyChange
+          expr: increase(stellar_asset_large_supply_changes_total[5m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Large supply change for {{ `{{ $labels.asset_code }}` }}'
+            description: 'Watched asset {{ `{{ $labels.asset_code }}` }} on {{ `{{ $labels.network }}` }} exceeded its configured supply-change threshold.'
+        - alert: StellarAssetClawback
+          expr: increase(stellar_asset_clawback_events_total[5m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Clawback observed for {{ `{{ $labels.asset_code }}` }}'
+            description: 'A clawback ledger change was observed for watched asset {{ `{{ $labels.asset_code }}` }}.'
+        {{- with .Values.monitoring.prometheusRule.additionalRules }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}
+{{- if (and .Values.monitoring .Values.monitoring.enabled .Values.monitoring.prometheusRule.enabled .Values.monitoring.prometheusRule.certAlerts) }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-cert-expiry
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: certificate-expiry
+      rules:
+        {{- $warnRatio := .Values.monitoring.prometheusRule.certAlerts.webhookWarningRatio | default 0.25 }}
+        {{- $critRatio := .Values.monitoring.prometheusRule.certAlerts.webhookCriticalRatio | default 0.10 }}
+        - alert: WebhookCertificateExpiringWarning
+          expr: stellar_webhook_certificate_remaining_ratio > 0 and stellar_webhook_certificate_remaining_ratio <= {{ $warnRatio }}
+          for: 1m
+          labels:
+            severity: warning
+            component: admission-webhook
+          annotations:
+            summary: "Admission webhook certificate is inside its warning expiry horizon (remaining ratio <= {{ $warnRatio }})"
+            description: "The cert-health sidecar is validating rotation and trust-bundle propagation; investigate if the alert persists."
+        - alert: WebhookCertificateExpiringCritical
+          expr: stellar_webhook_certificate_remaining_ratio > 0 and stellar_webhook_certificate_remaining_ratio <= {{ $critRatio }}
+          for: 1m
+          labels:
+            severity: critical
+            component: admission-webhook
+          annotations:
+            summary: "Admission webhook certificate is inside its critical expiry horizon (remaining ratio <= {{ $critRatio }})"
+            description: "Renewal is approaching expiry. Check cert-manager and cainjector immediately."
+        - alert: WebhookCertHealthMissing
+          # Every webhook pod must report cert health; silence means a pod runs
+          # without its sidecar (uncovered by renewal verification).
+          expr: absent(stellar_webhook_certificate_valid)
+          for: 5m
+          labels:
+            severity: critical
+            component: admission-webhook
+          annotations:
+            summary: "No cert-health metrics from the admission webhook"
+            description: "stellar_webhook_certificate_valid is absent. Check that the cert-health sidecar is running and scraped."
+        - alert: WebhookCertificateVerificationFailed
+          expr: stellar_webhook_certificate_valid == 0
+          for: 30s
+          labels:
+            severity: critical
+            component: admission-webhook
+          annotations:
+            summary: "Admission webhook serving certificate failed verification"
+            description: "The pod is failing readiness closed until certificate, key, CA, validity, and DNS identity agree."
+        - alert: CertificateExpiringSoon
+          expr: (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < {{ .Values.monitoring.prometheusRule.certAlerts.warningDays | default 30 }}
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate expiring soon"
+            description: "Certificate {{ `{{ $labels.name }}` }} in namespace {{ `{{ $labels.namespace }}` }} expires in {{ `{{ $value | humanizeDuration }}` }}."
+            runbook_url: "https://docs.stellar.org/runbooks/cert-expiry"
+        - alert: CertificateExpiringCritical
+          expr: (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < {{ .Values.monitoring.prometheusRule.certAlerts.criticalDays | default 7 }}
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "Certificate expiring critically soon"
+            description: "Certificate {{ `{{ $labels.name }}` }} in namespace {{ `{{ $labels.namespace }}` }} expires in {{ `{{ $value | humanizeDuration }}` }}. Immediate action required."
+            runbook_url: "https://docs.stellar.org/runbooks/cert-expiry-critical"
+        - alert: CertificateExpired
+          expr: certmanager_certificate_expiration_timestamp_seconds < time()
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Certificate has expired"
+            description: "Certificate {{ `{{ $labels.name }}` }} in namespace {{ `{{ $labels.namespace }}` }} has expired. Service may be unavailable."
+            runbook_url: "https://docs.stellar.org/runbooks/cert-expired"
+        - alert: CertificateRenewalFailed
+          expr: certmanager_certificate_ready_status{condition="False"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate renewal failed"
+            description: "Certificate {{ `{{ $labels.name }}` }} in namespace {{ `{{ $labels.namespace }}` }} has failed to renew. Check cert-manager logs."
+            runbook_url: "https://docs.stellar.org/runbooks/cert-renewal-failed"
+        - alert: ACMEAccountRegistrationFailed
+          expr: certmanager_acme_account_registration_failed_total > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ACME account registration failed"
+            description: "Failed to register ACME account. Certificate issuance may be affected."
+{{- end }}
+{{- if (and .Values.monitoring .Values.monitoring.enabled .Values.monitoring.prometheusRule.enabled .Values.monitoring.prometheusRule.costAlerts) }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-cost-optimization
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: stellar.cost.recording
+      interval: 60s
+      rules:
+        - record: stellar:cost_hourly_usd
+          expr: sum(stellar_cost_hourly_usd) by (namespace, workload)
+        - record: stellar:cost_daily_change_ratio
+          expr: (stellar_cost_total_monthly_usd - stellar_cost_total_monthly_usd offset 1d) / clamp_min(stellar_cost_total_monthly_usd offset 1d, 1)
+        - record: stellar:resource_waste_ratio
+          expr: 1 - (stellar_resource_cpu_p95_m / clamp_min(stellar_resource_cpu_request_m, 1))
+    - name: stellar.cost.anomaly
+      rules:
+        - alert: StellarCostSpikeDetected
+          expr: stellar:cost_daily_change_ratio > 0.20
+          for: 30m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Cloud cost spike detected (>20% day-on-day increase)"
+            description: "Total monthly cost estimate has grown by {{ `{{ $value | humanizePercentage }}` }} compared to 24 hours ago."
+            runbook_url: "https://docs.stellar.org/runbooks/cost-anomaly"
+        - alert: StellarCostSpikeCritical
+          expr: stellar:cost_daily_change_ratio > 0.50
+          for: 15m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Critical cloud cost spike (>50% day-on-day increase)"
+            description: "Total monthly cost estimate has grown by {{ `{{ $value | humanizePercentage }}` }}. Immediate investigation required."
+            runbook_url: "https://docs.stellar.org/runbooks/cost-anomaly-critical"
+        - alert: StellarResourceWasteHigh
+          expr: stellar:resource_waste_ratio > 0.60
+          for: 2h
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Workload {{ `{{ $labels.workload }}` }} is >60% over-provisioned"
+            description: "{{ `{{ $labels.workload }}` }} in {{ `{{ $labels.namespace }}` }} has a CPU waste ratio of {{ `{{ $value | humanizePercentage }}` }}."
+            runbook_url: "https://docs.stellar.org/runbooks/right-sizing"
+        - alert: StellarSpotInterruptionRateHigh
+          expr: rate(stellar_spot_interruptions_total[30m]) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "High spot instance interruption rate"
+            description: "More than 0.1 spot interruptions per second in the last 30 minutes."
+            runbook_url: "https://docs.stellar.org/runbooks/spot-interruptions"
+        - alert: StellarMonthlyBudgetExceeded
+          expr: stellar_cost_total_monthly_usd > stellar_cost_budget_monthly_usd
+          for: 1h
+          labels:
+            severity: critical
+            team: finops
+          annotations:
+            summary: "Monthly cloud budget exceeded"
+            description: "Current monthly cost estimate ${{ `{{ $value | humanize }}` }} exceeds the configured budget."
+            runbook_url: "https://docs.stellar.org/runbooks/budget-exceeded"
+{{- end }}
+{{- if (and .Values.monitoring .Values.monitoring.enabled .Values.monitoring.prometheusRule.enabled .Values.monitoring.prometheusRule.rateLimitAlerts) }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-rate-limiting
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: stellar.ratelimit.recording
+      interval: 30s
+      rules:
+        - record: stellar:gateway_rate_limit_rejection_ratio
+          expr: sum(rate(stellar_gateway_rate_limit_exceeded_total[5m])) / clamp_min(sum(rate(stellar_gateway_rate_limit_checks_total[5m])), 1e-9)
+        - record: stellar:gateway_rate_limit_check_p99_seconds
+          expr: histogram_quantile(0.99, sum by (le) (rate(stellar_gateway_rate_limit_check_duration_seconds_bucket[5m])))
+    - name: stellar.ratelimit.alerts
+      rules:
+        - alert: StellarGatewayRateLimitRejectionsHigh
+          expr: stellar:gateway_rate_limit_rejection_ratio > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Over 5% of gateway requests are being rate limited"
+            description: "{{ `{{ $value | humanizePercentage }}` }} of requests hit the rate limit over the last 5 minutes."
+        - alert: StellarGatewayRateLimitRejectionsCritical
+          expr: stellar:gateway_rate_limit_rejection_ratio > 0.25
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Over 25% of gateway requests are being rate limited"
+            description: "{{ `{{ $value | humanizePercentage }}` }} of requests are being rejected. This is user-visible."
+        - alert: StellarGatewayRateLimitBackendDegraded
+          expr: rate(stellar_gateway_rate_limit_backend_errors_total[5m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Gateway rate limit store is unreachable - limits are per-replica"
+            description: "The gateway is failing open to process-local counters. Check Redis availability."
+            runbook_url: "https://docs.stellar.org/runbooks/rate-limit-backend"
+        - alert: StellarGatewayRateLimitOverheadBudgetExceeded
+          expr: stellar:gateway_rate_limit_check_p99_seconds > 0.001
+          for: 15m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Rate limit check p99 exceeds the 1ms budget"
+            description: "p99 check latency is {{ `{{ $value | humanizeDuration }}` }}, above the 1ms budget."
+{{- end }}

@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "StellarRestore defines point-in-time restore operations",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "properties": {
+        "backupRef": {
+          "type": "string",
+          "description": "Reference to backup to restore from"
+        },
+        "targetLedger": {
+          "type": "integer",
+          "description": "Target ledger number for restore"
+        },
+        "targetTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Target timestamp for restore"
+        },
+        "parallelism": {
+          "type": "integer",
+          "default": 4,
+          "minimum": 1
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": [
+            "Pending",
+            "Running",
+            "Completed",
+            "Failed"
+          ]
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "restoreProgress": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "startTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completionTime": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "StellarRestore"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "StellarRestore"
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "title": "Stellar — Log to Trace Correlation",
+  "uid": "stellar-log-trace-correlation",
+  "version": 1,
+  "schemaVersion": 38,
+  "tags": ["stellar", "observability", "contract", "1481"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "pod",
+        "label": "k8s.pod.name",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": "label_values(k8s_pod_name)"
+      },
+      {
+        "name": "instance",
+        "label": "service.instance.id",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": "label_values(service_instance_id)"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Dead-letter rate",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "stellar_observability_contract_deadletter_rate",
+          "legendFormat": "rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.00005 },
+              { "color": "red", "value": 0.0001 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Dead-letter volume",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "stellar_observability_contract_deadletter_total",
+          "legendFormat": "quarantined"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "logs",
+      "title": "Logs by canonical identity (click Trace → Tempo)",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{k8s_pod_name=~\"$pod\"} | json | service_instance_id=~\"$instance\"",
+          "legendFormat": ""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "enableLogDetails": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "derivedFields": [
+              {
+                "datasourceUid": "tempo",
+                "matcherRegex": "\"trace_id\":\"([0-9a-fA-F]+)\"",
+                "name": "Trace",
+                "url": "${__value.raw}",
+                "urlDisplayLabel": "Open trace",
+                "internalLink": true
+              },
+              {
+                "datasourceUid": "tempo",
+                "matcherRegex": "trace_id=([0-9a-fA-F]+)",
+                "name": "TraceID",
+                "url": "${__value.raw}",
+                "urlDisplayLabel": "Open trace",
+                "internalLink": true
+              },
+              {
+                "datasourceUid": "loki",
+                "matcherRegex": "\"service.instance.id\":\"([^\"]+)\"",
+                "name": "service.instance.id",
+                "url": "${__value.raw}",
+                "internalLink": true
+              },
+              {
+                "datasourceUid": "loki",
+                "matcherRegex": "\"k8s.pod.name\":\"([^\"]+)\"",
+                "name": "k8s.pod.name",
+                "url": "${__value.raw}",
+                "internalLink": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Accepted vs quarantined",
+      "gridPos": { "x": 0, "y": 14, "w": 24, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "increase(stellar_observability_contract_accepted_total[5m])",
+          "legendFormat": "accepted"
+        },
+        {
+          "expr": "increase(stellar_observability_contract_deadletter_total[5m])",
+          "legendFormat": "dead-letter"
+        }
+      ]
+    }
+  ]
+}

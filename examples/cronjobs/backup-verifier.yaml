@@ -1,0 +1,764 @@
+# Nightly backup recovery verification (issue #107).
+# Restores a VolumeSnapshot into an isolated namespace, runs SQL / ledger-hash
+# checks, reports pass/fail, and always cleans up ephemeral resources.
+#
+# Prerequisites:
+#   - CSI VolumeSnapshot CRDs and a Ready snapshot
+#   - kubectl apply -f examples/cronjobs/backup-verifier.yaml
+#   - Secret backup-verifier-notify (optional Slack / PagerDuty keys)
+#
+# See docs/operations/backup-verification.md
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stellar-backup-verify
+  labels:
+    app.kubernetes.io/name: backup-verifier
+    stellar.org/backup-verification: "true"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-verifier
+  namespace: stellar-backup-verify
+  labels:
+    app.kubernetes.io/name: backup-verifier
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backup-verifier
+  labels:
+    app.kubernetes.io/name: backup-verifier
+rules:
+  # Ephemeral test namespaces only. Production CRs are not in this role.
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - persistentvolumeclaims
+      - configmaps
+      - services
+      - events
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "get", "list", "delete"]
+  - apiGroups: [""]
+    resources: ["resourcequotas"]
+    verbs: ["create", "get", "list", "delete"]
+  # Read-only snapshot inspection. No delete/update of production snapshots.
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-verifier
+  namespace: stellar-backup-verify
+  labels:
+    app.kubernetes.io/name: backup-verifier
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backup-verifier
+  labels:
+    app.kubernetes.io/name: backup-verifier
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: backup-verifier
+subjects:
+  - kind: ServiceAccount
+    name: backup-verifier
+    namespace: stellar-backup-verify
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-verifier
+  namespace: stellar-backup-verify
+  labels:
+    app.kubernetes.io/name: backup-verifier
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backup-verifier
+subjects:
+  - kind: ServiceAccount
+    name: backup-verifier
+    namespace: stellar-backup-verify
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-verifier-scripts
+  namespace: stellar-backup-verify
+  labels:
+    app.kubernetes.io/name: backup-verifier
+data:
+  run.sh: |
+    #!/usr/bin/env bash
+    # Orchestrate isolated restore + checks. Cleanup always runs (EXIT trap).
+    set -euo pipefail
+
+    VERIFY_MODE="${VERIFY_MODE:-live}"
+    BACKUP_KIND="${BACKUP_KIND:-validator}"
+    SNAPSHOT_NAME="${SNAPSHOT_NAME:-}"
+    SNAPSHOT_NAMESPACE="${SNAPSHOT_NAMESPACE:-stellar-nodes}"
+    STORAGE_CLASS="${STORAGE_CLASS:-standard-rwo}"
+    STORAGE_SIZE="${STORAGE_SIZE:-500Gi}"
+    NS_PREFIX="${NS_PREFIX:-verify-backup-}"
+    _prot_default="stellar,stellar-nodes,stellar-system"
+    _prot_default="${_prot_default},kube-system,kube-public,kube-node-lease"
+    PROTECTED_NAMESPACES="${PROTECTED_NAMESPACES:-${_prot_default}}"
+    HOME_NS="${HOME_NS:-stellar-backup-verify}"
+    TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-3600}"
+    SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
+    PAGERDUTY_ROUTING_KEY="${PAGERDUTY_ROUTING_KEY:-}"
+    PAGERDUTY_URL="${PAGERDUTY_URL:-https://events.pagerduty.com/v2/enqueue}"
+    PAGERDUTY_RESOLVE_ON_PASS="${PAGERDUTY_RESOLVE_ON_PASS:-false}"
+    EXPECTED_LEDGER_HASH="${EXPECTED_LEDGER_HASH:-}"
+    EXPECTED_LEDGER_SEQ="${EXPECTED_LEDGER_SEQ:-}"
+    MIN_LEDGER_ROWS="${MIN_LEDGER_ROWS:-1}"
+    REPORT_CONFIGMAP="${REPORT_CONFIGMAP:-backup-verifier-last-report}"
+
+    VERIFY_NS=""
+    STATUS="fail"
+    STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    START_EPOCH="$(date +%s)"
+    CHECKS=""
+
+    log() { echo "[backup-verifier] $*"; }
+
+    is_protected() {
+      local name="$1"
+      local IFS=','
+      local item
+      for item in ${PROTECTED_NAMESPACES}; do
+        if [ "${name}" = "${item}" ]; then
+          return 0
+        fi
+      done
+      return 1
+    }
+
+    add_check() {
+      local name="$1"
+      local passed="$2"
+      local msg="${3:-}"
+      if [ -n "${CHECKS}" ]; then
+        CHECKS="${CHECKS},"
+      fi
+      CHECKS="${CHECKS}{\"name\":\"${name}\",\"passed\":${passed},\"message\":\"${msg}\"}"
+    }
+
+    cleanup() {
+      local rc=$?
+      set +e
+      if [ -n "${VERIFY_NS}" ]; then
+        if is_protected "${VERIFY_NS}"; then
+          log "refusing to delete protected namespace ${VERIFY_NS}"
+          add_check "Cleanup" false "protected namespace"
+        else
+          case "${VERIFY_NS}" in
+            "${NS_PREFIX}"*)
+              log "deleting ephemeral namespace ${VERIFY_NS}"
+              kubectl delete namespace "${VERIFY_NS}" --wait=false --ignore-not-found
+              add_check "Cleanup" true "namespace delete issued"
+              ;;
+            *)
+              log "refusing cleanup of unexpected name ${VERIFY_NS}"
+              add_check "Cleanup" false "unexpected namespace"
+              ;;
+          esac
+        fi
+      else
+        add_check "Cleanup" true "nothing to delete"
+      fi
+      emit_report
+      notify
+      exit "${rc}"
+    }
+
+    emit_report() {
+      local ended duration
+      ended="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      duration="$(( $(date +%s) - START_EPOCH ))"
+      local report
+      report="{"
+      report="${report}\"timestamp\":\"${STARTED_AT}\","
+      report="${report}\"ended\":\"${ended}\","
+      report="${report}\"mode\":\"${VERIFY_MODE}\","
+      report="${report}\"status\":\"${STATUS}\","
+      report="${report}\"snapshot\":\"${SNAPSHOT_NAME}\","
+      report="${report}\"namespace\":\"${VERIFY_NS}\","
+      report="${report}\"backupKind\":\"${BACKUP_KIND}\","
+      report="${report}\"durationSeconds\":${duration},"
+      report="${report}\"checks\":[${CHECKS}]}"
+      printf '%s\n' "${report}"
+      if [ "${VERIFY_MODE}" = "live" ] && command -v kubectl >/dev/null 2>&1; then
+        kubectl create configmap "${REPORT_CONFIGMAP}" \
+          -n "${HOME_NS}" \
+          --from-literal=report.json="${report}" \
+          --dry-run=client -o yaml | kubectl apply -f - || true
+      fi
+    }
+
+    http_post() {
+      local url="$1"
+      local body="$2"
+      if command -v curl >/dev/null 2>&1; then
+        curl -sS -m 10 -X POST -H 'Content-Type: application/json' \
+          --data "${body}" "${url}" >/dev/null
+      elif command -v wget >/dev/null 2>&1; then
+        wget -q -O /dev/null --timeout=10 --header='Content-Type: application/json' \
+          --post-data="${body}" "${url}"
+      else
+        log "neither curl nor wget available; skip HTTP notify"
+        return 1
+      fi
+    }
+
+    notify() {
+      local text color body dedup
+      if [ "${STATUS}" = "pass" ]; then
+        text="Backup verification PASS snapshot=${SNAPSHOT_NAME} ns=${VERIFY_NS}"
+        color="good"
+      else
+        text="Backup verification FAIL snapshot=${SNAPSHOT_NAME} ns=${VERIFY_NS}"
+        color="danger"
+      fi
+      dedup="stellar-k8s/backup-verification/${SNAPSHOT_NAME}"
+      if [ -n "${SLACK_WEBHOOK_URL}" ]; then
+        body="{\"text\":\"${text}\",\"attachments\":[{\"color\":\"${color}\"}]}"
+        http_post "${SLACK_WEBHOOK_URL}" "${body}" || log "slack notify failed"
+      else
+        log "SLACK_WEBHOOK_URL unset; skipping Slack"
+      fi
+      if [ "${STATUS}" != "pass" ] && [ -n "${PAGERDUTY_ROUTING_KEY}" ]; then
+        body="{\"routing_key\":\"${PAGERDUTY_ROUTING_KEY}\""
+        body="${body},\"event_action\":\"trigger\",\"dedup_key\":\"${dedup}\""
+        body="${body},\"payload\":{\"summary\":\"${text}\""
+        body="${body},\"severity\":\"error\",\"source\":\"backup-verifier\"}}"
+        http_post "${PAGERDUTY_URL}" "${body}" || log "pagerduty notify failed"
+      elif [ "${STATUS}" = "pass" ] && [ "${PAGERDUTY_RESOLVE_ON_PASS}" = "true" ] \
+        && [ -n "${PAGERDUTY_ROUTING_KEY}" ]; then
+        body="{\"routing_key\":\"${PAGERDUTY_ROUTING_KEY}\""
+        body="${body},\"event_action\":\"resolve\",\"dedup_key\":\"${dedup}\"}"
+        http_post "${PAGERDUTY_URL}" "${body}" || log "pagerduty resolve failed"
+      fi
+    }
+
+    trap cleanup EXIT
+
+    case "${VERIFY_MODE}" in
+      dry-run)
+        log "dry-run: configuration ok, no cluster mutations"
+        add_check "DryRun" true "synthetic pass"
+        STATUS="pass"
+        exit 0
+        ;;
+      fail-fixture)
+        log "fail-fixture: synthetic failure for notify wiring"
+        add_check "FailFixture" false "synthetic fail"
+        STATUS="fail"
+        exit 1
+        ;;
+      live) ;;
+      *)
+        log "unknown VERIFY_MODE=${VERIFY_MODE}"
+        add_check "Mode" false "invalid mode"
+        exit 1
+        ;;
+    esac
+
+    if [ -z "${SNAPSHOT_NAME}" ]; then
+      log "SNAPSHOT_NAME is required in live mode"
+      add_check "SnapshotName" false "missing"
+      exit 1
+    fi
+    if is_protected "${SNAPSHOT_NAMESPACE}"; then
+      log "read-only access to ${SNAPSHOT_NAMESPACE} snapshots is allowed"
+    fi
+
+    if ! kubectl get volumesnapshot "${SNAPSHOT_NAME}" \
+      -n "${SNAPSHOT_NAMESPACE}" >/dev/null 2>&1; then
+      log "snapshot ${SNAPSHOT_NAMESPACE}/${SNAPSHOT_NAME} not found"
+      add_check "SnapshotReady" false "not found"
+      exit 1
+    fi
+    ready="$(kubectl get volumesnapshot "${SNAPSHOT_NAME}" \
+      -n "${SNAPSHOT_NAMESPACE}" -o jsonpath='{.status.readyToUse}')"
+    if [ "${ready}" != "true" ]; then
+      log "snapshot not readyToUse=${ready}"
+      add_check "SnapshotReady" false "readyToUse=${ready}"
+      exit 1
+    fi
+    add_check "SnapshotReady" true "readyToUse=true"
+
+    VERIFY_NS="${NS_PREFIX}$(date +%s)"
+    if is_protected "${VERIFY_NS}"; then
+      log "computed namespace is protected: ${VERIFY_NS}"
+      add_check "NamespaceGuard" false "protected"
+      VERIFY_NS=""
+      exit 1
+    fi
+    case "${VERIFY_NS}" in
+      "${NS_PREFIX}"*) ;;
+      *)
+        log "namespace prefix guard failed"
+        add_check "NamespaceGuard" false "prefix"
+        VERIFY_NS=""
+        exit 1
+        ;;
+    esac
+
+    kubectl create namespace "${VERIFY_NS}"
+    kubectl label namespace "${VERIFY_NS}" \
+      stellar.org/backup-verification=true \
+      stellar.org/ephemeral=true \
+      app.kubernetes.io/name=backup-verifier
+    add_check "CreateNamespace" true "${VERIFY_NS}"
+
+    kubectl apply -f - <<EOF
+    apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: verify-quota
+      namespace: ${VERIFY_NS}
+    spec:
+      hard:
+        pods: "8"
+        persistentvolumeclaims: "4"
+        requests.cpu: "4"
+        requests.memory: 8Gi
+        limits.cpu: "8"
+        limits.memory: 16Gi
+    EOF
+
+    kubectl apply -f - <<EOF
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: verify-default-deny-ingress
+      namespace: ${VERIFY_NS}
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+    EOF
+
+    kubectl apply -f - <<EOF
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: restored-data
+      namespace: ${VERIFY_NS}
+      labels:
+        stellar.org/backup-verification: "true"
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      storageClassName: ${STORAGE_CLASS}
+      dataSource:
+        name: ${SNAPSHOT_NAME}
+        kind: VolumeSnapshot
+        apiGroup: snapshot.storage.k8s.io
+      resources:
+        requests:
+          storage: ${STORAGE_SIZE}
+    EOF
+
+    if ! kubectl wait --for=jsonpath='{.status.phase}'=Bound \
+      pvc/restored-data -n "${VERIFY_NS}" --timeout="${TIMEOUT_SECONDS}s"; then
+      add_check "RestorePvcBound" false "timeout"
+      exit 1
+    fi
+    add_check "RestorePvcBound" true "Bound"
+
+    if [ "${BACKUP_KIND}" = "horizon" ] || [ "${BACKUP_KIND}" = "both" ]; then
+      kubectl create configmap sql-integrity \
+        -n "${VERIFY_NS}" \
+        --from-file=sql-integrity.sh=/scripts/sql-integrity.sh
+      kubectl apply -f - <<EOF
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: sql-integrity
+      namespace: ${VERIFY_NS}
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 600
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sql
+              image: postgres:16-alpine
+              command: ["sh", "/scripts/sql-integrity.sh"]
+              env:
+                - name: MIN_LEDGER_ROWS
+                  value: "${MIN_LEDGER_ROWS}"
+                - name: PGDATA
+                  value: /var/lib/postgresql/data
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: restored
+                  mountPath: /var/lib/postgresql/data
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+          volumes:
+            - name: scripts
+              configMap:
+                name: sql-integrity
+                defaultMode: 0755
+            - name: restored
+              persistentVolumeClaim:
+                claimName: restored-data
+    EOF
+      if kubectl wait --for=condition=complete "job/sql-integrity" \
+        -n "${VERIFY_NS}" --timeout=300s; then
+        add_check "SqlIntegrity" true "job complete"
+      else
+        add_check "SqlIntegrity" false "job failed"
+        exit 1
+      fi
+    fi
+
+    if [ "${BACKUP_KIND}" = "validator" ] || [ "${BACKUP_KIND}" = "both" ]; then
+      kubectl create configmap ledger-hash \
+        -n "${VERIFY_NS}" \
+        --from-file=ledger-hash.sh=/scripts/ledger-hash.sh
+      kubectl apply -f - <<EOF
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: ledger-hash
+      namespace: ${VERIFY_NS}
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 600
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: hash
+              image: busybox:1.36
+              command: ["sh", "/scripts/ledger-hash.sh"]
+              env:
+                - name: EXPECTED_LEDGER_HASH
+                  value: "${EXPECTED_LEDGER_HASH}"
+                - name: EXPECTED_LEDGER_SEQ
+                  value: "${EXPECTED_LEDGER_SEQ}"
+                - name: RESTORE_MOUNT
+                  value: /restore
+              volumeMounts:
+                - name: restored
+                  mountPath: /restore
+                  readOnly: true
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+          volumes:
+            - name: restored
+              persistentVolumeClaim:
+                claimName: restored-data
+            - name: scripts
+              configMap:
+                name: ledger-hash
+                defaultMode: 0755
+    EOF
+      if kubectl wait --for=condition=complete "job/ledger-hash" \
+        -n "${VERIFY_NS}" --timeout=300s; then
+        add_check "LedgerHash" true "job complete"
+      else
+        add_check "LedgerHash" false "job failed"
+        exit 1
+      fi
+    fi
+
+    STATUS="pass"
+    log "verification passed for ${SNAPSHOT_NAME} in ${VERIFY_NS}"
+    exit 0
+
+  sql-integrity.sh: |
+    #!/bin/sh
+    # Template: SQL integrity against a restored Horizon database.
+    # Mount the snapshot PVC at PGDATA or set PGHOST to the restored instance.
+    set -eu
+    MIN_LEDGER_ROWS="${MIN_LEDGER_ROWS:-1}"
+    PGDATA="${PGDATA:-/var/lib/postgresql/data}"
+    if ! command -v psql >/dev/null 2>&1; then
+      echo "psql not in image; use postgres:16-alpine"
+      exit 1
+    fi
+    if [ -d "${PGDATA}" ] && [ -z "${PGHOST:-}" ]; then
+      if command -v docker-entrypoint.sh >/dev/null 2>&1; then
+        echo "starting postgres from restored PGDATA"
+        docker-entrypoint.sh postgres >/tmp/pg.log 2>&1 &
+        i=0
+        while [ "${i}" -lt 60 ]; do
+          pg_isready && break
+          i=$((i + 1))
+          sleep 2
+        done
+        pg_isready || { echo "FAIL: postgres did not become ready"; exit 1; }
+        export PGHOST=127.0.0.1
+      fi
+    fi
+    psql -v ON_ERROR_STOP=1 -c 'SELECT 1;'
+    found="$(psql -At -c "SELECT COUNT(*) FROM information_schema.tables
+      WHERE table_schema='public' AND table_name IN
+      ('accounts','ledgers','transactions','operations');")"
+    if [ "${found}" -lt 4 ]; then
+      echo "FAIL: expected 4 Horizon tables, found ${found}"
+      exit 1
+    fi
+    ledgers="$(psql -At -c 'SELECT COUNT(*) FROM ledgers;')"
+    if [ "${ledgers}" -lt "${MIN_LEDGER_ROWS}" ]; then
+      echo "FAIL: ledgers rows ${ledgers} < ${MIN_LEDGER_ROWS}"
+      exit 1
+    fi
+    echo "SQL integrity PASS (ledgers=${ledgers})"
+
+  ledger-hash.sh: |
+    #!/bin/sh
+    # Template: ledger / bucket file hashes on a restored Validator PVC.
+    set -eu
+    RESTORE_MOUNT="${RESTORE_MOUNT:-/restore}"
+    EXPECTED_LEDGER_HASH="${EXPECTED_LEDGER_HASH:-}"
+    if [ ! -d "${RESTORE_MOUNT}" ]; then
+      echo "FAIL: restore mount missing"
+      exit 1
+    fi
+    if [ -z "$(ls -A "${RESTORE_MOUNT}" 2>/dev/null)" ]; then
+      echo "FAIL: restored volume is empty"
+      exit 1
+    fi
+    find "${RESTORE_MOUNT}" -type f | sort | xargs sha256sum || true
+    if [ -f "${RESTORE_MOUNT}/ledger-files.sha256" ]; then
+      sha256sum -c "${RESTORE_MOUNT}/ledger-files.sha256"
+    fi
+    if [ -n "${EXPECTED_LEDGER_HASH}" ]; then
+      found="$(grep -Rsi "${EXPECTED_LEDGER_HASH}" "${RESTORE_MOUNT}" \
+        | head -n 1 || true)"
+      if [ -z "${found}" ]; then
+        echo "FAIL: expected ledger hash not present on volume"
+        exit 1
+      fi
+    fi
+    echo "Ledger hash verification PASS"
+
+  gc.sh: |
+    #!/usr/bin/env bash
+    # Delete leftover verify-backup-* namespaces older than ORPHAN_TTL_SECONDS.
+    set -euo pipefail
+    NS_PREFIX="${NS_PREFIX:-verify-backup-}"
+    ORPHAN_TTL_SECONDS="${ORPHAN_TTL_SECONDS:-21600}"
+    now="$(date +%s)"
+    kubectl get ns -l stellar.org/backup-verification=true \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.creationTimestamp}{"\n"}{end}' \
+      | while IFS="$(printf '\t')" read -r name created; do
+          [ -n "${name}" ] || continue
+          case "${name}" in
+            "${NS_PREFIX}"*) ;;
+            *) echo "skip ${name} (prefix)"; continue ;;
+          esac
+          created_epoch="$(date -d "${created}" +%s 2>/dev/null || echo 0)"
+          age="$((now - created_epoch))"
+          if [ "${age}" -gt "${ORPHAN_TTL_SECONDS}" ]; then
+            echo "deleting orphan ${name} age=${age}s"
+            kubectl delete namespace "${name}" --wait=false
+          fi
+        done
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-verifier
+  namespace: stellar-backup-verify
+  labels:
+    app.kubernetes.io/name: backup-verifier
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 7200
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backup-verifier
+        spec:
+          serviceAccountName: backup-verifier
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            fsGroup: 65532
+          containers:
+            - name: verifier
+              image: bitnami/kubectl:1.30.7
+              command: ["/bin/bash", "/scripts/run.sh"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              env:
+                - name: VERIFY_MODE
+                  value: live
+                - name: BACKUP_KIND
+                  value: validator
+                - name: SNAPSHOT_NAME
+                  value: validator-primary-data-latest
+                - name: SNAPSHOT_NAMESPACE
+                  value: stellar-nodes
+                - name: STORAGE_CLASS
+                  value: standard-rwo
+                - name: STORAGE_SIZE
+                  value: 500Gi
+                - name: HOME_NS
+                  value: stellar-backup-verify
+                - name: SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-verifier-notify
+                      key: slack-webhook-url
+                      optional: true
+                - name: PAGERDUTY_ROUTING_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-verifier-notify
+                      key: pagerduty-routing-key
+                      optional: true
+                - name: EXPECTED_LEDGER_HASH
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-verifier-expected
+                      key: expected-ledger-hash
+                      optional: true
+                - name: EXPECTED_LEDGER_SEQ
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-verifier-expected
+                      key: expected-ledger-seq
+                      optional: true
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-verifier-scripts
+                defaultMode: 0755
+            - name: tmp
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-verifier-gc
+  namespace: stellar-backup-verify
+  labels:
+    app.kubernetes.io/name: backup-verifier
+    stellar.org/role: orphan-gc
+spec:
+  schedule: "30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backup-verifier
+            stellar.org/role: orphan-gc
+        spec:
+          serviceAccountName: backup-verifier
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            fsGroup: 65532
+          containers:
+            - name: gc
+              image: bitnami/kubectl:1.30.7
+              command: ["/bin/bash", "/scripts/gc.sh"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              env:
+                - name: ORPHAN_TTL_SECONDS
+                  value: "21600"
+                - name: NS_PREFIX
+                  value: verify-backup-
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-verifier-scripts
+                defaultMode: 0755

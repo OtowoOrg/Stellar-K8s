@@ -1,0 +1,14 @@
+[package]
+name = "mock-v2"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Test fixture: v2 of a contract upgraded through proxy-controller"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = "23.5.0"
+proxy-controller = { path = "../proxy_controller" }

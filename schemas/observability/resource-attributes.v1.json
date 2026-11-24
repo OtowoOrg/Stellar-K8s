@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stellar.org/schemas/observability/resource-attributes.v1.json",
+  "title": "Stellar unified observability resource-attribute contract",
+  "description": "Versioned vocabulary shared by logs, metrics, and traces so signals correlate from pod identity without manual translation.",
+  "contractVersion": "1.0.0",
+  "compatibleWith": ["1.0.0"],
+  "minCompatibleVersion": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "service.name",
+    "service.instance.id",
+    "k8s.pod.name",
+    "k8s.namespace.name",
+    "k8s.node.name",
+    "stellar.observability.contract.version"
+  ],
+  "properties": {
+    "service.name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "requirement": "required",
+      "description": "Logical service name (OTel semantic convention)."
+    },
+    "service.instance.id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "requirement": "required",
+      "description": "Stable instance identity; pod UID when running in-cluster."
+    },
+    "k8s.pod.name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "requirement": "required",
+      "description": "Kubernetes pod name derived from downward API."
+    },
+    "k8s.namespace.name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "requirement": "required",
+      "description": "Kubernetes namespace of the emitting pod."
+    },
+    "k8s.node.name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$",
+      "requirement": "required",
+      "description": "Kubernetes node hosting the pod."
+    },
+    "stellar.observability.contract.version": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "requirement": "required",
+      "description": "Contract version embedded in every accepted signal."
+    },
+    "k8s.pod.uid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F-]{1,64}$",
+      "requirement": "optional"
+    },
+    "k8s.cluster.name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "requirement": "optional"
+    },
+    "k8s.deployment.name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "requirement": "optional"
+    },
+    "k8s.container.name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "requirement": "optional"
+    },
+    "service.version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "requirement": "optional"
+    },
+    "service.namespace": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "requirement": "optional"
+    },
+    "host.name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "requirement": "optional"
+    },
+    "deployment.environment": {
+      "type": "string",
+      "enum": ["development", "staging", "production", "test", "local"],
+      "requirement": "optional"
+    },
+    "telemetry.sdk.name": {
+      "type": "string",
+      "requirement": "optional"
+    },
+    "telemetry.sdk.language": {
+      "type": "string",
+      "requirement": "optional"
+    },
+    "telemetry.sdk.version": {
+      "type": "string",
+      "requirement": "optional"
+    }
+  },
+  "x-legacyAliases": {
+    "namespace": "k8s.namespace.name",
+    "k8s_namespace": "k8s.namespace.name",
+    "k8s_node": "k8s.node.name",
+    "node": "k8s.pod.name",
+    "pod": "k8s.pod.name",
+    "service_name": "service.name",
+    "service_instance_id": "service.instance.id",
+    "contract_version": "stellar.observability.contract.version"
+  },
+  "x-grafanaCorrelation": {
+    "identityKeys": [
+      "service.instance.id",
+      "k8s.pod.name",
+      "k8s.namespace.name"
+    ],
+    "logToTraceField": "trace_id"
+  }
+}

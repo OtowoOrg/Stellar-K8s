@@ -17,6 +17,10 @@ Production-grade Stellar infrastructure on Kubernetes. This directory contains a
 - [Horizon API](deployment-guides/horizon.md)
 - [Soroban RPC](deployment-guides/soroban-rpc.md)
 - [OLM / OpenShift](deploy-olm.md)
+- [Deployment Patterns](deployment-patterns/index.md)
+- [Horizon / RPC Farm](deployment-patterns/horizon-rpc-farm.md)
+- [Multi-Region and DR](deployment-patterns/multi-region-dr.md)
+- [GitOps, Scaling and Upgrades](deployment-patterns/gitops-scaling-upgrades.md)
 
 ## CRD & API Reference
 
@@ -30,7 +34,7 @@ Production-grade Stellar infrastructure on Kubernetes. This directory contains a
 - [Storage & PVC Auto-Expansion](pvc-auto-expansion.md)
 - [Proactive Disk Scaling](proactive-disk-scaling.md)
 - [Sync-State Scaling](sync-state-scaling.md)
-- [Feature Flags](../README.md#️-runtime-feature-flags)
+- [Feature Flags](../README.md#runtime-feature-flags)
 - [Ingress Guide](ingress-guide.md)
 - [Network Policies](network-isolation.md)
 - [Network Policy Templates](network-policy-templates.md)
@@ -52,6 +56,13 @@ Production-grade Stellar infrastructure on Kubernetes. This directory contains a
 
 ## Observability
 
+- [Observability Overview](observability/index.md)
+- [Metric Reference](observability/metric-reference.md)
+- [Metric Naming Conventions](observability/metric-naming-conventions.md)
+- [Metrics and Dashboards](observability/metrics-and-dashboards.md)
+- [Telemetry Architecture](observability/telemetry-architecture.md)
+- [Unified Observability Contract](observability/unified-contract.md)
+- [OpenTelemetry Tracing](observability/tracing.md)
 - [Metrics Guide](metrics/STELLAR_METRICS_GUIDE.md)
 - [Grafana Dashboard Guide](monitoring/GRAFANA_DASHBOARD_GUIDE.md)
 - [SCP Analytics Pipeline](scp-analytics-pipeline.md)
@@ -106,9 +117,11 @@ Production-grade Stellar infrastructure on Kubernetes. This directory contains a
 - [Development Setup](contributing/development-setup.md)
 - [Developer Onboarding](developer-onboarding/index.md)
 - [Development Reference](development.md)
+- [Build Targets](development/build-targets.md)
 - [Regenerating Charts & Bundle Manifests](development/regeneration-guide.md)
 - [Fuzzing](fuzzing.md)
 - [Docker Compose → Kubernetes Migration](docker-compose-to-kubernetes-migration.md)
+- [First-Class Issue Types](first-class-issues.md)
 
 ## Reference
 
@@ -118,16 +131,26 @@ Production-grade Stellar infrastructure on Kubernetes. This directory contains a
 - [Third-Party Licenses](../THIRD_PARTY_LICENSES.md)
 
 ---
+## Navigation
+
+The canonical documentation index is maintained in [`mkdocs.yml`](../mkdocs.yml) — the single navigation source for the rendered MkDocs site. Use that file to find all documentation pages organized by topic.
+
+For a quick reference, key topic areas include:
+- Getting Started, Deployment Guides, Configuration, Tutorials
+- Operations & Observability, Troubleshooting
+- API Reference, Security, Networking
+- Development, Contributing
+- PITCH Storyboards ([`pitch-storyboards.md`](./pitch-storyboards.md))
+- Change Notes ([`change-notes.md`](./change-notes.md))
 
 ## Documentation Maintenance
 
-**Owner:** Any contributor — this index is maintained alongside the docs it links to.
+**Owner:** Any contributor — this README is maintained alongside `mkdocs.yml`.
 
 ### Adding a new doc
 
 1. Create your `.md` file under the appropriate `docs/` subdirectory.
-2. Add a link in the relevant section above.
-3. Add a corresponding entry to `mkdocs.yml` if the doc should appear in the rendered site.
+2. Add a corresponding entry to `mkdocs.yml` under the relevant section.
 
 ### Updating an existing doc
 
@@ -137,7 +160,7 @@ Production-grade Stellar infrastructure on Kubernetes. This directory contains a
 ### Removing a doc
 
 1. Delete the file.
-2. Remove its link from this index **and** from `mkdocs.yml`.
+2. Remove its entry from `mkdocs.yml`.
 3. Search for cross-references: `grep -r "filename.md" docs/` and fix or remove them.
 
 ### Generating auto-derived docs

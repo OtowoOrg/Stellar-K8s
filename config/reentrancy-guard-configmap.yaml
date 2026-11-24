@@ -1,0 +1,46 @@
+# Reentrancy Guard runtime configuration for the Soroban sub-contract middleware.
+#
+# This ConfigMap exposes the operator-driven, per-namespace / per-contract
+# scope that the Reentrancy Guard middleware enforces. The operator admission
+# webhook parses the JSON document under the `reentrancy-guard.json` data key
+# and passes it (via `stellar_soroban_reentrancy_guard::ReentrancyGuardConfig`)
+# into the middleware before a guarded invocation. See:
+#   - wasm-plugins/security/reentrancy/
+#   - docs/adr/0005-reentrancy-guard-middleware.md
+#
+# Semantics (all lists are optional; empty ranks = the safe "enabled
+# everywhere" default):
+#   enabled_namespaces  - ONLY these namespaces are guarded (allow-list).
+#   enabled_contracts   - ONLY these contract IDs are guarded (allow-list).
+#   disabled_namespaces - these namespaces are NEVER guarded (explicit opt-out).
+#   disabled_contracts  - these contract IDs are NEVER guarded (explicit opt-out).
+#   Explicit disables always win over enables.
+#
+# Contract IDs are hexadecimal Soroban contract identifiers without the leading
+# `C` prefix (e.g. "a1b2c3...").
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reentrancy-guard
+  namespace: stellar-operator-system
+data:
+  reentrancy-guard.json: |
+    {
+      "enabled_namespaces": ["payments", "settlement"],
+      "enabled_contracts": [],
+      "disabled_namespaces": ["legacy"],
+      "disabled_contracts": []
+    }
+
+  # (Optional) When the middleware itself ships as a compiled Wasm plugin, load
+  # it through the operator's existing plugin mechanism and reference it here.
+  # See docs/wasm-webhook.md for the matching `plugins.yaml` `configMapRef`.
+  #
+  # Rebuild the Wasm guest with:
+  #   cargo build --manifest-path wasm-plugins/security/reentrancy/Cargo.toml \
+  #       --features soroban --target wasm32-unknown-unknown --release
+  # then mount the artifact under the `plugin.wasm` key:
+  #   kubectl create configmap reentrancy-guard \
+  #       --from-literal=reentrancy-guard.json="$(cat reentrancy-guard.json)" \
+  #       --from-file=plugin.wasm=wasm-plugins/security/reentrancy/target/wasm32-unknown-unknown/release/stellar_soroban_reentrancy_guard.wasm \
+  #       -n stellar-operator-system

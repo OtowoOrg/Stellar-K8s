@@ -1,0 +1,210 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: chaos-drill-node-failure
+  namespace: stellar-chaos
+  labels:
+    app: chaos-driller
+    drill-type: node-failure
+spec:
+  schedule: "0 2 1 * *"  # 2 AM on 1st of every month
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 12
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: chaos-driller
+            drill-type: node-failure
+        spec:
+          serviceAccountName: chaos-driller
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            fsGroup: 65532
+          containers:
+          - name: chaos-drill
+            image: ghcr.io/stellar/stellar-k8s:0.1.0
+            command: ["/scripts/run-chaos-drill.sh"]
+            args: ["node-kill", "60", "validator"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
+            env:
+            - name: NAMESPACE
+              value: "stellar"
+            - name: RESULTS_DIR
+              value: "/results/chaos"
+            volumeMounts:
+            - name: results
+              mountPath: /results
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
+          volumes:
+          - name: results
+            persistentVolumeClaim:
+              claimName: chaos-results-pvc
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: chaos-drill-network-partition
+  namespace: stellar-chaos
+  labels:
+    app: chaos-driller
+    drill-type: network-partition
+spec:
+  schedule: "0 2 15 * *"  # 2 AM on 15th of every month
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 12
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: chaos-driller
+            drill-type: network-partition
+        spec:
+          serviceAccountName: chaos-driller
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            fsGroup: 65532
+          containers:
+          - name: chaos-drill
+            image: ghcr.io/stellar/stellar-k8s:0.1.0
+            command: ["/scripts/run-chaos-drill.sh"]
+            args: ["network", "120", "stellar-validator-0"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
+            env:
+            - name: NAMESPACE
+              value: "stellar"
+            - name: RESULTS_DIR
+              value: "/results/chaos"
+            volumeMounts:
+            - name: results
+              mountPath: /results
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
+          volumes:
+          - name: results
+            persistentVolumeClaim:
+              claimName: chaos-results-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chaos-results-pvc
+  namespace: stellar-chaos
+  labels:
+    app: chaos-driller
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: chaos-drill-storage-failure
+  namespace: stellar-chaos
+  labels:
+    app: chaos-driller
+    drill-type: storage-failure
+spec:
+  schedule: "0 2 28 * *"  # 2 AM on 28th of every month
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 12
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: chaos-driller
+            drill-type: storage-failure
+        spec:
+          serviceAccountName: chaos-driller
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            fsGroup: 65532
+          containers:
+          - name: chaos-drill
+            image: ghcr.io/stellar/stellar-k8s:0.1.0
+            command: ["/scripts/run-chaos-drill.sh"]
+            args: ["disk", "180", "stellar-validator-0"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
+            env:
+            - name: NAMESPACE
+              value: "stellar"
+            - name: RESULTS_DIR
+              value: "/results/chaos"
+            - name: DRILL_TYPE
+              value: "storage-failure"
+            - name: RTO_TARGET_SECONDS
+              value: "900"
+            volumeMounts:
+            - name: results
+              mountPath: /results
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
+          volumes:
+          - name: results
+            persistentVolumeClaim:
+              claimName: chaos-results-pvc

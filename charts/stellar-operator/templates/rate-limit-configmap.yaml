@@ -1,0 +1,38 @@
+{{- if .Values.rateLimiting.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-rate-limiting
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    component: api-gateway
+data:
+  rate-limiting.yaml: |
+    distributed:
+      enabled: {{ .Values.rateLimiting.distributed.enabled }}
+      failOpen: {{ .Values.rateLimiting.distributed.failOpen }}
+    {{- if .Values.rateLimiting.distributed.enabled }}
+    redis:
+      address: {{ .Values.rateLimiting.redis.address | quote }}
+      poolSize: {{ .Values.rateLimiting.redis.poolSize }}
+      timeoutMs: {{ .Values.rateLimiting.redis.timeoutMs }}
+      tls:
+        enabled: {{ .Values.rateLimiting.redis.tls.enabled | default false }}
+      {{- if .Values.rateLimiting.redis.passwordSecretName }}
+      passwordSecretName: {{ .Values.rateLimiting.redis.passwordSecretName | quote }}
+      passwordSecretKey: {{ .Values.rateLimiting.redis.passwordSecretKey | default "password" | quote }}
+      {{- end }}
+    {{- end }}
+    tiers:
+    {{- range .Values.rateLimiting.tiers }}
+      - name: {{ .name }}
+        requestsPerMinute: {{ .requestsPerMinute }}
+        requestsPerHour: {{ .requestsPerHour }}
+        requestsPerDay: {{ .requestsPerDay }}
+        burst: {{ .burst }}
+    {{- end }}
+    endpointTiers:
+    {{- range $path, $tier := .Values.rateLimiting.endpointTiers }}
+      {{ $path }}: {{ $tier }}
+    {{- end }}
+{{- end }}

@@ -1,0 +1,21 @@
+[package]
+name = "hello-world"
+version = "0.1.0"
+edition = "2021"
+description = "Hello World Wasm validation plugin for Stellar-K8s — tutorial example"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Release profile tuned for minimal Wasm binary size
+[profile.release]
+opt-level = "z"       # optimise for size
+lto = true            # link-time optimisation
+codegen-units = 1     # single codegen unit for maximum optimisation
+panic = "abort"       # no unwinding machinery (~30 KiB savings)
+strip = true          # strip debug symbols

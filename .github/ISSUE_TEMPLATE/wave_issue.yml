@@ -1,0 +1,53 @@
+name: Stellar Wave Issue
+description: Structured contributor issue following the standard wave format
+title: "[Wave] "
+labels: ["stellar-wave"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Consistent issue structure lets contributors assess scope quickly, helps reviewers
+        verify completion against clear Acceptance Criteria, and allows automated tooling
+        to parse sections predictably. Fill in every section before submitting.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is broken or missing? Be specific and factual.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope Target
+      description: What should change and where? Name files, modules, or systems when known.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Bullet list of verifiable outcomes. Each item should be testable.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: How will a reviewer confirm this is done correctly?
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: resources
+    attributes:
+      label: Resources
+      description: Links to relevant docs, RFCs, or code references.

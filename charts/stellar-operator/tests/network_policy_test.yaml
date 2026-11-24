@@ -1,0 +1,213 @@
+suite: network policies
+# Tests for the default-deny NetworkPolicies that enforce zero-trust pod-to-pod
+# segmentation (issue #1320):
+#   - templates/networkpolicy.yaml    (operator + webhook default-deny)
+#   - templates/network-pod-policy.yaml (per-namespace default-deny baseline)
+templates:
+  - templates/networkpolicy.yaml
+  - templates/network-pod-policy.yaml
+
+tests:
+  # ── Operator default-deny ──────────────────────────────────────────────────
+  - it: operator default-deny renders by default with base egress rules
+    template: templates/networkpolicy.yaml
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-stellar-operator-default-deny
+        documentIndex: 0
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+        documentIndex: 0
+      - equal:
+          path: spec.policyTypes[0]
+          value: Ingress
+        documentIndex: 0
+      - equal:
+          path: spec.policyTypes[1]
+          value: Egress
+        documentIndex: 0
+
+  - it: operator default-deny allows kube-apiserver egress on 443
+    template: templates/networkpolicy.yaml
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: kube-system
+                podSelector:
+                  matchLabels:
+                    component: kube-apiserver
+            ports:
+              - protocol: TCP
+                port: 443
+          any: true
+
+  - it: operator default-deny allows DNS egress on 53
+    template: templates/networkpolicy.yaml
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: kube-system
+                podSelector:
+                  matchLabels:
+                    k8s-app: kube-dns
+            ports:
+              - protocol: UDP
+                port: 53
+              - protocol: TCP
+                port: 53
+          any: true
+
+  - it: operator default-deny does NOT include Redis rule by default
+    template: templates/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - protocol: TCP
+                port: 6379
+          any: true
+
+  # ── Explicit allow rules for required pod-to-pod traffic ──────────────────
+  - it: allows Redis egress when distributed rate limiting is enabled
+    template: templates/networkpolicy.yaml
+    set:
+      rateLimiting.distributed.enabled: true
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: NAMESPACE
+            ports:
+              - protocol: TCP
+                port: 6379
+          any: true
+
+  - it: allows Vault egress when cert management backend is vault-pki
+    template: templates/networkpolicy.yaml
+    set:
+      certManagement.backend: vault-pki
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: NAMESPACE
+            ports:
+              - protocol: TCP
+                port: 8200
+          any: true
+
+  - it: allows OTel collector egress when the collector is enabled
+    template: templates/networkpolicy.yaml
+    set:
+      otel.collector.enabled: true
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - podSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: otel-collector
+                namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: NAMESPACE
+            ports:
+              - protocol: TCP
+                port: 4317
+              - protocol: TCP
+                port: 4318
+          any: true
+
+  - it: allows Kafka egress when SCP analytics is enabled
+    template: templates/networkpolicy.yaml
+    set:
+      scpAnalytics.enabled: true
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: kafka
+            ports:
+              - protocol: TCP
+                port: 9092
+              - protocol: TCP
+                port: 9093
+          any: true
+
+  # ── Webhook default-deny ──────────────────────────────────────────────────
+  - it: webhook default-deny renders in stellar-webhook namespace
+    template: templates/networkpolicy.yaml
+    set:
+      webhook.enabled: true
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+        documentIndex: 1
+      - equal:
+          path: metadata.name
+          value: stellar-webhook-default-deny
+        documentIndex: 1
+      - equal:
+          path: metadata.namespace
+          value: stellar-webhook
+        documentIndex: 1
+
+  # ── Per-namespace default-deny baseline (network-pod-policy) ──────────────
+  - it: renders one default-deny per configured namespace
+    template: templates/network-pod-policy.yaml
+    set:
+      security.networkPolicy.defaultDenyNamespaces:
+        - stellar
+        - stellar-mainnet
+    asserts:
+      - hasDocuments:
+          count: 2
+      - equal:
+          path: metadata.name
+          value: default-deny
+        documentIndex: 0
+      - equal:
+          path: metadata.namespace
+          value: stellar
+        documentIndex: 0
+      - equal:
+          path: spec.policyTypes[0]
+          value: Ingress
+        documentIndex: 0
+      - equal:
+          path: spec.policyTypes[1]
+          value: Egress
+        documentIndex: 0
+      - equal:
+          path: metadata.namespace
+          value: stellar-mainnet
+        documentIndex: 1
+
+  - it: renders no policies when defaultDenyNamespaces is empty
+    template: templates/network-pod-policy.yaml
+    asserts:
+      - hasDocuments:
+          count: 0

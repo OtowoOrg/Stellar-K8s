@@ -1,0 +1,223 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "BenchmarkReport is a read-only resource written by the operator after a StellarBenchmark run completes.  It contains the aggregated performance metrics (Peak TPS, Average Ledger Close Time, P99 API Latency) and per-pod raw results.\n",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "BenchmarkReport"
+      ]
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "spec": {
+      "type": "object",
+      "required": [
+        "benchmarkRef",
+        "startedAt",
+        "completedAt",
+        "targetEndpoint",
+        "config",
+        "metrics"
+      ],
+      "properties": {
+        "benchmarkRef": {
+          "description": "Name of the StellarBenchmark that produced this report.",
+          "type": "string"
+        },
+        "startedAt": {
+          "description": "RFC 3339 timestamp when the benchmark run started.",
+          "type": "string"
+        },
+        "completedAt": {
+          "description": "RFC 3339 timestamp when the benchmark run completed.",
+          "type": "string"
+        },
+        "targetEndpoint": {
+          "description": "Target endpoint that was tested.",
+          "type": "string"
+        },
+        "config": {
+          "description": "Configuration snapshot from the StellarBenchmark spec.",
+          "type": "object",
+          "required": [
+            "durationSeconds",
+            "targetTps",
+            "concurrency",
+            "networkPassphrase",
+            "loadGeneratorImage"
+          ],
+          "properties": {
+            "durationSeconds": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "targetTps": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "concurrency": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "networkPassphrase": {
+              "type": "string"
+            },
+            "loadGeneratorImage": {
+              "type": "string"
+            }
+          }
+        },
+        "metrics": {
+          "description": "Aggregated performance metrics for the benchmark run.",
+          "type": "object",
+          "required": [
+            "peakTps",
+            "avgLedgerCloseMs",
+            "p99ApiLatencyMs",
+            "p50ApiLatencyMs",
+            "p95ApiLatencyMs",
+            "totalTransactions",
+            "successfulTransactions",
+            "failedTransactions",
+            "errorRatePct"
+          ],
+          "properties": {
+            "peakTps": {
+              "description": "Peak transactions per second observed across all pods.",
+              "type": "number",
+              "format": "double"
+            },
+            "avgLedgerCloseMs": {
+              "description": "Average ledger close time in milliseconds.",
+              "type": "number",
+              "format": "double"
+            },
+            "p99ApiLatencyMs": {
+              "description": "99th-percentile API response latency in milliseconds.",
+              "type": "number",
+              "format": "double"
+            },
+            "p50ApiLatencyMs": {
+              "description": "50th-percentile (median) API response latency in milliseconds.",
+              "type": "number",
+              "format": "double"
+            },
+            "p95ApiLatencyMs": {
+              "description": "95th-percentile API response latency in milliseconds.",
+              "type": "number",
+              "format": "double"
+            },
+            "totalTransactions": {
+              "description": "Total transactions submitted across all pods.",
+              "type": "integer",
+              "format": "int64"
+            },
+            "successfulTransactions": {
+              "description": "Transactions accepted by the network.",
+              "type": "integer",
+              "format": "int64"
+            },
+            "failedTransactions": {
+              "description": "Transactions rejected or timed out.",
+              "type": "integer",
+              "format": "int64"
+            },
+            "errorRatePct": {
+              "description": "Error rate as a percentage (0\u2013100).",
+              "type": "number",
+              "format": "double"
+            },
+            "throughputBytesPerSec": {
+              "description": "Throughput in bytes per second (if available).",
+              "type": "number",
+              "format": "double",
+              "nullable": true
+            }
+          }
+        },
+        "podResults": {
+          "description": "Per-pod raw results.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "podName",
+              "peakTps",
+              "totalTransactions",
+              "successfulTransactions",
+              "failedTransactions",
+              "p99LatencyMs",
+              "exitCode"
+            ],
+            "properties": {
+              "podName": {
+                "type": "string"
+              },
+              "peakTps": {
+                "type": "number",
+                "format": "double"
+              },
+              "totalTransactions": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "successfulTransactions": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "failedTransactions": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "p99LatencyMs": {
+                "type": "number",
+                "format": "double"
+              },
+              "exitCode": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "logs": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "status": {
+      "description": "Status subresource for BenchmarkReport.",
+      "type": "object",
+      "properties": {
+        "ready": {
+          "description": "Whether the report has been fully written.",
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "required": [
+    "spec",
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "BenchmarkReport"
+    }
+  ]
+}

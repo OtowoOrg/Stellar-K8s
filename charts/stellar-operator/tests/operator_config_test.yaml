@@ -1,0 +1,45 @@
+suite: operator-config configmap
+templates:
+  - templates/operator-config.yaml
+
+tests:
+  - it: renders ConfigMap with correct name
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-stellar-operator-defaults
+
+  - it: has correct app labels
+    asserts:
+      - isSubset:
+          path: metadata.labels
+          content:
+            app.kubernetes.io/name: stellar-operator
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: contains config.yaml data key
+    asserts:
+      - isNotNull:
+          path: data["config.yaml"]
+
+  - it: embeds default validator cpu request
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "cpu:"
+
+  - it: embeds default validator memory request
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "memory:"
+
+  - it: renders with fullnameOverride
+    set:
+      fullnameOverride: my-op
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-op-defaults

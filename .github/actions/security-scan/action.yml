@@ -1,21 +1,36 @@
 name: Security Scan with Trivy
 description: >
-  Run Trivy security scan on a container image and upload SARIF results to GitHub.
+  Run Trivy on a container image, upload SARIF to GitHub, and fail the job when
+  vulnerabilities at or above a blocking severity are present (issue #1334).
 
 inputs:
   image-ref:
     description: Container image reference to scan
     required: true
   severity:
-    description: Severity levels to scan for
+    description: Severity levels to report in the SARIF upload
     required: false
     default: "CRITICAL,HIGH"
+  fail-on-severity:
+    description: >
+      Severities that fail the job. Empty string disables the blocking pass and
+      makes this action report-only.
+    required: false
+    default: "CRITICAL"
+  ignore-unfixed:
+    description: >
+      Skip vulnerabilities with no upstream fix in the blocking pass. Defaults
+      to true: a base-image CVE nobody can patch yet should not wedge every
+      merge, and it is still reported in the SARIF upload above.
+    required: false
+    default: "true"
 
 runs:
   using: composite
   steps:
-    - name: Run Trivy
-      uses: aquasecurity/trivy-action@0.35.0
+    # ── Report: everything at `severity`, surfaced in the Security tab ──────
+    - name: Run Trivy (report)
+      uses: aquasecurity/trivy-action@v0.36.0
       with:
         image-ref: ${{ inputs.image-ref }}
         format: sarif
@@ -27,3 +42,24 @@ runs:
       if: always()
       with:
         sarif_file: trivy-results.sarif
+
+    # ── Gate: fail the job on blocking severities ───────────────────────────
+    # A separate pass because the SARIF upload above must run for the full
+    # severity range even when the gate below fails the job.
+    - name: Run Trivy (blocking gate)
+      if: inputs.fail-on-severity != ''
+      uses: aquasecurity/trivy-action@v0.36.0
+      with:
+        image-ref: ${{ inputs.image-ref }}
+        format: table
+        severity: ${{ inputs.fail-on-severity }}
+        ignore-unfixed: ${{ inputs.ignore-unfixed }}
+        exit-code: "1"
+        # Do not let a Trivy DB download hiccup silently pass the gate.
+        skip-setup-trivy: false
+
+    - name: Report gate outcome
+      if: success() && inputs.fail-on-severity != ''
+      shell: bash
+      run: |
+        echo "::notice title=Image scan::No ${{ inputs.fail-on-severity }} vulnerabilities with an available fix in ${{ inputs.image-ref }}"

@@ -1,0 +1,69 @@
+# Upgrade-preservation tests.
+#
+# Chart.yaml has been 0.1.0 since the chart was introduced (see git history of
+# charts/stellar-operator/Chart.yaml). There is no tagged previous chart
+# artifact, so these cases treat examples/values-production.yaml as the last
+# supported values schema and assert a current-chart render keeps scheduling,
+# resources, and tracing configuration.
+suite: upgrade/preservation
+templates:
+  - templates/deployment.yaml
+  - templates/service.yaml
+  - templates/pdb.yaml
+
+tests:
+  - it: production values keep replica count, nodeSelector, and zone anti-affinity
+    values:
+      - ../examples/values-production.yaml
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+      - equal:
+          path: spec.template.spec.nodeSelector["stellar.org/node-pool"]
+          value: operator
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey
+          value: topology.kubernetes.io/zone
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 512Mi
+
+  - it: production values keep dedicated-pool tolerations
+    values:
+      - ../examples/values-production.yaml
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.tolerations
+          content:
+            key: stellar.org/dedicated
+            operator: Equal
+            value: operator
+            effect: NoSchedule
+
+  - it: production values keep ClusterIP service ports
+    values:
+      - ../examples/values-production.yaml
+    template: templates/service.yaml
+    asserts:
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - contains:
+          path: spec.ports
+          content:
+            name: http
+            port: 8080
+            targetPort: http
+            protocol: TCP
+
+  - it: production PDB minAvailable is preserved
+    values:
+      - ../examples/values-production.yaml
+    template: templates/pdb.yaml
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 2

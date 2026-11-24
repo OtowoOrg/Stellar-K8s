@@ -343,6 +343,57 @@ See Disk Scaling Guide for PVC expansion procedures.
 
 ---
 
+## Issue 15: Validator Container Exits Immediately
+
+**Symptoms:**
+
+```
+validator-0   0/1   CrashLoopBackOff
+```
+
+No log output, or the process exits with code `0` or `1` within a second of starting.
+
+**Root Cause:**
+
+The official `stellar/stellar-core` image ships with an empty `Cmd`. If the
+operator's injected command is accidentally removed or misconfigured, the
+container starts with no executable and exits immediately.
+
+**Solution:**
+
+Verify the rendered command on the running pod:
+
+```bash
+kubectl get pod validator-0 -n stellar \
+  -o jsonpath='{.spec.containers[0].command}' | python3 -m json.tool
+```
+
+Expected output:
+
+```json
+[
+  "/usr/bin/stellar-core",
+  "run",
+  "--conf",
+  "/config/stellar-core.cfg"
+]
+```
+
+If the array is empty or wrong, restore it via `spec.command` in the `StellarNode`
+resource or remove the override to fall back to the operator default.
+
+Also verify the config `ConfigMap` volume is correctly mounted:
+
+```bash
+kubectl exec -n stellar validator-0 -- cat /config/stellar-core.cfg | head -5
+```
+
+For full details on the default command, the config file path mapping, and
+customisation guidance see the
+[Validator Container Command Override](../configuration/validator-command.md) doc.
+
+---
+
 ## Additional Resources
 
 - Disk Scaling Troubleshooting

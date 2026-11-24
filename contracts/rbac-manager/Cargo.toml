@@ -1,0 +1,18 @@
+# Standalone workspace root so this crate is not conflated with the parent
+# operator workspace (which pins its own toolchain/profile settings).
+[workspace]
+
+[package]
+name = "stellar-rbac-manager"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Role-based access control module for Soroban contracts (hierarchical, metering-friendly)"
+repository = "https://github.com/stellar/stellar-k8s"
+
+[lib]
+crate-type = ["rlib"]
+
+[dev-dependencies]
+# Property-based testing for the role state machine.
+proptest = "1.5"

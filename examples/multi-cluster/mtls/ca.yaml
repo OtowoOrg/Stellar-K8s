@@ -1,0 +1,26 @@
+# Example: Shared CA + cert-manager issuer for cross-cluster mTLS
+#
+# Install the same CA secret into BOTH clusters, then apply this issuer.
+#
+# Generate the CA first:
+#   openssl genrsa -out ca.key 4096
+#   openssl req -new -x509 -days 3650 -key ca.key -out ca.crt \
+#     -subj "/CN=stellar-multi-cluster-ca"
+#
+# Install into both clusters:
+#   kubectl create secret tls stellar-ca \
+#     --cert=ca.crt --key=ca.key -n stellar-nodes --context=cluster-a
+#   kubectl create secret tls stellar-ca \
+#     --cert=ca.crt --key=ca.key -n stellar-nodes --context=cluster-b
+#
+# Apply to both clusters:
+#   kubectl apply -f mtls/ca.yaml --context=cluster-a
+#   kubectl apply -f mtls/ca.yaml --context=cluster-b
+
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: stellar-ca-issuer
+spec:
+  ca:
+    secretName: stellar-ca

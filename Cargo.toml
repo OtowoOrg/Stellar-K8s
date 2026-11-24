@@ -1,6 +1,6 @@
 [package]
 name = "stellar-k8s"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Stellar K8s Contributors"]
 description = "Cloud-Native Kubernetes Operator for Stellar Infrastructure"
@@ -9,21 +9,12 @@ repository = "https://github.com/stellar/stellar-k8s"
 
 [dependencies]
 ed25519-dalek = { version = "2", features = ["rand_core"] }
-lru = "0.16"
-printpdf = "0.7"
-toml = "0.5"
+toml = "0.8"
 # Glob pattern matching for label propagation filters
 glob = "0.3"
 
 # Kubernetes client and operator framework
-kube = { version = "0.94", features = [
-    "runtime",
-    "derive",
-    "unstable-runtime",
-    "admission",
-    "client",
-    "ws",
-] }
+kube = { version = "0.94", features = ["runtime", "derive", "unstable-runtime", "admission", "client", "ws"] }
 kube-runtime = { version = "0.94", features = ["unstable-runtime"] }
 k8s-openapi = { version = "0.22", default-features = false, features = [
     "v1_30",
@@ -39,31 +30,21 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
 
-# JWT support
-jsonwebtoken = "9"
-
-# Regex for routing
-regex = "1"
-
-# HTTP types
-http = "1"
-
 # Schema generation for CRDs
 schemars = { version = "0.8", features = ["chrono"] }
 
 # Error handling
 thiserror = "1"
-anyhow = "1"
-
+anyhow = "1.0.104" # Pinned to Cargo.lock (1.0.104); 1.0.108 was unpublished
 # CLI argument parsing
 clap = { version = "4.5", features = ["derive", "env"] }
-clap_complete = "4.6"
+clap_complete = "4.5"
 
 # Date/time handling
 chrono = { version = "0.4", features = ["serde"] }
 # Pinned to fix RUSTSEC-2026-0009 (stack exhaustion DoS); also used transitively
 # by rcgen/yasna/x509-parser.
-time = { version = "0.3.47", optional = true }
+time = "0.3.47"
 # Pinned to fix RUSTSEC-2026-0007; used transitively by many HTTP/async crates.
 bytes = "1.11.1"
 
@@ -73,13 +54,12 @@ zip = "2"
 # Hostname for leader election
 hostname = "0.4"
 
+# Regex for log scrubbing patterns
+regex = "1"
+
 # Logging and tracing
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = [
-    "env-filter",
-    "json",
-    "registry",
-] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "registry"] }
 tracing-opentelemetry = "0.22"
 
 # OpenTelemetry for distributed tracing
@@ -91,23 +71,22 @@ opentelemetry-otlp = { version = "0.14", features = [
 ] }
 
 # HTTP client for health checks
-reqwest = { version = "0.12", features = [
+reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "rustls-tls-manual-roots",
-    "native-tls",
+    
     "multipart",
 ] }
+
+# Kafka client for SCP analytics pipeline
 rdkafka = { version = "0.36", optional = true, features = [
     "cmake-build",
     "ssl",
     "sasl",
 ] }
-async-nats = { version = "0.35", optional = true }
-# Vendored libsasl2; required only when the kafka feature is enabled.
-sasl2-sys = { version = "0.1.22", features = ["vendored"], optional = true }
 
 # REST API (optional)
-axum = { version = "0.7.5", optional = true, features = ["ws"] }
+axum = { version = "0.8.8", optional = true, features = ["ws"] }
 tower = { version = "0.4", optional = true }
 tower-http = { version = "0.5", features = ["trace"], optional = true }
 
@@ -116,11 +95,16 @@ prometheus-client = { version = "0.22", optional = true }
 once_cell = { version = "1", optional = true }
 
 # TLS and certificate generation
-rustls = "0.23"
-rcgen = { version = "0.13", features = ["pem", "x509-parser"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rcgen = { version = "0.14", features = ["pem", "x509-parser"] }
 axum-server = { version = "0.7.0", features = ["tls-rustls"] }
 rustls-pki-types = "1.14.1"
-x509-parser = "0.16"
+# `verify` enables the cryptographic chain check used by the webhook
+# certificate-health verifier (src/webhook/cert_health.rs).
+x509-parser = { version = "0.16", features = ["verify"] }
+
+# Bounded Soroban RPC cache primitives and Wasm guest
+stellar-wasm-cache = { path = "wasm-plugins" }
 
 # Wasm runtime for custom validation plugins
 wasmtime = { version = "24.0.7", optional = true }
@@ -134,30 +118,51 @@ base64 = "0.21"
 
 # HMAC-SHA256 for webhook payload signing
 hmac = "0.12"
+http = "1"
+jsonwebtoken = "9"
+lru = "0.12"
 
 # SHA256 for plugin integrity verification
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
+# Keccak-256 for Merkle proof verification (issue #113)
+tiny-keccak = { version = "2.0", features = ["keccak"] }
+rand_distr = "0.5.1"
 
 # Backup scheduler dependencies
 cron = "0.15"
-tar = "0.4"
 flate2 = "1"
+# Used unconditionally by backup-verify's restore integrity check, not just tests
+tempfile = "3"
 async-trait = "0.1"
 sqlx = { version = "0.8.6", default-features = false, features = [
     "runtime-tokio",
     "postgres",
     "chrono",
 ] }
+pqcrypto-dilithium = "0.5.0"
+pqcrypto-kyber = "0.8.1"
+pqcrypto-traits = "0.3.5"
 comfy-table = "7.2.2"
 csv = "1.4.0"
 url = "2.5"
 urlencoding = "2.1"
-aws-sdk-s3 = "1.132.0"
-aws-config = "1.8.17"
-json-patch = "4.2.0"
+aws-sdk-s3 = "1.131.0"
+aws-sdk-secretsmanager = "1"
+aws-config = "1.8.16"
+serde_json_diff = "0.2.0"
+json-patch = "4.1.0"
 md5 = "0.8.0"
+# tar archive extraction for snapshot bootstrapping (#119)
+tar = "0.4"
+# UUID generation for leases, events, and config revisions
+uuid = { version = "1", features = ["v4"] }
+# Unix signal handling for captive-core process supervision
+nix = { version = "0.30", features = ["signal", "process"] }
+# PDF generation for compliance reports
+printpdf = "0.7"
+
 
 [build-dependencies]
 chrono = "0.4"
@@ -166,19 +171,21 @@ walkdir = "2"
 serde = { version = "1", features = ["derive"] }
 
 [features]
-default = ["rest-api", "metrics", "admission-webhook", "k8s-v1-30"]
-rest-api = ["dep:axum", "dep:tower", "dep:tower-http"]
+default = ["rest-api", "metrics", "admission-webhook", "k8s-v1-30", "kafka"]
+rest-api = ["axum", "tower", "tower-http"]
 metrics = ["prometheus-client", "once_cell"]
-kafka = ["dep:rdkafka", "dep:sasl2-sys"]
-nats = ["dep:async-nats"]
 admission-webhook = [
     "wasmtime",
     "wasmtime-wasi",
     "tokio-rustls",
-    "dep:axum",
-    "dep:tower",
-    "dep:tower-http",
+    "axum",
+    "tower",
+    "tower-http",
 ]
+axum = ["dep:axum"]
+# Keep the SCP Kafka analytics pipeline enabled by default; tests can opt out
+# with `--no-default-features` in minimal build environments.
+kafka = ["rdkafka"]
 # Expose reconciler for state-machine fuzzing (reconcile_no_panic, event sequences)
 reconciler-fuzz = []
 
@@ -187,22 +194,23 @@ k8s-v1-30 = ["k8s-openapi/v1_30"]
 
 [dev-dependencies]
 tokio-test = "0.4"
-tempfile = "3"
 wiremock = "=0.6.5"
 proptest = "1.5"
-wat = "1.251"
+wat = "1.246"
 # Ensure dev builds that pull k8s-openapi 0.22 have an explicit API version feature.
-k8s-openapi = { version = "0.22", default-features = false, features = [
-    "v1_30",
-] }
-
-[[bin]]
-name = "stellar-scaffold"
-path = "src/bin/stellar-scaffold.rs"
+k8s-openapi = { version = "0.22", default-features = false, features = ["v1_30"] }
 
 [[bin]]
 name = "stellar-operator"
 path = "src/main.rs"
+
+[[bin]]
+name = "check-unreachable-modules"
+path = "src/bin/check_unreachable_modules.rs"
+
+[[bin]]
+name = "check-pipeline-log-redaction"
+path = "src/bin/check_pipeline_log_redaction.rs"
 
 [[bin]]
 name = "stellar-sidecar"
@@ -215,6 +223,58 @@ path = "src/kubectl_plugin.rs"
 [[bin]]
 name = "stellar-completions"
 path = "src/bin/completions.rs"
+
+[[bin]]
+name = "soroban-cache-proxy"
+path = "src/bin/soroban-cache-proxy.rs"
+
+[[bin]]
+name = "conventional-commit-check"
+path = "src/bin/conventional-commit-check.rs"
+
+[[bin]]
+name = "backup-verify"
+path = "src/bin/backup-verify.rs"
+
+# Hierarchical fair-share kube-scheduler extender (#1959).
+[[bin]]
+name = "stellar-fairshare-extender"
+path = "src/bin/stellar-fairshare-extender.rs"
+required-features = ["rest-api"]
+# Offline verifier / exporter for tamper-evident audit ledgers (#1958).
+[[bin]]
+name = "stellar-audit-verify"
+path = "src/bin/stellar-audit-verify.rs"
+
+# Out-of-process Kubernetes audit webhook sink writing the hash-chained ledger (#1958).
+[[bin]]
+name = "stellar-audit-sink"
+path = "src/bin/stellar-audit-sink.rs"
+required-features = ["rest-api"]
+# Dependency upgrade gate: scans call sites, generates consumer contract tests
+# and blocks incompatible upgrades with consumer attribution (#1999).
+[[bin]]
+name = "dependency-upgrade-gate"
+path = "src/bin/dependency-upgrade-gate.rs"
+
+# Release reproducibility verifier: compares a release build with an independent
+# rebuild bit for bit, localizes mismatches to a build step and records the
+# result in the release audit log (#1997).
+[[bin]]
+name = "verify-reproducible-build"
+path = "src/bin/verify-reproducible-build.rs"
+
+# Lifecycle hooks runner — installed into workload pods to run ordered
+# setup / readiness / teardown hooks (#1525).
+[[bin]]
+name = "stellar-hooks"
+path = "src/bin/stellar-hooks.rs"
+
+# Cross-platform developer bootstrap verifier — pure Rust so it also runs on
+# plain Windows (no WSL/Git Bash needed), unlike scripts/preflight.sh.
+[[bin]]
+name = "stellar-bootstrap-verify"
+path = "src/bin/stellar-bootstrap-verify.rs"
 
 # Byzantine Monitoring Watcher — deployed as a sidecar in multiple cloud regions
 # to detect local vs. global consensus issues (Byzantine partition detection).
@@ -237,4 +297,16 @@ name = "stellar-health-sidecar"
 path = "src/bin/stellar-health-sidecar.rs"
 required-features = ["rest-api"]
 
+# Admission webhook certificate-health sidecar. It performs local, offline
+# chain/identity/validity checks and gates pod readiness fail-closed.
+[[bin]]
+name = "stellar-cert-health"
+path = "src/bin/stellar-cert-health.rs"
+required-features = ["admission-webhook"]
+
+[[bench]]
+name = "crd_operations"
+harness = false
+
 [workspace]
+members = ["wasm-plugins", "security/p2p-firewall"]

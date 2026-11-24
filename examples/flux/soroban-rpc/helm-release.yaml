@@ -1,0 +1,45 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: stellar-soroban-rpc
+  namespace: stellar-testnet
+spec:
+  interval: 10m
+  dependsOn:
+    - name: stellar-operator
+      namespace: stellar-system
+  chart:
+    spec:
+      chart: ./examples/argocd/v1/node-chart
+      sourceRef:
+        kind: GitRepository
+        name: stellar-k8s
+        namespace: flux-system
+      interval: 1h
+  install:
+    createNamespace: true
+  values:
+    nodeType: SorobanRpc
+    network: testnet
+    version: v21.0.0
+    replicas: 2
+    storageClass: standard
+    storageSize: 100Gi
+    retentionPolicy: Delete
+    seedSecret:
+      enabled: false
+    soroban:
+      replicas: 2
+      minReplicas: 2
+      maxReplicas: 3
+      targetCPU: 70
+      stellarCoreUrl: http://validator-testnet:11626
+      maxEventsPerRequest: 10000
+      historyArchiveUrl: https://history.stellar.org/prd/core-testnet/core_testnet_001
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: "4"
+        memory: 8Gi

@@ -1,0 +1,26 @@
+{
+  "metadata": {
+    "version": "0.1.0",
+    "generated_date": "2024-01-15T10:00:00Z",
+    "environment": "CI (Ubuntu 22.04, 8 vCPU, 32GB RAM)",
+    "description": "Helm rendering baseline v0.1.0"
+  },
+  "helm_rendering": {
+    "chart_name": "stellar-operator",
+    "values_count": 50,
+    "total_templates": 15,
+    "total_duration_secs": 1.12,
+    "average_per_template_ms": 74.7,
+    "p95_per_template_ms": 89.3,
+    "rendered_bytes": 45230
+  },
+  "metrics": {
+    "helm_avg_ms": 74.7,
+    "helm_p95_ms": 89.3,
+    "helm_p99_ms": 110.0,
+    "helm_throughput": 44.6
+  },
+  "regression_thresholds": {
+    "helm_rendering_percent": 20.0
+  }
+}

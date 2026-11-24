@@ -1,0 +1,147 @@
+name: Conventional Commits & Changelog
+
+# Validates that all commits follow Conventional Commits format and
+# generates changelogs automatically on release.
+#
+# On PR: Validates commit message format
+# On Release: Generates CHANGELOG.md from commit history
+#
+# Conventional Commits format:
+#   <type>[optional scope]: <description>
+#   
+#   Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert
+#   Example: fix(auth): prevent race condition in login handler
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: conventional-commits-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  validate-commits:
+    name: Validate Conventional Commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-conventional"
+
+      - name: Build conventional-commit-check tool
+        run: |
+          cargo build --release --bin conventional-commit-check
+          cp target/release/conventional-commit-check /usr/local/bin/
+
+      - name: Validate PR commits
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          
+          echo "→ Validating commits from $(git rev-parse --short $BASE) to $(git rev-parse --short HEAD)"
+          
+          FAILED=0
+          while IFS= read -r COMMIT; do
+            MESSAGE=$(git log -1 --pretty=%B "$COMMIT")
+            SUBJECT=$(echo "$MESSAGE" | head -1)
+            
+            echo "Checking: $SUBJECT"
+            
+            if ! conventional-commit-check "$SUBJECT"; then
+              echo "  ❌ Failed"
+              FAILED=$((FAILED + 1))
+            else
+              echo "  ✓ Passed"
+            fi
+          done < <(git rev-list $BASE..HEAD)
+          
+          if [ $FAILED -gt 0 ]; then
+            echo "::error::$FAILED commit(s) do not follow Conventional Commits format"
+            exit 1
+          fi
+          
+          echo "✓ All commits follow Conventional Commits format"
+
+      - name: Add PR comment with format guide
+        if: failure()
+        continue-on-error: true
+        uses: actions/github-script@v9
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ℹ️ Commit Format Reminder
+
+              This repository uses [Conventional Commits](https://www.conventionalcommits.org/).
+              
+              **Format**: \`<type>[optional scope]: <description>\`
+              
+              **Types**:
+              - \`feat\`: New feature
+              - \`fix\`: Bug fix
+              - \`docs\`: Documentation
+              - \`style\`: Code style (formatting, etc.)
+              - \`refactor\`: Code refactoring
+              - \`test\`: Adding/updating tests
+              - \`chore\`: Maintenance tasks
+              - \`perf\`: Performance improvements
+              - \`ci\`: CI/CD configuration
+              - \`build\`: Build system changes
+              - \`revert\`: Revert a previous commit
+              
+              **Examples**:
+              - \`feat(api): add webhook endpoint\`
+              - \`fix: prevent race condition in auth\`
+              - \`docs(readme): add installation guide\`
+              - \`perf(cache): reduce memory usage by 50%\`
+              
+              **Breaking Changes**:
+              Add \`BREAKING CHANGE:\` in the commit body for breaking changes.
+              `
+            })
+
+  validate-changelog-format:
+    name: Validate Changelog Format
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check changelog exists
+        run: |
+          if [ ! -f CHANGELOG.md ]; then
+            echo "⚠️ No CHANGELOG.md found (expected for releases)"
+          fi
+
+      - name: Validate changelog structure
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            # Check for version headers
+            if ! grep -q '## \[' CHANGELOG.md; then
+              echo "::warning::CHANGELOG.md missing version headers (format: ## [version])"
+            fi
+            
+            # Check for date format
+            if ! grep -qE '\[.*\] - [0-9]{4}-[0-9]{2}-[0-9]{2}' CHANGELOG.md; then
+              echo "::warning::CHANGELOG.md missing dates (format: YYYY-MM-DD)"
+            fi
+            
+            echo "✓ Changelog format valid"
+          fi

@@ -1,0 +1,66 @@
+# Example: Ingress + cert-manager (Cluster B)
+#
+# Exposes Horizon and Soroban RPC over HTTPS with automatic TLS.
+# On failover, ExternalDNS updates the record to point here.
+#
+# Apply to cluster-b:
+#   kubectl apply -f cluster-b/ingress.yaml --context=cluster-b
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: horizon-ingress
+  namespace: stellar-nodes
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    cert-manager.io/cluster-issuer: "stellar-ca-issuer"
+    external-dns.alpha.kubernetes.io/hostname: "horizon.stellar.io"
+    external-dns.alpha.kubernetes.io/ttl: "30"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - horizon.stellar.io
+      secretName: horizon-tls-cert
+  rules:
+    - host: horizon.stellar.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: horizon-standby
+                port:
+                  number: 8000
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: soroban-ingress
+  namespace: stellar-nodes
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "stellar-ca-issuer"
+    external-dns.alpha.kubernetes.io/hostname: "soroban.stellar.io"
+    external-dns.alpha.kubernetes.io/ttl: "30"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - soroban.stellar.io
+      secretName: soroban-tls-cert
+  rules:
+    - host: soroban.stellar.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: soroban-active
+                port:
+                  number: 8000

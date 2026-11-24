@@ -20,6 +20,10 @@ spec:
         {{- with .Values.extraAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        {{- if .Values.mtls.enabled }}
+        reloader.stakater.com/auto: "true"
+        cert-manager.io/rotation-strategy: "rolling"
+        {{- end }}
       labels:
         {{- include "stellar-operator.selectorLabels" . | nindent 8 }}
     spec:
@@ -33,12 +37,32 @@ spec:
       volumes:
         - name: operator-config
           configMap:
-            name: {{ include "stellar-operator.fullname" . }}-config
+            name: {{ include "stellar-operator.fullname" . }}-defaults
+        {{- if .Values.mtls.enabled }}
+        - name: stellar-tls
+          secret:
+            secretName: stellar-core-mtls-secret
+            optional: true
+        - name: horizon-tls
+          secret:
+            secretName: horizon-mtls-secret
+            optional: true
+        - name: soroban-tls
+          secret:
+            secretName: soroban-rpc-mtls-secret
+            optional: true
+        {{- end }}
+        {{- if and .Values.operator.restApiEnabled .Values.operator.profiling.enabled }}
+        # Ephemeral writable temp for jemalloc heap profile dumps (NamedTempFile → /tmp).
+        # Root filesystem stays read-only; this emptyDir is mounted only when profiling is on.
+        - name: profiling-tmp
+          emptyDir: {}
+        {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ include "stellar-operator.operatorImage" . }}"
+          image: {{ include "stellar-operator.operatorImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: STELLAR_OPERATOR_CONFIG
@@ -56,33 +80,80 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            - name: POD_NAMESPACE
+            - name: OPERATOR_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            {{- if .Values.operator.appArmorEnabled }}
+            - name: STELLAR_APPARMOR_ENABLED
+              value: "true"
+            {{- end }}
+            {{- if .Values.operator.dryRun }}
+            - name: DRY_RUN
+              value: "true"
+            {{- end }}
+            {{- if .Values.operator.logFormat }}
+            - name: LOG_FORMAT
+              value: {{ .Values.operator.logFormat | quote }}
+            {{- end }}
+            {{- if .Values.operator.restApiEnabled }}
+            - name: REST_API_PORT
+              value: {{ .Values.operator.restApiPort | quote }}
+            {{- end }}
+            {{- if and .Values.operator.restApiEnabled .Values.operator.profiling.enabled }}
+            - name: REST_API_PROFILING_ENABLED
+              value: "true"
+            # Enable jemalloc profiling samples for heap dumps (image must include `profiling` feature).
+            - name: MALLOC_CONF
+              value: "prof:true,prof_active:true,lg_prof_sample:19"
+            {{- end }}
+            - name: POD_NAME
               valueFrom:
                 fieldRef:
-                  fieldPath: metadata.namespace
+                  fieldPath: metadata.name
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
             {{- if .Values.otel.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.otel.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
-              value: "stellar-operator"
-            - name: OTEL_TRACES_SAMPLER
-              value: "parentbased_traceidratio"
+              value: {{ .Values.otel.serviceName | default "stellar-operator" | quote }}
+            {{- if .Values.otel.samplingRatio }}
             - name: OTEL_TRACES_SAMPLER_ARG
               value: {{ .Values.otel.samplingRatio | quote }}
+            {{- end }}
             {{- end }}
           volumeMounts:
             - name: operator-config
               mountPath: /etc/stellar-operator
               readOnly: true
-          args:
-            - --log-level={{ .Values.operator.logLevel }}
-            {{- if .Values.operator.restApiEnabled }}
-            - --enable-rest-api
-            - --rest-api-port={{ .Values.operator.restApiPort }}
+            {{- if .Values.mtls.enabled }}
+            - name: stellar-tls
+              mountPath: /etc/stellar/tls
+              readOnly: true
+            - name: horizon-tls
+              mountPath: /etc/horizon/tls
+              readOnly: true
+            - name: soroban-tls
+              mountPath: /etc/soroban/tls
+              readOnly: true
             {{- end }}
-            - --metrics-port={{ .Values.operator.metricsPort }}
+            {{- if and .Values.operator.restApiEnabled .Values.operator.profiling.enabled }}
+            - name: profiling-tmp
+              mountPath: /tmp
+            {{- end }}
+          args:
+            - run
+            - --log-level={{ .Values.operator.logLevel }}
+            {{- if .Values.operator.logFormat }}
+            - --log-format={{ .Values.operator.logFormat }}
+            {{- end }}
+            - --namespace={{ .Release.Namespace }}
             {{- if .Values.operator.watchNamespace }}
             - --watch-namespace={{ .Values.operator.watchNamespace }}
+            {{- end }}
+            {{- if .Values.operator.dryRun }}
+            - --dry-run
             {{- end }}
           ports:
             - name: http
@@ -91,9 +162,17 @@ spec:
             - name: metrics
               containerPort: {{ .Values.operator.metricsPort }}
               protocol: TCP
+          {{- if .Values.operator.restApiEnabled }}
+          startupProbe:
+            httpGet:
+              path: "/healthz"
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 24
           livenessProbe:
             httpGet:
-              path: /livez
+              path: "/livez"
               port: http
             initialDelaySeconds: 15
             periodSeconds: 20
@@ -101,24 +180,18 @@ spec:
             timeoutSeconds: 5
           readinessProbe:
             httpGet:
-              path: /readyz
+              path: "/readyz"
               port: http
             initialDelaySeconds: 30
             periodSeconds: 10
             failureThreshold: 3
             timeoutSeconds: 5
-          startupProbe:
-            httpGet:
-              path: /healthz
-              port: http
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            failureThreshold: 24
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
         {{- if .Values.sidecar.enabled }}
         - name: crash-analyzer
-          image: "{{ .Values.sidecar.image.repository | default .Values.image.repository }}:{{ .Values.sidecar.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "stellar-operator.componentImage" (dict "root" . "repository" .Values.sidecar.image.repository "tag" .Values.sidecar.image.tag) }}
           imagePullPolicy: {{ .Values.sidecar.image.pullPolicy | default .Values.image.pullPolicy }}
           command: ["/stellar-sidecar"]
           env:
@@ -141,7 +214,7 @@ spec:
         {{- end }}
         {{- if .Values.forkDetector.enabled }}
         - name: fork-detector
-          image: "{{ .Values.forkDetector.image.repository | default .Values.image.repository }}:{{ .Values.forkDetector.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "stellar-operator.componentImage" (dict "root" . "repository" .Values.forkDetector.image.repository "tag" .Values.forkDetector.image.tag) }}
           imagePullPolicy: {{ .Values.forkDetector.image.pullPolicy | default .Values.image.pullPolicy }}
           command: ["/stellar-fork-detector"]
           env:

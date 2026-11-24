@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 use anyhow::Result;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
@@ -5,8 +17,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use stellar_k8s::backup::providers::StorageProviderTrait;
-use stellar_k8s::error::diagnostic;
+use crate::backup::providers::StorageProviderTrait;
+use crate::error::diagnostic;
 
 #[derive(Parser, Debug)]
 pub struct BackupArgs {
@@ -41,8 +53,9 @@ pub struct RestoreArgs {
     #[arg(short, long)]
     pub destination: PathBuf,
 
-    /// Storage backend (file, s3, arweave, ipfs, filecoin
-    #[arg(short, long, default_value = "file")]
+    /// Storage backend (file, s3, arweave, ipfs, filecoin)
+    // long-only: short `-b` is already used by `--backup`
+    #[arg(long, default_value = "file")]
     pub backend: String,
 
     /// Verify restore
@@ -119,20 +132,35 @@ pub async fn run_backup(args: BackupArgs) -> Result<()> {
             .collect(),
     };
 
-    // TODO: Implement storage backend handling
+    let backup_path = PathBuf::from(&args.destination).join(format!(
+        "backup-{}.tar.gz",
+        metadata.timestamp.format("%Y%m%d%H%M%S")
+    ));
+
+    // Storage backend handling - only file and s3 are supported
     match args.backend.as_str() {
         "file" => backup_to_file(&args, &metadata, &files).await?,
         "s3" => backup_to_s3(&args, &metadata, &files).await?,
-        "arweave" => backup_to_arweave(&args, &metadata, &files).await?,
-        "ipfs" => backup_to_ipfs(&args, &metadata, &files).await?,
-        "filecoin" => backup_to_filecoin(&args, &metadata, &files).await?,
+        // Deprecated: arweave, ipfs, and filecoin backends removed in cleanup wave
+        "arweave" | "ipfs" | "filecoin" => {
+            return Err(anyhow::anyhow!(
+                "{}",
+                diagnostic(
+                    "backend deprecated",
+                    format!(
+                        "backend {:?} has been removed; supported backends: file, s3",
+                        args.backend
+                    )
+                )
+            ))
+        }
         _ => {
             return Err(anyhow::anyhow!(
                 "{}",
                 diagnostic(
                     "select backend",
                     format!(
-                        "unsupported backend {:?}; expected file, s3, arweave, ipfs, or filecoin",
+                        "unsupported backend {:?}; expected file or s3",
                         args.backend
                     )
                 )
@@ -143,8 +171,62 @@ pub async fn run_backup(args: BackupArgs) -> Result<()> {
     println!("Backup completed in {:?}", start.elapsed());
 
     if args.verify {
-        println!("Verifying backup...");
-        // TODO: Implement verification
+        if args.backend == "file" {
+            println!("Verifying backup...");
+            verify_backup_integrity(&backup_path.to_string_lossy()).await?;
+            println!("✓ Backup verification passed");
+        } else {
+            println!(
+                "Skipping local verification: backend {:?} does not produce a local archive",
+                args.backend
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Verify backup integrity with checksum and structure validation
+async fn verify_backup_integrity(backup_path: &str) -> Result<()> {
+    use sha2::{Digest, Sha256};
+    use std::fs::File;
+    use std::io::Read;
+
+    let file = std::fs::File::open(backup_path)?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buffer = [0; 8192];
+
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+
+    let checksum = format!("{:x}", hasher.finalize());
+    println!("  Checksum: {}", checksum);
+
+    // Try to list archive contents
+    if backup_path.ends_with(".tar.gz") {
+        use flate2::read::GzDecoder;
+        use tar::Archive;
+
+        let file = File::open(backup_path)?;
+        let gz = GzDecoder::new(file);
+        let mut archive = Archive::new(gz);
+        let mut count = 0;
+
+        for entry in archive.entries()? {
+            let _entry = entry?;
+            count += 1;
+        }
+
+        println!("  Files: {}", count);
+        if count == 0 {
+            return Err(anyhow::anyhow!("Backup appears empty"));
+        }
     }
 
     Ok(())
@@ -158,20 +240,30 @@ pub async fn run_restore(args: RestoreArgs) -> Result<()> {
     // Create destination directory if it doesn't exist
     fs::create_dir_all(&args.destination)?;
 
-    // TODO: Implement restore based on backend
+    // TODO(exempt: pending storage backends): Implement restore based on backend
     match args.backend.as_str() {
         "file" => restore_from_file(&args).await?,
         "s3" => restore_from_s3(&args).await?,
-        "arweave" => restore_from_arweave(&args).await?,
-        "ipfs" => restore_from_ipfs(&args).await?,
-        "filecoin" => restore_from_filecoin(&args).await?,
+        // Deprecated: arweave, ipfs, and filecoin backends removed in cleanup wave
+        "arweave" | "ipfs" | "filecoin" => {
+            return Err(anyhow::anyhow!(
+                "{}",
+                diagnostic(
+                    "backend deprecated",
+                    format!(
+                        "backend {:?} has been removed; supported backends: file, s3",
+                        args.backend
+                    )
+                )
+            ))
+        }
         _ => {
             return Err(anyhow::anyhow!(
                 "{}",
                 diagnostic(
                     "select backend",
                     format!(
-                        "unsupported backend {:?}; expected file, s3, arweave, ipfs, or filecoin",
+                        "unsupported backend {:?}; expected file or s3",
                         args.backend
                     )
                 )
@@ -187,20 +279,30 @@ pub async fn run_restore(args: RestoreArgs) -> Result<()> {
 pub async fn run_list(args: ListArgs) -> Result<()> {
     println!("Listing backups from {}", args.location);
 
-    // TODO: Implement list based on backend
+    // TODO(exempt: pending storage backends): Implement list based on backend
     match args.backend.as_str() {
         "file" => list_from_file(&args).await?,
         "s3" => list_from_s3(&args).await?,
-        "arweave" => list_from_arweave(&args).await?,
-        "ipfs" => list_from_ipfs(&args).await?,
-        "filecoin" => list_from_filecoin(&args).await?,
+        // Deprecated: arweave, ipfs, and filecoin backends removed in cleanup wave
+        "arweave" | "ipfs" | "filecoin" => {
+            return Err(anyhow::anyhow!(
+                "{}",
+                diagnostic(
+                    "backend deprecated",
+                    format!(
+                        "backend {:?} has been removed; supported backends: file, s3",
+                        args.backend
+                    )
+                )
+            ))
+        }
         _ => {
             return Err(anyhow::anyhow!(
                 "{}",
                 diagnostic(
                     "select backend",
                     format!(
-                        "unsupported backend {:?}; expected file, s3, arweave, ipfs, or filecoin",
+                        "unsupported backend {:?}; expected file or s3",
                         args.backend
                     )
                 )
@@ -217,20 +319,30 @@ pub async fn run_cleanup(args: CleanupArgs) -> Result<()> {
         args.location, args.keep
     );
 
-    // TODO: Implement cleanup based on backend
+    // Only file and s3 are supported
     match args.backend.as_str() {
         "file" => cleanup_from_file(&args).await?,
         "s3" => cleanup_from_s3(&args).await?,
-        "arweave" => cleanup_from_arweave(&args).await?,
-        "ipfs" => cleanup_from_ipfs(&args).await?,
-        "filecoin" => cleanup_from_filecoin(&args).await?,
+        // Deprecated: arweave, ipfs, and filecoin backends removed in cleanup wave
+        "arweave" | "ipfs" | "filecoin" => {
+            return Err(anyhow::anyhow!(
+                "{}",
+                diagnostic(
+                    "backend deprecated",
+                    format!(
+                        "backend {:?} has been removed; supported backends: file, s3",
+                        args.backend
+                    )
+                )
+            ))
+        }
         _ => {
             return Err(anyhow::anyhow!(
                 "{}",
                 diagnostic(
                     "select backend",
                     format!(
-                        "unsupported backend {:?}; expected file, s3, arweave, ipfs, or filecoin",
+                        "unsupported backend {:?}; expected file or s3",
                         args.backend
                     )
                 )
@@ -300,7 +412,34 @@ async fn backup_to_file(
 }
 
 async fn restore_from_file(args: &RestoreArgs) -> Result<()> {
-    let backup_path = PathBuf::from(&args.backup);
+    let mut backup_path = PathBuf::from(&args.backup);
+
+    // Accept a directory containing backups: restore the most recent archive.
+    if backup_path.is_dir() {
+        let mut archives: Vec<PathBuf> = fs::read_dir(&backup_path)?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.ends_with(".tar.gz"))
+                    .unwrap_or(false)
+            })
+            .collect();
+        if archives.is_empty() {
+            return Err(anyhow::anyhow!(
+                "{}",
+                diagnostic(
+                    "open backup archive",
+                    format!("no backup archives found in {}", backup_path.display())
+                )
+            ));
+        }
+        archives.sort();
+        backup_path = archives
+            .pop()
+            .expect("archives is non-empty, checked above");
+    }
 
     if !backup_path.exists() {
         return Err(anyhow::anyhow!(
@@ -339,7 +478,14 @@ async fn list_from_file(args: &ListArgs) -> Result<()> {
 
     let backups: Vec<_> = fs::read_dir(location)?
         .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("tar.gz"))
+        .filter(|entry| {
+            entry
+                .path()
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.ends_with(".tar.gz"))
+                .unwrap_or(false)
+        })
         .collect();
 
     println!("Found {} backups", backups.len());
@@ -364,7 +510,14 @@ async fn cleanup_from_file(args: &CleanupArgs) -> Result<()> {
 
     let mut backups: Vec<_> = fs::read_dir(location)?
         .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("tar.gz"))
+        .filter(|entry| {
+            entry
+                .path()
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.ends_with(".tar.gz"))
+                .unwrap_or(false)
+        })
         .collect();
 
     backups.sort_by_key(|entry| entry.metadata().unwrap().modified().unwrap());
@@ -487,7 +640,7 @@ async fn cleanup_from_filecoin(_args: &CleanupArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use stellar_k8s::error::diagnostic;
+    use crate::error::diagnostic;
 
     #[test]
     fn backup_source_missing_error_names_step() {

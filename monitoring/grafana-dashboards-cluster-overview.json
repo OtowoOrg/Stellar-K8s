@@ -1,0 +1,149 @@
+{
+  "dashboard": {
+    "title": "Stellar-K8s Cluster Overview",
+    "description": "High-level cluster health, operator status, and Stellar Core performance",
+    "tags": ["stellar", "kubernetes", "cluster"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Cluster Status",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "stellar:cluster:nodes:ready",
+            "legendFormat": "Ready Nodes"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Operator Pods Running",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+        "targets": [
+          {
+            "expr": "count(kube_pod_info{namespace=\"stellar-system\",pod=~\"stellar-operator.*\"})"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Stellar Core Nodes",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "count(stellar_core_ledger_sequence)"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Synced Nodes",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+        "targets": [
+          {
+            "expr": "count(stellar:core:node:is_synced == 1)"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Transactions Per Second (5m avg)",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+        "targets": [
+          {
+            "expr": "stellar:core:tps:5m",
+            "legendFormat": "{{ instance }}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "TPS",
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Ledger Lag (seconds)",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+        "targets": [
+          {
+            "expr": "stellar:core:ledger:lag_seconds",
+            "legendFormat": "{{ instance }}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Seconds",
+            "format": "short"
+          }
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [60],
+                "type": "gt"
+              },
+              "operator": {"type": "and"},
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "type": "query"
+            }
+          ]
+        }
+      },
+      {
+        "id": 7,
+        "title": "Operator Reconciliation Success Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+        "targets": [
+          {
+            "expr": "stellar:operator:reconciliation:success:rate * 100",
+            "legendFormat": "Success Rate %"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Percentage",
+            "format": "percent",
+            "min": 0,
+            "max": 100
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Operator Reconciliation Duration (P99)",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+        "targets": [
+          {
+            "expr": "stellar:operator:reconciliation:duration:p99",
+            "legendFormat": "P99 Duration"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Seconds",
+            "format": "short"
+          }
+        ]
+      }
+    ]
+  }
+}

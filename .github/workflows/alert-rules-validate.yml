@@ -1,0 +1,142 @@
+name: Alert Rule Builder Validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/builder/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/builder/**'
+  workflow_dispatch:
+
+jobs:
+  test-and-validate:
+    name: Unit Tests + promtool Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        working-directory: frontend/builder
+        run: npm ci
+
+      - name: Run PromQL generator + YAML exporter unit tests
+        working-directory: frontend/builder
+        run: npm test
+
+      - name: Build frontend (verifies JSX/component correctness)
+        working-directory: frontend/builder
+        run: npm run build
+
+      - name: Install Prometheus (for promtool)
+        run: |
+          PROM_VERSION="2.55.1"
+          curl -sL "https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz" -o prometheus.tar.gz
+          tar xzf prometheus.tar.gz
+          sudo mv "prometheus-${PROM_VERSION}.linux-amd64/promtool" /usr/local/bin/promtool
+          promtool --version
+
+      - name: Generate sample alert rule YAML from exporter
+        working-directory: frontend/builder
+        run: |
+          mkdir -p /tmp/sample-alerts
+          node --input-type=module -e "
+          import { renderPrometheusRule } from './alerts/src/lib/yamlExporter.js';
+          import fs from 'fs';
+
+          const samples = [
+            {
+              name: 'stellar-fork-critical',
+              groupName: 'stellar.custom.fork_critical',
+              extraLabels: { release: 'kube-prometheus-stack' },
+              rules: [{
+                name: 'StellarLedgerDelayWithLowPeers',
+                condition: { joiner: 'and', comparisons: [
+                  { metric: 'stellar_fork_detector_consecutive_diverging_ledgers', operator: '>', threshold: 5 },
+                  { metric: 'stellar_fork_detector_responding_anchors', operator: '<', threshold: 8 },
+                ]},
+                forDuration: '3m', severity: 'critical', team: 'stellar-infra', component: 'fork-detector',
+                summary: 'Ledger close delay with low peer count',
+                description: 'Node has diverging ledgers and fewer than 8 responding anchors.',
+              }],
+            },
+            {
+              name: 'stellar-sync-confidence-degraded',
+              groupName: 'stellar.custom.sync_confidence',
+              extraLabels: { release: 'kube-prometheus-stack' },
+              rules: [{
+                name: 'StellarSyncConfidenceCriticallyLow',
+                condition: { comparisons: [
+                  { metric: 'stellar_fork_detector_sync_confidence', operator: '<', threshold: 200 },
+                ]},
+                forDuration: '5m', severity: 'warning', team: 'stellar-infra', component: 'fork-detector',
+                summary: 'Sync confidence critically low',
+                description: 'Fewer than 20% of anchor nodes agree with local ledger hash for 5+ minutes.',
+              }],
+            },
+            {
+              name: 'stellar-watcher-error-spike',
+              groupName: 'stellar.custom.watcher_errors',
+              extraLabels: { release: 'kube-prometheus-stack' },
+              rules: [{
+                name: 'StellarWatcherPollErrorSpike',
+                condition: { comparisons: [
+                  { metric: 'stellar_watcher_poll_errors_total', operator: '>', threshold: 10, useIncrease: true, rangeWindow: '15m' },
+                ]},
+                forDuration: '0m', severity: 'warning', team: 'stellar-infra', component: 'watcher',
+                summary: 'Watcher poll error spike detected',
+                description: 'More than 10 poll errors in the last 15 minutes.',
+              }],
+            },
+            {
+              name: 'stellar-cve-and-anchors-down',
+              groupName: 'stellar.custom.security_and_health',
+              extraLabels: { release: 'kube-prometheus-stack' },
+              rules: [{
+                name: 'StellarCriticalCVEWithAnchorsDown',
+                condition: { joiner: 'or', comparisons: [
+                  { metric: 'stellar_cve_critical_alerts_total', operator: '>', threshold: 0, useIncrease: true, rangeWindow: '1h' },
+                  { metric: 'stellar_fork_detector_responding_anchors', operator: '==', threshold: 0 },
+                ]},
+                forDuration: '0m', severity: 'critical', team: 'stellar-infra', component: 'cve-scanner',
+                summary: 'Critical CVE detected or all anchors unreachable',
+                description: 'Either a critical CVE was found in the last hour, or the fork detector cannot reach any anchor nodes.',
+              }],
+            },
+            {
+              name: 'stellar-triple-condition-fork-risk',
+              groupName: 'stellar.custom.compound_fork_risk',
+              extraLabels: { release: 'kube-prometheus-stack' },
+              rules: [{
+                name: 'StellarCompoundForkRisk',
+                condition: { joiner: 'and', comparisons: [
+                  { metric: 'stellar_fork_detector_consecutive_diverging_ledgers', operator: '>=', threshold: 3 },
+                  { metric: 'stellar_fork_detector_responding_anchors', operator: '<', threshold: 5 },
+                  { metric: 'stellar_fork_detector_sync_confidence', operator: '<', threshold: 500 },
+                ]},
+                forDuration: '1m', severity: 'critical', team: 'stellar-infra', component: 'fork-detector',
+                summary: 'Compound fork risk: divergence, low anchors, low confidence',
+                description: 'Three independent signals simultaneously indicate a probable network fork in progress.',
+              }],
+            },
+          ];
+
+          for (const sample of samples) {
+            fs.writeFileSync(\`/tmp/sample-alerts/\${sample.name}.yaml\`, renderPrometheusRule(sample));
+            console.log(\`Wrote /tmp/sample-alerts/\${sample.name}.yaml\`);
+          }
+          "
+
+      - name: Validate all sample rules with promtool
+        run: |
+          for f in /tmp/sample-alerts/*.yaml; do
+            echo "── Validating $f ──"
+            promtool check rules "$f"
+          done

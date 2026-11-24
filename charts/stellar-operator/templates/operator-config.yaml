@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "stellar-operator.fullname" . }}-config
+  name: {{ include "stellar-operator.fullname" . }}-defaults
   labels:
     {{- include "stellar-operator.labels" . | nindent 4 }}
 data:
@@ -28,3 +28,14 @@ data:
         limits:
           cpu: {{ .Values.defaultResources.sorobanRpc.limits.cpu | quote }}
           memory: {{ .Values.defaultResources.sorobanRpc.limits.memory | quote }}
+    keyRotation:
+      enabled: {{ .Values.keyRotation.enabled }}
+      intervalSecs: {{ .Values.keyRotation.intervalSecs }}
+      validationWindowSecs: {{ .Values.keyRotation.validationWindowSecs }}
+      validationSampleIntervalSecs: {{ .Values.keyRotation.validationSampleIntervalSecs }}
+      minAuthenticatedPeers: {{ .Values.keyRotation.minAuthenticatedPeers }}
+      maxUnhealthySamples: {{ .Values.keyRotation.maxUnhealthySamples }}
+      rollbackOnFailure: {{ .Values.keyRotation.rollbackOnFailure }}
+      {{- if .Values.keyRotation.awsRegion }}
+      awsRegion: {{ .Values.keyRotation.awsRegion | quote }}
+      {{- end }}

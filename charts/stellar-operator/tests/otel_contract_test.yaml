@@ -1,0 +1,86 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+suite: otel observability contract
+templates:
+  - templates/otel-collector.yaml
+  - templates/deployment.yaml
+
+tests:
+  - it: collector config quarantines invalid signals to a dead-letter stream
+    template: templates/otel-collector.yaml
+    set:
+      otel.collector.enabled: true
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 0
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: traces/deadletter
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: file/deadletter
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: filter/keep_invalid
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: stellar.observability.contract.version
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: metrics/deadletter
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: logs/deadletter
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: health_check
+
+  - it: collector exposes dead-letter volume and metrics port
+    template: templates/otel-collector.yaml
+    set:
+      otel.collector.enabled: true
+    documentIndex: 1
+    asserts:
+      - isKind:
+          of: Deployment
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: deadletter
+            emptyDir: {}
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: metrics
+            containerPort: 8888
+            protocol: TCP
+
+  - it: operator pod identity env is always present for the contract
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POD_UID
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.uid

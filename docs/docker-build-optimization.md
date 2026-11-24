@@ -1,5 +1,7 @@
 # Dockerfile Build Optimization: cargo-chef Workspace-Aware Caching
 
+<!-- chart-sync: 2026-07-27T23:45Z Dockerfile cargo-chef latest-rust-1.95-slim-bookworm -->
+
 This document captures the cache-busting inefficiencies found in the original
 `Dockerfile`, the changes made to address them, and the measured before/after
 build-time impact.

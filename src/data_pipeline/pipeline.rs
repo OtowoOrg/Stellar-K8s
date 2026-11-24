@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Main pipeline orchestration: Kafka consumer → ETL → multi-sink fan-out with DLQ.
 
 use crate::data_pipeline::{
@@ -7,8 +19,12 @@ use crate::data_pipeline::{
     sinks::{build_sinks, Sink},
 };
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::watch;
-use tracing::info;
+use tracing::{error, info, warn};
+
+use crate::data_pipeline::etl::EtlTransformer;
+use crate::data_pipeline::lineage::LineageStatus;
 
 /// Handle returned by [`DataPipeline::start`] for monitoring and shutdown.
 pub struct PipelineHandle {
@@ -63,11 +79,11 @@ impl DataPipeline {
 }
 
 async fn run_pipeline(
-    _config: Arc<PipelineConfig>,
-    _sinks: Arc<Vec<Box<dyn Sink>>>,
-    _metrics: PipelineMetrics,
-    _lineage: LineageTracker,
-    mut shutdown_rx: watch::Receiver<bool>,
+    config: Arc<PipelineConfig>,
+    sinks: Arc<Vec<Box<dyn Sink>>>,
+    metrics: PipelineMetrics,
+    lineage: LineageTracker,
+    shutdown_rx: watch::Receiver<bool>,
 ) {
     #[cfg(feature = "kafka")]
     {

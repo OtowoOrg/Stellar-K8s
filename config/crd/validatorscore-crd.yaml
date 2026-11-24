@@ -1,0 +1,131 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: validatorscores.stellar.org
+spec:
+  group: stellar.org
+  names:
+    kind: ValidatorScore
+    plural: validatorscores
+    singular: validatorscore
+    shortNames:
+      - vscore
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Validator
+          type: string
+          jsonPath: .spec.validatorRef
+        - name: Grade
+          type: string
+          jsonPath: .status.grade
+        - name: CompositeScore
+          type: number
+          jsonPath: .status.compositeScore
+        - name: UptimeScore
+          type: number
+          jsonPath: .status.uptimeScore.score
+        - name: ConsensusRate
+          type: number
+          jsonPath: .status.consensusScore.score
+        - name: ArchiveScore
+          type: number
+          jsonPath: .status.archiveScore.score
+        - name: LastEvaluated
+          type: date
+          jsonPath: .status.lastEvaluatedAt
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - validatorRef
+              properties:
+                validatorRef:
+                  type: string
+                evaluationIntervalHours:
+                  type: integer
+                  default: 1
+                historyWindowHours:
+                  type: integer
+                  default: 24
+                federationMember:
+                  type: string
+                weights:
+                  type: object
+                  properties:
+                    uptimeWeight:
+                      type: number
+                      default: 0.40
+                    consensusWeight:
+                      type: number
+                      default: 0.40
+                    archiveWeight:
+                      type: number
+                      default: 0.20
+            status:
+              type: object
+              properties:
+                lastEvaluatedAt:
+                  type: string
+                  format: date-time
+                compositeScore:
+                  type: number
+                grade:
+                  type: string
+                federationMember:
+                  type: string
+                uptimeScore:
+                  type: object
+                  properties:
+                    score:
+                      type: number
+                    rawValue:
+                      type: number
+                    grade:
+                      type: string
+                    details:
+                      type: string
+                consensusScore:
+                  type: object
+                  properties:
+                    score:
+                      type: number
+                    rawValue:
+                      type: number
+                    grade:
+                      type: string
+                    details:
+                      type: string
+                archiveScore:
+                  type: object
+                  properties:
+                    score:
+                      type: number
+                    rawValue:
+                      type: number
+                    grade:
+                      type: string
+                    details:
+                      type: string
+                hourlyHistory:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      timestamp:
+                        type: string
+                        format: date-time
+                      compositeScore:
+                        type: number
+                      uptimePct:
+                        type: number
+                      consensusRate:
+                        type: number
+                      archiveCompletenessPct:
+                        type: number

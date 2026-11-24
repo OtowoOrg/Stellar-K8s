@@ -1,0 +1,62 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Chaos Experiment 12 — Ledger Reconnection after Partition (issue #1388)
+#
+# Tests that Stellar Core reconnects to the network and resumes ledger
+# progress after a complete network partition is lifted.  This validates
+# both the operator's health-check loop and Stellar Core's built-in
+# reconnection logic.
+#
+# Scenario:
+#   1. A bidirectional TCP block is applied to the Stellar Core pod, severing
+#      peer connections and cutting off access to history archives.
+#   2. The operator should detect the node as Syncing/NotReady.
+#   3. After the partition lifts, Stellar Core must re-establish peer
+#      connections and resume advancing the ledger sequence.
+#   4. The operator must update StellarNode status back to Ready.
+#
+# Success criteria:
+#   1. During partition: StellarNode condition Ready == False within 60s
+#   2. After partition: ledger sequence advances within SLO (180s)
+#   3. After partition: StellarNode condition Ready == True within SLO
+#   4. No operator crash / panic during or after partition
+#
+# SLO: 180s reconnection after partition lifts
+# Severity: 🔴 Critical
+# Category: network / ledger-reconnection
+#
+# Usage:
+#   kubectl apply -f tests/chaos/12-ledger-reconnection.yaml \
+#     --namespace=chaos-testing
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: stellar-core-ledger-reconnection
+  namespace: chaos-testing
+  labels:
+    chaos.stellar.org/experiment: "12"
+    chaos.stellar.org/category: ledger-reconnection
+    chaos.stellar.org/severity: critical
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces:
+      - stellar-system
+    labelSelectors:
+      app.kubernetes.io/component: validator
+  direction: both
+  duration: "90s"
+  # External traffic rules: block all egress including history archives and peers
+  externalTargets:
+    - "0.0.0.0/0"

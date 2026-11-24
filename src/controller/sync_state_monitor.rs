@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Monitors the Stellar Core sync state by querying the `/info` HTTP endpoint
 //! on port 11626.
 //!
@@ -21,6 +33,17 @@ use tracing::{debug, warn};
 
 use crate::crd::{CoreSyncState, NodeType, StellarNode};
 use crate::error::{Error, Result};
+
+/// Snapshot of Core `/info` plus Kubernetes readiness for cutover decisions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CoreInfoSnapshot {
+    pub sync_state: CoreSyncState,
+    pub ledger: Option<u64>,
+    pub pod_ready: bool,
+    /// Whether `/info` was successfully reached and parsed.
+    pub reachable: bool,
+    pub raw_state: Option<String>,
+}
 
 /// Stellar Core `/info` response (only the fields we care about).
 #[derive(Debug, Deserialize)]
@@ -68,7 +91,7 @@ pub async fn query_core_sync_state(pod_ip: &str) -> Result<CoreSyncState> {
 }
 
 /// Map the raw state string from stellar-core to a [`CoreSyncState`].
-fn parse_sync_state(raw: &str) -> CoreSyncState {
+pub fn parse_sync_state(raw: &str) -> CoreSyncState {
     let lower = raw.to_lowercase();
     if lower.contains("synced") {
         CoreSyncState::Synced

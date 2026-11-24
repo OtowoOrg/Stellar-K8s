@@ -14,6 +14,14 @@ inputs:
     description: Rust toolchain version
     required: false
     default: "stable"
+  extra-tools:
+    description: >
+      Space-separated cargo subcommand crates to install (e.g. "cargo-audit
+      cargo-tarpaulin"). Installed after the cache is restored, with retry,
+      and skipped per-tool if already on PATH so repeat workflow runs don't
+      reinstall.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -41,4 +49,31 @@ runs:
         shared-key: ${{ inputs.cache-key }}
         # Cache ~/.cargo/bin so cargo-installed tools (cargo-audit, tarpaulin,
         # cargo-watch) are restored across runs without reinstalling.
-        cache-all-crates: true
+        cache-directories: |
+          ~/.cargo/bin
+
+    - name: Install extra cargo tools
+      if: inputs.extra-tools != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        for tool in ${{ inputs.extra-tools }}; do
+          if command -v "$tool" >/dev/null 2>&1; then
+            echo "✓ $tool already on PATH (cache hit), skipping install"
+            continue
+          fi
+          echo "→ Installing $tool"
+          installed=false
+          for i in 1 2 3; do
+            if cargo install --locked "$tool"; then
+              installed=true
+              break
+            fi
+            echo "Attempt $i failed, retrying..."
+            sleep 5
+          done
+          if [[ "$installed" != "true" ]]; then
+            echo "::error::Failed to install $tool after 3 attempts"
+            exit 1
+          fi
+        done

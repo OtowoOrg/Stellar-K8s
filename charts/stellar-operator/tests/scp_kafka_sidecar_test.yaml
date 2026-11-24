@@ -1,0 +1,33 @@
+suite: scp-kafka-sidecar
+templates:
+  - templates/scp-kafka-sidecar.yaml
+
+tests:
+  - it: renders nothing when scpAnalytics is disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: topology health consumer uses the default pod security context
+    set:
+      scpAnalytics.enabled: true
+    documentIndex: 1
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1000
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 1000
+
+  - it: topology health consumer pod security context follows overrides
+    set:
+      scpAnalytics.enabled: true
+      scpAnalytics.consumer.podSecurityContext.runAsUser: 2000
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 2000

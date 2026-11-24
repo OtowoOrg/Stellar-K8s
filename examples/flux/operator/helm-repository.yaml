@@ -1,0 +1,8 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: stellar-k8s
+  namespace: stellar-system
+spec:
+  interval: 1h
+  url: https://stellar.github.io/stellar-k8s

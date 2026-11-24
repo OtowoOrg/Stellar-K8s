@@ -11,6 +11,42 @@ The stellar-k8s operator includes four specialized Grafana dashboards:
 3. **Soroban RPC Dashboard** (`grafana-soroban-rpc-dashboard.json`) - Smart contract execution metrics
 4. **Operator Health Dashboard** (`grafana-operator-health-dashboard.json`) - Operator performance metrics
 
+## Dashboard Access
+
+### Local (docker-compose)
+
+```bash
+docker-compose -f docker-compose.monitoring.yml up -d grafana
+```
+
+Grafana is exposed on `http://localhost:3000`. Default credentials (change
+after first login): `admin` / `admin`, set via `GF_SECURITY_ADMIN_USER` /
+`GF_SECURITY_ADMIN_PASSWORD` in `docker-compose.monitoring.yml`. Dashboards
+under `monitoring/` are auto-provisioned via
+`config/monitoring/grafana/provisioning/dashboards`, so they appear
+immediately — no manual import needed for the local stack.
+
+### Kubernetes cluster
+
+If Grafana is deployed in-cluster (e.g. via the `kube-prometheus-stack`
+Helm chart), access it with a port-forward rather than exposing it publicly
+by default:
+
+```bash
+kubectl port-forward -n <grafana-namespace> svc/<grafana-service> 3000:80
+```
+
+Then open `http://localhost:3000`. Retrieve the admin password from the
+chart's generated secret, e.g.:
+
+```bash
+kubectl get secret -n <grafana-namespace> <release>-grafana \
+  -o jsonpath="{.data.admin-password}" | base64 -d
+```
+
+For persistent access, front the Grafana Service with an Ingress and your
+cluster's standard auth/TLS setup rather than relying on port-forwarding.
+
 ## Installation
 
 ### Prerequisites

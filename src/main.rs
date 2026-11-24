@@ -1,20 +1,18 @@
-mod cli;
-mod commands;
-
-use crate::cli::{Args, BackupCommands, Commands};
-use crate::commands::backup::{run_backup, run_cleanup, run_list, run_restore};
-use crate::commands::benchmark::run_benchmark_controller_cmd;
-use crate::commands::check_crd::run_check_crd;
-use crate::commands::doctor::run_doctor;
-use crate::commands::export_compliance::run_export_compliance;
-use crate::commands::health_check::run_health_check;
-use crate::commands::info::run_info;
-use crate::commands::operator::run_operator;
-use crate::commands::runbook::run_generate_runbook;
-use crate::commands::simulator::run_simulator;
-use crate::commands::webhook::run_webhook;
 use clap::Parser;
 use std::process;
+use stellar_k8s::cli::{Args, BackupCommands, Commands};
+use stellar_k8s::commands::backup::{run_backup, run_cleanup, run_list, run_restore};
+use stellar_k8s::commands::benchmark::run_benchmark_controller_cmd;
+use stellar_k8s::commands::check_crd::run_check_crd;
+use stellar_k8s::commands::doctor::run_doctor;
+use stellar_k8s::commands::export_compliance::run_export_compliance;
+use stellar_k8s::commands::health_check::run_health_check;
+use stellar_k8s::commands::info::run_info;
+use stellar_k8s::commands::operator::run_operator;
+use stellar_k8s::commands::runbook::run_generate_runbook;
+use stellar_k8s::commands::schema_compat::run_schema_compat;
+use stellar_k8s::commands::simulator::run_simulator;
+use stellar_k8s::commands::webhook::run_webhook;
 
 use stellar_k8s::controller::archive_prune::prune_archive;
 use stellar_k8s::controller::diff::diff;
@@ -24,13 +22,6 @@ use stellar_k8s::{incident, Error};
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
-
-    // Handle --version/-v flag
-    if args.version {
-        println!("stellar-cli v{}", env!("CARGO_PKG_VERSION"));
-        println!("Build Date: {}", env!("BUILD_DATE"));
-        return Ok(());
-    }
 
     let offline = args.offline;
 
@@ -115,13 +106,52 @@ async fn main() -> Result<(), Error> {
                 eprintln!("error: {e}");
                 process::exit(2);
             }
-            return run_operator(run_args).await;
+
+            // Create a Kubernetes client for leader election.
+            let k8s_client = match kube::Client::try_default().await {
+                Ok(client) => client,
+                Err(e) => {
+                    eprintln!("Failed to create Kubernetes client for leader election: {e}");
+                    process::exit(1);
+                }
+            };
+
+            // Start leader election to ensure only one operator instance is active.
+            let leader = match stellar_k8s::controller::leader::LeaderElectionHandle::start(
+                k8s_client, None, None, None,
+            ) {
+                Ok(handle) => handle,
+                Err(e) => {
+                    eprintln!("Failed to start leader election: {e}");
+                    process::exit(1);
+                }
+            };
+
+            // Wait until this pod becomes the leader before starting the operator.
+            leader.wait_until_leader().await;
+
+            // Run the operator while we hold the lease. If the lease is lost (e.g.,
+            // during network partition or pod failure), abort the operator so the pod
+            // can restart and another replica can take over.
+            tokio::select! {
+                result = run_operator(run_args) => result,
+                _ = leader.wait_until_lost() => {
+                    eprintln!("Lost leader lease; shutting down operator");
+                    Ok(())
+                }
+            }
         }
         Commands::Webhook(webhook_args) => return run_webhook(webhook_args).await,
         Commands::Doctor(doctor_args) => return run_doctor(doctor_args).await,
+        Commands::SchemaCompat(args) => {
+            return run_schema_compat(args).await.map_err(|e| {
+                eprintln!("schema-compat: {e}");
+                Error::ConfigError(e.to_string())
+            });
+        }
         Commands::HealthCheck(hc_args) => return run_health_check(hc_args),
         Commands::Benchmark(benchmark_args) => {
-            return run_benchmark_controller_cmd(benchmark_args).await
+            return run_benchmark_controller_cmd(benchmark_args).await;
         }
         Commands::Simulator(cli) => return run_simulator(cli).await,
         Commands::BenchmarkCompare(compare_args) => {
@@ -135,16 +165,16 @@ async fn main() -> Result<(), Error> {
         Commands::Backup { command } => match command {
             BackupCommands::Create(args) => run_backup(args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string())),
+                .map_err(|e| Error::config_step("backup create", e)),
             BackupCommands::Restore(args) => run_restore(args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string())),
+                .map_err(|e| Error::config_step("backup restore", e)),
             BackupCommands::List(args) => run_list(args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string())),
+                .map_err(|e| Error::config_step("backup list", e)),
             BackupCommands::Cleanup(args) => run_cleanup(args)
                 .await
-                .map_err(|e| Error::ConfigError(e.to_string())),
+                .map_err(|e| Error::config_step("backup cleanup", e)),
         },
     };
 

@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! OpenAPI/Swagger Documentation Generator
 //!
 //! Generates OpenAPI 3.0 specifications from gateway routes
@@ -718,6 +730,111 @@ pub fn get_default_routes() -> Vec<ApiRoute> {
                 status: 200,
                 description: "Successful response".to_string(),
                 schema: Some("DashboardOverview".to_string()),
+            }],
+            auth_required: true,
+        },
+        ApiRoute {
+            path: "/healthz".to_string(),
+            method: "GET".to_string(),
+            summary: "Liveness-style health probe".to_string(),
+            description: "Kubernetes-compatible health probe endpoint".to_string(),
+            tags: vec!["Health".to_string()],
+            parameters: vec![],
+            request_body: None,
+            responses: vec![RouteResponse {
+                status: 200,
+                description: "Probe succeeded".to_string(),
+                schema: Some("ProbeResponse".to_string()),
+            }],
+            auth_required: false,
+        },
+        ApiRoute {
+            path: "/readyz".to_string(),
+            method: "GET".to_string(),
+            summary: "Readiness probe".to_string(),
+            description: "Returns ready when the operator can serve traffic".to_string(),
+            tags: vec!["Health".to_string()],
+            parameters: vec![],
+            request_body: None,
+            responses: vec![RouteResponse {
+                status: 200,
+                description: "Operator is ready".to_string(),
+                schema: Some("ProbeResponse".to_string()),
+            }],
+            auth_required: false,
+        },
+        ApiRoute {
+            path: "/livez".to_string(),
+            method: "GET".to_string(),
+            summary: "Liveness probe".to_string(),
+            description: "Returns alive when the operator process is running".to_string(),
+            tags: vec!["Health".to_string()],
+            parameters: vec![],
+            request_body: None,
+            responses: vec![RouteResponse {
+                status: 200,
+                description: "Operator is alive".to_string(),
+                schema: Some("ProbeResponse".to_string()),
+            }],
+            auth_required: false,
+        },
+        ApiRoute {
+            path: "/leader".to_string(),
+            method: "GET".to_string(),
+            summary: "Leader election status".to_string(),
+            description: "Whether this replica is the active leader".to_string(),
+            tags: vec!["Leader".to_string()],
+            parameters: vec![],
+            request_body: None,
+            responses: vec![RouteResponse {
+                status: 200,
+                description: "Leader status".to_string(),
+                schema: Some("LeaderResponse".to_string()),
+            }],
+            auth_required: true,
+        },
+        ApiRoute {
+            path: "/config/log-level".to_string(),
+            method: "GET".to_string(),
+            summary: "Get log level".to_string(),
+            description: "Returns the current operator log level".to_string(),
+            tags: vec!["Configuration".to_string()],
+            parameters: vec![],
+            request_body: None,
+            responses: vec![RouteResponse {
+                status: 200,
+                description: "Current log level".to_string(),
+                schema: Some("LogLevelResponse".to_string()),
+            }],
+            auth_required: true,
+        },
+        ApiRoute {
+            path: "/api/v1/jobs".to_string(),
+            method: "GET".to_string(),
+            summary: "List background jobs".to_string(),
+            description: "Lists operator background jobs and their status".to_string(),
+            tags: vec!["Jobs".to_string()],
+            parameters: vec![],
+            request_body: None,
+            responses: vec![RouteResponse {
+                status: 200,
+                description: "Job list".to_string(),
+                schema: None,
+            }],
+            auth_required: true,
+        },
+        ApiRoute {
+            path: "/api/v1/audit-log".to_string(),
+            method: "GET".to_string(),
+            summary: "List audit log entries".to_string(),
+            description: "Returns recent operator audit log events".to_string(),
+            tags: vec!["Audit".to_string()],
+            parameters: vec![],
+            request_body: None,
+            responses: vec![RouteResponse {
+                status: 200,
+                description: "Audit log entries".to_string(),
+                schema: None,
             }],
             auth_required: true,
         },

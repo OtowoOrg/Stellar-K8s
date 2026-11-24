@@ -1,0 +1,58 @@
+# Example: Active Horizon node (Cluster A - Primary)
+#
+# Horizon runs ACTIVE in both clusters (Active-Active RPC topology).
+# This instance is the primary write path.
+#
+# Apply to cluster-a:
+#   kubectl apply -f cluster-a/horizon-active.yaml --context=cluster-a
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-active
+  namespace: stellar-nodes
+  labels:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/instance: horizon-active
+    cluster: cluster-a
+    role: active
+spec:
+  nodeType: Horizon
+  network: Mainnet
+  version: "v21.0.0"
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+
+  storage:
+    storageClass: "fast-ssd"
+    size: "200Gi"
+
+  horizonConfig:
+    databaseSecretRef: "horizon-db-credentials-cluster-a"
+    enableIngest: true
+    stellarCoreUrl: "http://validator-primary:11626"
+    ingestWorkers: 4
+
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCpuUtilizationPercentage: 70
+
+  ingress:
+    className: "nginx"
+    hosts:
+      - host: "horizon.stellar.io"
+        paths:
+          - path: "/"
+            pathType: "Prefix"
+    certManagerClusterIssuer: "stellar-ca-issuer"
+    tlsSecretName: "horizon-tls-cert"
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"

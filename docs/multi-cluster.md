@@ -173,7 +173,7 @@ spec:
       targetPort: 11625
 ```
 
-See [`examples/cross-cluster-external-dns.yaml`](../examples/cross-cluster-external-dns.yaml) for a complete example.
+See [`examples/cross-cluster-external-dns.yaml`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/examples/cross-cluster-external-dns.yaml) for a complete example.
 
 ### Option B: Istio Service Mesh (mTLS)
 
@@ -198,7 +198,7 @@ spec:
     - address: "10.20.0.5"  # Remote cluster node IP
 ```
 
-See [`examples/cross-cluster-istio.yaml`](../examples/cross-cluster-istio.yaml) and [`docs/service-mesh.md`](service-mesh.md) for full setup.
+See [`examples/cross-cluster-istio.yaml`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/examples/cross-cluster-istio.yaml) and [`docs/service-mesh.md`](service-mesh.md) for full setup.
 
 ### Option C: Submariner (Direct Pod-to-Pod)
 
@@ -213,7 +213,7 @@ subctl join --context cluster-a broker-info.subm --clusterid us-east
 subctl join --context cluster-b broker-info.subm --clusterid eu-west
 ```
 
-See [`examples/cross-cluster-submariner.yaml`](../examples/cross-cluster-submariner.yaml) for the full configuration.
+See [`examples/cross-cluster-submariner.yaml`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/examples/cross-cluster-submariner.yaml) for the full configuration.
 
 ---
 
@@ -482,7 +482,7 @@ spec:
       port: 11625
 ```
 
-See [`examples/dr-setup.yaml`](../examples/dr-setup.yaml) for a complete disaster recovery configuration.
+See [`examples/dr-setup.yaml`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/examples/dr-setup.yaml) for a complete disaster recovery configuration.
 
 ---
 
@@ -549,4 +549,4 @@ If both clusters believe they are primary:
 - [Cross-Cloud Failover](cross-cloud-failover.md)
 - [Service Mesh Setup](service-mesh.md)
 - [mTLS Guide](mtls-guide.md)
-- [Monitoring & Observability](../README.md#-monitoring--observability)
+- [Monitoring & Observability](https://github.com/OtowoOrg/Stellar-K8s/blob/main/README.md#-monitoring--observability)

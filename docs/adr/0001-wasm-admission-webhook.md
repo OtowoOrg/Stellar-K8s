@@ -283,7 +283,7 @@ wasm-opt -Oz -o plugin.wasm target/wasm32-wasi/release/plugin.wasm
 - [Wasmtime](https://wasmtime.dev/)
 - [WASI (WebAssembly System Interface)](https://wasi.dev/)
 - [Wasm Webhook Implementation](../wasm-webhook.md)
-- [Plugin Example](../../examples/plugins/example-validator/)
+- [Plugin Example](https://github.com/OtowoOrg/Stellar-K8s/tree/main/examples/plugins/example-validator)
 
 ## Decision Makers
 

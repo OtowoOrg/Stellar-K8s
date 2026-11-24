@@ -1,0 +1,56 @@
+{
+  "metadata": {
+    "version": "0.1.0",
+    "generated_date": "2024-01-15T10:00:00Z",
+    "environment": "CI (Ubuntu 22.04, 8 vCPU, 32GB RAM)",
+    "description": "Baseline performance metrics for Stellar-K8s v0.1.0"
+  },
+  "crd_validation": {
+    "total_manifests": 500,
+    "duration_secs": 2.45,
+    "throughput_per_sec": 204.1,
+    "average_validation_ms": 4.9,
+    "p95_validation_ms": 7.2,
+    "p99_validation_ms": 9.1
+  },
+  "helm_rendering": {
+    "chart_name": "stellar-operator",
+    "values_count": 50,
+    "total_templates": 15,
+    "total_duration_secs": 1.12,
+    "average_per_template_ms": 74.7,
+    "p95_per_template_ms": 89.3,
+    "rendered_bytes": 45230
+  },
+  "operator_api": {
+    "endpoint": "/api/v1/stellarnodes",
+    "total_requests": 1000,
+    "successful_requests": 995,
+    "failed_requests": 5,
+    "duration_secs": 10.0,
+    "rps": 99.5,
+    "error_rate_percent": 0.5,
+    "avg_latency_ms": 8.2,
+    "p50_latency_ms": 7.1,
+    "p95_latency_ms": 12.5,
+    "p99_latency_ms": 18.3
+  },
+  "reconciliation": {
+    "resource_type": "StellarNode",
+    "resource_count": 50,
+    "total_reconciliations": 245,
+    "successful": 240,
+    "failed": 5,
+    "avg_duration_ms": 342.5,
+    "p50_duration_ms": 320.0,
+    "p95_duration_ms": 520.0,
+    "p99_duration_ms": 680.0,
+    "total_duration_secs": 83.8
+  },
+  "regression_thresholds": {
+    "crd_validation_percent": 15.0,
+    "helm_rendering_percent": 20.0,
+    "api_latency_percent": 25.0,
+    "reconciliation_latency_percent": 30.0
+  }
+}

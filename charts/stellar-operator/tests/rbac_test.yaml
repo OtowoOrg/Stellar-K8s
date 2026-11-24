@@ -32,6 +32,36 @@ tests:
             resources: ["stellarnodes/status"]
             verbs: ["get", "update", "patch"]
 
+  - it: ClusterRole has maintenanceplans rules
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["stellar.org"]
+            resources: ["maintenanceplans"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - it: ClusterRole has maintenanceplans/status rules
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["stellar.org"]
+            resources: ["maintenanceplans/status"]
+            verbs: ["get", "update", "patch"]
+
+  - it: ClusterRole has poddisruptionbudgets read rules
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["policy"]
+            resources: ["poddisruptionbudgets"]
+            verbs: ["get", "list", "watch"]
+
   - it: ClusterRole has stellarnodes/finalizers rules
     documentIndex: 0
     asserts:

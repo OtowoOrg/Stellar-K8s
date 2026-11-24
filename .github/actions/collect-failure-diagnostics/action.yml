@@ -1,0 +1,87 @@
+name: Collect Failure Diagnostics Bundle
+description: >
+  Unified diagnostics artifact bundle for failing CI runs (issue #1151).
+  Assembles run metadata, optional cluster dumps, and caller-supplied
+  extra paths into one downloadable artifact.
+
+inputs:
+  artifact-name:
+    description: Name of the uploaded artifact (include run_id for uniqueness)
+    required: true
+  job-name:
+    description: Human-readable job slug written into manifest.json / summary.txt
+    required: false
+    default: ${{ github.job }}
+  operator-namespace:
+    description: Namespace where the operator is deployed
+    required: false
+    default: stellar-system
+  extra-namespaces:
+    description: Space-separated list of additional namespaces to dump events from
+    required: false
+    default: ""
+  extra-paths:
+    description: >
+      Newline-separated paths (files or directories) to copy into the bundle
+      extras/ directory (e.g. /tmp/examples-smoke-triage)
+    required: false
+    default: ""
+  include-cluster:
+    description: When "true", dump kubectl pods/logs/events into the bundle
+    required: false
+    default: "true"
+  bundle-dir:
+    description: Working directory for the assembled bundle
+    required: false
+    default: /tmp/ci-diagnostics
+  retention-days:
+    description: How many days to retain the artifact
+    required: false
+    default: "14"
+
+runs:
+  using: composite
+  steps:
+    - name: Assemble diagnostics bundle
+      shell: bash
+      env:
+        BUNDLE_DIR: ${{ inputs.bundle-dir }}
+        OPERATOR_NAMESPACE: ${{ inputs.operator-namespace }}
+        EXTRA_NS: ${{ inputs.extra-namespaces }}
+        JOB_NAME: ${{ inputs.job-name }}
+        INCLUDE_CLUSTER: ${{ inputs.include-cluster }}
+        EXTRA_PATHS_RAW: ${{ inputs.extra-paths }}
+        RUN_ID: ${{ github.run_id }}
+        SHA: ${{ github.sha }}
+      run: |
+        set -euo pipefail
+        chmod +x scripts/ci/collect-failure-diagnostics.sh
+
+        ARGS=(
+          --bundle-dir "${BUNDLE_DIR}"
+          --job-name "${JOB_NAME}"
+          --operator-namespace "${OPERATOR_NAMESPACE}"
+          --run-id "${RUN_ID:-local}"
+          --sha "${SHA:-unknown}"
+        )
+        if [[ -n "${EXTRA_NS}" ]]; then
+          ARGS+=(--extra-namespaces "${EXTRA_NS}")
+        fi
+        if [[ "${INCLUDE_CLUSTER}" != "true" ]]; then
+          ARGS+=(--no-cluster)
+        fi
+
+        while IFS= read -r path; do
+          [[ -z "${path}" ]] && continue
+          ARGS+=(--extra "${path}")
+        done <<< "${EXTRA_PATHS_RAW}"
+
+        bash scripts/ci/collect-failure-diagnostics.sh "${ARGS[@]}"
+
+    - name: Upload diagnostics bundle
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.bundle-dir }}/
+        retention-days: ${{ inputs.retention-days }}
+        if-no-files-found: warn

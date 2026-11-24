@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! StellarRegistry controller reconciliation loop.
 //!
 //! Orchestrates security scanning, Cosign signature verification, multi-region
@@ -30,6 +42,22 @@ pub async fn reconcile_stellar_registry(
         warn!(registry = %name, error = %e, "StellarRegistry validation failed");
         return Ok(failed_status(e));
     }
+
+    // Keep the pull-path gate in step with the CR's policy (#2000). Stored scan
+    // reports survive a policy change.
+    let gate = crate::controller::registry_gate_registry::global()
+        .sync(
+            registry,
+            &crate::controller::registry_gate_registry::report_base_url(),
+        )
+        .await;
+    info!(
+        registry = %name,
+        namespace = %namespace,
+        mode = ?gate.mode,
+        max_critical_cves = gate.max_critical_cves,
+        "registry pull gate synced"
+    );
 
     let mut status = registry.status.clone().unwrap_or_default();
 
@@ -259,6 +287,7 @@ mod tests {
                     block_vulnerable: true,
                     block_unsigned: true,
                     enforce_on_deploy: true,
+                    ..Default::default()
                 },
                 mirrors: vec![
                     RegistryMirror {

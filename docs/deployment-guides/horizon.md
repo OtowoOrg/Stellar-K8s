@@ -71,6 +71,7 @@ curl http://localhost:8000/ledgers?order=desc&limit=5
 
 ## Next Steps
 
+- [Horizon Query API Reference](../horizon-query-api-reference.md)
 - Configure Ingress for external access
 - Set up [monitoring](validator.md#monitoring)
 - Optimize database performance

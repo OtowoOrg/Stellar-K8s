@@ -8,7 +8,7 @@ A comprehensive guide to common terms and concepts used throughout the Stellar-K
 The mechanism by which Stellar nodes agree on the state of the ledger. Stellar uses the Stellar Consensus Protocol (SCP).
 
 ### Horizon
-The REST API server for the Stellar network. It provides access to historical data, account information, and transaction submission. See [Horizon documentation](../examples/horizon.yaml).
+The REST API server for the Stellar network. It provides access to historical data, account information, and transaction submission. See [Horizon documentation](https://github.com/OtowoOrg/Stellar-K8s/blob/main/examples/horizon.yaml).
 
 ### Ledger
 A record of all accounts, balances, and transactions on the Stellar network. Each ledger is identified by a sequence number and contains a cryptographic hash of the previous ledger.
@@ -23,7 +23,7 @@ The Byzantine Fault Tolerant consensus algorithm used by Stellar. It allows node
 The reference implementation of the Stellar protocol. It validates transactions, maintains the ledger, and participates in consensus.
 
 ### Soroban
-Stellar's smart contract platform. Enables developers to write and deploy WebAssembly-based smart contracts on the Stellar network. See [Soroban RPC](../examples/soroban-rpc.yaml).
+Stellar's smart contract platform. Enables developers to write and deploy WebAssembly-based smart contracts on the Stellar network. See [Soroban RPC](https://github.com/OtowoOrg/Stellar-K8s/blob/main/examples/soroban-rpc.yaml).
 
 ### Validator
 A Stellar node that participates in consensus and helps validate transactions. Validators maintain a full copy of the ledger and vote on transaction validity.
@@ -34,7 +34,7 @@ A Stellar node that participates in consensus and helps validate transactions. V
 A Kubernetes extension that defines custom resources. Stellar-K8s uses the `StellarNode` CRD to represent Stellar infrastructure. See [API Reference](./api-reference.md).
 
 ### Controller
-The core reconciliation loop that watches for changes to Kubernetes resources and drives the cluster state to match the desired specification. See [Reconciler](../src/controller/reconciler.rs).
+The core reconciliation loop that watches for changes to Kubernetes resources and drives the cluster state to match the desired specification. See [Reconciler](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/reconciler.rs).
 
 ### Finalizer
 A Kubernetes mechanism that prevents resource deletion until cleanup tasks are complete. Stellar-K8s uses finalizers to ensure PVCs and other resources are properly cleaned up. See [kube-rs Finalizers ADR](./adr/README.md).
@@ -92,7 +92,7 @@ A deployment strategy where new versions are rolled out to a small subset of nod
 Processes and tools for recovering from failures. Includes backup/restore procedures and automated failover. See [Cross-Cloud Failover](./cross-cloud-failover.md).
 
 ### Feature Flag
-A runtime configuration that enables or disables functionality without redeploying. Stellar-K8s supports feature flags via ConfigMap. See [Runtime Feature Flags](../README.md#-runtime-feature-flags).
+A runtime configuration that enables or disables functionality without redeploying. Stellar-K8s supports feature flags via ConfigMap. See [Runtime Feature Flags](https://github.com/OtowoOrg/Stellar-K8s/blob/main/README.md#-runtime-feature-flags).
 
 ### GitOps
 A deployment methodology where infrastructure is defined in Git and automatically applied to clusters. Stellar-K8s is compatible with ArgoCD and Flux.
@@ -104,7 +104,7 @@ A system design that minimizes downtime through redundancy and automatic failove
 The delay between when a transaction is committed to the network and when a node processes it. Lower lag indicates better node performance.
 
 ### Metrics
-Quantitative measurements of system behavior (e.g., CPU usage, transaction throughput). Stellar-K8s exports Prometheus metrics for monitoring. See [Monitoring & Observability](../README.md#-monitoring--observability).
+Quantitative measurements of system behavior (e.g., CPU usage, transaction throughput). Stellar-K8s exports Prometheus metrics for monitoring. See [Monitoring & Observability](https://github.com/OtowoOrg/Stellar-K8s/blob/main/README.md#-monitoring--observability).
 
 ### mTLS (Mutual TLS)
 Encryption and authentication where both client and server verify each other's certificates. Stellar-K8s supports mTLS for secure inter-node communication.
@@ -156,7 +156,7 @@ A test that verifies the entire system works from user perspective. Includes dep
 ## Security Concepts
 
 ### CVE (Common Vulnerabilities and Exposures)
-A standardized identifier for known security vulnerabilities. Stellar-K8s includes CVE scanning in CI/CD. See [Security Scanning](../README.md#-runtime-feature-flags).
+A standardized identifier for known security vulnerabilities. Stellar-K8s includes CVE scanning in CI/CD. See [Security Scanning](https://github.com/OtowoOrg/Stellar-K8s/blob/main/README.md#-runtime-feature-flags).
 
 ### Pod Security Standards (PSS)
 Kubernetes policies that enforce security best practices (e.g., no root containers, read-only filesystems). See [Pod Security Standards](./security/pss.md).
@@ -174,7 +174,7 @@ The process of periodically updating secrets to reduce exposure risk. See [Secre
 
 ## Cross-References
 
-- **Deployment Examples**: See [examples/](../examples/) directory for sample manifests
+- **Deployment Examples**: See [examples/](https://github.com/OtowoOrg/Stellar-K8s/tree/main/examples) directory for sample manifests
 - **API Reference**: See [api-reference.md](./api-reference.md) for CRD field documentation
-- **Architecture Decisions**: See [adr/](./adr/) for design rationale
-- **Troubleshooting**: See [troubleshooting/](./troubleshooting/) for common issues
+- **Architecture Decisions**: See [adr/](adr/README.md) for design rationale
+- **Troubleshooting**: See [troubleshooting/](troubleshooting/index.md) for common issues

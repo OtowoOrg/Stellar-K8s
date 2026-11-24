@@ -1,40 +1,231 @@
-# CODEOWNERS - Define code ownership and required reviewers
+# CODEOWNERS - reviewer routing (last matching rule wins)
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
-# Default owners for everything in the repo
-# These owners will be requested for review when someone opens a pull request
+# ==============================================================================
+# DEFAULT OWNERSHIP
+# ==============================================================================
 *       @stellar-k8s-maintainers
 
-# CI/CD & Infrastructure
-/.github/workflows/     @stellar-k8s-maintainers @devops-team
-/Dockerfile            @stellar-k8s-maintainers @devops-team
-/charts/               @stellar-k8s-maintainers @devops-team
-/.github/dependabot.yml @devops-team
+# ==============================================================================
+# CI/CD & INFRASTRUCTURE
+# ==============================================================================
+/.github/workflows/            @stellar-k8s-maintainers @devops-team
+/.github/actions/              @stellar-k8s-maintainers @devops-team
+/.github/dependabot.yml        @devops-team
+/Dockerfile                    @stellar-k8s-maintainers @devops-team
+/Dockerfile.dev                @devops-team
+/bundle.Dockerfile             @devops-team
+/docker-compose*.yml           @devops-team
+/Tiltfile                      @devops-team
+/skaffold.yaml                 @devops-team
+/charts/                       @stellar-k8s-maintainers @devops-team
+/scripts/                      @devops-team
+/.cargo/                       @stellar-k8s-maintainers
+/Makefile                      @stellar-k8s-maintainers @devops-team
 
-# Core operator code
-/src/controller/       @stellar-k8s-maintainers @kubernetes-experts
-/src/crd/              @stellar-k8s-maintainers @kubernetes-experts
-/src/webhook/          @stellar-k8s-maintainers @kubernetes-experts
+# ==============================================================================
+# CORE OPERATOR & KUBERNETES
+# ==============================================================================
+/src/controller/               @stellar-k8s-maintainers @kubernetes-experts
+/src/crd/                      @stellar-k8s-maintainers @kubernetes-experts
+/src/scheduler/                @stellar-k8s-maintainers @kubernetes-experts
+/src/admission/                @kubernetes-experts
+/controller/                   @stellar-k8s-maintainers @kubernetes-experts
 
-# Security-sensitive files
-/src/controller/mtls.rs @security-team
-/src/webhook/          @security-team
+# ==============================================================================
+# SECURITY & COMPLIANCE
+# ==============================================================================
+/src/security/                 @security-team
+/src/webhook/                  @security-team
+/src/namespace_security/       @security-team
+/src/secrets_broker.rs         @security-team
+/src/identity/                 @security-team
+/src/approval/                 @security-team
+/src/audit_chain.rs            @security-team
+/src/audit_report.rs           @security-team
+/src/compliance/               @security-team
+/src/compliance_scan.rs        @security-team
+/src/policy_engine/            @security-team
+/src/data_residency.rs         @security-team
+/security/                     @security-team
+/policy/                       @security-team
+/SECURITY.md                   @security-team
+/.gitleaks.toml                @security-team
+/.github/workflows/compliance-scan.yml @security-team
+/.github/workflows/container-image-security.yml @security-team
 
-# Documentation
-/docs/                 @stellar-k8s-maintainers @docs-team
-README.md              @stellar-k8s-maintainers @docs-team
+# ==============================================================================
+# BLOCKCHAIN & CONSENSUS
+# ==============================================================================
+/src/contracts/                @blockchain-team
+/src/consensus_monitoring.rs   @blockchain-team
+/src/byzantine/                @blockchain-team
+/src/fork_detector/            @blockchain-team
+/src/protocol_compatibility.rs @blockchain-team
+/contracts/                    @blockchain-team
+/formal_verification/          @blockchain-team @security-team
 
-# Monitoring & Observability
-/src/telemetry.rs      @observability-team
-/monitoring/           @observability-team
-/src/controller/metrics.rs @observability-team
+# ==============================================================================
+# API & GATEWAY
+# ==============================================================================
+/src/rest_api/                 @api-team
+/src/api_gateway/              @api-team
+/src/gateway/                  @api-team
+/src/websocket_streaming.rs    @api-team
+/src/plugin_sdk.rs             @api-team
+/src/sdk/                      @api-team
+/.github/workflows/api-contract-testing.yml @api-team
 
-# Backup & Archive
-/src/backup/           @data-team
+# ==============================================================================
+# DATA & STORAGE
+# ==============================================================================
+/src/backup/                   @data-team
+/src/db_management/            @data-team
+/src/db_migrations.rs          @data-team
+/src/data_pipeline/            @data-team
+/src/event_sourcing/           @data-team
+/src/schema_evolution.rs       @data-team
+/src/schema_registry.rs        @data-team
+/src/sql.rs                    @data-team
+/db/                           @data-team
 
-# API & REST
-/src/rest_api/         @api-team
+# ==============================================================================
+# OBSERVABILITY & MONITORING
+# ==============================================================================
+/src/telemetry.rs              @observability-team
+/src/telemetry/                @observability-team
+/src/metrics/                  @observability-team
+/src/logging/                  @observability-team
+/src/log_aggregation.rs        @observability-team
+/src/log_scrub.rs              @observability-team
+/src/network_observability/    @observability-team
+/src/profiling/                @observability-team
+/monitoring/                   @observability-team
+/telemetry/                    @observability-team
+/.codecov.yml                  @observability-team
 
-# Benchmarking
-/benchmarks/           @performance-team
-/.github/workflows/benchmark.yml @performance-team
+# ==============================================================================
+# SRE & RELIABILITY
+# ==============================================================================
+/src/sla/                      @sre-team @observability-team
+/src/composite_slo.rs          @sre-team @observability-team
+/src/error_budget.rs           @sre-team
+/src/incident/                 @sre-team
+/src/chaos/                    @sre-team
+/src/degradation/              @sre-team
+/src/runbook.rs                @sre-team
+/.github/workflows/chaos-tests.yml @sre-team
+
+# ==============================================================================
+# PERFORMANCE & OPTIMIZATION
+# ==============================================================================
+/benchmarks/                   @performance-team
+/benches/                      @performance-team
+/src/benchmark_bisect.rs       @performance-team
+/src/benchmark_compare.rs      @performance-team
+/src/caching/                  @performance-team
+/src/cardinality/              @performance-team
+/src/cost_optimization/        @performance-team
+/src/carbon_aware/             @performance-team
+/src/load_balancer.rs          @performance-team
+/src/load_modeling.rs          @performance-team
+/.github/workflows/performance.yml @performance-team
+/.github/workflows/crd-performance-testing.yml @performance-team
+
+# ==============================================================================
+# DEPLOYMENT & RELEASES
+# ==============================================================================
+/src/canary_deployment.rs      @deployment-team
+/src/canary_promotion_controller.rs @deployment-team
+/src/deployment_strategy.rs    @deployment-team
+/src/rollback_engine.rs        @deployment-team
+/src/migration_safety.rs       @deployment-team
+/src/preflight.rs              @deployment-team
+/src/connection_drain.rs       @deployment-team
+
+# ==============================================================================
+# SCALABILITY & AUTOSCALING
+# ==============================================================================
+/src/adaptive_hpa.rs           @scaling-team
+/src/capacity_planning/        @scaling-team
+/src/fair_share_scheduler.rs   @scaling-team
+/src/fair_share_rate_limiter.rs @scaling-team
+
+# ==============================================================================
+# FEDERATION & MULTI-REGION
+# ==============================================================================
+/src/federation.rs             @federation-team
+/src/federation_consistency.rs @federation-team
+/src/service_discovery/        @federation-team
+
+# ==============================================================================
+# EVENT PROCESSING & MESSAGING
+# ==============================================================================
+/src/event_processing/         @messaging-team
+/src/message_queue.rs          @messaging-team
+/src/kafka/                    @messaging-team
+
+# ==============================================================================
+# CONFIGURATION MANAGEMENT
+# ==============================================================================
+/src/config.rs                 @stellar-k8s-maintainers
+/src/config_mgmt/              @stellar-k8s-maintainers
+/src/config_reload.rs          @stellar-k8s-maintainers
+/src/progressive_config.rs     @stellar-k8s-maintainers
+/src/feature_flags.rs          @stellar-k8s-maintainers
+/src/flag_bundle.rs            @stellar-k8s-maintainers
+/config/                       @stellar-k8s-maintainers
+
+# ==============================================================================
+# DOCUMENTATION
+# ==============================================================================
+/docs/                         @stellar-k8s-maintainers @docs-team
+README.md                      @stellar-k8s-maintainers @docs-team
+CONTRIBUTING.md                @stellar-k8s-maintainers @docs-team
+CONVENTIONS.md                 @stellar-k8s-maintainers @docs-team
+DEVELOPMENT.md                 @stellar-k8s-maintainers @docs-team
+CHANGELOG.md                   @stellar-k8s-maintainers @docs-team
+RELEASE_CHECKLIST.md           @stellar-k8s-maintainers @docs-team
+/mkdocs.yml                    @docs-team
+/.github/ISSUE_TEMPLATE/       @docs-team
+/.github/PULL_REQUEST_TEMPLATE.md @docs-team
+/.github/workflows/docs-build.yml @docs-team
+
+# ==============================================================================
+# FRONTEND & UI
+# ==============================================================================
+/frontend/                     @frontend-team
+/assets/                       @frontend-team
+/package.json                  @frontend-team
+/tsconfig.json                 @frontend-team
+
+# ==============================================================================
+# WASM & PLUGINS
+# ==============================================================================
+/wasm-plugins/                 @wasm-team
+
+# ==============================================================================
+# TESTING & QUALITY
+# ==============================================================================
+/tests/                        @stellar-k8s-maintainers @qa-team
+/examples/                     @stellar-k8s-maintainers @docs-team
+/src/cli_tests.rs              @qa-team
+/.github/workflows/ci.yml      @stellar-k8s-maintainers @devops-team
+/.github/workflows/ci-reliability-test.yml @qa-team
+
+# ==============================================================================
+# BUILD & DEPENDENCIES
+# ==============================================================================
+Cargo.toml                     @stellar-k8s-maintainers
+Cargo.lock                     @stellar-k8s-maintainers
+/build.rs                      @stellar-k8s-maintainers
+/deny.toml                     @security-team
+/requirements.txt              @devops-team
+/.github/workflows/dependency-review.yml @security-team
+
+# ==============================================================================
+# PROJECT GOVERNANCE
+# ==============================================================================
+LICENSE                        @stellar-k8s-maintainers @legal-team
+THIRD_PARTY_LICENSES.md        @stellar-k8s-maintainers @legal-team
+/.github/CODEOWNERS            @stellar-k8s-maintainers

@@ -9,6 +9,7 @@ This guide covers the most common networking failures when running Stellar nodes
 | Port  | Protocol | Purpose                                      |
 |-------|----------|----------------------------------------------|
 | 11625 | TCP      | Stellar Core P2P (peer-to-peer SCP traffic)  |
+| 3510  | TCP      | SDF testnet peer port (outbound to testnet cores) |
 | 11626 | TCP      | Stellar Core HTTP admin / Horizon ingest URL |
 | 8000  | TCP      | Horizon REST API                             |
 | 9100  | TCP      | Prometheus metrics (if enabled)              |
@@ -348,10 +349,13 @@ Validators need outbound access to:
 
 | Destination | Port | Purpose |
 |---|---|---|
+| SDF testnet validator cores | **3510 TCP** | Peer dial-out to SDF testnet validators (testnet-specific port) |
 | Other validators (cluster-internal) | 11625 TCP | SCP consensus |
 | Other validators (external) | 11625 TCP | SCP consensus with external peers |
 | History archive servers | 443 TCP | Ledger history sync |
 | Kubernetes DNS | 53 UDP/TCP | Service name resolution |
+
+> ⚠️ **Testnet note:** the SDF testnet cores listen on **`3510`** (and community testnet peers on the default `11625`). If outbound `3510`/`11625` is blocked by a firewall, NAT gateway, or cloud security group, the node sits in `Joining SCP` with **zero peers** indefinitely — the pod itself stays `Running` and looks healthy. Full guidance, verification commands, and the symptom checklist live in [Testnet Peer Egress Port Requirements](../networking/testnet-egress-ports.md).
 
 ### 6.2 Required inbound connections to validators
 
@@ -477,15 +481,15 @@ Before opening a support issue, collect:
 - [ ] `kubectl get events -n <namespace> --sort-by='.lastTimestamp'`
 - [ ] Operator logs: `kubectl logs deployment/stellar-operator -n stellar-system --tail=200`
 - [ ] Validator pod logs: `kubectl logs <validator-pod> -n <namespace> --tail=200`
-- [ ] Output of `scripts/debug-network.sh` (see below)
 
 ---
 
 ## Related Documentation
 
+- [Testnet Peer Egress Port Requirements](../networking/testnet-egress-ports.md) — 3510/11625 outbound rules, symptom checklist
 - [Ingress Configuration Guide](../ingress-guide.md)
 - [Peer Discovery](../peer-discovery.md)
 - [mTLS Guide](../mtls-guide.md)
 - [MetalLB BGP Anycast](../metallb-bgp-anycast.md)
 - [NetworkPolicy examples](../gatekeeper-policies.md)
-- [Diagnostic script](../../scripts/debug-network.sh)
+- [Operations scripts](../development/scripts-reference.md#operations-and-incident-response)

@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: stellar-k8s-gitops-v1
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: stellar-k8s
+    stellar.org/gitops-version: v1
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/agnesnaomiolim-cloud/Stellar-K8s.git
+    targetRevision: main
+    path: examples/argocd/v1/apps
+    kustomize: {}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - PruneLast=true
+      - PrunePropagationPolicy=foreground

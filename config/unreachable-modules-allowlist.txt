@@ -1,0 +1,17 @@
+# Known unreachable / WIP source files acknowledged by the static reachability
+# audit (issue #1150). Paths are relative to the repository root and use
+# forward slashes. Blank lines and comments (#) are ignored.
+#
+# This list is intentionally EMPTY.
+#
+# The cleanup wave ("remove unnecessary files, redundant checks, dead code,
+# and overly crowded paths") deleted every allowlisted orphan file, declared
+# the two load-bearing src/bin binaries (crdgen, stellar-log-shipper) in
+# Cargo.toml, and fixed the audit to resolve `mod` declarations in declared
+# `[[bin]]` crate roots as siblings (matching rustc), which un-orphaned
+# src/explain.rs, src/audit_report.rs, and src/sql.rs (live code of the
+# kubectl-stellar binary).
+#
+# Adding a path here silences the orphan-file hard failure for that file.
+# Prefer wiring the module into lib.rs / a [[bin]] entry, or deleting it,
+# over growing this list. CI fails when a NEW orphan appears that is not listed.

@@ -21,6 +21,11 @@ to a healthy state.
 | 08 | `08-validator-pod-kill.yaml` | pod-failure | 🟠 High | 300s |
 | 09 | `09-cascading-failure.yaml` | cascading | 🔴 Critical | 600s |
 | 10 | `10-io-stress.yaml` | storage | 🟡 Medium | 300s |
+| 11 | `11-stellar-core-crash-recovery.yaml` | stellar-core | 🔴 Critical | 60s |
+| 12 | `12-ledger-reconnection.yaml` | stellar-core | 🟠 High | 90s |
+| 13 | `13-resource-exhaustion-recovery.yaml` | resource-exhaustion | 🟠 High | 90s |
+| 14 | `14-control-plane-dns-outage.yaml` | control-plane | 🔴 Critical | 60s |
+| 15 | `15-control-plane-webhook-outage.yaml` | control-plane | 🟠 High | 60s |
 
 ---
 
@@ -74,6 +79,42 @@ to a healthy state.
 - **Verifies:** Operator detects I/O degradation; does NOT delete the PVC;
   StellarNode recovers after stress ends
 
+### 11 — Stellar Core Crash Recovery
+- **Chaos:** Stellar Core process killed inside the validator pod
+- **Verifies:** Core restarts and catches back up to the network without
+  operator intervention or StellarNode status flapping
+
+### 12 — Ledger Reconnection
+- **Chaos:** Validator network access cut, then restored after falling behind
+- **Verifies:** Core reconnects to peers and resyncs the ledger to the
+  current close without manual resets
+
+### 13 — Resource Exhaustion Recovery
+- **Chaos:** Combined CPU/memory exhaustion on a validator pod
+- **Verifies:** Pod recovers once pressure clears; StellarNode returns to
+  Ready without stuck finalizers or duplicate resources
+
+### 14, 15 — Control-Plane Component-Kill Matrix (#1494)
+- **Chaos:** Each control-plane component isolated for 15 minutes with
+  workload traffic held flat: DNS (14) and the admission webhook (15) via
+  Chaos Mesh. etcd and the scheduler run as static pods, which Chaos Mesh
+  cannot fail, so on kind they are isolated by moving the manifest aside:
+  ```bash
+  CP=stellar-chaos-control-plane   # kind control-plane container
+  C=etcd                           # or kube-scheduler
+  docker exec $CP mv /etc/kubernetes/manifests/$C.yaml /tmp/
+  sleep 900
+  docker exec $CP mv /tmp/$C.yaml /etc/kubernetes/manifests/
+  ```
+- **Verifies:** `ControlPlaneHealth/cluster` reports the declared level
+  (etcd → Frozen, DNS → Degraded, webhook/scheduler → Reduced), the operator
+  restarts no serving pods, pod startup is never blocked in Permissive webhook
+  mode, and the level returns to Normal on its own with a post-incident report
+  in `status.incidents`. These run 15 minutes each and need the webhook
+  installed, so they are opt-in: `EXPERIMENTS="14 15" ./tests/chaos/run-chaos-tests.sh`.
+  The same matrix runs in-process in
+  `src/degradation/tracker.rs` (`chaos_matrix_each_component_isolated_for_15_minutes`).
+
 ---
 
 ## Running locally
@@ -84,13 +125,16 @@ You need only **Docker** installed. The script installs everything else.
 # From the project root:
 chmod +x tests/chaos/run-chaos-tests.sh
 ./tests/chaos/run-chaos-tests.sh
+
+# Or via the Makefile target:
+make chaos-test
 ```
 
 The script will:
 1. Check for `docker`, `kubectl`, `helm`, `kind`, `python3`
 2. Create a 3-node kind cluster called `stellar-chaos`
 3. Install Chaos Mesh and deploy the operator
-4. Run all 10 experiments in sequence
+4. Run all 13 experiments in sequence
 5. Generate a resilience report in `tests/chaos/results/<run-id>/`
 
 ### Options

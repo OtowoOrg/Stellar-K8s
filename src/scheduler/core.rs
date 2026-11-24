@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 use anyhow::Result;
 use k8s_openapi::api::core::v1::{Binding, Node, Pod};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
@@ -91,7 +103,7 @@ impl Scheduler {
         let pod_name = pod.name_any();
         info!("Attempting to schedule pod: {}", pod_name);
 
-        // 1. Filter nodes (basic checks)
+        // 1. Filter nodes (unschedulable + capacity-class hard rules)
         let filtered_nodes = self.filter_nodes(pod, nodes).await;
         if filtered_nodes.is_empty() {
             warn!("No suitable nodes found for pod {}", pod_name);
@@ -113,29 +125,10 @@ impl Scheduler {
         Ok(())
     }
 
-    async fn filter_nodes<'a>(&self, _pod: &Pod, nodes: &'a [Node]) -> Vec<&'a Node> {
-        let mut filtered = Vec::new();
-
-        for n in nodes {
-            // 1. Check for unschedulable taint/flag
-            if let Some(spec) = &n.spec {
-                if spec.unschedulable == Some(true) {
-                    continue;
-                }
-            }
-
-            // 2. Resource check (Stub for CPU/Mem)
-            // In a production scheduler, we would check if node has enough capacity
-
-            filtered.push(n);
-        }
-
-        // 3. Quorum-aware filtering
-        // If this is a validator, we ideally want to avoid nodes that already host a peer.
-        // However, filtering is "hard" - if all nodes have peers, we'd fail to schedule.
-        // So we keep filtering light and let scoring do the heavy lifting for "best" node.
-
-        filtered
+    async fn filter_nodes<'a>(&self, pod: &Pod, nodes: &'a [Node]) -> Vec<&'a Node> {
+        // Capacity-class hard filter: critical never lands on spot.
+        // Soft preference (best-effort → spot) is applied in scoring.
+        super::capacity::filter_k8s_nodes(pod, nodes)
     }
 
     async fn bind_pod(&self, pod: &Pod, node: &Node) -> Result<()> {

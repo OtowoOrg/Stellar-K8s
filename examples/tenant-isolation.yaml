@@ -1,0 +1,12 @@
+apiVersion: stellar.org/v1alpha1
+kind: Tenant
+metadata:
+  name: acme
+  namespace: stellar-system
+spec:
+  tenantId: acme
+  namespace: tenant-acme
+  quota:
+    cpu: "2"
+    memory: 4Gi
+  cleanupOnDelete: true

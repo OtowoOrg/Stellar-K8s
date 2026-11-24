@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "proxy_controller",
+    "mock_v1",
+    "mock_v2",
+    "proxy_controller_tests",
+]
+
+# This is a standalone Soroban workspace, intentionally kept out of the
+# top-level Stellar-K8s Cargo workspace (which builds the Kubernetes
+# operator binaries, not on-chain contracts). Build it with the wasm32
+# target via `make -C contracts/proxy-controller`.
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true

@@ -1,0 +1,110 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+# Control-Plane Degradation — PrometheusRule (#1494)
+#
+# Alerts on degradation-level transitions published by the operator's
+# control-plane health monitor (see ControlPlaneHealth/cluster status).
+#
+#   kubectl apply -f monitoring/control-plane-degradation-alerts.yaml -n monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-control-plane-degradation
+  namespace: monitoring
+  labels:
+    app: stellar-operator
+    component: control-plane-health
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: stellar.control_plane_degradation.alerts
+      rules:
+        # ── INFO: any level transition (degrading or recovering) ────────────
+        - alert: StellarControlPlaneDegradationTransition
+          expr: |
+            increase(stellar_control_plane_degradation_transitions_total[5m]) > 0
+          for: 0m
+          labels:
+            severity: info
+            team: stellar-infra
+            component: control-plane-health
+          annotations:
+            summary: "Control-plane degradation level changed {{ $labels.from }} -> {{ $labels.to }}"
+            description: |
+              The operator moved from {{ $labels.from }} to {{ $labels.to }}.
+              Inspect: kubectl get controlplanehealth cluster -o yaml
+
+        # ── WARNING: operator running in a degraded mode ────────────────────
+        - alert: StellarControlPlaneDegraded
+          expr: |
+            max(stellar_control_plane_degradation_level) >= 1
+          for: 1m
+          labels:
+            severity: warning
+            team: stellar-infra
+            component: control-plane-health
+          annotations:
+            summary: "Operator is in a degraded control-plane mode (level {{ $value }})"
+            description: |
+              One or more control-plane components (etcd, DNS, webhook,
+              scheduler) are unhealthy. Disruptive operator actions such as
+              pod restarts are withheld; workloads keep serving.
+              Levels: 1=Reduced, 2=Degraded, 3=Frozen.
+
+        # ── CRITICAL: etcd unavailable, operator frozen ─────────────────────
+        - alert: StellarControlPlaneFrozen
+          expr: |
+            max(stellar_control_plane_degradation_level) >= 3
+          for: 1m
+          labels:
+            severity: critical
+            team: stellar-infra
+            component: control-plane-health
+          annotations:
+            summary: "etcd unavailable: operator frozen, no reconciliation writes"
+            description: |
+              The operator has stopped all API writes because etcd is
+              unavailable. The data plane runs on its last applied
+              configuration. Restore etcd; the operator recovers automatically.
+
+        # ── WARNING: a single component is unhealthy ────────────────────────
+        - alert: StellarControlPlaneComponentUnhealthy
+          expr: |
+            stellar_control_plane_component_state == 0
+          for: 1m
+          labels:
+            severity: warning
+            team: stellar-infra
+            component: control-plane-health
+          annotations:
+            summary: "Control-plane component {{ $labels.component }} is unhealthy"
+            description: |
+              The {{ $labels.component }} probe has failed past its failure
+              threshold. See status.components in ControlPlaneHealth/cluster.
+
+        # ── CRITICAL: automatic recovery has not happened ───────────────────
+        - alert: StellarControlPlaneDegradationProlonged
+          expr: |
+            max(stellar_control_plane_degradation_level) >= 1
+          for: 30m
+          labels:
+            severity: critical
+            team: stellar-infra
+            component: control-plane-health
+          annotations:
+            summary: "Control plane has been degraded for over 30 minutes"
+            description: |
+              The degradation level has not returned to Normal within 30
+              minutes. Automatic recovery is waiting on the unhealthy
+              component; investigate it directly.

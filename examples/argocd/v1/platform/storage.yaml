@@ -1,0 +1,52 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: stellar-local
+  labels:
+    app.kubernetes.io/part-of: stellar-k8s
+    stellar.org/gitops-version: v1
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: Immediate
+reclaimPolicy: Delete
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: stellar-validator-testnet-data
+  labels:
+    app.kubernetes.io/part-of: stellar-k8s
+    stellar.org/gitops-version: v1
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: stellar-local
+  persistentVolumeReclaimPolicy: Delete
+  hostPath:
+    path: /var/lib/stellar-k8s/validator-testnet
+    type: DirectoryOrCreate
+  claimRef:
+    namespace: stellar-testnet
+    name: validator-testnet-data
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: stellar-soroban-rpc-testnet-data
+  labels:
+    app.kubernetes.io/part-of: stellar-k8s
+    stellar.org/gitops-version: v1
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: stellar-local
+  persistentVolumeReclaimPolicy: Delete
+  hostPath:
+    path: /var/lib/stellar-k8s/soroban-rpc-testnet
+    type: DirectoryOrCreate
+  claimRef:
+    namespace: stellar-testnet
+    name: soroban-rpc-testnet-data

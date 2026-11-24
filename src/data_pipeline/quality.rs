@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Data quality validation and cleansing rules for the Stellar data pipeline
 
 use serde::{Deserialize, Serialize};
@@ -44,11 +56,14 @@ impl QualityReport {
     }
 }
 
+/// (field, message) emitted by a [`ValidationRule`] check when validation fails
+type CheckFn = dyn Fn(&EtlRecord) -> Option<(String, String)> + Send + Sync;
+
 /// A validation rule applied to ETL records
 pub struct ValidationRule {
     pub name: String,
     pub severity: Severity,
-    check: Box<dyn Fn(&EtlRecord) -> Option<(String, String)> + Send + Sync>,
+    check: Box<CheckFn>,
 }
 
 impl ValidationRule {
@@ -75,63 +90,6 @@ impl ValidationRule {
     }
 }
 
-// Helper functions to extract fields from EtlRecord payload
-fn get_sequence(record: &EtlRecord) -> u64 {
-    record.ledger_seq.unwrap_or(0)
-}
-
-fn get_hash(record: &EtlRecord) -> String {
-    record
-        .payload
-        .get("hash")
-        .or_else(|| record.payload.get("ledger_hash"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string()
-}
-
-fn get_base_fee_xlm(record: &EtlRecord) -> f64 {
-    record
-        .payload
-        .get("base_fee_xlm")
-        .or_else(|| record.payload.get("base_fee"))
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.0)
-}
-
-fn get_tx_success_rate(record: &EtlRecord) -> f64 {
-    record
-        .payload
-        .get("tx_success_rate")
-        .or_else(|| record.payload.get("success_rate"))
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.0)
-}
-
-fn get_date_partition(record: &EtlRecord) -> String {
-    record
-        .metadata
-        .get("date_partition")
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            record
-                .pipeline_ts
-                .split('T')
-                .next()
-                .unwrap_or("")
-                .to_string()
-        })
-}
-
-fn get_avg_ops_per_tx(record: &EtlRecord) -> f64 {
-    record
-        .payload
-        .get("avg_ops_per_tx")
-        .or_else(|| record.payload.get("operations_per_transaction"))
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.0)
-}
-
 /// Engine that applies all validation rules and produces quality reports
 pub struct DataQualityEngine {
     rules: Vec<ValidationRule>,
@@ -155,7 +113,7 @@ impl DataQualityEngine {
             "positive_sequence",
             Severity::Critical,
             |r| {
-                let sequence = get_sequence(r);
+                let sequence = r.ledger_seq.unwrap_or(0);
                 if sequence == 0 {
                     Some(("sequence".into(), "Ledger sequence must be > 0".into()))
                 } else {
@@ -169,7 +127,12 @@ impl DataQualityEngine {
             "non_empty_hash",
             Severity::Critical,
             |r| {
-                let hash = get_hash(r);
+                let hash = r
+                    .payload
+                    .get("hash")
+                    .or_else(|| r.payload.get("ledger_hash"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 if hash.is_empty() {
                     Some(("hash".into(), "Ledger hash must not be empty".into()))
                 } else {
@@ -183,7 +146,12 @@ impl DataQualityEngine {
             "min_base_fee",
             Severity::Warning,
             |r| {
-                let base_fee = get_base_fee_xlm(r);
+                let base_fee = r
+                    .payload
+                    .get("base_fee_xlm")
+                    .or_else(|| r.payload.get("base_fee"))
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 if base_fee < 0.000_001 {
                     Some((
                         "base_fee_xlm".into(),
@@ -200,7 +168,12 @@ impl DataQualityEngine {
             "valid_success_rate",
             Severity::Error,
             |r| {
-                let success_rate = get_tx_success_rate(r);
+                let success_rate = r
+                    .payload
+                    .get("tx_success_rate")
+                    .or_else(|| r.payload.get("success_rate"))
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 if !(0.0..=1.0).contains(&success_rate) {
                     Some((
                         "tx_success_rate".into(),
@@ -217,7 +190,11 @@ impl DataQualityEngine {
             "date_partition_format",
             Severity::Error,
             |r| {
-                let date_partition = get_date_partition(r);
+                let date_partition = r
+                    .metadata
+                    .get("date_partition")
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| r.pipeline_ts.split('T').next().unwrap_or("").to_string());
                 let valid = date_partition.len() == 10
                     && date_partition.chars().nth(4) == Some('-')
                     && date_partition.chars().nth(7) == Some('-');
@@ -237,7 +214,12 @@ impl DataQualityEngine {
             "ops_per_tx_sanity",
             Severity::Warning,
             |r| {
-                let avg_ops = get_avg_ops_per_tx(r);
+                let avg_ops = r
+                    .payload
+                    .get("avg_ops_per_tx")
+                    .or_else(|| r.payload.get("operations_per_transaction"))
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 if avg_ops > 100.0 {
                     Some((
                         "avg_ops_per_tx".into(),

@@ -13,6 +13,7 @@
 | HA validator architecture | [validator-ha-topology.md](validator-ha-topology.md) | Single-active enforcement and quorum safety |
 | Horizon/RPC farm architecture | [horizon-rpc-farm.md](horizon-rpc-farm.md) | Horizontal scale and API resilience |
 | Multi-region and DR | [multi-region-dr.md](multi-region-dr.md) | Quorum latency and restore playbooks |
+| Multi-region deployment & failover (full) | [multi-region-deployment-and-failover.md](../multi-region-deployment-and-failover.md) | Architecture, failover, validation |
 | GitOps, capacity, upgrades | [gitops-scaling-upgrades.md](gitops-scaling-upgrades.md) | Terraform/Helm templates and release strategy |
 
 ## Architecture Principles

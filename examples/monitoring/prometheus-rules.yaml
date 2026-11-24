@@ -1,0 +1,622 @@
+# PrometheusRule Manifests for Stellar-K8s Monitoring
+# Production-ready alert rules with validated thresholds
+
+---
+# Stellar Core Alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-core-alerts
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: stellar-core.rules
+    interval: 30s
+    rules:
+    
+    # CRITICAL: Consensus Lost
+    - alert: StellarCoreConsensusLost
+      expr: stellar_core_consensus_state == 0
+      for: 5m
+      labels:
+        severity: critical
+        component: stellar-core
+        runbook: "https://wiki.stellar.org/runbook/consensus-lost"
+      annotations:
+        summary: "Stellar Core has lost consensus"
+        description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has been out of consensus for more than 5 minutes"
+        dashboard: "http://grafana:3000/d/stellar-core"
+    
+    # CRITICAL: Sync Lag Excessive
+    - alert: StellarCoreSyncLagExcessive
+      expr: stellar_core_sync_lag_seconds > 60
+      for: 10m
+      labels:
+        severity: critical
+        component: stellar-core
+      annotations:
+        summary: "Stellar Core sync lag critical"
+        description: "Pod {{ $labels.pod }} is {{ $value | humanize }}s behind the network (threshold: 60s)"
+        remediation: "Check peer connectivity and network latency"
+    
+    # CRITICAL: No Connected Peers
+    - alert: StellarCoreNoPeers
+      expr: stellar_core_peers_connected == 0
+      for: 5m
+      labels:
+        severity: critical
+        component: stellar-core
+      annotations:
+        summary: "Stellar Core has no connected peers"
+        description: "Pod {{ $labels.pod }} cannot connect to any peers"
+        remediation: "Check firewall rules and peer discovery configuration"
+    
+    # WARNING: Low Peer Count
+    - alert: StellarCoreLowPeerCount
+      expr: stellar_core_peers_connected < 5
+      for: 15m
+      labels:
+        severity: warning
+        component: stellar-core
+      annotations:
+        summary: "Stellar Core peer count low"
+        description: "Pod {{ $labels.pod }} has only {{ $value }} connected peers (threshold: 5)"
+    
+    # WARNING: Transaction Rate Anomaly
+    - alert: StellarCoreTxnRateAnomaly
+      expr: |
+        abs(rate(stellar_core_txn_counter_total[5m]) - avg(rate(stellar_core_txn_counter_total[5m] offset 1h))) 
+        / 
+        (avg(rate(stellar_core_txn_counter_total[5m] offset 1h)) + 0.001) > 0.3
+      for: 15m
+      labels:
+        severity: warning
+        component: stellar-core
+      annotations:
+        summary: "Stellar Core transaction rate anomaly detected"
+        description: "Transaction rate deviated {{ $value | humanizePercentage }} from 1-hour baseline"
+    
+    # CRITICAL: High Memory Usage
+    - alert: StellarCoreHighMemory
+      expr: stellar_core_memory_bytes / 8589934592 > 0.85
+      for: 5m
+      labels:
+        severity: critical
+        component: stellar-core
+      annotations:
+        summary: "Stellar Core memory usage critical"
+        description: "Memory usage at {{ $value | humanizePercentage }} of 8GB limit"
+        remediation: "Check for memory leaks or increase pod memory limit"
+    
+    # WARNING: Memory Usage Elevated
+    - alert: StellarCoreHighMemoryWarning
+      expr: stellar_core_memory_bytes / 8589934592 > 0.70
+      for: 10m
+      labels:
+        severity: warning
+        component: stellar-core
+      annotations:
+        summary: "Stellar Core memory usage elevated"
+        description: "Memory usage at {{ $value | humanizePercentage }} of 8GB limit"
+    
+    # CRITICAL: Database Connection Pool Saturation
+    - alert: StellarCoreDBConnectionSaturation
+      expr: stellar_core_db_connections / 100 > 0.90
+      for: 5m
+      labels:
+        severity: critical
+        component: stellar-core
+      annotations:
+        summary: "Stellar Core database connection pool near saturation"
+        description: "{{ $value | humanizePercentage }} of connection pool in use"
+        remediation: "Investigate long-running queries or increase pool size"
+    
+    # WARNING: Database Connection Pool Usage High
+    - alert: StellarCoreDBConnectionHigh
+      expr: stellar_core_db_connections / 100 > 0.70
+      for: 10m
+      labels:
+        severity: warning
+        component: stellar-core
+      annotations:
+        summary: "Stellar Core database connection pool usage high"
+        description: "{{ $value | humanizePercentage }} of connection pool in use"
+    
+    # CRITICAL: High HTTP Error Rate
+    - alert: StellarCoreHighErrorRate
+      expr: |
+        rate(stellar_core_http_requests_total{status=~"5.."}[5m]) / 
+        (rate(stellar_core_http_requests_total[5m]) + 0.001) > 0.01
+      for: 5m
+      labels:
+        severity: critical
+        component: stellar-core
+      annotations:
+        summary: "Stellar Core high HTTP error rate"
+        description: "5xx error rate at {{ $value | humanizePercentage }} (threshold: 1%)"
+    
+    # WARNING: Elevated HTTP Error Rate
+    - alert: StellarCoreElevatedErrorRate
+      expr: |
+        rate(stellar_core_http_requests_total{status=~"5.."}[5m]) / 
+        (rate(stellar_core_http_requests_total[5m]) + 0.001) > 0.005
+      for: 10m
+      labels:
+        severity: warning
+        component: stellar-core
+      annotations:
+        summary: "Stellar Core HTTP error rate elevated"
+        description: "5xx error rate at {{ $value | humanizePercentage }}"
+    
+    # WARNING: High HTTP Latency
+    - alert: StellarCoreHighLatency
+      expr: |
+        histogram_quantile(0.99, rate(stellar_core_http_duration_seconds_bucket[5m])) > 2.0
+      for: 10m
+      labels:
+        severity: warning
+        component: stellar-core
+      annotations:
+        summary: "Stellar Core high HTTP latency"
+        description: "P99 latency: {{ $value | humanize }}s (threshold: 2s)"
+    
+    # CRITICAL: SCP Timeout Detection
+    - alert: StellarCoreSCPTimeouts
+      expr: increase(stellar_core_scp_timeout_total[5m]) > 0
+      for: 5m
+      labels:
+        severity: critical
+        component: stellar-core
+      annotations:
+        summary: "Stellar Core SCP timeouts detected"
+        description: "{{ $value | humanize }} SCP timeouts in the last 5 minutes"
+        remediation: "Check network connectivity and peer health"
+    
+    # INFO: Recording Rule for Consensus Health
+    - record: stellar:core:consensus:healthy
+      expr: stellar_core_consensus_state == 1
+
+---
+# Horizon Alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: horizon-alerts
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: horizon.rules
+    interval: 30s
+    rules:
+    
+    # CRITICAL: High Error Rate
+    - alert: HorizonHighErrorRate
+      expr: |
+        rate(horizon_requests_total{status=~"5.."}[5m]) / 
+        (rate(horizon_requests_total[5m]) + 0.001) > 0.01
+      for: 5m
+      labels:
+        severity: critical
+        component: horizon
+      annotations:
+        summary: "Horizon high error rate detected"
+        description: "5xx error rate at {{ $value | humanizePercentage }} (threshold: 1%)"
+    
+    # WARNING: Elevated Error Rate
+    - alert: HorizonElevatedErrorRate
+      expr: |
+        rate(horizon_requests_total{status=~"5.."}[5m]) / 
+        (rate(horizon_requests_total[5m]) + 0.001) > 0.005
+      for: 10m
+      labels:
+        severity: warning
+        component: horizon
+      annotations:
+        summary: "Horizon error rate elevated"
+        description: "5xx error rate at {{ $value | humanizePercentage }}"
+    
+    # WARNING: High Request Latency (P99)
+    - alert: HorizonHighLatencyP99
+      expr: |
+        histogram_quantile(0.99, rate(horizon_request_duration_seconds_bucket[5m])) > 1.0
+      for: 10m
+      labels:
+        severity: warning
+        component: horizon
+      annotations:
+        summary: "Horizon high request latency (P99)"
+        description: "P99 latency: {{ $value | humanize }}s (threshold: 1.0s)"
+    
+    # WARNING: High Request Latency (P95)
+    - alert: HorizonHighLatencyP95
+      expr: |
+        histogram_quantile(0.95, rate(horizon_request_duration_seconds_bucket[5m])) > 0.5
+      for: 10m
+      labels:
+        severity: warning
+        component: horizon
+      annotations:
+        summary: "Horizon high request latency (P95)"
+        description: "P95 latency: {{ $value | humanize }}s (threshold: 0.5s)"
+    
+    # CRITICAL: Database Replication Lag
+    - alert: HorizonDatabaseReplicationLagCritical
+      expr: horizon_database_lag_seconds > 10
+      for: 10m
+      labels:
+        severity: critical
+        component: horizon
+      annotations:
+        summary: "Horizon database replication lag critical"
+        description: "Database replication lag: {{ $value | humanize }}s (threshold: 10s)"
+        remediation: "Check database replica status and network connectivity"
+    
+    # WARNING: Database Replication Lag High
+    - alert: HorizonDatabaseReplicationLagHigh
+      expr: horizon_database_lag_seconds > 5
+      for: 15m
+      labels:
+        severity: warning
+        component: horizon
+      annotations:
+        summary: "Horizon database replication lag high"
+        description: "Database replication lag: {{ $value | humanize }}s"
+    
+    # WARNING: Low Cache Hit Rate
+    - alert: HorizonLowCacheHitRate
+      expr: horizon_cache_hit_rate < 0.80
+      for: 20m
+      labels:
+        severity: warning
+        component: horizon
+      annotations:
+        summary: "Horizon cache hit rate low"
+        description: "Cache hit rate: {{ $value | humanizePercentage }} (threshold: 80%)"
+    
+    # WARNING: High Ingestion Lag
+    - alert: HorizonHighIngestionLag
+      expr: horizon_ingestion_lag_seconds > 30
+      for: 20m
+      labels:
+        severity: warning
+        component: horizon
+      annotations:
+        summary: "Horizon ingestion lag high"
+        description: "Ingestion lag: {{ $value | humanize }}s"
+    
+    # CRITICAL: High Memory Usage
+    - alert: HorizonHighMemory
+      expr: horizon_memory_bytes / 4294967296 > 0.85
+      for: 5m
+      labels:
+        severity: critical
+        component: horizon
+      annotations:
+        summary: "Horizon memory usage critical"
+        description: "Memory usage at {{ $value | humanizePercentage }} of 4GB limit"
+    
+    # WARNING: Memory Usage Elevated
+    - alert: HorizonMemoryElevated
+      expr: horizon_memory_bytes / 4294967296 > 0.70
+      for: 10m
+      labels:
+        severity: warning
+        component: horizon
+      annotations:
+        summary: "Horizon memory usage elevated"
+        description: "Memory usage at {{ $value | humanizePercentage }}"
+    
+    # WARNING: Goroutine Leak Suspected
+    - alert: HorizonGoroutineLeakSuspected
+      expr: |
+        rate(horizon_goroutines[1h]) > 0
+      for: 30m
+      labels:
+        severity: warning
+        component: horizon
+      annotations:
+        summary: "Horizon goroutine count increasing"
+        description: "Goroutine count trending up over 30 minutes (current: {{ $value }})"
+        remediation: "Check for goroutine leaks in recent code changes"
+    
+    # CRITICAL: Database Connection Pool Saturation
+    - alert: HorizonDBConnectionSaturation
+      expr: horizon_db_connections_open / 100 > 0.85
+      for: 5m
+      labels:
+        severity: critical
+        component: horizon
+      annotations:
+        summary: "Horizon database connection pool saturation"
+        description: "{{ $value | humanizePercentage }} of connection pool in use"
+
+---
+# Soroban RPC Alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: soroban-rpc-alerts
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: soroban-rpc.rules
+    interval: 30s
+    rules:
+    
+    # CRITICAL: High Error Rate
+    - alert: SorobanRPCHighErrorRate
+      expr: |
+        rate(soroban_rpc_requests_total{status=~"5.."}[5m]) / 
+        (rate(soroban_rpc_requests_total[5m]) + 0.001) > 0.01
+      for: 5m
+      labels:
+        severity: critical
+        component: soroban-rpc
+      annotations:
+        summary: "Soroban RPC high error rate"
+        description: "5xx error rate at {{ $value | humanizePercentage }}"
+    
+    # WARNING: High Request Latency
+    - alert: SorobanRPCHighLatency
+      expr: |
+        histogram_quantile(0.99, rate(soroban_rpc_request_duration_seconds_bucket[5m])) > 1.0
+      for: 10m
+      labels:
+        severity: warning
+        component: soroban-rpc
+      annotations:
+        summary: "Soroban RPC high latency"
+        description: "P99 latency: {{ $value | humanize }}s"
+    
+    # CRITICAL: Cache Memory High
+    - alert: SorobanRPCCacheMemoryHigh
+      expr: soroban_rpc_cache_bytes / 16000000000 > 0.90
+      for: 5m
+      labels:
+        severity: critical
+        component: soroban-rpc
+      annotations:
+        summary: "Soroban RPC cache memory high"
+        description: "Cache memory at {{ $value | humanizePercentage }} of 16GB limit"
+    
+    # WARNING: High Ledger Lag
+    - alert: SorobanRPCHighLedgerLag
+      expr: soroban_rpc_ledger_lag_seconds > 5
+      for: 10m
+      labels:
+        severity: warning
+        component: soroban-rpc
+      annotations:
+        summary: "Soroban RPC ledger lag high"
+        description: "Ledger sync lag: {{ $value | humanize }}s"
+    
+    # WARNING: High Error Count
+    - alert: SorobanRPCHighErrorCount
+      expr: increase(soroban_rpc_error_total[5m]) > 100
+      for: 5m
+      labels:
+        severity: warning
+        component: soroban-rpc
+      annotations:
+        summary: "Soroban RPC error count high"
+        description: "{{ $value | humanize }} errors in the last 5 minutes"
+    
+    # WARNING: High Disk Usage
+    - alert: SorobanRPCHighDiskUsage
+      expr: soroban_rpc_disk_usage_bytes / 2199023255552 > 0.85
+      for: 15m
+      labels:
+        severity: warning
+        component: soroban-rpc
+      annotations:
+        summary: "Soroban RPC disk usage high"
+        description: "Disk usage at {{ $value | humanizePercentage }} of 2TB"
+
+---
+# Infrastructure & Kubernetes Alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: infrastructure-alerts
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: kubernetes.rules
+    interval: 30s
+    rules:
+    
+    # CRITICAL: Node Not Ready
+    - alert: KubernetesNodeNotReady
+      expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Kubernetes node not ready"
+        description: "Node {{ $labels.node }} has not been ready for more than 5 minutes"
+    
+    # WARNING: Many Nodes Not Ready
+    - alert: KubernetesManyNodesNotReady
+      expr: count(kube_node_status_condition{condition="Ready",status="true"} == 0) > 1
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Multiple Kubernetes nodes not ready"
+        description: "{{ $value }} nodes are not ready"
+    
+    # CRITICAL: High Disk Usage
+    - alert: KubernetesHighDiskUsage
+      expr: |
+        (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs"} / node_filesystem_size_bytes)) > 0.85
+      for: 10m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High disk usage on {{ $labels.device }}"
+        description: "Disk {{ $labels.device }} on {{ $labels.node }} at {{ $value | humanizePercentage }} capacity"
+    
+    # WARNING: Disk Usage High
+    - alert: KubernetesDiskUsageHigh
+      expr: |
+        (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs"} / node_filesystem_size_bytes)) > 0.70
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Disk usage high on {{ $labels.device }}"
+        description: "Disk at {{ $value | humanizePercentage }} capacity"
+    
+    # CRITICAL: High CPU Usage
+    - alert: KubernetesHighCPUUsage
+      expr: |
+        (1 - avg(irate(node_cpu_seconds_total{mode="idle"}[5m]))) > 0.85
+      for: 15m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High CPU usage on {{ $labels.node }}"
+        description: "CPU at {{ $value | humanizePercentage }} utilization"
+    
+    # WARNING: High Memory Usage
+    - alert: KubernetesHighMemoryUsage
+      expr: |
+        (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.85
+      for: 10m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High memory usage on {{ $labels.node }}"
+        description: "Memory at {{ $value | humanizePercentage }} utilization"
+    
+    # CRITICAL: Pod Restart Loop
+    - alert: KubernetesPodRestartLoop
+      expr: |
+        rate(kube_pod_container_status_restarts_total[15m]) > 0.1
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Pod {{ $labels.pod }} restarting frequently"
+        description: "Pod {{ $labels.pod }} in {{ $labels.namespace }} restart rate: {{ $value | humanize }}/min"
+    
+    # WARNING: Pod Warning
+    - alert: KubernetesPodWarning
+      expr: kube_pod_status_phase{phase=~"Pending|Unknown|Failed"} > 0
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Pod {{ $labels.pod }} in warning state"
+        description: "Pod phase: {{ $labels.phase }}"
+    
+    # CRITICAL: PVC Near Capacity
+    - alert: KubernetesPVCNearCapacity
+      expr: |
+        kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.85
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "PVC {{ $labels.persistentvolumeclaim }} near capacity"
+        description: "PVC at {{ $value | humanizePercentage }} capacity"
+    
+    # WARNING: PVC Capacity High
+    - alert: KubernetesPVCCapacityHigh
+      expr: |
+        kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.70
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "PVC {{ $labels.persistentvolumeclaim }} capacity high"
+        description: "PVC at {{ $value | humanizePercentage }} capacity"
+    
+    # CRITICAL: Container OOMKilled
+    - alert: KubernetesContainerOOMKill
+      expr: increase(kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}[15m]) > 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Container OOMKilled in {{ $labels.pod }}"
+        description: "Pod {{ $labels.pod }} in {{ $labels.namespace }} was killed due to OOM"
+        remediation: "Increase memory limit for pod"
+    
+    # WARNING: High API Server Latency
+    - alert: KubernetesAPIServerLatencyHigh
+      expr: |
+        histogram_quantile(0.99, rate(apiserver_request_duration_seconds_bucket[5m])) > 1.0
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Kubernetes API server latency high"
+        description: "P99 latency: {{ $value | humanize }}s"
+
+---
+# Recording Rules for Performance Optimization
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: performance-recording-rules
+  namespace: monitoring
+spec:
+  groups:
+  - name: performance.recording
+    interval: 30s
+    rules:
+    
+    # Stellar Core Performance
+    - record: stellar:core:request:rate:1m
+      expr: rate(stellar_core_http_requests_total[1m])
+    
+    - record: stellar:core:error:rate:5m
+      expr: |
+        rate(stellar_core_http_requests_total{status=~"5.."}[5m]) / 
+        (rate(stellar_core_http_requests_total[5m]) + 0.001)
+    
+    - record: stellar:core:latency:p99:5m
+      expr: histogram_quantile(0.99, rate(stellar_core_http_duration_seconds_bucket[5m]))
+    
+    # Horizon Performance
+    - record: horizon:request:rate:1m
+      expr: rate(horizon_requests_total[1m])
+    
+    - record: horizon:error:rate:5m
+      expr: |
+        rate(horizon_requests_total{status=~"5.."}[5m]) / 
+        (rate(horizon_requests_total[5m]) + 0.001)
+    
+    - record: horizon:latency:p99:5m
+      expr: histogram_quantile(0.99, rate(horizon_request_duration_seconds_bucket[5m]))
+    
+    # Soroban RPC Performance
+    - record: soroban:rpc:request:rate:1m
+      expr: rate(soroban_rpc_requests_total[1m])
+    
+    - record: soroban:rpc:error:rate:5m
+      expr: |
+        rate(soroban_rpc_requests_total{status=~"5.."}[5m]) / 
+        (rate(soroban_rpc_requests_total[5m]) + 0.001)
+    
+    - record: soroban:rpc:latency:p99:5m
+      expr: histogram_quantile(0.99, rate(soroban_rpc_request_duration_seconds_bucket[5m]))
+    
+    # Infrastructure
+    - record: node:cpu:utilization:5m
+      expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))
+    
+    - record: node:memory:utilization:5m
+      expr: 1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+    
+    - record: node:disk:utilization:5m
+      expr: 1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)

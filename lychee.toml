@@ -1,0 +1,128 @@
+# Lychee configuration for repository-wide link checking.
+# Lychee scans markdown, source files, configs, etc. for broken links.
+# Docs: https://lychee.cli.rs/usage/config
+
+# Verbose mode: report broken links with context
+verbose = "info"
+
+# Cache results between runs to avoid hammering remote servers
+cache = true
+max_cache_age = "1d"
+
+# Network behavior
+# `max_retries = 5` + `retry_wait_time = 5` gives ~25s of retry budget per
+# URL, which rides through most short Cloudflare/CDN throttle windows that
+# kubernetes.io and similar high-traffic doc hosts apply to GitHub Actions
+# IP ranges. Bumped from 2/2 because two kubernetes.io URLs were flaking
+# every CI run with `Network error: Connection failed` (no HTTP status —
+# the connection itself is reset, so `accept = [..., 429]` doesn't help).
+max_redirects = 10
+max_retries = 5
+retry_wait_time = 5
+timeout = 30
+
+# Accept these HTTP status codes as alive
+accept = [200, 201, 202, 203, 204, 206, 302, 303, 304, 307, 308, 403, 429]
+
+# Don't fail on a single bad link in flaky paths
+exclude_loopback = true
+
+# Skip URLs that are templated, internal, or known-flaky
+exclude = [
+  # Localhost / loopback
+  "^http://localhost",
+  "^http://127\\.0\\.0\\.1",
+  "^https?://0\\.0\\.0\\.0",
+  # Shell variable expansions in code blocks
+  "\\$\\(",
+  "\\$\\{",
+  # GitHub compare/release/blob/tree links can rate-limit hard in CI; also
+  # covers /discussions when the feature isn't enabled on the upstream repo.
+  # The trailing (/|$) matches bare segment URLs (e.g. .../discussions) and
+  # paths underneath (.../discussions/123) — the previous trailing "/" alone
+  # silently leaked bare URLs through.
+  "^https://github\\.com/OtowoOrg/Stellar-K8s/(compare|releases|blob|tree|discussions|security|issues)(/|$)",
+  # Project-controlled hosts that may not be reachable from CI
+  "^https://stellar\\.github\\.io/stellar-k8s",
+  # GitHub Pages for this repo (mkdocs gh-deploy target) isn't enabled yet,
+  # so the docs site 404s until Pages is turned on for OtowoOrg/Stellar-K8s.
+  "^https://otowoorg\\.github\\.io/Stellar-K8s",
+  "^https://otowo\\.org/",
+  "^https://history\\.stellar\\.org/",
+  "^https://dashboard\\.stellar\\.org",
+  "^https://laboratory\\.stellar\\.org",
+  "^https://developers\\.stellar\\.org/",
+  "^https://drips\\.stellar\\.org",
+  # ACME / docker registry / fixed external sources known to rate-limit anonymous CI
+  "^https://acme-v02\\.api\\.letsencrypt\\.org",
+  "^https://registry-1\\.docker\\.io",
+  # Vendor sites that frequently respond 403 to non-browser UAs
+  "^https://www\\.microsoft\\.com/en-us/research/",
+  "^https://www\\.aicpa\\.org/",
+  "^https://www\\.gartner\\.com/",
+  "^https://k6\\.io/",
+  "^https://www\\.gnu\\.org/",
+  "^https://gdpr\\.eu/",
+  "^https://lamport\\.azurewebsites\\.net/",
+  "^https://nvd\\.nist\\.gov/",
+  "^https://www\\.cisecurity\\.org/",
+  "^https://llvm\\.org/",
+  # kubernetes.io/docs is fronted by Cloudflare which throttles GHA IP
+  # ranges with intermittent connection drops (not 429s — full TCP
+  # resets). Two URLs in particular were failing every CI run
+  # (custom-resource-definition-versioning, kubernetes-basics/update).
+  # k8s docs are canonical, hyper-stable, and link changes get
+  # announced in their release notes — re-verifying them on every PR
+  # provides almost no signal and costs every contributor a CI flake.
+  "^https://kubernetes\\.io/docs/",
+  # Root/blog pages also reset from GHA IPs (same Cloudflare fronting as /docs/).
+  "^https://kubernetes\\.io/blog/",
+  "^https://kubernetes\\.io/?$",
+  # helm.sh front page also resets from GHA IPs intermittently.
+  "^https://helm\\.sh/?$",
+  # SLSA site intermittently blocks/resets GHA crawlers.
+  "^https://slsa\\.dev/?$",
+  # GitHub "latest/download" assets for kubernetes autoscaler are redirect-only and
+  # intermittently fail DNS/TLS from GHA; pin checks provide no PR signal.
+  "^https://github\\.com/kubernetes/autoscaler/releases/latest/download/",
+  # helm.sh intermittently resets CI connections
+  "^https://helm\\.sh/",
+  # tokio.rs also resets connections from GHA IPs intermittently
+  "^https://tokio\\.rs/",
+  # istio.io docs flake with connection failures from GHA
+  "^https://istio\\.io/",
+  # kyverno.io also resets connections from GHA IPs
+  "^https://kyverno\\.io/",
+  # slsa.dev flakes with connection failures from GHA
+  "^https://slsa\\.dev/",
+  # kubernetes.io is fronted by Cloudflare which throttles GHA IP ranges
+  # with intermittent TLS/TCP failures (not just 429s). Blog, docs,
+  # and related hosts flake regularly; re-verifying them on every PR
+  # provides almost no signal.
+  "^https://kubernetes\\.io/",
+  # Placeholder URLs that appear in code examples and snippets
+  "^https://host/path/backup\\.tar\\.gz",
+  "example\\.com",
+  "example\\.org",
+  # Cargo doc helper anchors that lychee can't resolve without a build
+  "^https://docs\\.rs/.*#",
+  # In-cluster Kubernetes service DNS referenced in example manifests
+  # (examples/**/*.yaml) — these hostnames only resolve inside a live
+  # cluster and are not real links to verify from CI.
+  "^https?://stellar-core(-svc)?:",
+  "^https?://validator-(mainnet|testnet):",
+  "^https?://core(-mainnet)?\\.default",
+  "^https?://prometheus-(k8s\\.monitoring\\.svc|operated\\.monitoring):",
+  "^https?://trivy\\.trivy\\.svc:",
+  "^https://kubernetes\\.default\\.svc",
+]
+
+# Paths that lychee should not scan (matches anywhere in the path)
+exclude_path = [
+  "target",
+  "node_modules",
+  ".git",
+  ".kiro",
+  "vendor",
+  "THIRD_PARTY_LICENSES.md",
+]

@@ -43,7 +43,7 @@ spec:
   # Cross-cluster communication using ExternalName
   crossCluster:
     enabled: true
-    mode: ExternalName
+    mode: externalName
 
     # ExternalName service configuration
     externalName:

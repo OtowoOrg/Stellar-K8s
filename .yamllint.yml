@@ -1,10 +1,53 @@
 extends: default
 
+# Project-specific YAML linting configuration (issues #1291, #1401).
+# Enforces formatting, structure, and validity across all repository YAML files.
+# Helm templates are excluded because they contain Go templating directives;
+# rendered chart output is validated via kubeconform in CI scripts.
+
+ignore: |
+  target/**
+  bundle/**
+  .kiro/**
+  charts/**/templates/**
+  charts/**/charts/**
+  **/node_modules/**
+  mkdocs.yml
+
 rules:
-  line-length:
-    max: 120
+  braces:
+    min-spaces-inside: 0
+    max-spaces-inside: 1
+  brackets:
+    min-spaces-inside: 0
+    max-spaces-inside: 1
+  colons:
+    max-spaces-after: 1
+  commas:
+    max-spaces-after: 1
   comments:
     min-spaces-from-content: 1
+  comments-indentation: disable
+  document-end: disable
   document-start: disable
+  empty-lines:
+    max: 2
+    max-end: 1
+  hyphens:
+    max-spaces-after: 1
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+    check-multi-line-strings: false
+  key-duplicates: enable
+  line-length:
+    max: 120
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+  new-line-at-end-of-file: enable
+  new-lines: disable
+  trailing-spaces: enable
   truthy:
-    allowed-values: ['true', 'false', 'on', 'off']
+    allowed-values: ['true', 'false', 'on', 'off', 'yes', 'no']
+    check-keys: false
+

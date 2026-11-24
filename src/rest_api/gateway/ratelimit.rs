@@ -1,7 +1,20 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Rate Limiting and Quota Management
 //!
 //! Provides sophisticated rate limiting with sliding window,
-//! token bucket algorithm, and quota management per client.
+//! token bucket algorithm, quota management per client, and
+//! endpoint tier configuration with rate limit headers.
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
@@ -19,6 +32,59 @@ pub enum RateLimitError {
     QuotaExceeded(String),
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
+}
+
+/// API endpoint tier
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EndpointTier {
+    /// Public endpoints (health, status)
+    Public,
+    /// Standard API endpoints
+    Standard,
+    /// Premium endpoints (advanced queries)
+    Premium,
+    /// Administrative endpoints
+    Admin,
+}
+
+impl EndpointTier {
+    /// Get rate limit config for tier
+    pub fn rate_limit_config(&self) -> RateLimitConfig {
+        match self {
+            EndpointTier::Public => RateLimitConfig {
+                requests_per_minute: 1000,
+                requests_per_hour: 50000,
+                requests_per_day: 500000,
+                burst_size: 100,
+                per_ip_limit: Some(500),
+                per_client_limit: Some(1000),
+            },
+            EndpointTier::Standard => RateLimitConfig {
+                requests_per_minute: 100,
+                requests_per_hour: 10000,
+                requests_per_day: 100000,
+                burst_size: 20,
+                per_ip_limit: Some(50),
+                per_client_limit: Some(200),
+            },
+            EndpointTier::Premium => RateLimitConfig {
+                requests_per_minute: 50,
+                requests_per_hour: 5000,
+                requests_per_day: 50000,
+                burst_size: 10,
+                per_ip_limit: Some(25),
+                per_client_limit: Some(100),
+            },
+            EndpointTier::Admin => RateLimitConfig {
+                requests_per_minute: 200,
+                requests_per_hour: 20000,
+                requests_per_day: 200000,
+                burst_size: 50,
+                per_ip_limit: Some(100),
+                per_client_limit: Some(500),
+            },
+        }
+    }
 }
 
 /// Rate limit configuration
@@ -42,6 +108,54 @@ impl Default for RateLimitConfig {
             per_ip_limit: Some(50),
             per_client_limit: Some(200),
         }
+    }
+}
+
+/// Rate limit response headers
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RateLimitHeaders {
+    /// Rate limit limit per minute
+    pub x_ratelimit_limit_minute: u32,
+    /// Rate limit remaining per minute
+    pub x_ratelimit_remaining_minute: u32,
+    /// Rate limit reset time (Unix timestamp)
+    pub x_ratelimit_reset: u64,
+    /// Rate limit limit per hour
+    pub x_ratelimit_limit_hour: u32,
+    /// Rate limit remaining per hour
+    pub x_ratelimit_remaining_hour: u32,
+    /// Retry after seconds (only set on 429)
+    pub retry_after: Option<u64>,
+}
+
+impl RateLimitHeaders {
+    /// Convert to HTTP header tuples
+    pub fn to_header_tuples(&self) -> Vec<(&str, String)> {
+        let mut headers = vec![
+            (
+                "X-RateLimit-Limit-Minute",
+                self.x_ratelimit_limit_minute.to_string(),
+            ),
+            (
+                "X-RateLimit-Remaining-Minute",
+                self.x_ratelimit_remaining_minute.to_string(),
+            ),
+            ("X-RateLimit-Reset", self.x_ratelimit_reset.to_string()),
+            (
+                "X-RateLimit-Limit-Hour",
+                self.x_ratelimit_limit_hour.to_string(),
+            ),
+            (
+                "X-RateLimit-Remaining-Hour",
+                self.x_ratelimit_remaining_hour.to_string(),
+            ),
+        ];
+
+        if let Some(retry) = self.retry_after {
+            headers.push(("Retry-After", retry.to_string()));
+        }
+
+        headers
     }
 }
 
@@ -121,12 +235,14 @@ impl ClientRateLimit {
             && self.day_bucket.try_consume()
     }
 
-    fn get_limit_info(&self) -> RateLimitInfo {
+    fn get_limit_info(&self, config: &RateLimitConfig) -> RateLimitInfo {
         RateLimitInfo {
             remaining_minute: self.minute_bucket.remaining(),
             remaining_hour: self.hour_bucket.remaining(),
             remaining_day: self.day_bucket.remaining(),
             reset_at: self.first_request + ChronoDuration::days(1),
+            limit_minute: config.requests_per_minute,
+            limit_hour: config.requests_per_hour,
         }
     }
 }
@@ -137,13 +253,30 @@ pub struct RateLimitInfo {
     pub remaining_hour: u32,
     pub remaining_day: u32,
     pub reset_at: DateTime<Utc>,
+    pub limit_minute: u32,
+    pub limit_hour: u32,
 }
 
-/// Rate Limiter with multiple strategies
+impl RateLimitInfo {
+    /// Convert to rate limit headers
+    pub fn to_headers(&self, retry_after: Option<u64>) -> RateLimitHeaders {
+        RateLimitHeaders {
+            x_ratelimit_limit_minute: self.limit_minute,
+            x_ratelimit_remaining_minute: self.remaining_minute,
+            x_ratelimit_reset: self.reset_at.timestamp() as u64,
+            x_ratelimit_limit_hour: self.limit_hour,
+            x_ratelimit_remaining_hour: self.remaining_hour,
+            retry_after,
+        }
+    }
+}
+
+/// Rate Limiter with multiple strategies and endpoint tier support
 pub struct RateLimiter {
     config: RateLimitConfig,
     ip_limits: Arc<RwLock<HashMap<String, ClientRateLimit>>>,
     client_limits: Arc<RwLock<HashMap<String, ClientRateLimit>>>,
+    tier_limits: Arc<RwLock<HashMap<EndpointTier, RateLimitConfig>>>,
 }
 
 impl RateLimiter {
@@ -160,10 +293,26 @@ impl RateLimiter {
     }
 
     pub fn from_config(config: &RateLimitConfig) -> Self {
+        let mut tier_limits = HashMap::new();
+        tier_limits.insert(
+            EndpointTier::Public,
+            EndpointTier::Public.rate_limit_config(),
+        );
+        tier_limits.insert(
+            EndpointTier::Standard,
+            EndpointTier::Standard.rate_limit_config(),
+        );
+        tier_limits.insert(
+            EndpointTier::Premium,
+            EndpointTier::Premium.rate_limit_config(),
+        );
+        tier_limits.insert(EndpointTier::Admin, EndpointTier::Admin.rate_limit_config());
+
         Self {
             config: config.clone(),
             ip_limits: Arc::new(RwLock::new(HashMap::new())),
             client_limits: Arc::new(RwLock::new(HashMap::new())),
+            tier_limits: Arc::new(RwLock::new(tier_limits)),
         }
     }
 
@@ -208,10 +357,65 @@ impl RateLimiter {
         }
     }
 
+    /// Check rate limit for a specific endpoint tier
+    pub async fn check_tier(
+        &self,
+        client_id: &str,
+        tier: EndpointTier,
+    ) -> Result<RateLimitHeaders, RateLimitError> {
+        let tier_config = {
+            let tier_limits = self.tier_limits.read().await;
+            tier_limits
+                .get(&tier)
+                .cloned()
+                .unwrap_or_else(|| tier.rate_limit_config())
+        };
+
+        let mut limits = self.client_limits.write().await;
+        let client_key = format!("{}:{:?}", client_id, tier);
+        let client = limits
+            .entry(client_key)
+            .or_insert_with(|| ClientRateLimit::new(&tier_config));
+
+        if !client.check() {
+            let info = client.get_limit_info(&tier_config);
+            let headers = info.to_headers(Some(60));
+            return Err(RateLimitError::RateLimitExceeded(format!(
+                "Rate limit exceeded for tier {:?}",
+                tier
+            )));
+        }
+
+        let info = client.get_limit_info(&tier_config);
+        Ok(info.to_headers(None))
+    }
+
     /// Get rate limit info for a client
     pub async fn get_limit_info(&self, client_id: &str) -> Option<RateLimitInfo> {
         let limits = self.client_limits.read().await;
-        limits.get(client_id).map(|c| c.get_limit_info())
+        limits
+            .get(client_id)
+            .map(|c| c.get_limit_info(&self.config))
+    }
+
+    /// Get rate limit info for a client and tier
+    pub async fn get_tier_limit_info(
+        &self,
+        client_id: &str,
+        tier: EndpointTier,
+    ) -> Option<RateLimitInfo> {
+        let limits = self.client_limits.read().await;
+        let client_key = format!("{}:{:?}", client_id, tier);
+        let tier_config = {
+            let tier_limits = self.tier_limits.read().await;
+            tier_limits
+                .get(&tier)
+                .cloned()
+                .unwrap_or_else(|| tier.rate_limit_config())
+        };
+        limits
+            .get(&client_key)
+            .map(|c| c.get_limit_info(&tier_config))
     }
 
     /// Add custom rate limit for a client
@@ -224,6 +428,12 @@ impl RateLimiter {
     pub async fn remove_limit(&self, client_id: &str) {
         let mut limits = self.client_limits.write().await;
         limits.remove(client_id);
+    }
+
+    /// Update tier configuration
+    pub async fn set_tier_config(&self, tier: EndpointTier, config: RateLimitConfig) {
+        let mut tier_limits = self.tier_limits.write().await;
+        tier_limits.insert(tier, config);
     }
 
     /// Cleanup old entries to prevent memory growth
@@ -428,6 +638,53 @@ mod tests {
 
         // Different client should have own limit
         assert!(limiter.check_client("client2").await);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter_tier_based() {
+        let limiter = RateLimiter::new(100, 10);
+
+        // Public tier should allow more requests
+        for _ in 0..100 {
+            let result = limiter.check_tier("client1", EndpointTier::Public).await;
+            assert!(result.is_ok());
+        }
+
+        // Standard tier should have its own limit
+        for _ in 0..100 {
+            let result = limiter.check_tier("client1", EndpointTier::Standard).await;
+            assert!(result.is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_headers() {
+        let limiter = RateLimiter::new(100, 10);
+
+        let headers = limiter
+            .check_tier("client1", EndpointTier::Standard)
+            .await
+            .unwrap();
+
+        assert_eq!(headers.x_ratelimit_limit_minute, 100);
+        assert!(headers.x_ratelimit_remaining_minute <= 100);
+        assert!(headers.x_ratelimit_reset > 0);
+        assert_eq!(headers.retry_after, None);
+    }
+
+    #[test]
+    fn test_endpoint_tier_configs() {
+        let public = EndpointTier::Public.rate_limit_config();
+        assert_eq!(public.requests_per_minute, 1000);
+
+        let standard = EndpointTier::Standard.rate_limit_config();
+        assert_eq!(standard.requests_per_minute, 100);
+
+        let premium = EndpointTier::Premium.rate_limit_config();
+        assert_eq!(premium.requests_per_minute, 50);
+
+        let admin = EndpointTier::Admin.rate_limit_config();
+        assert_eq!(admin.requests_per_minute, 200);
     }
 
     #[tokio::test]

@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! OCI-based Ledger Snapshot Sync
 //!
 //! Packages the contents of a validator/RPC node's data PVC into an OCI image
@@ -70,21 +82,6 @@ pub fn pull_image_ref(cfg: &OciSnapshotConfig, ledger_seq: u64) -> String {
     cfg.pull_image_ref
         .clone()
         .unwrap_or_else(|| push_image_ref(cfg, ledger_seq))
-}
-
-// ─── Job name helpers ─────────────────────────────────────────────────────────
-
-/// Kubernetes Job name for a push snapshot Job.
-pub fn push_job_name(node: &StellarNode, ledger_seq: u64) -> String {
-    // Keep the name within K8s 63-char limit by taking the first 40 chars of the node name.
-    let node_name = &node.name_any()[..node.name_any().len().min(40)];
-    format!("{node_name}-snap-push-{ledger_seq}")
-}
-
-/// Kubernetes Job name for a pull snapshot Job.
-pub fn pull_job_name(node: &StellarNode) -> String {
-    let node_name = &node.name_any()[..node.name_any().len().min(48)];
-    format!("{node_name}-snap-pull")
 }
 
 // ─── Volume helpers ───────────────────────────────────────────────────────────
@@ -172,7 +169,9 @@ pub fn build_snapshot_push_job(
     ledger_seq: u64,
 ) -> Job {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let job_name = push_job_name(node, ledger_seq);
+    // Keep the name within K8s 63-char limit by taking the first 40 chars of the node name.
+    let node_name = &node.name_any()[..node.name_any().len().min(40)];
+    let job_name = format!("{node_name}-snap-push-{ledger_seq}");
     let image_ref = push_image_ref(cfg, ledger_seq);
     let pvc_name = format!("{}-data", node.name_any());
 
@@ -190,6 +189,7 @@ pub fn build_snapshot_push_job(
             "set -e; \
              echo 'Packaging ledger snapshot...'; \
              tar -czf {SCRATCH_MOUNT_PATH}/snapshot.tar.gz -C {DATA_MOUNT_PATH} .; \
+             echo 'Snapshot SHA256:'; sha256sum {SCRATCH_MOUNT_PATH}/snapshot.tar.gz; \
              echo 'Pushing to OCI registry: {image_ref}'; \
              crane push {SCRATCH_MOUNT_PATH}/snapshot.tar.gz {image_ref}; \
              echo 'Push complete.'"
@@ -269,7 +269,8 @@ pub fn build_snapshot_pull_job(
     ledger_seq: u64,
 ) -> Job {
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let job_name = pull_job_name(node);
+    let node_name = &node.name_any()[..node.name_any().len().min(48)];
+    let job_name = format!("{node_name}-snap-pull");
     let image_ref = pull_image_ref(cfg, ledger_seq);
     let pvc_name = format!("{}-data", node.name_any());
 

@@ -1,0 +1,13 @@
+[package]
+name = "stellar-zk-verifier"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic Merkle proof verifier for Stellar ledger state (Wasm-compatible)"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sha2 = "0.10"
+hex = "0.4"

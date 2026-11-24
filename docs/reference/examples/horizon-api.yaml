@@ -1,0 +1,67 @@
+# Production-ready Horizon REST API deployment with ingress and rolling updates.
+# Validated against config/crd/stellarnode-crd.yaml (kind StellarNode, v1alpha1).
+#
+# Horizon is a nodeType on StellarNode, not a separate CRD. When horizonConfig
+# is set, OpenAPI requires databaseSecretRef and stellarCoreUrl.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-mainnet
+  namespace: stellar
+  labels:
+    app.kubernetes.io/name: horizon
+    app.kubernetes.io/component: api
+    stellar.org/network: mainnet
+spec:
+  nodeType: Horizon
+  network: mainnet
+  # Horizon image tag (string; not constrained by the CRD enum).
+  version: "2.32.0"
+
+  # Horizon is horizontally scalable; keep minAvailable >= 2 for HA.
+  replicas: 3
+  minAvailable: 2
+  maxUnavailable: 1
+  topologySpreadConstraints: []
+
+  historyMode: Recent
+  podAntiAffinity: Soft
+  alerting: true
+  strategy:
+    type: rollingUpdate
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  storage:
+    mode: PersistentVolume
+    storageClass: ssd-premium
+    size: 200Gi
+    retentionPolicy: Retain
+
+  horizonConfig:
+    # Secret must provide the Horizon DATABASE_URL (or equivalent) connection.
+    databaseSecretRef: horizon-db-secret
+    # In-cluster stellar-core HTTP endpoint (typically port 11626).
+    stellarCoreUrl: http://validator-mainnet:11626
+    # Defaults from OpenAPI: enableIngest=true, ingestWorkers=1, autoMigration=true.
+    enableIngest: true
+    ingestWorkers: 2
+    autoMigration: true
+    enableExperimentalIngestion: false
+
+  # ingress.hosts is required when ingress is set.
+  ingress:
+    className: nginx
+    hosts:
+      - host: horizon.example.com
+        paths:
+          - path: /
+            # Default pathType is Prefix.
+            pathType: Prefix
+    tlsSecretName: horizon-tls-secret

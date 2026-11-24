@@ -14,6 +14,7 @@
 | CIS hardening patterns | [cis-kubernetes-hardening.md](cis-kubernetes-hardening.md) | Automated cluster baseline enforcement |
 | Secrets and least privilege | [secrets-access-control.md](secrets-access-control.md) | Minimized blast radius and secure rotation |
 | Incident response playbook | [incident-response-playbook.md](incident-response-playbook.md) | Fast containment and forensic continuity |
+| Automated dependency updates | [dependency-updates.md](dependency-updates.md) | Dependabot PR review, CI gates, and merge process |
 
 ## Security Principles for Stellar Core Workloads
 
@@ -26,5 +27,7 @@
 
 - [credentials-and-secrets.md](credentials-and-secrets.md)
 - [pss.md](pss.md)
+- [dependency-updates.md](dependency-updates.md)
+- [SECURITY.md](https://github.com/OtowoOrg/Stellar-K8s/blob/main/SECURITY.md) — vulnerability reporting and disclosure policy
 - [../production-security-hardening.md](../production-security-hardening.md)
 - [../gatekeeper-policies.md](../gatekeeper-policies.md)

@@ -1,0 +1,179 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "StellarPolicyBundle is a signed CEL policy bundle evaluated at admission",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "version",
+        "policies",
+        "notBefore",
+        "notAfter",
+        "nonce",
+        "keyId"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Operator-independent bundle version"
+        },
+        "policies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "expression"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "expression": {
+                "type": "string",
+                "description": "CEL expression that must evaluate to true"
+              }
+            }
+          }
+        },
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "nonce": {
+          "type": "string"
+        },
+        "keyId": {
+          "type": "string"
+        },
+        "algorithm": {
+          "type": "string",
+          "default": "ed25519"
+        },
+        "signature": {
+          "type": "string",
+          "description": "Base64-encoded Ed25519 signature"
+        },
+        "trustRootRef": {
+          "type": "object",
+          "properties": {
+            "secretName": {
+              "type": "string"
+            },
+            "secretKey": {
+              "type": "string"
+            },
+            "kmsProvider": {
+              "type": "string",
+              "enum": [
+                "aws",
+                "azure",
+                "gcp",
+                "vault"
+              ]
+            },
+            "kmsKeyId": {
+              "type": "string"
+            }
+          }
+        },
+        "rollbackTarget": {
+          "type": "string"
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "verified": {
+          "type": "boolean"
+        },
+        "activeHash": {
+          "type": "string"
+        },
+        "previousHash": {
+          "type": "string"
+        },
+        "activeVersion": {
+          "type": "string"
+        },
+        "lastError": {
+          "type": "string"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "StellarPolicyBundle"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "StellarPolicyBundle"
+    }
+  ]
+}

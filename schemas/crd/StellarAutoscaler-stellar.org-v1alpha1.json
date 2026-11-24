@@ -1,0 +1,171 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "StellarAutoscaler custom resource",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "targetNode",
+        "policy",
+        "customMetrics"
+      ],
+      "properties": {
+        "targetNode": {
+          "type": "string"
+        },
+        "policy": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "minReplicas": {
+              "type": "integer"
+            },
+            "maxReplicas": {
+              "type": "integer"
+            },
+            "strategy": {
+              "type": "string",
+              "enum": [
+                "Aggressive",
+                "Balanced",
+                "Conservative",
+                "Custom"
+              ]
+            }
+          }
+        },
+        "customMetrics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "metricType": {
+                "type": "string",
+                "enum": [
+                  "TransactionThroughput",
+                  "LedgerLag",
+                  "RpcQueueDepth",
+                  "ContractInvocations",
+                  "HistoryArchiveBacklog"
+                ]
+              },
+              "threshold": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "predictiveScaling": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "predictionWindowMins": {
+              "type": "integer"
+            },
+            "modelType": {
+              "type": "string",
+              "enum": [
+                "Prophet",
+                "LinearRegression",
+                "Arima"
+              ]
+            }
+          }
+        },
+        "costAware": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "budgetPerMonthUsd": {
+              "type": "number"
+            },
+            "preferSpotInstances": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string"
+        },
+        "currentReplicas": {
+          "type": "integer"
+        },
+        "desiredReplicas": {
+          "type": "integer"
+        },
+        "lastScalingTime": {
+          "type": "string"
+        },
+        "predictedLoad": {
+          "type": "number"
+        },
+        "costOptimizationApplied": {
+          "type": "boolean"
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "StellarAutoscaler"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "StellarAutoscaler"
+    }
+  ]
+}

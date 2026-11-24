@@ -1,0 +1,155 @@
+name: Dependency & License Review
+
+# Unique dependency-review gates (stale deps, lockfile diff, license inventory,
+# cargo-deny on dep changes). cargo-audit is intentionally NOT duplicated here:
+#   - PR/push:  ci.yml `security-audit`
+#   - Schedule: security-audit.yml
+#
+# Addresses GitHub Issue #1119; deduplicated in #1219.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - ".cargo/audit.toml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - ".cargo/audit.toml"
+  workflow_dispatch:
+    inputs:
+      full_check:
+        description: "Run full check (including unmaintained + license)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  security-events: write  # for uploading SARIF results
+
+concurrency:
+  group: dep-review-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── 1. cargo deny — license + bans + advisories ─────────────────────────────
+  cargo-deny:
+    name: Cargo Deny (Licenses + Bans)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-deny"
+          extra-tools: "cargo-deny"
+
+      - name: Run cargo deny check
+        run: |
+          echo "── Dependency policy check (licenses + bans + advisories + sources) ──"
+          cargo deny check
+
+  # ── 3. Stale dependency detection ───────────────────────────────────────────
+  stale-deps:
+    name: Stale Dependency Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Run on schedule and manual dispatch; also on dep changes
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-stale"
+          extra-tools: "cargo-outdated"
+
+      - name: Check for outdated dependencies
+        id: outdated
+        run: |
+          echo "── Outdated dependency report ───────────────────────────────────"
+          # Generate report; exit 0 even if outdated crates exist (advisory only)
+          cargo outdated --workspace --depth 1 2>&1 | tee outdated-report.txt
+          OUTDATED_COUNT=$(grep -c "^[[:space:]]*[a-z]" outdated-report.txt || true)
+          echo "outdated_count=${OUTDATED_COUNT}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload outdated report
+        uses: actions/upload-artifact@v7
+        with:
+          name: outdated-dependencies-report
+          path: outdated-report.txt
+          retention-days: 30
+
+      - name: Annotate PR with outdated count
+        if: github.event_name == 'pull_request' && steps.outdated.outputs.outdated_count > 0
+        run: |
+          echo "::warning::${{ steps.outdated.outputs.outdated_count }} outdated direct dependencies found. Review outdated-dependencies-report artifact."
+
+  # ── 4. Dependency diff on PRs ────────────────────────────────────────────────
+  dep-diff:
+    name: Dependency Diff (PR only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-diff"
+          extra-tools: "cargo-lock"
+
+      - name: Summarise Cargo.lock changes
+        run: |
+          echo "── Cargo.lock dependency diff ───────────────────────────────────"
+          git diff origin/${{ github.base_ref }}..HEAD -- Cargo.lock | \
+            grep -E "^[+-]name|^[+-]version" | \
+            sed 's/^+/ADDED:   /; s/^-/REMOVED: /' || echo "No Cargo.lock changes detected"
+
+  # ── 5. License drift report (scheduled) ─────────────────────────────────────
+  license-report:
+    name: License Drift Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-license"
+          extra-tools: "cargo-license"
+
+      - name: Generate full license inventory
+        run: |
+          echo "── Full license inventory ───────────────────────────────────────"
+          cargo license --all-features --tsv 2>/dev/null | tee license-inventory.tsv
+          echo ""
+          echo "── License summary ──────────────────────────────────────────────"
+          cargo license --all-features 2>/dev/null | sort | uniq -c | sort -rn | head -20
+
+      - name: Upload license inventory
+        uses: actions/upload-artifact@v7
+        with:
+          name: license-inventory
+          path: license-inventory.tsv
+          retention-days: 90

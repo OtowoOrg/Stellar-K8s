@@ -35,13 +35,6 @@ spec:
         description: Auto-generated derived type for StellarNodeSpec via `CustomResource`
         properties:
           spec:
-            x-kubernetes-validations:
-            - message: horizonConfig is required when nodeType is Horizon
-              rule: self.nodeType != 'Horizon' || has(self.horizonConfig)
-            - message: validatorConfig is required when nodeType is Validator
-              rule: self.nodeType != 'Validator' || has(self.validatorConfig)
-            - message: customNetworkPassphrase can only be set when network is Custom
-              rule: '!has(self.customNetworkPassphrase) || self.network == ''custom'''
             properties:
               alerting:
                 default: false
@@ -375,14 +368,27 @@ spec:
                     format: uint32
                     minimum: 0.0
                     type: integer
+                  enableLedgerPruning:
+                    default: false
+                    description: Prune old ledgers (history_ledgers and dependent history tables) during maintenance. Disabled by default because pruning is destructive.
+                    type: boolean
                   enabled:
                     default: true
                     description: Enable automated database maintenance
                     type: boolean
+                  pruningRetentionDays:
+                    default: 30
+                    description: Retention period for pruned ledgers in days (default: 30). Only used when enableLedgerPruning is true.
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
                   readPoolCoordination:
                     default: true
                     description: Coordination with read-pool for zero-downtime
                     type: boolean
+                  schedule:
+                    description: 'Optional cron expression (6 fields with seconds, e.g., "0 0 2 * * *") that triggers compaction on a fixed schedule. When set, this takes precedence over windowStart/windowDuration.'
+                    type: string
                   windowDuration:
                     description: Maintenance window duration (e.g., "2h")
                     type: string
@@ -392,6 +398,36 @@ spec:
                 required:
                 - windowDuration
                 - windowStart
+                type: object
+              diagnosticSidecarResources:
+                description: Resource requests and limits for the operator-managed diagnostic health-check sidecar. Defaults to 50m CPU and 64Mi memory for both requests and limits when unset.
+                nullable: true
+                properties:
+                  limits:
+                    description: Resource specification for CPU and memory
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - memory
+                    type: object
+                  requests:
+                    description: Resource specification for CPU and memory
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - memory
+                    type: object
+                required:
+                - limits
+                - requests
                 type: object
               drConfig:
                 description: Configuration for multi-cluster disaster recovery
@@ -659,11 +695,13 @@ spec:
                 - hosts
                 type: object
               initContainers:
-                description: |-
-                  Optional init containers to run before the main Stellar container starts.
+                description: 'Optional init containers to run before the main Stellar container starts.
+
                   These run to completion in order before the main container starts.
+
                   Useful for tasks like fetching custom configuration, restoring state,
-                  or pre-populating volumes.
+
+                  or pre-populating volumes.'
                 items:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
@@ -961,7 +999,6 @@ spec:
                   metricsNamespace:
                     default: monitoring
                     type: string
-
                 type: object
               nodeType:
                 description: Supported Stellar node types
@@ -1124,36 +1161,6 @@ spec:
                 - limits
                 - requests
                 type: object
-              diagnosticSidecarResources:
-                description: Resource requests and limits for the operator-managed diagnostic health-check sidecar. Defaults to 50m CPU and 64Mi memory for both requests and limits when unset.
-                nullable: true
-                properties:
-                  limits:
-                    description: Resource specification for CPU and memory
-                    properties:
-                      cpu:
-                        type: string
-                      memory:
-                        type: string
-                    required:
-                    - cpu
-                    - memory
-                    type: object
-                  requests:
-                    description: Resource specification for CPU and memory
-                    properties:
-                      cpu:
-                        type: string
-                      memory:
-                        type: string
-                    required:
-                    - cpu
-                    - memory
-                    type: object
-                required:
-                - limits
-                - requests
-                type: object
               restoreFromSnapshot:
                 description: Bootstrap this node from an existing VolumeSnapshot instead of an empty volume (Validator only). The PVC will be created from the specified snapshot for near-instant startup.
                 nullable: true
@@ -1279,6 +1286,29 @@ spec:
                     nullable: true
                     type: string
                 type: object
+              backupConfig:
+                description: Pre-upgrade backup configuration for Validator PVC snapshots. When set, the operator snapshots the PVC before applying a new version.
+                nullable: true
+                properties:
+                  encryptionKeyRef:
+                    description: Reference to a Cloud KMS key for encrypting the snapshot.
+                    nullable: true
+                    type: string
+                  flushBeforeSnapshot:
+                    default: false
+                    description: If true, the operator will attempt to flush/lock the Stellar database briefly before creating the snapshot.
+                    type: boolean
+                  readyTimeoutSeconds:
+                    default: 300
+                    description: Maximum time in seconds to wait for the snapshot to become ReadyToUse before failing the upgrade.
+                    format: uint64
+                    minimum: 0.0
+                    type: integer
+                  volumeSnapshotClassName:
+                    description: VolumeSnapshotClass name. If unset, the default class for the PVC's driver is used.
+                    nullable: true
+                    type: string
+                type: object
               sorobanConfig:
                 description: Soroban RPC server configuration
                 nullable: true
@@ -1323,6 +1353,34 @@ spec:
                     format: uint32
                     minimum: 0.0
                     type: integer
+                  cache:
+                    description: Bounded fail-open cache for read-only Soroban RPC state requests
+                    nullable: true
+                    properties:
+                      enabled:
+                        default: false
+                        type: boolean
+                      ttlSecs:
+                        default: 30
+                        format: int64
+                        minimum: 1.0
+                        type: integer
+                      maxEntries:
+                        default: 10000
+                        format: int64
+                        maximum: 10000.0
+                        minimum: 1.0
+                        type: integer
+                      maxBytes:
+                        default: 67108864
+                        format: int64
+                        maximum: 67108864.0
+                        minimum: 1.0
+                        type: integer
+                      image:
+                        nullable: true
+                        type: string
+                    type: object
                   stellarCoreUrl:
                     type: string
                 required:
@@ -1361,51 +1419,60 @@ spec:
                     type: string
                   size:
                     type: string
-                  storageClass:
-                    type: string
                   snapshotRef:
-                    description: >-
-                      Bootstrap this node from a pre-computed snapshot or compressed DB backup.
-                      Supports CSI VolumeSnapshot (zero-copy PVC clone) or a compressed archive
-                      (.tar.gz / .tar.zst) downloaded by an init container before Stellar Core starts.
-                      Reduces catch-up time from days to minutes.
+                    description: Bootstrap this node from a pre-computed snapshot or compressed DB backup. Supports CSI VolumeSnapshot (zero-copy PVC clone) or a compressed archive (.tar.gz / .tar.zst) downloaded by an init container before Stellar Core starts. Reduces catch-up time from days to minutes.
                     nullable: true
                     properties:
-                      volumeSnapshotName:
-                        description: >-
-                          Name of an existing VolumeSnapshot (snapshot.storage.k8s.io/v1) in the
-                          same namespace. The PVC is provisioned from this snapshot — no init
-                          container is needed.
-                        nullable: true
-                        type: string
-                      volumeSnapshotNamespace:
-                        description: >-
-                          Optional namespace of the VolumeSnapshot when it lives in a different
-                          namespace. Requires CrossNamespaceVolumeDataSource feature gate.
-                        nullable: true
-                        type: string
                       backupUrl:
-                        description: >-
-                          URL of a compressed DB backup archive (.tar.gz or .tar.zst).
-                          Supported schemes: s3://bucket/path/backup.tar.gz or https://host/path/backup.tar.gz.
-                          An init container (snapshot-restore) downloads and extracts the archive
-                          into /data before Stellar Core starts.
+                        description: 'URL of a compressed DB backup archive (.tar.gz or .tar.zst). Supported schemes: s3://bucket/path/backup.tar.gz or https://host/path/backup.tar.gz. An init container (snapshot-restore) downloads and extracts the archive into /data before Stellar Core starts.'
                         nullable: true
                         type: string
+                      sha256:
+                        description: Expected SHA-256 hex digest of the downloaded archive. Restore fails before extraction if it does not match.
+                        nullable: true
+                        pattern: ^[a-fA-F0-9]{64}$
+                        type: string
+                      expectedLedgerSequence:
+                        description: Source ledger sequence checked against the snapshot manifest after extraction.
+                        format: int64
+                        minimum: 0.0
+                        nullable: true
+                        type: integer
+                      expectedNetwork:
+                        description: Source network checked against the snapshot manifest after extraction.
+                        nullable: true
+                        type: string
+                      export:
+                        description: S3 export destination on the source node. Export is triggered by annotation while the node is suspended.
+                        nullable: true
+                        properties:
+                          credentialsSecretRef:
+                            type: string
+                          destination:
+                            type: string
+                        required:
+                        - credentialsSecretRef
+                        - destination
+                        type: object
                       credentialsSecretRef:
-                        description: >-
-                          Name of a Kubernetes Secret containing credentials for the backup URL.
-                          For S3: keys AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION.
-                          For HTTPS: key BEARER_TOKEN.
+                        description: 'Name of a Kubernetes Secret containing credentials for the backup URL. For S3: keys AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION. For HTTPS: key BEARER_TOKEN.'
                         nullable: true
                         type: string
                       restoreImage:
-                        description: >-
-                          Container image for the restore init container.
-                          Defaults to amazon/aws-cli:latest for S3 URLs, alpine:3 for HTTPS.
+                        description: Container image for the restore init container. Defaults to amazon/aws-cli:latest for S3 URLs, alpine:3 for HTTPS.
+                        nullable: true
+                        type: string
+                      volumeSnapshotName:
+                        description: Name of an existing VolumeSnapshot (snapshot.storage.k8s.io/v1) in the same namespace. The PVC is provisioned from this snapshot — no init container is needed.
+                        nullable: true
+                        type: string
+                      volumeSnapshotNamespace:
+                        description: Optional namespace of the VolumeSnapshot when it lives in a different namespace. Requires CrossNamespaceVolumeDataSource feature gate.
                         nullable: true
                         type: string
                     type: object
+                  storageClass:
+                    type: string
                 required:
                 - size
                 - storageClass
@@ -1413,8 +1480,41 @@ spec:
               strategy:
                 default:
                   type: rollingUpdate
-                description: Rollout strategy for updates (RollingUpdate or Canary)
+                description: Rollout strategy for updates (RollingUpdate, Canary, or BlueGreen). Validators support RollingUpdate and BlueGreen; Canary is rejected.
                 properties:
+                  blueGreen:
+                    description: Blue/green settings for Validator (Stellar Core) rollouts. Ignored for Horizon/SorobanRpc (those use the Horizon migration path).
+                    nullable: true
+                    properties:
+                      maxLedgerLag:
+                        default: 5
+                        description: Maximum allowed ledger lag of green behind blue (or network reference). Matches the repository's read-replica freshness default of 5.
+                        format: int64
+                        type: integer
+                      postCutoverSuccessThreshold:
+                        default: 3
+                        description: Consecutive successful post-cutover health evaluations before blue may be retired.
+                        format: int32
+                        type: integer
+                      readyTimeoutSeconds:
+                        default: 3600
+                        description: Maximum seconds to wait for green to become sync-eligible before failing closed.
+                        format: int32
+                        type: integer
+                      requireVolumeSnapshot:
+                        default: true
+                        description: When true (default), green PVC must be provisioned from a CSI VolumeSnapshot of blue. When false, green may start from an empty PVC and catch up from history archives.
+                        type: boolean
+                      rollbackWindowSeconds:
+                        default: 3600
+                        description: Seconds to retain scaled-down blue after successful cutover for instant rollback.
+                        format: int32
+                        type: integer
+                      volumeSnapshotClassName:
+                        description: Optional VolumeSnapshotClass for the cutover snapshot. If unset, the cluster default is used.
+                        nullable: true
+                        type: string
+                    type: object
                   canary:
                     description: Configuration for Canary rollout
                     nullable: true
@@ -1433,6 +1533,7 @@ spec:
                     enum:
                     - rollingUpdate
                     - canary
+                    - blueGreen
                     type: string
                 required:
                 - type
@@ -1522,10 +1623,10 @@ spec:
                     nullable: true
                     properties:
                       csiRef:
-                        description: |-
-                          Secrets Store CSI Driver — **recommended for production**.
+                        description: 'Secrets Store CSI Driver — **recommended for production**.
 
-                          Mounts the seed directly from a KMS/Vault into the pod filesystem via a CSI volume.  The seed is never written to etcd.  The controller injects `STELLAR_SEED_FILE` into the container pointing at the mount path; stellar-core reads the key from that file path.
+
+                          Mounts the seed directly from a KMS/Vault into the pod filesystem via a CSI volume.  The seed is never written to etcd.  The controller injects `STELLAR_SEED_FILE` into the container pointing at the mount path; stellar-core reads the key from that file path.'
                         nullable: true
                         properties:
                           mountPath:
@@ -1545,10 +1646,10 @@ spec:
                         - secretProviderClassName
                         type: object
                       externalRef:
-                        description: |-
-                          External Secrets Operator — **recommended for production**.
+                        description: 'External Secrets Operator — **recommended for production**.
 
-                          The operator creates an `ExternalSecret` CR which causes ESO to pull the seed from AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault, or any other supported backend and materialise it as a Kubernetes Secret in the same namespace.  The seed value is never stored in the CRD itself.
+
+                          The operator creates an `ExternalSecret` CR which causes ESO to pull the seed from AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault, or any other supported backend and materialise it as a Kubernetes Secret in the same namespace.  The seed value is never stored in the CRD itself.'
                         nullable: true
                         properties:
                           name:
@@ -1560,16 +1661,16 @@ spec:
                             nullable: true
                             type: string
                           remoteKey:
-                            description: |-
-                              Path / identifier of the secret in the remote backend.
+                            description: 'Path / identifier of the secret in the remote backend.
 
-                              Examples: - AWS Secrets Manager: `"prod/stellar/validator-seed"` - GCP Secret Manager: `"projects/MY_PROJECT/secrets/stellar-validator-seed"` - HashiCorp Vault: `"secret/data/stellar/validator"`
+
+                              Examples: - AWS Secrets Manager: `"prod/stellar/validator-seed"` - GCP Secret Manager: `"projects/MY_PROJECT/secrets/stellar-validator-seed"` - HashiCorp Vault: `"secret/data/stellar/validator"`'
                             type: string
                           remoteProperty:
-                            description: |-
-                              Property (field) inside the remote secret to extract.
+                            description: 'Property (field) inside the remote secret to extract.
 
-                              Required for secrets that store a JSON object (e.g., `{"seed": "S..."}`) and you only want the `seed` value.  Leave empty to use the whole secret value as the seed.
+
+                              Required for secrets that store a JSON object (e.g., `{"seed": "S..."}`) and you only want the `seed` value.  Leave empty to use the whole secret value as the seed.'
                             nullable: true
                             type: string
                           secretStoreRef:
@@ -1577,10 +1678,10 @@ spec:
                             properties:
                               kind:
                                 default: ClusterSecretStore
-                                description: |-
-                                  Kind of the store resource.
+                                description: 'Kind of the store resource.
 
-                                  - `"SecretStore"` — namespaced store (only works within the same namespace) - `"ClusterSecretStore"` — cluster-wide store (recommended for production)
+
+                                  - `"SecretStore"` — namespaced store (only works within the same namespace) - `"ClusterSecretStore"` — cluster-wide store (recommended for production)'
                                 type: string
                               name:
                                 description: Name of the `SecretStore` / `ClusterSecretStore` resource.
@@ -1594,10 +1695,10 @@ spec:
                         - secretStoreRef
                         type: object
                       localRef:
-                        description: |-
-                          Plain Kubernetes Secret — **development only**.
+                        description: 'Plain Kubernetes Secret — **development only**.
 
-                          Points to an existing `Secret` in the same namespace.  The secret must contain the key specified in `key` (defaults to `STELLAR_CORE_SEED`).
+
+                          Points to an existing `Secret` in the same namespace.  The secret must contain the key specified in `key` (defaults to `STELLAR_CORE_SEED`).'
                         nullable: true
                         properties:
                           key:
@@ -1612,10 +1713,10 @@ spec:
                         - name
                         type: object
                       vaultRef:
-                        description: |-
-                          HashiCorp Vault via the **Vault Agent Injector** (init + sidecar).
+                        description: 'HashiCorp Vault via the **Vault Agent Injector** (init + sidecar).
 
-                          Requires the Vault Agent Injector mutating webhook in the cluster. The operator sets standard `vault.hashicorp.com/*` pod annotations; the injector adds the Vault Agent containers and renders the secret file under `/vault/secrets/`.
+
+                          Requires the Vault Agent Injector mutating webhook in the cluster. The operator sets standard `vault.hashicorp.com/*` pod annotations; the injector adds the Vault Agent containers and renders the secret file under `/vault/secrets/`.'
                         nullable: true
                         properties:
                           extraPodAnnotations:
@@ -1706,17 +1807,46 @@ spec:
             - topologySpreadConstraints
             - version
             type: object
+            x-kubernetes-validations:
+            - message: horizonConfig is required when nodeType is Horizon
+              rule: self.nodeType != 'Horizon' || has(self.horizonConfig)
+            - message: validatorConfig is required when nodeType is Validator
+              rule: self.nodeType != 'Validator' || has(self.validatorConfig)
+            - message: customNetworkPassphrase can only be set when network is Custom
+              rule: '!has(self.customNetworkPassphrase) || self.network == ''custom'''
           status:
-            description: |-
-              Status subresource for StellarNode
+            description: 'Status subresource for StellarNode
+
 
               Reports the current state of the managed Stellar node using Kubernetes conventions. The operator continuously updates this status as the node progresses through its lifecycle.
 
+
               # Node Phases
 
-              - `Pending` - Resource creation is queued but not started - `Creating` - Infrastructure (Pod, Service, etc.) is being created - `Running` - Pod is running but not yet synced - `Syncing` - Node is syncing blockchain data (validators) - `Ready` - Node is fully synced and operational - `Failed` - Node encountered an unrecoverable error - `Degraded` - Node is running but not fully healthy - `Remediating` - Operator is attempting to recover the node - `Terminating` - Node resources are being cleaned up
+
+              - `Pending` - Resource creation is queued but not started - `Creating` - Infrastructure (Pod, Service, etc.) is being created - `Running` - Pod is running but not yet synced - `Syncing` - Node is syncing blockchain data (validators) - `Ready` - Node is fully synced and operational - `Failed` - Node encountered an unrecoverable error - `Degraded` - Node is running but not fully healthy - `Remediating` - Operator is attempting to recover the node - `Terminating` - Node resources are being cleaned up'
             nullable: true
             properties:
+              blueGreenActiveColor:
+                description: Active deployment color for Validator blue/green (`blue` or `green`).
+                nullable: true
+                type: string
+              blueGreenMessage:
+                description: Human-readable message for the current Validator blue/green rollout.
+                nullable: true
+                type: string
+              blueGreenPhase:
+                description: Validator blue/green rollout phase (e.g. `BlueActive`, `WaitingForGreen`, `GreenActive`).
+                nullable: true
+                type: string
+              blueGreenSnapshotName:
+                description: VolumeSnapshot used to seed the green Validator PVC (if any).
+                nullable: true
+                type: string
+              blueGreenTargetVersion:
+                description: Target Core version for an in-progress Validator blue/green rollout.
+                nullable: true
+                type: string
               bgpStatus:
                 description: BGP advertisement status (when using BGP mode)
                 nullable: true
@@ -1755,10 +1885,10 @@ spec:
                 nullable: true
                 type: string
               conditions:
-                description: |-
-                  Readiness conditions following Kubernetes conventions
+                description: 'Readiness conditions following Kubernetes conventions
 
-                  Standard conditions include: - Ready: True when all sub-resources are healthy and the node is operational - Progressing: True when the node is being created, updated, or syncing - Degraded: True when the node is operational but experiencing issues
+
+                  Standard conditions include: - Ready: True when all sub-resources are healthy and the node is operational - Progressing: True when the node is being created, updated, or syncing - Degraded: True when the node is operational but experiencing issues'
                 items:
                   description: Condition for status reporting
                   properties:
@@ -1868,6 +1998,10 @@ spec:
                 description: Phase of the last forensic snapshot request (`Pending`, `Capturing`, `Complete`, `Failed`).
                 nullable: true
                 type: string
+              labelPropagationStatus:
+                description: Result of the last label propagation pass. One of "Synced", "Partial", "Failed"
+                nullable: true
+                type: string
               lastMigratedVersion:
                 description: Version of the database schema after last successful migration
                 nullable: true
@@ -1891,11 +2025,23 @@ spec:
                 format: int64
                 nullable: true
                 type: integer
+              observedPassphraseSecretVersion:
+                description: Resource version of the passphrase Secret last applied to the pods.
+                nullable: true
+                type: string
+              observedSeedSecretVersion:
+                description: Resource version of the validator seed Secret last applied to the pods.
+                nullable: true
+                type: string
+              lastSecretRotationTime:
+                description: RFC3339 timestamp of the last observed passphrase or seed secret rotation.
+                nullable: true
+                type: string
               phase:
-                description: |-
-                  Current phase of the node lifecycle (Pending, Creating, Running, Syncing, Ready, Failed, Degraded, Remediating, Terminating)
+                description: 'Current phase of the node lifecycle (Pending, Creating, Running, Syncing, Ready, Failed, Degraded, Remediating, Terminating)
 
-                  DEPRECATED: Use the conditions array instead. This field is maintained for backward compatibility and will be removed in a future version. The phase is now derived from the conditions.
+
+                  DEPRECATED: Use the conditions array instead. This field is maintained for backward compatibility and will be removed in a future version. The phase is now derived from the conditions.'
                 type: string
               quorumAnalysisTimestamp:
                 description: Timestamp of last quorum analysis (RFC3339)
@@ -1916,57 +2062,46 @@ spec:
                 description: Total number of desired replicas
                 format: int32
                 type: integer
-              vaultObservedSecretVersion:
-                description: Last observed Vault secret version annotation (for rotation-driven rollouts).
-                nullable: true
-                type: string
-              labelPropagationStatus:
-                description: Result of the last label propagation pass. One of "Synced", "Partial", "Failed"
-                nullable: true
-                type: string
               snapshotBootstrap:
-                description: >-
-                  Bootstrap status when the node was started from a snapshot or compressed backup.
-                  Tracks the restore phase and time-to-sync for observability.
-                  A secondsToSync value ≤ 600 satisfies the "synced within 10 minutes" acceptance criterion.
+                description: Bootstrap status when the node was started from a snapshot or compressed backup. Tracks the restore phase and time-to-sync for observability. A secondsToSync value ≤ 600 satisfies the "synced within 10 minutes" acceptance criterion.
                 nullable: true
                 properties:
-                  phase:
-                    description: >-
-                      Current phase of the bootstrap operation.
-                      One of: Pending, Restoring, Restored, Syncing, Synced, Failed
+                  message:
+                    description: Human-readable message about the current bootstrap state.
+                    nullable: true
                     type: string
-                  source:
-                    description: Source used for bootstrap (VolumeSnapshot name or backup URL).
+                  phase:
+                    description: 'Current phase of the bootstrap operation. One of: Pending, Restoring, Restored, Syncing, Synced, Failed'
+                    type: string
+                  restoreCompletedAt:
+                    description: RFC3339 timestamp when the restore init container completed successfully.
                     nullable: true
                     type: string
                   restoreStartedAt:
                     description: RFC3339 timestamp when the restore init container started.
                     nullable: true
                     type: string
-                  restoreCompletedAt:
-                    description: RFC3339 timestamp when the restore init container completed successfully.
+                  secondsToSync:
+                    description: Elapsed seconds from restore completion to first Synced state. A value ≤ 600 satisfies the "synced within 10 minutes" acceptance criterion.
+                    format: uint64
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
+                  source:
+                    description: Source used for bootstrap (VolumeSnapshot name or backup URL).
                     nullable: true
                     type: string
                   syncedAt:
                     description: RFC3339 timestamp when the node first reached Synced state after bootstrap.
                     nullable: true
                     type: string
-                  secondsToSync:
-                    description: >-
-                      Elapsed seconds from restore completion to first Synced state.
-                      A value ≤ 600 satisfies the "synced within 10 minutes" acceptance criterion.
-                    format: uint64
-                    minimum: 0.0
-                    nullable: true
-                    type: integer
-                  message:
-                    description: Human-readable message about the current bootstrap state.
-                    nullable: true
-                    type: string
                 required:
                 - phase
                 type: object
+              vaultObservedSecretVersion:
+                description: Last observed Vault secret version annotation (for rotation-driven rollouts).
+                nullable: true
+                type: string
             required:
             - phase
             type: object

@@ -1,0 +1,67 @@
+# Production-ready Stellar Core validator for Public Global Stellar Network.
+# Validated against config/crd/stellarnode-crd.yaml (kind StellarNode, v1alpha1).
+#
+# Required spec fields (OpenAPI): nodeType, network, version, minAvailable,
+# maxUnavailable, topologySpreadConstraints.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-mainnet
+  namespace: stellar
+  labels:
+    app.kubernetes.io/name: stellar-core
+    app.kubernetes.io/component: validator
+    stellar.org/network: mainnet
+spec:
+  # Enum: Validator | Horizon | SorobanRpc
+  nodeType: Validator
+  # Enum: mainnet | testnet | futurenet | custom
+  network: mainnet
+  version: "v21.2.0"
+
+  # PodDisruptionBudget knobs. IntOrString (count or percentage).
+  minAvailable: 1
+  maxUnavailable: 0
+  # Required even when empty; Kubernetes TopologySpreadConstraint objects.
+  topologySpreadConstraints: []
+
+  # Enum default Recent. Full retains archive-compatible history.
+  historyMode: Full
+  replicas: 1
+  # Enum default Hard. Spreads same-network pods across nodes.
+  podAntiAffinity: Hard
+  alerting: true
+  # Enum default rollingUpdate. Canary is not used for validators.
+  strategy:
+    type: rollingUpdate
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+
+  # storage.size and storage.storageClass are required when storage is set.
+  # Default object is size 100Gi / class standard / retention Delete.
+  storage:
+    mode: PersistentVolume
+    storageClass: ssd-premium
+    size: 500Gi
+    # Retain keeps the PVC if the StellarNode is deleted.
+    retentionPolicy: Retain
+
+  validatorConfig:
+    # Legacy Secret ref (key STELLAR_CORE_SEED). Prefer seedSecretSource in prod.
+    seedSecretRef: validator-seed-mainnet
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - https://history.stellar.org/prd/core-live/core_live_001
+      - https://history.stellar.org/prd/core-live/core_live_002
+    quorumSet: |
+      [QUORUM_SET]
+      THRESHOLD_PERCENT=67
+      VALIDATORS=[
+        "$sdf1", "$sdf2", "$sdf3"
+      ]

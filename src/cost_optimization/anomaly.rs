@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Cost anomaly detection with configurable alerting thresholds
 
 use chrono::{DateTime, Utc};
@@ -91,7 +103,35 @@ impl AnomalyDetector {
                     None
                 }
             } else {
-                None
+                // All historical values are identical (stddev == 0).
+                // Only flag if deviation exceeds the low threshold.
+                let deviation_pct = ((record.cost_usd - mean) / mean * 100.0).abs();
+                if deviation_pct > self.low_pct {
+                    let severity = if deviation_pct >= self.high_pct {
+                        AnomalySeverity::High
+                    } else if deviation_pct >= self.medium_pct {
+                        AnomalySeverity::Medium
+                    } else {
+                        AnomalySeverity::Low
+                    };
+                    warn!(
+                        resource = %record.resource_id,
+                        expected = mean,
+                        actual = record.cost_usd,
+                        z_score = f64::INFINITY,
+                        "Cost anomaly detected"
+                    );
+                    Some(CostAnomaly {
+                        resource_id: record.resource_id.clone(),
+                        expected_cost: mean,
+                        actual_cost: record.cost_usd,
+                        deviation_pct,
+                        severity,
+                        detected_at: Utc::now(),
+                    })
+                } else {
+                    None
+                }
             }
         } else {
             None
@@ -104,10 +144,10 @@ impl AnomalyDetector {
 
 #[cfg(test)]
 mod tests {
+    use super::super::model::{CloudProvider, ResourceType};
     use super::*;
     use chrono::Utc;
     use std::collections::HashMap;
-    use super::super::model::{CloudProvider, ResourceType};
 
     fn record(id: &str, cost: f64) -> CostRecord {
         CostRecord {
@@ -132,7 +172,9 @@ mod tests {
     #[test]
     fn test_normal_costs_no_anomaly() {
         let mut det = AnomalyDetector::new(10, 2.0);
-        for _ in 0..8 { det.observe(&record("r1", 100.0)); }
+        for _ in 0..8 {
+            det.observe(&record("r1", 100.0));
+        }
         let result = det.observe(&record("r1", 105.0));
         assert!(result.is_none());
     }
@@ -140,7 +182,9 @@ mod tests {
     #[test]
     fn test_spike_detected() {
         let mut det = AnomalyDetector::new(10, 2.0);
-        for _ in 0..8 { det.observe(&record("r1", 100.0)); }
+        for _ in 0..8 {
+            det.observe(&record("r1", 100.0));
+        }
         let result = det.observe(&record("r1", 500.0));
         assert!(result.is_some());
         assert!(result.unwrap().severity == AnomalySeverity::High);

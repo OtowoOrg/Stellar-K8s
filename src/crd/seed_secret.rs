@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Seed secret source types for KMS / Vault / CSI integration
 //!
 //! This module defines the typed `SeedSecretSource` enum that replaces the plain
@@ -48,6 +60,11 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+/// Legacy seed key retained for backwards compatibility during the
+/// `SEED` → `STELLAR_CORE_SEED` migration (Issue #1554).
+pub const LEGACY_SEED_KEY: &str = "SEED";
 
 // ============================================================================
 // Top-level discriminated union
@@ -178,6 +195,83 @@ impl LocalSecretRef {
     /// Returns the effective key name, defaulting to `STELLAR_CORE_SEED`.
     pub fn effective_key(&self) -> &str {
         self.key.as_deref().unwrap_or(DEFAULT_SEED_KEY)
+    }
+}
+
+// ============================================================================
+// Seed key resolution (Issue #1554)
+// ============================================================================
+
+/// Resolve the seed value from a secret's data map, preferring the
+/// standardized [`DEFAULT_SEED_KEY`] (`STELLAR_CORE_SEED`) and falling back to
+/// the legacy [`LEGACY_SEED_KEY`] (`SEED`).
+///
+/// When only the legacy key is present a `tracing::warn!` is emitted so
+/// operators are nudged to migrate (see `scripts/migrate-seed-key.sh`).
+///
+/// Returns `Err` with a descriptive message when neither key is present.
+pub fn resolve_seed_from_map(
+    data: &BTreeMap<String, String>,
+    secret_name: &str,
+) -> Result<String, String> {
+    if let Some(value) = data.get(DEFAULT_SEED_KEY) {
+        return Ok(value.clone());
+    }
+
+    if let Some(value) = data.get(LEGACY_SEED_KEY) {
+        tracing::warn!(
+            secret = %secret_name,
+            legacy_key = LEGACY_SEED_KEY,
+            preferred_key = DEFAULT_SEED_KEY,
+            "Secret uses the deprecated `SEED` key; please migrate to \
+             `STELLAR_CORE_SEED` (see scripts/migrate-seed-key.sh)"
+        );
+        return Ok(value.clone());
+    }
+
+    Err(format!(
+        "secret `{secret_name}` is missing the seed key: expected `{DEFAULT_SEED_KEY}` \
+         (or legacy `{LEGACY_SEED_KEY}`)"
+    ))
+}
+
+/// Resolve the effective key name for a secret given its available keys.
+///
+/// Precedence: an explicit `key` on the ref wins; otherwise
+/// `STELLAR_CORE_SEED` if present; otherwise legacy `SEED` (with a warning);
+/// otherwise `STELLAR_CORE_SEED` (so callers surface a missing-key error).
+pub fn resolve_effective_key<'a>(
+    explicit_key: Option<&'a str>,
+    available_keys: impl IntoIterator<Item = &'a str>,
+    secret_name: &str,
+) -> &'a str {
+    if let Some(key) = explicit_key {
+        return key;
+    }
+
+    let mut has_preferred = false;
+    let mut has_legacy = false;
+    for key in available_keys {
+        if key == DEFAULT_SEED_KEY {
+            has_preferred = true;
+        } else if key == LEGACY_SEED_KEY {
+            has_legacy = true;
+        }
+    }
+
+    if has_preferred {
+        DEFAULT_SEED_KEY
+    } else if has_legacy {
+        tracing::warn!(
+            secret = %secret_name,
+            legacy_key = LEGACY_SEED_KEY,
+            preferred_key = DEFAULT_SEED_KEY,
+            "Secret uses the deprecated `SEED` key; please migrate to \
+             `STELLAR_CORE_SEED` (see scripts/migrate-seed-key.sh)"
+        );
+        LEGACY_SEED_KEY
+    } else {
+        DEFAULT_SEED_KEY
     }
 }
 
@@ -536,5 +630,59 @@ mod tests {
         assert!(external_source().describe().contains("External Secrets"));
         assert!(csi_source().describe().contains("CSI"));
         assert!(vault_source().describe().contains("Vault"));
+    }
+
+    fn map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn test_resolve_seed_prefers_standard_key() {
+        let data = map(&[(DEFAULT_SEED_KEY, "S_PREFERRED"), (LEGACY_SEED_KEY, "S_LEGACY")]);
+        let resolved = resolve_seed_from_map(&data, "my-secret").unwrap();
+        assert_eq!(resolved, "S_PREFERRED");
+    }
+
+    #[test]
+    fn test_resolve_seed_falls_back_to_legacy_key() {
+        let data = map(&[(LEGACY_SEED_KEY, "S_LEGACY")]);
+        let resolved = resolve_seed_from_map(&data, "my-secret").unwrap();
+        assert_eq!(resolved, "S_LEGACY");
+    }
+
+    #[test]
+    fn test_resolve_seed_missing_both_keys_errors() {
+        let data = map(&[("OTHER", "value")]);
+        let err = resolve_seed_from_map(&data, "my-secret").unwrap_err();
+        assert!(err.contains(DEFAULT_SEED_KEY));
+        assert!(err.contains(LEGACY_SEED_KEY));
+    }
+
+    #[test]
+    fn test_resolve_effective_key_precedence() {
+        // Explicit key always wins.
+        assert_eq!(
+            resolve_effective_key(
+                Some("CUSTOM"),
+                [DEFAULT_SEED_KEY, LEGACY_SEED_KEY],
+                "s"
+            ),
+            "CUSTOM"
+        );
+        // Preferred key wins over legacy.
+        assert_eq!(
+            resolve_effective_key(None, [LEGACY_SEED_KEY, DEFAULT_SEED_KEY], "s"),
+            DEFAULT_SEED_KEY
+        );
+        // Legacy fallback when only SEED is present.
+        assert_eq!(
+            resolve_effective_key(None, [LEGACY_SEED_KEY], "s"),
+            LEGACY_SEED_KEY
+        );
+        // Neither present → default (caller will surface missing-key error).
+        assert_eq!(resolve_effective_key(None, ["OTHER"], "s"), DEFAULT_SEED_KEY);
     }
 }

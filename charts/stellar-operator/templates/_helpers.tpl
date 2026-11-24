@@ -96,33 +96,3 @@ Usage: include "stellar-operator.selectorLabelsWithComponent" (dict "root" . "co
 app.kubernetes.io/component: {{ .component }}
 {{- end }}
 
-{{/*
-Prometheus scrape annotations for sidecar and watcher pods.
-Usage: include "stellar-operator.prometheusAnnotations" (dict "metricsPort" .Values.forkDetector.metricsPort)
-*/}}
-{{- define "stellar-operator.prometheusAnnotations" -}}
-prometheus.io/scrape: "true"
-prometheus.io/port: {{ .metricsPort | quote }}
-prometheus.io/path: {{ .path | default "/metrics" | quote }}
-{{- end }}
-
-{{/*
-Compatibility aliases for legacy Soroban RPC-oriented templates.
-Prefer stellar-operator.* helpers in new templates.
-*/}}
-{{- define "stellar-rpc.name" -}}
-{{- include "stellar-operator.name" . -}}
-{{- end }}
-
-{{- define "stellar-rpc.fullname" -}}
-{{- include "stellar-operator.fullname" . -}}
-{{- end }}
-
-{{- define "stellar-rpc.labels" -}}
-{{- include "stellar-operator.labels" . -}}
-{{- end }}
-
-{{- define "stellar-rpc.selectorLabels" -}}
-{{- include "stellar-operator.selectorLabels" . -}}
-{{- end }}
-

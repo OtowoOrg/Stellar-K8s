@@ -34,6 +34,15 @@ Pre-release versions use `-alpha.N`, `-beta.N`, or `-rc.N` suffixes (e.g. `v1.2.
   git push origin v1.2.3
   ```
 
+To run these checks and create the tag in one step, use the helper script (add `PUSH=1` to also push):
+
+```bash
+make tag-release TAG=v1.2.3 DRY_RUN=1   # validate and print the command only
+make tag-release TAG=v1.2.3             # create annotated tag locally
+```
+
+The script enforces the rules above: semver format, `Cargo.toml` version match, `main` branch, and a clean tree.
+
 Pushing a `v*.*.*` tag automatically triggers the [release workflow](#automated-pipeline).
 
 ---
@@ -65,7 +74,7 @@ in dependency order:
 
 ```
 validate ──┬── build-artifacts (4 targets: linux-amd64, linux-arm64, darwin-amd64, darwin-arm64)
-           ├── container (re-tags sha image from multiarch-build.yml, or builds fresh)
+           ├── container (re-tags sha image from ci.yml Docker Build, or builds fresh)
            ├── helm (bumps chart version, packages .tgz)
            └── security (Trivy scan on published image, uploads SARIF)
                 └── release (creates GitHub Release, uploads all artifacts + SBOM)
@@ -95,7 +104,7 @@ A CycloneDX SBOM is generated for each binary.
 
 ### `container` job
 
-Re-tags the multi-arch image published by `multiarch-build.yml` for the `sha-<commit>` label.
+Re-tags the multi-arch image published by `ci.yml` for the `sha-<commit>` label.
 Falls back to a fresh `docker buildx` build if the sha image is unavailable.
 
 Published tags for a full release (non-pre-release):
@@ -164,6 +173,23 @@ To update `CHANGELOG.md` with all history:
 git cliff -o CHANGELOG.md
 ```
 
+### Previewing the release notes
+
+The `release` job publishes a changelog excerpt (not the full file) as the
+GitHub Release body. Preview exactly that excerpt before tagging:
+
+```bash
+bash scripts/generate-release-notes.sh
+# or write it to a file for review
+bash scripts/generate-release-notes.sh --output /tmp/release-notes.md
+```
+
+The script runs `git cliff --latest --strip header`, mirroring the
+`orhun/git-cliff-action` step in `.github/workflows/release.yml`. If the
+preview looks wrong (missing section, mis-grouped commit), fix the commit
+messages or `cliff.toml` first — the tag, and therefore the published
+notes, cannot be edited without re-tagging.
+
 ---
 
 ## Hotfix Releases
@@ -197,10 +223,11 @@ If the automated release pipeline fails partway through:
 
 | Workflow | File | Trigger |
 |---|---|---|
-| Main CI | `.github/workflows/ci.yml` | Push / PR to `main` |
-| Multi-arch build | `.github/workflows/multiarch-build.yml` | Push to `main` |
+| Main CI (incl. multi-arch Docker) | `.github/workflows/ci.yml` | Push / PR to `main` |
 | Release | `.github/workflows/release.yml` | Push `v*.*.*` tag |
-| Security scan | `.github/workflows/security-scan.yml` | Push to `main`, schedule |
+| Vulnerability scan (Trivy fs/IaC) | `.github/workflows/vulnerability-scan.yml` | Push to `main`, schedule |
+| Container image security (Trivy/Grype) | `.github/workflows/container-image-security.yml` | Push to `main`, schedule |
+| Security audit (cargo-audit/deny) | `.github/workflows/security-audit.yml` | Schedule, manual |
 | Performance | `.github/workflows/performance.yml` | Push to `main`, schedule |
 | Chaos tests | `.github/workflows/chaos-tests.yml` | Schedule |
 | Docs deploy | `.github/workflows/docs-deploy.yml` | Push to `main` |

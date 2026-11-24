@@ -1,0 +1,201 @@
+suite: full render smoke test
+# This test renders the entire chart with default values to catch any
+# render-time errors (nil pointer, missing required keys, type mismatches)
+# that would otherwise only be caught at install time.
+templates:
+  - templates/deployment.yaml
+  - templates/service.yaml
+  - templates/serviceaccount.yaml
+  - templates/rbac.yaml
+  - templates/pdb.yaml
+  - templates/operator-config.yaml
+  - templates/feature-flags-configmap.yaml
+  - templates/secret.yaml
+  - templates/mtls-peer-authentication.yaml
+
+tests:
+  - it: deployment renders without errors with default values
+    template: templates/deployment.yaml
+    asserts:
+      - isKind:
+          of: Deployment
+      - isNotNull:
+          path: spec.template.spec.containers[0].image
+      - isNotNull:
+          path: spec.template.spec.containers[0].args
+      - isNotNull:
+          path: spec.template.spec.containers[0].livenessProbe
+      - isNotNull:
+          path: spec.template.spec.containers[0].readinessProbe
+      - isNotNull:
+          path: spec.template.spec.securityContext
+
+  - it: mTLS enables Istio injection and operator certificate setup
+    template: templates/deployment.yaml
+    set:
+      mtls.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["sidecar.istio.io/inject"]
+          value: "true"
+      - equal:
+          path: spec.template.metadata.labels["stellar.org/mtls-mode"]
+          value: strict
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --enable-mtls
+
+  - it: mTLS enforces strict Istio peer authentication for StellarNode workloads
+    template: templates/mtls-peer-authentication.yaml
+    set:
+      mtls.enabled: true
+    asserts:
+      - isKind:
+          of: PeerAuthentication
+      - equal:
+          path: spec.selector.matchLabels["stellar.org/mtls-mode"]
+          value: strict
+      - equal:
+          path: spec.mtls.mode
+          value: STRICT
+
+  - it: peer authentication is absent when mTLS is disabled
+    template: templates/mtls-peer-authentication.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: service renders without errors with default values
+    template: templates/service.yaml
+    asserts:
+      - isKind:
+          of: Service
+      - isNotNull:
+          path: spec.ports
+
+  - it: serviceaccount renders without errors with default values
+    template: templates/serviceaccount.yaml
+    asserts:
+      - isKind:
+          of: ServiceAccount
+
+  - it: rbac renders without errors with default values
+    template: templates/rbac.yaml
+    asserts:
+      - isNotNull:
+          path: kind
+
+  - it: pdb renders when enabled
+    template: templates/pdb.yaml
+    set:
+      podDisruptionBudget.enabled: true
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+
+  - it: operator-config configmap renders without errors
+    template: templates/operator-config.yaml
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - isNotNull:
+          path: data["config.yaml"]
+
+  - it: feature-flags configmap renders without errors
+    template: templates/feature-flags-configmap.yaml
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - isNotNull:
+          path: data
+
+  - it: deployment image tag falls back to chart appVersion when tag is empty
+    template: templates/deployment.yaml
+    set:
+      image.tag: ""
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/stellar/stellar-k8s:0.1.0
+
+  - it: deployment includes sidecar container by default
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers
+          content:
+            name: crash-analyzer
+          any: true
+
+  - it: sidecar container appears when sidecar.enabled is true
+    template: templates/deployment.yaml
+    set:
+      sidecar.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers
+          content:
+            name: crash-analyzer
+          any: true
+
+  - it: sidecar container absent when sidecar.enabled is false
+    template: templates/deployment.yaml
+    set:
+      sidecar.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers
+          content:
+            name: crash-analyzer
+          any: true
+
+  - it: deployment does not include fork-detector container by default
+    template: templates/deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers
+          content:
+            name: fork-detector
+          any: true
+
+  - it: fork-detector container appears when forkDetector.enabled is true
+    template: templates/deployment.yaml
+    set:
+      forkDetector.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers
+          content:
+            name: fork-detector
+          any: true
+
+  - it: deployment mounts operator-config volume
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: operator-config
+          any: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: operator-config
+            mountPath: /etc/stellar-operator
+            readOnly: true
+
+  - it: anti-affinity is set when replicaCount is greater than 1
+    template: templates/deployment.yaml
+    set:
+      replicaCount: 3
+    asserts:
+      - isNotNull:
+          path: spec.template.spec.affinity.podAntiAffinity
+
+  - it: no affinity rule is set for single replica by default
+    template: templates/deployment.yaml
+    set:
+      replicaCount: 1
+    asserts:
+      - isNull:
+          path: spec.template.spec.affinity

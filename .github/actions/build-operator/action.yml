@@ -1,0 +1,76 @@
+name: Build Operator Binary & Image
+description: >
+  Composite action that consolidates the repeated Rust build + Docker image
+  bootstrap used by chaos-tests, soak-test, performance, and
+  verify-operator-boot workflows.  A single call replaces the duplicated
+  setup-rust / cargo build / docker build / docker save / upload-artifact
+  blocks that previously appeared in every heavy-validation job.
+
+inputs:
+  image-tag:
+    description: Tag to apply to the built Docker image
+    required: false
+    default: "ci-build"
+  artifact-name:
+    description: Name for the uploaded image tarball artifact
+    required: false
+    default: "operator-image"
+  cache-key:
+    description: Shared Swatinem/rust-cache key suffix
+    required: false
+    default: "build-operator"
+  upload-artifact:
+    description: Whether to upload the Docker image tarball as an artifact
+    required: false
+    default: "true"
+  binary-only:
+    description: >
+      When 'true', build only the Rust binary (skip Docker build/save/upload).
+      Useful for jobs that only need the binary for unit tests.
+    required: false
+    default: "false"
+
+outputs:
+  image-tag:
+    description: The Docker image tag that was built
+    value: ${{ inputs.image-tag }}
+  artifact-name:
+    description: The artifact name of the uploaded image tarball
+    value: ${{ inputs.artifact-name }}
+
+runs:
+  using: composite
+  steps:
+    # ── Rust binary ───────────────────────────────────────────────────────────
+    - name: Setup Rust
+      uses: ./.github/actions/setup-rust
+      with:
+        cache-key: ${{ inputs.cache-key }}
+
+    - name: Build release binary
+      shell: bash
+      run: cargo build --release --locked --bin stellar-operator
+
+    # ── Docker image (skipped when binary-only=true) ───────────────────────
+    - name: Build Docker image
+      if: inputs.binary-only != 'true'
+      shell: bash
+      run: |
+        docker build -t stellar-operator:${{ inputs.image-tag }} .
+        echo "✓ Docker image built: stellar-operator:${{ inputs.image-tag }}"
+
+    - name: Export image tarball
+      if: inputs.binary-only != 'true' && inputs.upload-artifact == 'true'
+      shell: bash
+      run: |
+        docker save stellar-operator:${{ inputs.image-tag }} \
+          | gzip > operator-image.tar.gz
+        echo "✓ Image tarball saved: operator-image.tar.gz"
+
+    - name: Upload image artifact
+      if: inputs.binary-only != 'true' && inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: operator-image.tar.gz
+        retention-days: 1

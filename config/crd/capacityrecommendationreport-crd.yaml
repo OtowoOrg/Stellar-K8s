@@ -1,0 +1,414 @@
+# Generated from src/crd/capacity_forecast.rs (CapacityRecommendationReport::crd()).
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: capacityrecommendationreports.stellar.org
+spec:
+  group: stellar.org
+  names:
+    categories: []
+    kind: CapacityRecommendationReport
+    plural: capacityrecommendationreports
+    shortNames:
+    - caprec
+    singular: capacityrecommendationreport
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.cycleId
+      name: Cycle
+      type: string
+    - jsonPath: .spec.modelVersion
+      name: Model
+      type: string
+    - jsonPath: .spec.backtest.mapePct
+      name: MAPE
+      type: number
+    - jsonPath: .spec.recommendations[0].timeToExhaustion.earliestDays
+      name: NextExhaustionDays
+      type: integer
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for CapacityRecommendationReportSpec via `CustomResource`
+        properties:
+          spec:
+            description: Output of a single capacity recommendation cycle.
+            properties:
+              backtest:
+                description: Backtest of the model version published alongside the recommendations.
+                properties:
+                  evaluatedForecasts:
+                    description: Number of rolling-origin forecasts scored at the horizon.
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                  historyDays:
+                    description: Longest history (in days) used across evaluated series.
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                  horizonDays:
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                  incidents:
+                    default: []
+                    items:
+                      description: Whether a historical capacity incident would have been predicted in time.
+                      properties:
+                        cluster:
+                          type: string
+                        dimension:
+                          description: Capacity dimension, forecast independently of the others.
+                          enum:
+                          - Cpu
+                          - Memory
+                          - Storage
+                          - ObjectCount
+                          type: string
+                        leadTimeDays:
+                          description: Largest lead (days before the incident) at which the forecast warned.
+                          format: uint32
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        met:
+                          type: boolean
+                        objectKind:
+                          nullable: true
+                          type: string
+                        occurredAt:
+                          type: string
+                      required:
+                      - cluster
+                      - dimension
+                      - met
+                      - occurredAt
+                      type: object
+                    type: array
+                  intervalCoverage:
+                    description: Fraction of actuals that fell inside the confidence interval.
+                    format: double
+                    nullable: true
+                    type: number
+                  leadTimeTargetMet:
+                    description: True when every historical incident was predicted with enough lead.
+                    type: boolean
+                  mapePct:
+                    description: Pooled MAPE at the horizon; absent if nothing could be scored.
+                    format: double
+                    nullable: true
+                    type: number
+                  mapeTargetMet:
+                    type: boolean
+                  mapeTargetPct:
+                    format: double
+                    type: number
+                  minLeadTimeDays:
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                  modelVersion:
+                    type: string
+                  series:
+                    default: []
+                    items:
+                      description: Backtest detail for one series, including the model-selection evidence.
+                      properties:
+                        cluster:
+                          type: string
+                        dimension:
+                          description: Capacity dimension, forecast independently of the others.
+                          enum:
+                          - Cpu
+                          - Memory
+                          - Storage
+                          - ObjectCount
+                          type: string
+                        intervalCoverage:
+                          format: double
+                          nullable: true
+                          type: number
+                        linearMapePct:
+                          format: double
+                          nullable: true
+                          type: number
+                        objectKind:
+                          nullable: true
+                          type: string
+                        samples:
+                          format: uint32
+                          minimum: 0.0
+                          type: integer
+                        seasonalMapePct:
+                          format: double
+                          nullable: true
+                          type: number
+                        selectedModel:
+                          description: Model used to produce a forecast.
+                          enum:
+                          - RobustLinear
+                          - SeasonalLinear
+                          type: string
+                      required:
+                      - cluster
+                      - dimension
+                      - samples
+                      - selectedModel
+                      type: object
+                    type: array
+                required:
+                - evaluatedForecasts
+                - historyDays
+                - horizonDays
+                - leadTimeTargetMet
+                - mapeTargetMet
+                - mapeTargetPct
+                - minLeadTimeDays
+                - modelVersion
+                type: object
+              confidenceLevel:
+                description: Two-sided confidence level of every interval in this report (e.g. 0.9).
+                format: double
+                type: number
+              cycleId:
+                description: Identifier of the recommendation cycle (e.g. `2026-Q4`).
+                type: string
+              forecasts:
+                default: []
+                description: Forecast for every analysed series, whether or not it needs action.
+                items:
+                  description: Forecast for one (cluster, dimension) series.
+                  properties:
+                    atHorizon:
+                      description: Forecast usage at the end of the horizon.
+                      properties:
+                        lower:
+                          format: double
+                          type: number
+                        point:
+                          format: double
+                          type: number
+                        upper:
+                          format: double
+                          type: number
+                      required:
+                      - lower
+                      - point
+                      - upper
+                      type: object
+                    cluster:
+                      type: string
+                    currentCapacity:
+                      format: double
+                      type: number
+                    currentUsage:
+                      format: double
+                      type: number
+                    dimension:
+                      description: Capacity dimension, forecast independently of the others.
+                      enum:
+                      - Cpu
+                      - Memory
+                      - Storage
+                      - ObjectCount
+                      type: string
+                    model:
+                      description: Model used to produce a forecast.
+                      enum:
+                      - RobustLinear
+                      - SeasonalLinear
+                      type: string
+                    objectKind:
+                      description: Object kind for `ObjectCount` series (e.g. `pods`, `secrets`).
+                      nullable: true
+                      type: string
+                    timeToExhaustion:
+                      description: Days until usage reaches capacity. `None` means not within the horizon.
+                      properties:
+                        earliestDays:
+                          description: 'Pessimistic bound: the upper forecast band crosses capacity.'
+                          format: uint32
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        expectedDays:
+                          description: The point forecast crosses capacity.
+                          format: uint32
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        latestDays:
+                          description: 'Optimistic bound: the lower forecast band crosses capacity.'
+                          format: uint32
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                      type: object
+                  required:
+                  - atHorizon
+                  - cluster
+                  - currentCapacity
+                  - currentUsage
+                  - dimension
+                  - model
+                  - timeToExhaustion
+                  type: object
+                type: array
+              generatedAt:
+                description: RFC 3339 timestamp at which the cycle ran.
+                type: string
+              horizonDays:
+                description: Forecast horizon in days.
+                format: uint32
+                minimum: 0.0
+                type: integer
+              modelVersion:
+                description: Version of the forecasting model that produced this report.
+                type: string
+              recommendations:
+                default: []
+                description: Scaling recommendations, ranked by time-to-exhaustion (rank 1 first).
+                items:
+                  description: A single ranked scaling recommendation.
+                  properties:
+                    actBy:
+                      description: RFC 3339 deadline to act while keeping the required lead time.
+                      type: string
+                    cluster:
+                      type: string
+                    currentCapacity:
+                      format: double
+                      type: number
+                    dimension:
+                      description: Capacity dimension, forecast independently of the others.
+                      enum:
+                      - Cpu
+                      - Memory
+                      - Storage
+                      - ObjectCount
+                      type: string
+                    forecastAtHorizon:
+                      description: Point estimate with its confidence interval.
+                      properties:
+                        lower:
+                          format: double
+                          type: number
+                        point:
+                          format: double
+                          type: number
+                        upper:
+                          format: double
+                          type: number
+                      required:
+                      - lower
+                      - point
+                      - upper
+                      type: object
+                    model:
+                      description: Model used to produce a forecast.
+                      enum:
+                      - RobustLinear
+                      - SeasonalLinear
+                      type: string
+                    objectKind:
+                      nullable: true
+                      type: string
+                    priority:
+                      description: Urgency bucket derived from the pessimistic time-to-exhaustion.
+                      enum:
+                      - Critical
+                      - High
+                      - Medium
+                      - Low
+                      type: string
+                    rank:
+                      description: 1-based rank; lower means capacity runs out sooner.
+                      format: uint32
+                      minimum: 0.0
+                      type: integer
+                    rationale:
+                      type: string
+                    recommendedCapacity:
+                      description: Capacity that keeps the upper forecast band under the target utilisation for the whole horizon.
+                      format: double
+                      type: number
+                    timeToExhaustion:
+                      description: Days until usage reaches capacity. `None` means not within the horizon.
+                      properties:
+                        earliestDays:
+                          description: 'Pessimistic bound: the upper forecast band crosses capacity.'
+                          format: uint32
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        expectedDays:
+                          description: The point forecast crosses capacity.
+                          format: uint32
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        latestDays:
+                          description: 'Optimistic bound: the lower forecast band crosses capacity.'
+                          format: uint32
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                      type: object
+                  required:
+                  - actBy
+                  - cluster
+                  - currentCapacity
+                  - dimension
+                  - forecastAtHorizon
+                  - model
+                  - priority
+                  - rank
+                  - rationale
+                  - recommendedCapacity
+                  - timeToExhaustion
+                  type: object
+                type: array
+            required:
+            - backtest
+            - confidenceLevel
+            - cycleId
+            - generatedAt
+            - horizonDays
+            - modelVersion
+            type: object
+          status:
+            nullable: true
+            properties:
+              message:
+                nullable: true
+                type: string
+              observedGeneration:
+                format: int64
+                nullable: true
+                type: integer
+              phase:
+                default: Pending
+                description: Lifecycle of a report as driven by downstream automation.
+                enum:
+                - Pending
+                - Acknowledged
+                - Applied
+                - Superseded
+                type: string
+            type: object
+        required:
+        - spec
+        title: CapacityRecommendationReport
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

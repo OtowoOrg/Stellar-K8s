@@ -1,0 +1,287 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Prometheus metrics for Stellar Core TPS, ledger lag, and node health (issue #1389)
+#
+# This PrometheusRule extends the existing prometheus-rules.yaml with the
+# canonical metric definitions required by the #1389 monitoring dashboard.
+#
+# Metric naming conventions:
+#   stellar_core_*      — raw counters/gauges exported by Stellar Core itself
+#   stellar:core:*      — derived recording rules (rate/histogram_quantile)
+#   stellar_operator_*  — operator-side metrics (reconciler, leader, etc.)
+#   stellar_node_*      — per-StellarNode CRD aggregations
+#
+# Dashboard access: Grafana → Dashboards → "Stellar Core — Cluster Overview"
+# Scrape target:    PrometheusRule + ServiceMonitor (see monitoring.serviceMonitor)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-core-tps-ledger-health
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-operator
+    app.kubernetes.io/component: monitoring
+    # Grafana operator / Prometheus Operator label selector
+    release: prometheus
+spec:
+  groups:
+    # ──────────────────────────────────────────────────────────────────────
+    # 1. TPS (transactions per second)
+    # ──────────────────────────────────────────────────────────────────────
+    - name: stellar_core_tps
+      interval: 15s
+      rules:
+        # 1-minute rolling TPS per node
+        - record: stellar:core:tps:1m
+          expr: rate(stellar_core_transactions_total[1m])
+
+        # 5-minute rolling TPS per node
+        - record: stellar:core:tps:5m
+          expr: rate(stellar_core_transactions_total[5m])
+
+        # Cluster-wide aggregated TPS (sum across all nodes)
+        - record: stellar:core:tps:cluster:5m
+          expr: sum(stellar:core:tps:5m)
+
+        # Operations per second (contract invocations + payments + …)
+        - record: stellar:core:ops:5m
+          expr: rate(stellar_core_operations_total[5m])
+
+        # Alert: no transactions in 5 minutes on a synced node
+        - alert: StellarCoreZeroTPS
+          expr: |
+            stellar:core:tps:5m == 0
+            and
+            stellar_core_is_synced == 1
+          for: 5m
+          labels:
+            severity: warning
+            component: stellar-core
+            issue: "1389"
+          annotations:
+            summary: "Stellar Core TPS dropped to zero on {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: >
+              Node {{ $labels.namespace }}/{{ $labels.pod }} is synced but has
+              processed 0 transactions in the last 5 minutes.
+            runbook_url: "https://github.com/OtowoOrg/Stellar-K8s/blob/main/docs/profiling-runbook.md"
+
+        # Alert: sustained TPS spike (> 8000 ops/s for 2 minutes)
+        - alert: StellarCoreHighTPS
+          expr: stellar:core:tps:5m > 8000
+          for: 2m
+          labels:
+            severity: info
+            component: stellar-core
+            issue: "1389"
+          annotations:
+            summary: "High TPS on {{ $labels.namespace }}/{{ $labels.pod }}: {{ $value | humanize }}/s"
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 2. Ledger lag (seconds behind network tip)
+    # ──────────────────────────────────────────────────────────────────────
+    - name: stellar_core_ledger_lag
+      interval: 15s
+      rules:
+        # Raw ledger close time lag (seconds)
+        - record: stellar:core:ledger:close_lag_seconds
+          expr: time() - stellar_core_ledger_close_time_seconds
+
+        # Ingestion lag for Horizon nodes (ledgers behind the network)
+        - record: stellar:horizon:ingest:lag_ledgers
+          expr: stellar_horizon_latest_ledger_remote - stellar_horizon_latest_ledger_local
+
+        # p95 ledger close time histogram
+        - record: stellar:core:ledger:close_time:p95
+          expr: |
+            histogram_quantile(0.95,
+              rate(stellar_core_ledger_close_time_seconds_bucket[5m]))
+
+        # p99 ledger close time
+        - record: stellar:core:ledger:close_time:p99
+          expr: |
+            histogram_quantile(0.99,
+              rate(stellar_core_ledger_close_time_seconds_bucket[5m]))
+
+        # Ledger advance rate (should be ~1 ledger / 5 s = 0.2/s)
+        - record: stellar:core:ledger:advance_rate:1m
+          expr: rate(stellar_core_ledger_sequence_total[1m])
+
+        # Alert: ledger lag > 30 seconds
+        - alert: StellarCoreLedgerLagWarning
+          expr: stellar:core:ledger:close_lag_seconds > 30
+          for: 2m
+          labels:
+            severity: warning
+            component: stellar-core
+            issue: "1389"
+          annotations:
+            summary: "Ledger lag on {{ $labels.namespace }}/{{ $labels.pod }}: {{ $value | humanizeDuration }}"
+            description: >
+              The node's last ledger close is {{ $value | humanizeDuration }} behind wall-clock.
+              Expected: ≤ 5 seconds for a synced node.
+
+        # Alert: ledger lag > 120 seconds (critical)
+        - alert: StellarCoreLedgerLagCritical
+          expr: stellar:core:ledger:close_lag_seconds > 120
+          for: 1m
+          labels:
+            severity: critical
+            component: stellar-core
+            issue: "1389"
+          annotations:
+            summary: "CRITICAL ledger lag on {{ $labels.namespace }}/{{ $labels.pod }}: {{ $value | humanizeDuration }}"
+            description: >
+              Node has not closed a ledger in over 2 minutes. It may be
+              partitioned, crashed, or performing catchup.
+
+        # Alert: Horizon ingestion lag > 10 ledgers
+        - alert: StellarHorizonIngestionLag
+          expr: stellar:horizon:ingest:lag_ledgers > 10
+          for: 5m
+          labels:
+            severity: warning
+            component: horizon
+            issue: "1389"
+          annotations:
+            summary: "Horizon ingestion lag: {{ $value }} ledgers behind"
+            description: >
+              Horizon is {{ $value }} ledgers behind the network tip.
+              Check the stellar-core-url and ingestion workers.
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 3. Node health (sync state, quorum, peers, memory, CPU)
+    # ──────────────────────────────────────────────────────────────────────
+    - name: stellar_core_node_health
+      interval: 30s
+      rules:
+        # Binary synced indicator (1 = synced, 0 = not synced)
+        - record: stellar:core:node:synced
+          expr: stellar_core_is_synced
+
+        # Quorum intact indicator
+        - record: stellar:core:node:quorum_intact
+          expr: stellar_core_quorum_intact
+
+        # Connected peer count
+        - record: stellar:core:node:peers
+          expr: stellar_core_connection_count
+
+        # Memory usage (resident set size in MiB)
+        - record: stellar:core:node:memory_mib
+          expr: process_resident_memory_bytes{job=~"stellar-core|stellar-validator"} / 1048576
+
+        # CPU usage %
+        - record: stellar:core:node:cpu_percent
+          expr: rate(process_cpu_seconds_total{job=~"stellar-core|stellar-validator"}[5m]) * 100
+
+        # PVC disk usage % (operator exports this via disk_scaler)
+        - record: stellar:core:node:disk_usage_percent
+          expr: stellar_pvc_disk_usage_percent
+
+        # Cluster-wide: count of synced nodes
+        - record: stellar:core:cluster:synced_nodes
+          expr: count(stellar:core:node:synced == 1)
+
+        # Cluster-wide: count of unsynced nodes
+        - record: stellar:core:cluster:unsynced_nodes
+          expr: count(stellar:core:node:synced == 0)
+
+        # Alert: node not synced
+        - alert: StellarCoreNodeNotSynced
+          expr: stellar:core:node:synced == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: stellar-core
+            issue: "1389"
+          annotations:
+            summary: "Stellar Core node {{ $labels.namespace }}/{{ $labels.pod }} is NOT synced"
+            description: >
+              Node has been out of sync for 5+ minutes. Check Stellar Core
+              logs: kubectl logs -n {{ $labels.namespace }} {{ $labels.pod }}
+
+        # Alert: quorum not intact
+        - alert: StellarCoreQuorumNotIntact
+          expr: stellar:core:node:quorum_intact == 0
+          for: 2m
+          labels:
+            severity: warning
+            component: stellar-core
+            issue: "1389"
+          annotations:
+            summary: "Quorum not intact on {{ $labels.namespace }}/{{ $labels.pod }}"
+
+        # Alert: zero peers (completely isolated node)
+        - alert: StellarCoreNoPeers
+          expr: stellar:core:node:peers == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: stellar-core
+            issue: "1389"
+          annotations:
+            summary: "No peers connected on {{ $labels.namespace }}/{{ $labels.pod }}"
+
+        # Alert: memory over 80% of container limit
+        - alert: StellarCoreHighMemory
+          expr: |
+            stellar:core:node:memory_mib
+              / on(namespace, pod) group_left()
+                (kube_pod_container_resource_limits{resource="memory", container="stellar-core"}
+                  / 1048576)
+            > 0.80
+          for: 5m
+          labels:
+            severity: warning
+            component: stellar-core
+            issue: "1389"
+          annotations:
+            summary: "High memory on {{ $labels.namespace }}/{{ $labels.pod }}: {{ $value | humanizePercentage }}"
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 4. Operator reconciler metrics
+    # ──────────────────────────────────────────────────────────────────────
+    - name: stellar_operator_reconciler
+      interval: 30s
+      rules:
+        - record: stellar:operator:reconcile:error_rate:5m
+          expr: rate(stellar_operator_reconciliation_errors_total[5m])
+
+        - record: stellar:operator:reconcile:success_rate:5m
+          expr: rate(stellar_operator_reconciliation_success_total[5m])
+
+        - record: stellar:operator:reconcile:duration:p99
+          expr: |
+            histogram_quantile(0.99,
+              rate(stellar_operator_reconciliation_duration_seconds_bucket[5m]))
+
+        - alert: StellarOperatorHighErrorRate
+          expr: stellar:operator:reconcile:error_rate:5m > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            component: operator
+            issue: "1389"
+          annotations:
+            summary: "Operator reconcile error rate > 5%"
+            description: "Error rate: {{ $value | humanize }}/s"
+
+        - alert: StellarOperatorSlowReconcile
+          expr: stellar:operator:reconcile:duration:p99 > 30
+          for: 5m
+          labels:
+            severity: warning
+            component: operator
+            issue: "1389"
+          annotations:
+            summary: "Operator p99 reconcile latency {{ $value | humanizeDuration }}"

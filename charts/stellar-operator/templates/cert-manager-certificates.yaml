@@ -1,0 +1,39 @@
+{{- if .Values.certManagement.enabled }}
+{{- if eq .Values.certManagement.backend "cert-manager" }}
+{{- $fullname := include "stellar-operator.fullname" . }}
+{{- $issuerName := printf "%s-letsencrypt-prod" $fullname }}
+{{- $renewBefore := printf "%dh" (mul .Values.certManagement.renewBeforeDays 24) }}
+{{- $duration := printf "%dh" (mul .Values.certManagement.defaultTtlHours 1) }}
+{{- range .Values.certManagement.certificates }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $fullname }}-{{ .name }}
+  namespace: {{ .namespace | default "stellar" }}
+  labels:
+    app.kubernetes.io/name: {{ .name }}
+    app.kubernetes.io/component: tls
+    app.kubernetes.io/part-of: stellar-network
+spec:
+  secretName: {{ .secretName | default (printf "%s-tls" .name) }}
+  issuerRef:
+    name: {{ .issuerName | default $issuerName }}
+    kind: ClusterIssuer
+  commonName: {{ .commonName }}
+  dnsNames:
+  {{- range .dnsNames }}
+  - {{ . }}
+  {{- end }}
+  duration: {{ .duration | default $duration }}
+  renewBefore: {{ .renewBefore | default $renewBefore }}
+  privateKey:
+    algorithm: {{ .privateKeyAlgorithm | default "ECDSA" }}
+    size: {{ .privateKeySize | default 256 }}
+  usages:
+  - server auth
+  - digital signature
+  - key encipherment
+{{- end }}
+{{- end }}
+{{- end }}

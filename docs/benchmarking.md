@@ -7,36 +7,44 @@ This document describes the automated performance benchmarking suite for the Ste
 The benchmarking suite consists of:
 
 - **k6 Load Tests**: Comprehensive load testing scripts measuring API endpoints, CRD operations, and reconciliation loops
-- **Baseline Management**: Version-taggeds performance baselines for regression comparison
-- **Regression Detection**: Automated comparison tool that fails builds when performance degrades
+- **Criterion Core Benchmarks**: Rust-native micro-benchmarks for CRD validation, JSON serialization/deserialization, and concurrent validation
+- **Baseline Management**: Version-tagged performance baselines for regression comparison
+- **Regression Detection**: Automated comparison tool that fails builds when performance degrades by >10%
 - **CI/CD Integration**: GitHub Actions workflow for automated benchmarking on every PR and release
 
-## Quick Start
+## Core Operation Benchmarks (Issue #1257)
 
-### Prerequisites
-
-```bash
-# Install k6
-brew install k6  # macOS
-# or
-sudo apt-get install k6  # Ubuntu/Debian
-
-# Verify installation
-k6 version
-```
-
-### Running Locally
+Criterion benchmarks exercise the same in-memory spec validation and JSON conversion paths used during admission and reconciliation. They do not time Kubernetes API calls, etcd, or network latency; use the k6 suites for end-to-end measurements against a running cluster.
 
 ```bash
-# Start the operator (must be running)
-cargo run
+# Build benchmarks (compile check)
+make crd-benchmark
 
-# In another terminal, start kubectl proxy
-kubectl proxy --port=8001
+# Run full CRD benchmarks
+cargo bench --bench crd_operations
 
-# Run benchmarks
-./benchmarks/run-regression-test.sh
+# Run a specific benchmark group
+cargo bench --bench crd_operations -- crd_validate
+cargo bench --bench crd_operations -- crd_serialize
+cargo bench --bench crd_operations -- crd_deserialize
+cargo bench --bench crd_operations -- crd_concurrent_validate
 ```
+
+### Benchmark Groups
+
+| Group | Description |
+|-------|-------------|
+| `crd_validate` | `StellarNodeSpec::validate()` over minimal, standard, Horizon autoscaling, and full-config specs |
+| `crd_serialize` | JSON encoding throughput across the same four spec tiers |
+| `crd_deserialize` | JSON decoding throughput across the same four spec tiers |
+| `crd_concurrent_validate` | Parallel validation at 1, 5, 10, 25, and 50 workers |
+
+### Reports and baselines
+
+CI publishes Criterion timing data and an HTML report as workflow artifacts. The checked-in
+`crd-performance-v0.1.0.json` contains aggregate YAML manifest validation metrics, not timings
+from these Criterion groups, so it is not used as their regression baseline. Establish a
+Criterion-specific baseline from a stable runner before enabling regression comparisons.
 
 ### Running with Custom Options
 
@@ -160,25 +168,24 @@ The default regression threshold is **10%**. This means:
 
 ### GitHub Actions Workflow
 
-The `benchmark.yml` workflow runs automatically on:
-- Pull requests to `main`
-- Pushes to `main` and `develop`
-- Release tags (`v*`)
+The unified `performance.yml` workflow is the single supported benchmark entry
+point (it replaces the former `benchmark.yml`, `performance-regression.yml`, and
+`webhook-benchmark.yml` templates). It runs on:
+
+- Pushes to `main` (path-filtered)
+- Manual `workflow_dispatch`
 
 ### Workflow Jobs
 
-1. **Build**: Compile operator and build Docker image
-2. **Benchmark**: Run k6 tests in Kind cluster
-3. **Report**: Post results as PR comment
-4. **Update Baseline**: Create new baseline on release tags
+1. **resolve-matrix / build**: Compile operator and build Docker image once
+2. **benchmark** (matrix): operator, regression, and webhook suites
+3. **report**: Publish a combined summary artifact
 
 ### Manual Trigger
 
 ```bash
-# Trigger benchmark with custom baseline
-gh workflow run benchmark.yml \
-  -f baseline_version=v1.0.0 \
-  -f regression_threshold=15
+# Trigger the unified performance pipeline
+gh workflow run performance.yml
 ```
 
 ## Creating Baselines

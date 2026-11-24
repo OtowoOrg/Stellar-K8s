@@ -1,0 +1,38 @@
+apiVersion: stellar.org/v1alpha1
+kind: StellarFederation
+metadata:
+  name: stellar-global
+  namespace: stellar-system
+spec:
+  # Cross-cluster secret and configuration synchronization: each participating
+  # cluster is configured here with its kubeconfig lives in a referenced Secret
+  # (`kubeconfigSecretRef`), which the federation controller syncs and uses for
+  # failover (issue #1409).
+  clusters:
+    - name: us-east-1
+      region: us-east-1
+      apiEndpoint: https://kubernetes.us-east-1.example.internal
+      kubeconfigSecretRef: stellar-federation-us-east-1
+      weight: 100
+    - name: eu-west-1
+      region: eu-west-1
+      apiEndpoint: https://kubernetes.eu-west-1.example.internal
+      kubeconfigSecretRef: stellar-federation-eu-west-1
+      weight: 100
+
+  # Asynchronous ledger/state streaming between regions with a lag budget that
+  # the failover health checks compare against (zero-RPO target, see
+  # docs/dr-failover.md).
+  replication:
+    enabled: true
+    mode: Asynchronous
+    replicationLagThresholdSecs: 60
+
+  # Automated failover with health-check-based routing. When the active region
+  # misses `healthCheckIntervalSecs` consecutive probes, traffic is reweighted
+  # to the healthy standby and a failover condition is recorded in status.
+  trafficRouting:
+    strategy: Geographic
+    healthCheckTimeoutSecs: 10
+  healthCheckIntervalSecs: 30
+  failoverDetectionSecs: 30

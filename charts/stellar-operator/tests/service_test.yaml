@@ -30,7 +30,7 @@ tests:
       - contains:
           path: spec.ports
           content:
-            port: 9090
+            port: 8080
             targetPort: http
             protocol: TCP
             name: http

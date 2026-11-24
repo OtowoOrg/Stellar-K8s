@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: stellar-validator
+  namespace: argocd
+  annotations:
+    # Instruct ArgoCD to prune safely (helps with kube-rs finalizer ordering)
+    argocd.argoproj.io/sync-options: PruneLast=true
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: stellar
+  source:
+    repoURL: https://github.com/agnesnaomiolim-cloud/Stellar-K8s
+    path: charts/stellar-operator
+    targetRevision: HEAD
+    helm:
+      valueFiles: []
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - PruneLast=true

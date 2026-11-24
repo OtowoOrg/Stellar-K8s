@@ -58,25 +58,132 @@ tests:
           path: spec.template.metadata.annotations["prometheus.io/port"]
           value: "9090"
 
-  - it: renders rest-api args when enabled
+  - it: renders run subcommand and REST_API_PORT when enabled
     set:
       operator.restApiEnabled: true
       operator.restApiPort: 9090
     asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args[0]
+          value: run
       - contains:
-          path: spec.template.spec.containers[0].args
-          content: --enable-rest-api
-      - contains:
-          path: spec.template.spec.containers[0].args
-          content: --rest-api-port=9090
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REST_API_PORT
+            value: "9090"
 
-  - it: omits rest-api args when disabled
+  - it: omits REST_API_PORT when rest api disabled
     set:
       operator.restApiEnabled: false
     asserts:
       - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REST_API_PORT
+            value: "8080"
+      - equal:
+          path: spec.template.spec.containers[0].args[0]
+          value: run
+
+  - it: omits AppArmor env when disabled
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: STELLAR_APPARMOR_ENABLED
+            value: "true"
+
+  - it: enables AppArmor env when configured
+    set:
+      operator.appArmorEnabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: STELLAR_APPARMOR_ENABLED
+            value: "true"
+
+  - it: omits dryRun env and arg when disabled
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DRY_RUN
+            value: "true"
+      - notContains:
           path: spec.template.spec.containers[0].args
-          content: --enable-rest-api
+          content: --dry-run
+
+  - it: enables dryRun env and arg when configured
+    set:
+      operator.dryRun: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DRY_RUN
+            value: "true"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --dry-run
+
+  - it: sets log-format arg and env when configured
+    set:
+      operator.logFormat: pretty
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LOG_FORMAT
+            value: "pretty"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --log-format=pretty
+
+  - it: omits profiling env when profiling disabled
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REST_API_PROFILING_ENABLED
+            value: "true"
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: profiling-tmp
+            mountPath: /tmp
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: sets profiling env when operator.profiling.enabled
+    set:
+      operator.restApiEnabled: true
+      operator.profiling.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REST_API_PROFILING_ENABLED
+            value: "true"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MALLOC_CONF
+            value: "prof:true,prof_active:true,lg_prof_sample:19"
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: profiling-tmp
+            emptyDir: {}
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: profiling-tmp
+            mountPath: /tmp
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
 
   - it: exposes http and metrics ports
     asserts:
@@ -84,7 +191,7 @@ tests:
           path: spec.template.spec.containers[0].ports
           content:
             name: http
-            containerPort: 9090
+            containerPort: 8080
             protocol: TCP
       - contains:
           path: spec.template.spec.containers[0].ports
@@ -155,7 +262,7 @@ tests:
           path: spec.template.spec.containers[0].args
           content: --log-level=debug
 
-  - it: adds watch-namespace args when configured
+  - it: adds watch-namespace arg when configured
     set:
       operator.watchNamespace: stellar-system
     asserts:

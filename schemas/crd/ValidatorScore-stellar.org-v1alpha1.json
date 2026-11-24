@@ -1,0 +1,187 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "ValidatorScore custom resource",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "validatorRef"
+      ],
+      "properties": {
+        "validatorRef": {
+          "type": "string"
+        },
+        "evaluationIntervalHours": {
+          "type": "integer",
+          "default": 1
+        },
+        "historyWindowHours": {
+          "type": "integer",
+          "default": 24
+        },
+        "federationMember": {
+          "type": "string"
+        },
+        "weights": {
+          "type": "object",
+          "properties": {
+            "uptimeWeight": {
+              "type": "number",
+              "default": 0.4
+            },
+            "consensusWeight": {
+              "type": "number",
+              "default": 0.4
+            },
+            "archiveWeight": {
+              "type": "number",
+              "default": 0.2
+            }
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "lastEvaluatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "compositeScore": {
+          "type": "number"
+        },
+        "grade": {
+          "type": "string"
+        },
+        "federationMember": {
+          "type": "string"
+        },
+        "uptimeScore": {
+          "type": "object",
+          "properties": {
+            "score": {
+              "type": "number"
+            },
+            "rawValue": {
+              "type": "number"
+            },
+            "grade": {
+              "type": "string"
+            },
+            "details": {
+              "type": "string"
+            }
+          }
+        },
+        "consensusScore": {
+          "type": "object",
+          "properties": {
+            "score": {
+              "type": "number"
+            },
+            "rawValue": {
+              "type": "number"
+            },
+            "grade": {
+              "type": "string"
+            },
+            "details": {
+              "type": "string"
+            }
+          }
+        },
+        "archiveScore": {
+          "type": "object",
+          "properties": {
+            "score": {
+              "type": "number"
+            },
+            "rawValue": {
+              "type": "number"
+            },
+            "grade": {
+              "type": "string"
+            },
+            "details": {
+              "type": "string"
+            }
+          }
+        },
+        "hourlyHistory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "compositeScore": {
+                "type": "number"
+              },
+              "uptimePct": {
+                "type": "number"
+              },
+              "consensusRate": {
+                "type": "number"
+              },
+              "archiveCompletenessPct": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "ValidatorScore"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "ValidatorScore"
+    }
+  ]
+}

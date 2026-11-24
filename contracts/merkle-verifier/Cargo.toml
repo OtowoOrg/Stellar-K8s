@@ -1,0 +1,23 @@
+[package]
+name = "merkle-verifier"
+version = "0.1.0"
+edition = "2021"
+authors = ["Stellar K8s Contributors"]
+description = "Soroban Merkle Tree state-proof verification library for on-chain proof validation"
+license = "Apache-2.0"
+repository = "https://github.com/agnesnaomiolim-cloud/Stellar-K8s"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# SHA-256 digest
+sha2 = { version = "0.10", default-features = false }
+
+[dev-dependencies]
+hex = "0.4"
+sha2 = { version = "0.10", default-features = false }
+
+[[bench]]
+name = "proof_bench"
+harness = false

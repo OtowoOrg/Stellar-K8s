@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Real-time cost calculation for AWS, GCP, Azure resource types
 
 use serde::{Deserialize, Serialize};
@@ -43,7 +55,9 @@ pub struct CloudCostCalculator {
 
 impl CloudCostCalculator {
     pub fn new() -> Self {
-        let mut calc = Self { pricing: HashMap::new() };
+        let mut calc = Self {
+            pricing: HashMap::new(),
+        };
         calc.load_default_pricing();
         calc
     }
@@ -56,30 +70,33 @@ impl CloudCostCalculator {
         // Sample pricing (USD/hr) — replace with live pricing API in production
         let rules = vec![
             // AWS
-            ("m5.large",    CloudProvider::Aws,   0.096,  0.058, 0.035),
-            ("m5.xlarge",   CloudProvider::Aws,   0.192,  0.116, 0.070),
-            ("c5.2xlarge",  CloudProvider::Aws,   0.340,  0.204, 0.120),
-            ("r5.4xlarge",  CloudProvider::Aws,   1.008,  0.604, 0.350),
+            ("m5.large", CloudProvider::Aws, 0.096, 0.058, 0.035),
+            ("m5.xlarge", CloudProvider::Aws, 0.192, 0.116, 0.070),
+            ("c5.2xlarge", CloudProvider::Aws, 0.340, 0.204, 0.120),
+            ("r5.4xlarge", CloudProvider::Aws, 1.008, 0.604, 0.350),
             // GCP
-            ("n2-standard-4",  CloudProvider::Gcp, 0.190, 0.128, 0.065),
-            ("n2-standard-8",  CloudProvider::Gcp, 0.380, 0.256, 0.130),
-            ("n2-highcpu-8",   CloudProvider::Gcp, 0.312, 0.210, 0.110),
+            ("n2-standard-4", CloudProvider::Gcp, 0.190, 0.128, 0.065),
+            ("n2-standard-8", CloudProvider::Gcp, 0.380, 0.256, 0.130),
+            ("n2-highcpu-8", CloudProvider::Gcp, 0.312, 0.210, 0.110),
             // Azure
-            ("Standard_D4s_v3",  CloudProvider::Azure, 0.192, 0.115, 0.070),
-            ("Standard_D8s_v3",  CloudProvider::Azure, 0.384, 0.230, 0.140),
+            ("Standard_D4s_v3", CloudProvider::Azure, 0.192, 0.115, 0.070),
+            ("Standard_D8s_v3", CloudProvider::Azure, 0.384, 0.230, 0.140),
         ];
 
         for (instance, provider, on_demand, reserved, spot) in rules {
             let key = Self::pricing_key(&provider, instance);
-            self.pricing.insert(key, PricingRule {
-                provider,
-                resource_type: ResourceType::ComputeInstance,
-                instance_type: instance.into(),
-                region: "us-east-1".into(),
-                on_demand_usd: on_demand,
-                reserved_1yr_usd: reserved,
-                spot_usd: spot,
-            });
+            self.pricing.insert(
+                key,
+                PricingRule {
+                    provider,
+                    resource_type: ResourceType::ComputeInstance,
+                    instance_type: instance.into(),
+                    region: "us-east-1".into(),
+                    on_demand_usd: on_demand,
+                    reserved_1yr_usd: reserved,
+                    spot_usd: spot,
+                },
+            );
         }
     }
 
@@ -88,9 +105,13 @@ impl CloudCostCalculator {
         let pricing = self.pricing.get(&key);
 
         let hourly_rate = if let Some(p) = pricing {
-            if record.is_reserved { p.reserved_1yr_usd }
-            else if record.is_spot { p.spot_usd }
-            else { p.on_demand_usd }
+            if record.is_reserved {
+                p.reserved_1yr_usd
+            } else if record.is_spot {
+                p.spot_usd
+            } else {
+                p.on_demand_usd
+            }
         } else {
             record.hourly_rate()
         };
@@ -100,8 +121,10 @@ impl CloudCostCalculator {
 
         let (savings_reserved, savings_spot) = if let Some(p) = pricing {
             let base = p.on_demand_usd * HOURS_PER_MONTH;
-            ((base - p.reserved_1yr_usd * HOURS_PER_MONTH).max(0.0),
-             (base - p.spot_usd * HOURS_PER_MONTH).max(0.0))
+            (
+                (base - p.reserved_1yr_usd * HOURS_PER_MONTH).max(0.0),
+                (base - p.spot_usd * HOURS_PER_MONTH).max(0.0),
+            )
         } else {
             (0.0, 0.0)
         };

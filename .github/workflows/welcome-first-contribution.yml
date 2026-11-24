@@ -1,0 +1,86 @@
+name: Welcome First-Time Contributor
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+# Minimal permissions: PR conversation comments go through the issues API,
+# so issues: write covers posting; contents: read fetches the template.
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  welcome:
+    name: Post welcome comment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for prior contributions and post welcome
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const author = context.payload.sender.login;
+            const owner  = context.repo.owner;
+            const repo   = context.repo.repo;
+
+            // ── Duplicate-guard ──────────────────────────────────────────────
+            // issues.listForRepo returns issues AND PRs by this creator, including
+            // the item that just opened. More than one hit means not their first.
+            // (Single call: pulls.list is capped at the newest 100 PRs and would
+            // miss older contributions.)
+            const { data: prior } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              creator: author,
+              state: 'all',
+              per_page: 2,            // we only need to know if count > 1
+            });
+
+            if (prior.length > 1) {
+              core.info(`${author} has prior contributions — skipping welcome.`);
+              return;
+            }
+
+            // ── Build comment from WELCOME_TEMPLATE.md ───────────────────────
+            const { data: templateFile } = await github.rest.repos.getContent({
+              owner,
+              repo,
+              path: '.github/WELCOME_TEMPLATE.md',
+            });
+
+            // Drop the maintainer notes comment at the top of the template.
+            let body = Buffer.from(templateFile.content, 'base64').toString('utf8')
+              .replace(/^<!--[\s\S]*?-->\n/, '');
+
+            // ── Fill [POINTS] / [DIFFICULTY] from an `N-points` label ────────
+            const item   = context.payload.issue || context.payload.pull_request;
+            const labels = (item.labels || []).map(l => l.name);
+            const points = labels.map(l => /^(\d+)-points$/.exec(l)).find(Boolean)?.[1];
+            const difficulty = { 100: 'Trivial', 150: 'Medium', 200: 'High' }[points];
+            body = points
+              ? body.replace(/\[POINTS\]/g, points)
+                    .replace(/ \(\[DIFFICULTY\]\)/g, difficulty ? ` (${difficulty})` : '')
+              : body.replace(/^.*\[POINTS\].*\n\n?/m, '');
+
+            // ── Post the comment ─────────────────────────────────────────────
+            if (context.eventName === 'issues') {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: context.payload.issue.number,
+                body,
+              });
+              core.info(`Welcome comment posted on issue #${context.payload.issue.number}`);
+            } else {
+              // pull_request_target
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: context.payload.pull_request.number,
+                body,
+              });
+              core.info(`Welcome comment posted on PR #${context.payload.pull_request.number}`);
+            }

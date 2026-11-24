@@ -1,0 +1,19 @@
+nodeType: Validator
+network: testnet
+version: v21.0.0
+replicas: 1
+storageClass: stellar-local
+storageSize: 100Gi
+retentionPolicy: Delete
+seedSecret:
+  enabled: true
+  name: validator-seed-testnet
+  key: STELLAR_CORE_SEED
+  value: REPLACE_WITH_A_TESTNET_VALIDATOR_SECRET_KEY
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi

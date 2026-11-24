@@ -1,0 +1,56 @@
+name: Navigation Coverage
+
+# Issue #1711: Verify that every local path referenced in mkdocs.yml nav
+# resolves to a real file under docs/.  Runs check_mkdocs_nav.py which
+# already exists in scripts/ and is used by docs-deploy.yml.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'scripts/check_mkdocs_nav.py'
+      - '.github/workflows/nav-coverage.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'scripts/check_mkdocs_nav.py'
+      - '.github/workflows/nav-coverage.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nav-coverage:
+    name: MkDocs Navigation Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install PyYAML (required by check_mkdocs_nav.py)
+        run: pip install pyyaml
+
+      - name: Check MkDocs navigation coverage
+        # Fails with exit code 1 when any local nav entry points to a missing
+        # file, preventing navigation from rendering broken links in the site.
+        run: python scripts/check_mkdocs_nav.py
+
+      - name: Report
+        if: success()
+        run: |
+          echo "## Navigation Coverage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All local MkDocs navigation entries resolve to existing files." >> $GITHUB_STEP_SUMMARY

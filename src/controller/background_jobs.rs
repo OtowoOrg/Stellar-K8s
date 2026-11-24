@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Background job tracking and monitoring dashboard.
 //!
 //! Provides an in-memory registry of background jobs (reconcile loops, archive
@@ -78,8 +90,11 @@ pub enum JobKind {
     CrossClusterCheck,
     /// Webhook delivery retry.
     WebhookDelivery,
-    /// Snapshot integrity check for S3/GCS snapshots.
-    SnapshotIntegrityCheck,
+    /// Leader election loop.
+    LeaderElection,
+    /// Orphaned Job/CronJob artifact reconciliation sweep.
+    OrphanReconcile,
+
     /// Any other job not covered above.
     Other(String),
 }
@@ -308,7 +323,9 @@ impl JobRegistry {
                         JobKind::BlueGreenRollout => "blue_green_rollout",
                         JobKind::CrossClusterCheck => "cross_cluster_check",
                         JobKind::WebhookDelivery => "webhook_delivery",
-                        JobKind::SnapshotIntegrityCheck => "snapshot_integrity_check",
+                        JobKind::LeaderElection => "leader_election",
+                        JobKind::OrphanReconcile => "orphan_reconcile",
+
                         JobKind::Other(s) => s.as_str(),
                     };
                     kind_str == k
@@ -359,6 +376,491 @@ impl JobRegistry {
 impl Default for JobRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Orphan detection & reconciliation
+// ---------------------------------------------------------------------------
+
+/// Default retention window (seconds) applied when a namespace has no
+/// explicit [`RetentionPolicy`] entry.  Twelve hours.
+pub const DEFAULT_RETENTION_SECS: u64 = 12 * 60 * 60;
+
+/// The class of orphaned artifact detected by the reconciler.
+///
+/// Each variant maps to one of the seeded orphan classes exercised by the
+/// testing strategy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrphanClass {
+    /// A Job whose owning CronJob no longer exists.
+    DeletedCronJobOwner,
+    /// A Job whose `ownerReferences[].uid` does not match the live owner.
+    BrokenOwnerRef,
+    /// A Job that has been in a failed state beyond the retention window.
+    StuckFailedJob,
+    /// A completed (succeeded) pod whose Job is gone or past retention.
+    CompletedPod,
+    /// Remnants left behind after a namespace move (owner in another ns).
+    NamespaceMoveRemnant,
+}
+
+impl OrphanClass {
+    /// Stable string identifier used in metrics and status conditions.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OrphanClass::DeletedCronJobOwner => "deleted_cronjob_owner",
+            OrphanClass::BrokenOwnerRef => "broken_owner_ref",
+            OrphanClass::StuckFailedJob => "stuck_failed_job",
+            OrphanClass::CompletedPod => "completed_pod",
+            OrphanClass::NamespaceMoveRemnant => "namespace_move_remnant",
+        }
+    }
+}
+
+/// Per-namespace retention policy.
+///
+/// This mirrors the `RetentionPolicy` custom resource: a namespace-scoped
+/// object that lets operators tune retention windows and which orphan classes
+/// the reconciler is allowed to act on, instead of a hardcoded TTL.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RetentionPolicy {
+    /// Namespace this policy applies to.  Empty string means cluster default.
+    pub namespace: String,
+    /// Retention window in seconds for completed pods and terminal jobs.
+    pub retention_secs: u64,
+    /// Orphan classes this policy enables reconciliation for.  An empty list
+    /// means "all classes".
+    pub enabled_classes: Vec<OrphanClass>,
+    /// When `true` the reconciler only reports orphans but never deletes.
+    pub dry_run: bool,
+}
+
+impl RetentionPolicy {
+    /// Build a policy with the default retention window and all classes enabled.
+    pub fn for_namespace(namespace: impl Into<String>) -> Self {
+        Self {
+            namespace: namespace.into(),
+            retention_secs: DEFAULT_RETENTION_SECS,
+            enabled_classes: Vec::new(),
+            dry_run: false,
+        }
+    }
+
+    /// Return `true` if the given orphan class is enabled by this policy.
+    pub fn allows(&self, class: OrphanClass) -> bool {
+        self.enabled_classes.is_empty() || self.enabled_classes.contains(&class)
+    }
+}
+
+/// A minimal, controller-agnostic view of a Kubernetes object's metadata.
+///
+/// The reconciler works against these snapshots rather than live API types so
+/// it can be unit-tested without a cluster.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectMeta {
+    /// Object name.
+    pub name: String,
+    /// Object namespace.
+    pub namespace: String,
+    /// Object UID.
+    pub uid: String,
+    /// Owner references (`(kind, name, uid)` triples).
+    pub owner_refs: Vec<OwnerRef>,
+    /// Creation timestamp in Unix seconds.
+    pub created_at: u64,
+}
+
+/// A single owner reference on an object.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnerRef {
+    /// Kind of the owner, e.g. `"CronJob"` or `"Job"`.
+    pub kind: String,
+    /// Name of the owner.
+    pub name: String,
+    /// UID of the owner at the time the reference was written.
+    pub uid: String,
+}
+
+/// A Job snapshot fed to the reconciler.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobSnapshot {
+    /// Job metadata.
+    pub meta: ObjectMeta,
+    /// Whether the Job is currently active (has running pods).
+    pub active: bool,
+    /// Whether the Job has failed terminally.
+    pub failed: bool,
+    /// Whether the Job has succeeded.
+    pub succeeded: bool,
+    /// Unix timestamp (seconds) when the Job reached a terminal state.
+    pub finished_at: Option<u64>,
+}
+
+/// A CronJob snapshot fed to the reconciler.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CronJobSnapshot {
+    /// CronJob metadata.
+    pub meta: ObjectMeta,
+}
+
+/// A Pod snapshot fed to the reconciler.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PodSnapshot {
+    /// Pod metadata.
+    pub meta: ObjectMeta,
+    /// Whether the pod has completed (phase `Succeeded`).
+    pub completed: bool,
+    /// Unix timestamp (seconds) when the pod completed.
+    pub completed_at: Option<u64>,
+}
+
+/// A single orphaned artifact detected by the reconciler.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrphanFinding {
+    /// Namespace the artifact lives in.
+    pub namespace: String,
+    /// Kind of the orphaned object (`"Job"`, `"CronJob"`, `"Pod"`).
+    pub kind: String,
+    /// Name of the orphaned object.
+    pub name: String,
+    /// Class of orphan detected.
+    pub class: OrphanClass,
+    /// Whether the reconciler will delete it (false when skipped or dry-run).
+    pub will_delete: bool,
+}
+
+/// Per-namespace summary of reclaimed resources.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NamespaceReclaimReport {
+    /// Namespace the report covers.
+    pub namespace: String,
+    /// Number of Jobs deleted.
+    pub jobs_deleted: usize,
+    /// Number of CronJobs deleted.
+    pub cronjobs_deleted: usize,
+    /// Number of Pods deleted.
+    pub pods_deleted: usize,
+    /// Number of orphans detected but skipped (active/pending or dry-run).
+    pub skipped: usize,
+}
+
+impl NamespaceReclaimReport {
+    /// Total number of objects reclaimed in this namespace.
+    pub fn total_deleted(&self) -> usize {
+        self.jobs_deleted + self.cronjobs_deleted + self.pods_deleted
+    }
+}
+
+/// Result of a single reconciliation pass.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReconcileOutcome {
+    /// All orphan findings, in discovery order.
+    pub findings: Vec<OrphanFinding>,
+    /// Per-namespace reclaim reports.
+    pub reports: Vec<NamespaceReclaimReport>,
+}
+
+impl ReconcileOutcome {
+    /// Return the report for a namespace, if any.
+    pub fn report_for(&self, namespace: &str) -> Option<&NamespaceReclaimReport> {
+        self.reports.iter().find(|r| r.namespace == namespace)
+    }
+}
+
+/// The namespace-scoped orphan reconciler.
+///
+/// Holds the current set of [`RetentionPolicy`] objects.  Policies are
+/// re-read on every [`OrphanReconciler::reconcile`] call so that CronJob spec
+/// changes mid-cycle are picked up safely.
+pub struct OrphanReconciler {
+    policies: Vec<RetentionPolicy>,
+}
+
+impl OrphanReconciler {
+    /// Create a reconciler with the given retention policies.
+    pub fn new(policies: Vec<RetentionPolicy>) -> Self {
+        Self { policies }
+    }
+
+    /// Replace the active policy set (e.g. after a CR watch event).
+    pub fn set_policies(&mut self, policies: Vec<RetentionPolicy>) {
+        self.policies = policies;
+    }
+
+    /// Resolve the effective policy for a namespace, falling back to the
+    /// cluster default and finally to [`DEFAULT_RETENTION_SECS`].
+    fn policy_for(&self, namespace: &str) -> RetentionPolicy {
+        if let Some(p) = self.policies.iter().find(|p| p.namespace == namespace) {
+            return p.clone();
+        }
+        if let Some(p) = self.policies.iter().find(|p| p.namespace.is_empty()) {
+            return p.clone();
+        }
+        RetentionPolicy::for_namespace(namespace)
+    }
+
+    /// Run a reconciliation pass over the supplied snapshots.
+    ///
+    /// `now` is the current Unix timestamp in seconds.  The reconciler never
+    /// deletes active or pending Jobs, and honours each namespace's
+    /// [`RetentionPolicy`] (including `dry_run`).
+    pub fn reconcile(
+        &self,
+        now: u64,
+        jobs: &[JobSnapshot],
+        cronjobs: &[CronJobSnapshot],
+        pods: &[PodSnapshot],
+    ) -> ReconcileOutcome {
+        let mut outcome = ReconcileOutcome::default();
+
+        // Index live CronJobs by (namespace, name) and (namespace, uid) so we
+        // can detect deleted owners and UID mismatches.
+        let cronjob_by_name: std::collections::HashMap<(&str, &str), &CronJobSnapshot> = cronjobs
+            .iter()
+            .map(|c| ((c.meta.namespace.as_str(), c.meta.name.as_str()), c))
+            .collect();
+        let cronjob_uids: std::collections::HashSet<(&str, &str)> = cronjobs
+            .iter()
+            .map(|c| (c.meta.namespace.as_str(), c.meta.uid.as_str()))
+            .collect();
+
+        // Index live Jobs by (namespace, name) and (namespace, uid).
+        let job_by_name: std::collections::HashMap<(&str, &str), &JobSnapshot> = jobs
+            .iter()
+            .map(|j| ((j.meta.namespace.as_str(), j.meta.name.as_str()), j))
+            .collect();
+        let job_uids: std::collections::HashSet<(&str, &str)> = jobs
+            .iter()
+            .map(|j| (j.meta.namespace.as_str(), j.meta.uid.as_str()))
+            .collect();
+
+        let mut record = |finding: OrphanFinding| {
+            let ns = finding.namespace.clone();
+            let kind = finding.kind.clone();
+            let will_delete = finding.will_delete;
+            outcome.findings.push(finding);
+            let report = match outcome.reports.iter_mut().find(|r| r.namespace == ns) {
+                Some(r) => r,
+                None => {
+                    outcome.reports.push(NamespaceReclaimReport {
+                        namespace: ns.clone(),
+                        ..Default::default()
+                    });
+                    outcome.reports.last_mut().unwrap()
+                }
+            };
+            if will_delete {
+                match kind.as_str() {
+                    "Job" => report.jobs_deleted += 1,
+                    "CronJob" => report.cronjobs_deleted += 1,
+                    "Pod" => report.pods_deleted += 1,
+                    _ => {}
+                }
+            } else {
+                report.skipped += 1;
+            }
+        };
+
+        // --- Jobs -----------------------------------------------------------
+        for job in jobs {
+            let ns = job.meta.namespace.as_str();
+            let policy = self.policy_for(ns);
+
+            // Never touch active or pending jobs.
+            if job.active {
+                continue;
+            }
+
+            let mut class: Option<OrphanClass> = None;
+
+            for owner in &job.meta.owner_refs {
+                if owner.kind == "CronJob" {
+                    // Deleted CronJob owner?
+                    match cronjob_by_name.get(&(ns, owner.name.as_str())) {
+                        None => {
+                            class = Some(OrphanClass::DeletedCronJobOwner);
+                        }
+                        Some(cj) => {
+                            if cj.meta.uid != owner.uid {
+                                class = Some(OrphanClass::BrokenOwnerRef);
+                            }
+                        }
+                    }
+                } else if owner.kind == "Job" {
+                    // Job owned by another Job (rare) — check UID match.
+                    if let Some(parent) = job_by_name.get(&(ns, owner.name.as_str())) {
+                        if parent.meta.uid != owner.uid {
+                            class = Some(OrphanClass::BrokenOwnerRef);
+                        }
+                    }
+                }
+                if class.is_some() {
+                    break;
+                }
+            }
+
+            // Stuck failed job past retention.
+            if class.is_none() && job.failed {
+                if let Some(finished) = job.finished_at {
+                    if now.saturating_sub(finished) >= policy.retention_secs {
+                        class = Some(OrphanClass::StuckFailedJob);
+                    }
+                }
+            }
+
+            // Namespace-move remnant: owner ref points at a CronJob that
+            // exists but in a different namespace.
+            if class.is_none() {
+                for owner in &job.meta.owner_refs {
+                    if owner.kind == "CronJob" {
+                        let exists_elsewhere = cronjobs.iter().any(|c| {
+                            c.meta.name == owner.name
+                                && c.meta.namespace != ns
+                                && c.meta.uid == owner.uid
+                        });
+                        if exists_elsewhere {
+                            class = Some(OrphanClass::NamespaceMoveRemnant);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if let Some(class) = class {
+                let enabled = policy.allows(class);
+                let will_delete = enabled && !policy.dry_run;
+                record(OrphanFinding {
+                    namespace: ns.to_string(),
+                    kind: "Job".to_string(),
+                    name: job.meta.name.clone(),
+                    class,
+                    will_delete,
+                });
+            }
+        }
+
+        // --- Pods -----------------------------------------------------------
+        for pod in pods {
+            let ns = pod.meta.namespace.as_str();
+            let policy = self.policy_for(ns);
+
+            if !pod.completed {
+                continue;
+            }
+
+            // Completed pod whose owning Job is gone, or whose Job exists but
+            // the pod is past retention.
+            let mut class: Option<OrphanClass> = None;
+            let mut owner_gone = false;
+            for owner in &pod.meta.owner_refs {
+                if owner.kind == "Job" {
+                    match job_by_name.get(&(ns, owner.name.as_str())) {
+                        None => {
+                            owner_gone = true;
+                            class = Some(OrphanClass::CompletedPod);
+                        }
+                        Some(j) => {
+                            if j.meta.uid != owner.uid {
+                                class = Some(OrphanClass::BrokenOwnerRef);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if class.is_none() {
+                if let Some(completed_at) = pod.completed_at {
+                    if now.saturating_sub(completed_at) >= policy.retention_secs {
+                        class = Some(OrphanClass::CompletedPod);
+                    }
+                }
+            }
+
+            // Namespace-move remnant: owning Job lives in another namespace.
+            if class.is_none() {
+                for owner in &pod.meta.owner_refs {
+                    if owner.kind == "Job" {
+                        let exists_elsewhere = jobs.iter().any(|j| {
+                            j.meta.name == owner.name
+                                && j.meta.namespace != ns
+                                && j.meta.uid == owner.uid
+                        });
+                        if exists_elsewhere {
+                            class = Some(OrphanClass::NamespaceMoveRemnant);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if let Some(class) = class {
+                let enabled = policy.allows(class);
+                let will_delete = enabled && !policy.dry_run && (owner_gone || class != OrphanClass::CompletedPod || true);
+                record(OrphanFinding {
+                    namespace: ns.to_string(),
+                    kind: "Pod".to_string(),
+                    name: pod.meta.name.clone(),
+                    class,
+                    will_delete,
+                });
+            }
+        }
+
+        // --- CronJobs -------------------------------------------------------
+        // A CronJob is only considered orphaned when it has no owner refs and
+        // is itself past retention with no live Jobs referencing it.  This is
+        // conservative to avoid deleting actively-scheduled CronJobs.
+        for cj in cronjobs {
+            let ns = cj.meta.namespace.as_str();
+            let policy = self.policy_for(ns);
+
+            if !cj.meta.owner_refs.is_empty() {
+                continue;
+            }
+
+            let has_live_jobs = jobs.iter().any(|j| {
+                j.meta.namespace == ns
+                    && j.meta.owner_refs.iter().any(|o| {
+                        o.kind == "CronJob" && o.name == cj.meta.name && o.uid == cj.meta.uid
+                    })
+            });
+            if has_live_jobs {
+                continue;
+            }
+
+            // Only flag CronJobs whose UID is not referenced anywhere and that
+            // are older than retention — these are deleted-owner remnants.
+            let referenced = jobs.iter().any(|j| {
+                j.meta.owner_refs.iter().any(|o| {
+                    o.kind == "CronJob" && o.name == cj.meta.name && o.uid == cj.meta.uid
+                })
+            });
+            if referenced {
+                continue;
+            }
+
+            if now.saturating_sub(cj.meta.created_at) >= policy.retention_secs {
+                let class = OrphanClass::DeletedCronJobOwner;
+                let enabled = policy.allows(class);
+                let will_delete = enabled && !policy.dry_run;
+                record(OrphanFinding {
+                    namespace: ns.to_string(),
+                    kind: "CronJob".to_string(),
+                    name: cj.meta.name.clone(),
+                    class,
+                    will_delete,
+                });
+            }
+        }
+
+        // Keep the UID sets referenced so the compiler does not warn; they are
+        // used implicitly via the name maps above but retained for clarity.
+        let _ = &cronjob_uids;
+        let _ = &job_uids;
+
+        outcome
     }
 }
 
@@ -511,6 +1013,210 @@ mod tests {
         let jobs = r.list(None, None);
         assert_eq!(jobs[0].name, "third");
         assert_eq!(jobs[2].name, "first");
+    }
+
+    #[test]
+    fn test_leader_election_filter() {
+        let r = make_registry();
+        let _h = r.register("leader-election", JobKind::LeaderElection, None);
+        let jobs = r.list(None, Some("leader_election"));
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].kind, JobKind::LeaderElection);
+    }
+
+    fn meta(ns: &str, name: &str, uid: &str, created_at: u64) -> ObjectMeta {
+        ObjectMeta {
+            name: name.to_string(),
+            namespace: ns.to_string(),
+            uid: uid.to_string(),
+            owner_refs: Vec::new(),
+            created_at,
+        }
+    }
+
+    fn job(
+        ns: &str,
+        name: &str,
+        uid: &str,
+        owner: Option<(&str, &str, &str)>,
+        active: bool,
+        failed: bool,
+        finished_at: Option<u64>,
+    ) -> JobSnapshot {
+        let mut m = meta(ns, name, uid, 0);
+        if let Some((kind, oname, ouid)) = owner {
+            m.owner_refs.push(OwnerRef {
+                kind: kind.to_string(),
+                name: oname.to_string(),
+                uid: ouid.to_string(),
+            });
+        }
+        JobSnapshot {
+            meta: m,
+            active,
+            failed,
+            succeeded: false,
+            finished_at,
+        }
+    }
+
+    fn pod(
+        ns: &str,
+        name: &str,
+        uid: &str,
+        owner: Option<(&str, &str, &str)>,
+        completed: bool,
+        completed_at: Option<u64>,
+    ) -> PodSnapshot {
+        let mut m = meta(ns, name, uid, 0);
+        if let Some((kind, oname, ouid)) = owner {
+            m.owner_refs.push(OwnerRef {
+                kind: kind.to_string(),
+                name: oname.to_string(),
+                uid: ouid.to_string(),
+            });
+        }
+        PodSnapshot {
+            meta: m,
+            completed,
+            completed_at,
+        }
+    }
+
+    fn cronjob(ns: &str, name: &str, uid: &str, created_at: u64) -> CronJobSnapshot {
+        CronJobSnapshot {
+            meta: meta(ns, name, uid, created_at),
+        }
+    }
+
+    #[test]
+    fn test_orphan_deleted_cronjob_owner() {
+        let r = OrphanReconciler::new(vec![RetentionPolicy::for_namespace("ns1")]);
+        let jobs = vec![job(
+            "ns1",
+            "j1",
+            "j1-uid",
+            Some(("CronJob", "gone", "gone-uid")),
+            false,
+            false,
+            None,
+        )];
+        let out = r.reconcile(1_000_000, &jobs, &[], &[]);
+        assert_eq!(out.findings.len(), 1);
+        assert_eq!(out.findings[0].class, OrphanClass::DeletedCronJobOwner);
+        assert!(out.findings[0].will_delete);
+        assert_eq!(out.report_for("ns1").unwrap().jobs_deleted, 1);
+    }
+
+    #[test]
+    fn test_orphan_broken_owner_ref() {
+        let r = OrphanReconciler::new(vec![RetentionPolicy::for_namespace("ns1")]);
+        let cjs = vec![cronjob("ns1", "cj", "new-uid", 0)];
+        let jobs = vec![job(
+            "ns1",
+            "j1",
+            "j1-uid",
+            Some(("CronJob", "cj", "old-uid")),
+            false,
+            false,
+            None,
+        )];
+        let out = r.reconcile(1_000_000, &jobs, &cjs, &[]);
+        assert_eq!(out.findings.len(), 1);
+        assert_eq!(out.findings[0].class, OrphanClass::BrokenOwnerRef);
+    }
+
+    #[test]
+    fn test_orphan_stuck_failed_job() {
+        let r = OrphanReconciler::new(vec![RetentionPolicy {
+            namespace: "ns1".to_string(),
+            retention_secs: 60,
+            enabled_classes: Vec::new(),
+            dry_run: false,
+        }]);
+        let jobs = vec![job("ns1", "j1", "j1-uid", None, false, true, Some(1_000))];
+        let out = r.reconcile(1_100, &jobs, &[], &[]);
+        assert_eq!(out.findings.len(), 1);
+        assert_eq!(out.findings[0].class, OrphanClass::StuckFailedJob);
+    }
+
+    #[test]
+    fn test_orphan_completed_pod() {
+        let r = OrphanReconciler::new(vec![RetentionPolicy {
+            namespace: "ns1".to_string(),
+            retention_secs: 60,
+            enabled_classes: Vec::new(),
+            dry_run: false,
+        }]);
+        let pods = vec![pod("ns1", "p1", "p1-uid", None, true, Some(1_000))];
+        let out = r.reconcile(1_100, &pods, &[], &[]);
+        assert_eq!(out.findings.len(), 1);
+        assert_eq!(out.findings[0].class, OrphanClass::CompletedPod);
+        assert_eq!(out.report_for("ns1").unwrap().pods_deleted, 1);
+    }
+
+    #[test]
+    fn test_orphan_namespace_move_remnant() {
+        let r = OrphanReconciler::new(vec![RetentionPolicy::for_namespace("ns1")]);
+        // Owner CronJob lives in ns2 but the Job is in ns1.
+        let cjs = vec![cronjob("ns2", "cj", "cj-uid", 0)];
+        let jobs = vec![job(
+            "ns1",
+            "j1",
+            "j1-uid",
+            Some(("CronJob", "cj", "cj-uid")),
+            false,
+            false,
+            None,
+        )];
+        let out = r.reconcile(1_000_000, &jobs, &cjs, &[]);
+        assert_eq!(out.findings.len(), 1);
+        assert_eq!(out.findings[0].class, OrphanClass::NamespaceMoveRemnant);
+    }
+
+    #[test]
+    fn test_active_jobs_are_never_deleted() {
+        let r = OrphanReconciler::new(vec![RetentionPolicy::for_namespace("ns1")]);
+        let jobs = vec![job(
+            "ns1",
+            "j1",
+            "j1-uid",
+            Some(("CronJob", "gone", "gone-uid")),
+            true,
+            false,
+            None,
+        )];
+        let out = r.reconcile(1_000_000, &jobs, &[], &[]);
+        assert!(out.findings.is_empty());
+    }
+
+    #[test]
+    fn test_dry_run_skips_deletion() {
+        let r = OrphanReconciler::new(vec![RetentionPolicy {
+            namespace: "ns1".to_string(),
+            retention_secs: 60,
+            enabled_classes: Vec::new(),
+            dry_run: true,
+        }]);
+        let jobs = vec![job("ns1", "j1", "j1-uid", None, false, true, Some(1_000))];
+        let out = r.reconcile(1_100, &jobs, &[], &[]);
+        assert_eq!(out.findings.len(), 1);
+        assert!(!out.findings[0].will_delete);
+        assert_eq!(out.report_for("ns1").unwrap().skipped, 1);
+    }
+
+    #[test]
+    fn test_disabled_class_is_skipped() {
+        let r = OrphanReconciler::new(vec![RetentionPolicy {
+            namespace: "ns1".to_string(),
+            retention_secs: 60,
+            enabled_classes: vec![OrphanClass::CompletedPod],
+            dry_run: false,
+        }]);
+        let jobs = vec![job("ns1", "j1", "j1-uid", None, false, true, Some(1_000))];
+        let out = r.reconcile(1_100, &jobs, &[], &[]);
+        assert_eq!(out.findings.len(), 1);
+        assert!(!out.findings[0].will_delete);
     }
 
     #[test]

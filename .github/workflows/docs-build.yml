@@ -1,0 +1,71 @@
+name: Documentation Build
+
+# Issue #1710: Add a dedicated CI job that builds the MkDocs documentation
+# site on every PR/push touching docs content, mkdocs config, or requirements,
+# ensuring the published site never diverges from a broken state.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements.txt'
+      - 'scripts/check_mkdocs_nav.py'
+      - '.github/workflows/docs-build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements.txt'
+      - 'scripts/check_mkdocs_nav.py'
+      - '.github/workflows/docs-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-build:
+    name: Build Documentation Site
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install documentation dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build documentation (strict)
+        # mkdocs.yml sets strict: true; --strict on the CLI guarantees the same
+        # behaviour even if the config value is ever removed or overridden.
+        run: |
+          mkdocs build --strict --verbose
+
+      - name: Upload site artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-site-${{ github.sha }}
+          path: site/
+          retention-days: 7
+
+      - name: Build summary
+        run: |
+          echo "## Documentation Build" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ MkDocs site built successfully (strict mode)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Artifact \`docs-site-${{ github.sha }}\` retained for 7 days." >> $GITHUB_STEP_SUMMARY

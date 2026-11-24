@@ -1,0 +1,136 @@
+# cargo-deny configuration — Stellar-K8s
+# Enforces license compliance and detects banned/duplicate crates.
+# Run locally: cargo deny check
+# CI: .github/workflows/dependency-review.yml
+# Compatible with cargo-deny >= 0.20 (deprecated lint keys removed).
+
+[graph]
+# Only audit for the default feature set used in production builds.
+# Feature-flagged optional dependencies are covered separately.
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "aarch64-unknown-linux-gnu" },
+]
+
+# ── License policy ─────────────────────────────────────────────────────────────
+[licenses]
+# Allowlist — only the licenses enumerated here are permitted.
+# Any new dependency with a license NOT in this list will fail CI.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "MPL-2.0",       # Mozilla Public License 2.0 — file-level copyleft, acceptable
+    "Zlib",
+    "OpenSSL",
+]
+
+# Exceptions for specific crates that use uncommon-but-acceptable licenses.
+exceptions = [
+    # unicode-ident uses Unicode-DFS-2016 which is not a standard SPDX ID in
+    # older cargo-deny versions; treat it as allowed.
+    { allow = ["Unicode-DFS-2016"], crate = "unicode-ident" },
+]
+
+# ── Bans — forbidden and duplicate crates ─────────────────────────────────────
+[bans]
+# Deny multiple versions of the same crate (can cause binary bloat and subtle bugs).
+multiple-versions = "warn"
+
+# Completely deny these crates — they must not appear anywhere in the dependency tree
+# unless pulled exclusively through an approved wrapper.
+deny = [
+    # openssl — prefer rustls; still appears transitively via reqwest's native-tls feature.
+    { crate = "openssl", wrappers = ["native-tls"], reason = "reqwest enables native-tls alongside rustls-tls-manual-roots" },
+    { crate = "openssl-sys", wrappers = ["openssl", "native-tls"], reason = "sys crate for openssl/native-tls via reqwest" },
+]
+
+# Allow specific version duplicates that are unavoidable due to ecosystem lag.
+# Add entries here with justification when 'multiple-versions = warn' fires.
+skip = [
+    # syn 1.x vs 2.x — many macro crates still use 1.x; expected to resolve
+    # over time as the ecosystem migrates.
+    { crate = "syn", reason = "macro ecosystem migration from syn 1.x to 2.x is in progress" },
+    # tokio-util — kube-rs and some networking crates pin different minor versions.
+    { crate = "tokio-util", reason = "transitive version split between kube-rs and axum; no actionable fix" },
+]
+
+# ── Advisories — security vulnerability policy ────────────────────────────────
+[advisories]
+# Fetch the RustSec advisory database on each run.
+db-urls = ["https://github.com/rustsec/advisory-db"]
+db-path = "~/.cargo/advisory-db"
+
+# cargo-deny >=0.18: unmaintained/unsound are scopes (all|workspace|transitive|none).
+unmaintained = "workspace"
+unsound = "workspace"
+
+# Ignored advisories — all entries MUST have a documented reason and a
+# re-evaluation target date or upstream issue link.
+#
+# KNOWN DIVERGENCE (issue #936): this list is NOT actually in sync with
+# `.cargo/audit.toml`, despite the note below. It is missing 6 entries present
+# there: RUSTSEC-2026-0049, -0149, -0182, -0185, -0188, -0192.
+# Reconciling the four ignore lists (this file, .cargo/audit.toml, ci.yml,
+# dependency-review.yml) into one generated source of truth is outstanding.
+ignore = [
+    # backoff 0.4.0 — unmaintained, transitive via kube-runtime 0.94.x
+    # Re-evaluate when kube-rs upgrades its backoff dependency.
+    { id = "RUSTSEC-2025-0012", reason = "transitive via kube-runtime; no fix available" },
+
+    # derivative — unmaintained, transitive via kube-runtime
+    { id = "RUSTSEC-2024-0388", reason = "transitive via kube-runtime; no fix available" },
+
+    # instant 0.1.x — unmaintained, transitive via backoff → kube-runtime
+    { id = "RUSTSEC-2024-0384", reason = "transitive via kube-runtime; no fix available" },
+
+    # fxhash — unmaintained, transitive via wasmtime 24.x
+    { id = "RUSTSEC-2025-0057", reason = "transitive via wasmtime 24.x; fix requires wasmtime 36+" },
+
+    # paste — unmaintained, transitive via wasmtime 24.x
+    { id = "RUSTSEC-2024-0436", reason = "transitive via wasmtime 24.x; fix requires wasmtime 36+" },
+
+    # rustls-pemfile — unmaintained, transitive via kube-client / axum-server
+    { id = "RUSTSEC-2025-0134", reason = "transitive; upstream migration to rustls-pki-types in progress" },
+
+    # rsa Marvin Attack — transitive via sqlx-mysql (only postgres driver used)
+    { id = "RUSTSEC-2023-0071", reason = "sqlx-mysql only; postgres driver used in production" },
+
+    # rand unsound — transitive via rand_distr, quinn-proto, proptest
+    { id = "RUSTSEC-2026-0097", reason = "no patched rand 0.9.x release available" },
+
+    # wasmtime Winch backend — only affects Winch compiler, we use Cranelift
+    { id = "RUSTSEC-2026-0094", reason = "Winch backend only; we use Cranelift" },
+    { id = "RUSTSEC-2026-0086", reason = "Winch backend only; we use Cranelift" },
+    { id = "RUSTSEC-2026-0095", reason = "Winch backend only; we use Cranelift" },
+    { id = "RUSTSEC-2026-0096", reason = "Winch aarch64 only; we use Cranelift" },
+    { id = "RUSTSEC-2026-0088", reason = "Winch backend only; we use Cranelift" },
+    { id = "RUSTSEC-2026-0089", reason = "Winch backend only; we use Cranelift" },
+
+    # pqcrypto — experimental KMS path only, behind a feature flag
+    # NOTE (issue #936): the justification below references an "experimental
+    # pqcrypto KMS path", but no `pqcrypto` package exists in Cargo.toml or
+    # Cargo.lock. These ignores are inert; correct or remove them.
+    { id = "RUSTSEC-2024-0380", reason = "experimental pqcrypto KMS path, not in production" },
+    { id = "RUSTSEC-2024-0381", reason = "experimental pqcrypto KMS path, not in production" },
+
+    # DIVERGENT: ci.yml and dependency-review.yml additionally ignore
+    # RUSTSEC-2020-0071 and RUSTSEC-2026-0085/-0087/-0091/-0204, which are in
+    # neither this file nor .cargo/audit.toml. See issue #936.
+    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki name constraints; awaiting coordinated upgrade" },
+    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki wildcard name constraints; awaiting coordinated upgrade" },
+    { id = "RUSTSEC-2026-0104", reason = "rustls-webpki CRL parsing panic; awaiting coordinated upgrade" },
+    { id = "RUSTSEC-2026-0187", reason = "lopdf stack overflow; transitive, not on operator hot path" },
+]
+
+# ── Sources — only allow crates from trusted registries ───────────────────────
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

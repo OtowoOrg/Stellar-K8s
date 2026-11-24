@@ -1,0 +1,25 @@
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: soroban-rpc-testnet
+  namespace: stellar
+  labels:
+
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  storage:
+    mode: PersistentVolume
+
+      enabled: true
+      ttlSecs: 30
+      maxEntries: 10000
+      maxBytes: 67108864
+

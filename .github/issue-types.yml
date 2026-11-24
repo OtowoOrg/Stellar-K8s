@@ -1,0 +1,63 @@
+# First-class issue type registry for Stellar-K8s (issue #1836).
+#
+# Every issue that can be opened against this repository belongs to exactly one
+# first-class type. The registry is the single source of truth that maps a type
+# to its GitHub Issue Form, its title prefix, and its labels.
+#
+# `make issue-types-check` validates this file against the forms in
+# .github/ISSUE_TEMPLATE/ and fails when a form is unregistered, references a
+# missing template, or disagrees with the labels or title prefix declared
+# here. The check runs in the `Issue Template Lint` CI job.
+#
+# Documentation: docs/first-class-issues.md
+
+version: 1
+
+types:
+  - id: epic
+    name: Epic
+    description: Multi-part effort spanning several issues and weeks of work
+    title: "[EPIC] "
+    template: epic_200_point.yml
+    labels: [epic, 200-points, needs-triage]
+    points: 200
+    triage: needs-triage
+
+  - id: feature
+    name: Feature Request
+    description: New capability or enhancement proposed by a contributor
+    title: "[Feature]: "
+    template: feature_request.yml
+    labels: [enhancement]
+    triage: needs-triage
+
+  - id: bug
+    name: Bug Report
+    description: Reproducible defect in the operator, charts, or scripts
+    title: "[Bug]: "
+    template: bug_report.yml
+    labels: [bug, needs-triage]
+    triage: needs-triage
+
+  - id: maintenance
+    name: Maintenance
+    description: Repository hygiene, CI, documentation, or dependency work
+    title: "[Chore]: "
+    template: maintenance.yml
+    labels: [maintenance]
+    triage: needs-triage
+
+  - id: support
+    name: Support Question
+    description: Guidance request; redirected to GitHub Discussions when possible
+    template: support.yml
+    labels: []
+    triage: support
+
+  - id: wave
+    name: Stellar Wave Issue
+    description: Structured issue opened by a contributor in the Stellar Wave program
+    title: "[Wave] "
+    template: wave_issue.yml
+    labels: [stellar-wave]
+    triage: needs-triage

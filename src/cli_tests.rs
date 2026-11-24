@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Comprehensive CLI argument parser tests for all subcommands (Issue #594).
 //!
 //! Covers: defaults, flag parsing, required args, optional args, enum values,
@@ -378,7 +390,7 @@ mod tests {
         );
         assert!(matches!(
             a.format,
-            stellar_k8s::controller::diff::DiffFormat::Json
+            crate::controller::diff::DiffFormat::Json
         ));
     }
 
@@ -397,7 +409,7 @@ mod tests {
         );
         assert!(matches!(
             a.format,
-            stellar_k8s::controller::diff::DiffFormat::Unified
+            crate::controller::diff::DiffFormat::Unified
         ));
     }
 
@@ -535,13 +547,13 @@ mod tests {
 
     // ── IncidentReport ────────────────────────────────────────────────────────
 
-    fn parse_incident_report(args: &[&str]) -> stellar_k8s::incident::IncidentReportArgs {
+    fn parse_incident_report(args: &[&str]) -> crate::incident::IncidentReportArgs {
         let mut full: Vec<&str> = vec!["stellar-operator", "incident", "report"];
         full.extend_from_slice(args);
         let parsed = Args::try_parse_from(full).unwrap();
         match parsed.command {
             Commands::Incident {
-                command: stellar_k8s::incident::IncidentCommands::Report(r),
+                command: crate::incident::IncidentCommands::Report(r),
             } => r,
             _ => panic!("expected Incident Report subcommand"),
         }
@@ -775,5 +787,131 @@ mod tests {
                 argv
             );
         }
+    }
+
+    // ── Feature-flag resilience (Issue #1984) ────────────────────────────────
+
+    /// Simulates revoking bundle delivery for 24h and asserts that the
+    /// kill-switch and last-known-good flags continue to function.
+    #[test]
+    fn flags_survive_24h_bundle_delivery_outage() {
+        use crate::feature_flags::{FlagBundle, FlagEvaluator, FlagValue};
+        use std::time::Duration;
+
+        let mut bundle = FlagBundle::new("bundle-v1");
+        bundle.insert("kill-switch", FlagValue::Bool(false));
+        bundle.insert("new-ui", FlagValue::Bool(true));
+        bundle.insert("checkout-v2", FlagValue::Bool(true));
+        bundle.sign_for_test();
+
+        let mut evaluator = FlagEvaluator::new();
+        evaluator.install_bundle(bundle).expect("bundle installs");
+
+        // Baseline evaluation before the outage.
+        assert_eq!(
+            evaluator.evaluate_bool("new-ui", "user-1"),
+            Some(true),
+            "flag should be enabled before outage"
+        );
+
+        // Revoke bundle delivery for 24h: no successful refresh happens.
+        evaluator.simulate_delivery_outage(Duration::from_secs(24 * 60 * 60));
+
+        // Last-known-good flags must still evaluate.
+        assert_eq!(
+            evaluator.evaluate_bool("new-ui", "user-1"),
+            Some(true),
+            "last-known-good flag must survive a 24h outage"
+        );
+        assert_eq!(
+            evaluator.evaluate_bool("checkout-v2", "user-2"),
+            Some(true),
+            "last-known-good flag must survive a 24h outage"
+        );
+
+        // Kill-switch must still work while delivery is down.
+        evaluator.engage_kill_switch("new-ui");
+        assert_eq!(
+            evaluator.evaluate_bool("new-ui", "user-1"),
+            Some(false),
+            "kill-switch must override last-known-good value during outage"
+        );
+        assert_eq!(
+            evaluator.evaluate_bool("checkout-v2", "user-2"),
+            Some(true),
+            "kill-switch must only affect the targeted flag"
+        );
+
+        // Disengaging the kill-switch restores the last-known-good value.
+        evaluator.disengage_kill_switch("new-ui");
+        assert_eq!(
+            evaluator.evaluate_bool("new-ui", "user-1"),
+            Some(true),
+            "disengaging kill-switch restores last-known-good value"
+        );
+    }
+
+    /// Every user-affecting decision must be recorded in the audit trail,
+    /// including decisions made while bundle delivery is down.
+    #[test]
+    fn flag_decisions_are_audited_during_outage() {
+        use crate::feature_flags::{FlagBundle, FlagEvaluator, FlagValue};
+        use std::time::Duration;
+
+        let mut bundle = FlagBundle::new("bundle-v1");
+        bundle.insert("kill-switch", FlagValue::Bool(false));
+        bundle.insert("new-ui", FlagValue::Bool(true));
+        bundle.sign_for_test();
+
+        let mut evaluator = FlagEvaluator::new();
+        evaluator.install_bundle(bundle).expect("bundle installs");
+        evaluator.simulate_delivery_outage(Duration::from_secs(24 * 60 * 60));
+
+        let _ = evaluator.evaluate_bool("new-ui", "user-1");
+        evaluator.engage_kill_switch("new-ui");
+        let _ = evaluator.evaluate_bool("new-ui", "user-1");
+
+        let trail = evaluator.audit_trail();
+        assert!(
+            trail.len() >= 2,
+            "every user-affecting decision must be auditable"
+        );
+        assert!(
+            trail.iter().any(|e| e.flag == "new-ui" && e.reason.contains("kill-switch")),
+            "kill-switch decision must be recorded with its reason"
+        );
+    }
+
+    /// In-process evaluation must stay under 1ms at p99.
+    #[test]
+    fn flag_evaluation_p99_under_1ms() {
+        use crate::feature_flags::{FlagBundle, FlagEvaluator, FlagValue};
+        use std::time::{Duration, Instant};
+
+        let mut bundle = FlagBundle::new("bundle-v1");
+        bundle.insert("kill-switch", FlagValue::Bool(false));
+        for i in 0..64 {
+            bundle.insert(&format!("flag-{i}"), FlagValue::Bool(i % 2 == 0));
+        }
+        bundle.sign_for_test();
+
+        let mut evaluator = FlagEvaluator::new();
+        evaluator.install_bundle(bundle).expect("bundle installs");
+
+        const SAMPLES: usize = 10_000;
+        let mut latencies = Vec::with_capacity(SAMPLES);
+        for i in 0..SAMPLES {
+            let flag = format!("flag-{}", i % 64);
+            let start = Instant::now();
+            let _ = evaluator.evaluate_bool(&flag, "user-1");
+            latencies.push(start.elapsed());
+        }
+        latencies.sort_unstable();
+        let p99 = latencies[(SAMPLES * 99) / 100];
+        assert!(
+            p99 < Duration::from_millis(1),
+            "p99 evaluation latency {:?} must be under 1ms",
+            p99
+        );
     }
 }

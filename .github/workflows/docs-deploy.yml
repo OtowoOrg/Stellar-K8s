@@ -8,6 +8,7 @@ on:
       - 'docs/**'
       - 'mkdocs.yml'
       - 'requirements.txt'
+      - 'scripts/check_mkdocs_nav.py'
       - '.github/workflows/docs-deploy.yml'
   workflow_dispatch:
 
@@ -17,6 +18,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -24,7 +26,7 @@ jobs:
           fetch-depth: 0  # Fetch all history for git-revision-date-localized
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -40,20 +42,35 @@ jobs:
           cache-key: "docs-deploy"
 
       - name: Generate Rust API documentation
+        # Issue #1138: RUSTDOCFLAGS=-D warnings turns any rustdoc warning into
+        # a hard error so that documentation quality is enforced in CI.
+        # The continue-on-error guard has been removed — broken docs must be
+        # fixed before they are published to the docs site.
         run: |
-          cargo doc --no-deps --document-private-items
-        continue-on-error: true  # Don't fail if Rust project has issues
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
 
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Build and deploy documentation
+      - name: Check documentation navigation
+        run: python scripts/check_mkdocs_nav.py
+
+      - name: Build documentation (strict)
+        # Issue #1633: mkdocs.yml enables strict mode, so this build fails on
+        # any warning (broken links, unrecognized anchors, nav issues). The
+        # explicit --strict flag guarantees strict behavior even if the config
+        # is ever changed, keeping the PR docs check and deploy in lockstep.
         run: |
+          mkdocs build --strict --verbose
+
+      - name: Deploy documentation
+        run: |
+          mkdocs build --strict --clean --verbose
           mkdocs gh-deploy --force --clean --verbose
 
       - name: Verify deployment
         run: |
           echo "Documentation deployed successfully!"
-          echo "Site should be available at: https://m1s0g1.github.io/Stellar-K8s/"
+          echo "Site should be available at: https://otowoorg.github.io/Stellar-K8s/"

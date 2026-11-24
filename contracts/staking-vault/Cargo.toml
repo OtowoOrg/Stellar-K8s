@@ -1,0 +1,19 @@
+[package]
+name = "staking-vault"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Decentralized Staking & Continuous Yield Distribution Engine for Stellar Soroban"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { version = "27.0.6", features = ["alloc"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "27.0.6", features = ["testutils", "alloc"] }
+proptest = "1.5"
+
+[workspace]

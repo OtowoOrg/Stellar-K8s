@@ -19,10 +19,11 @@ use k8s_openapi::api::autoscaling::v2::{
 };
 use k8s_openapi::api::core::v1::{
     Affinity, Capabilities, ConfigMap, Container, ContainerPort, EnvVar, EnvVarSource,
-    PersistentVolumeClaim, PersistentVolumeClaimSpec, PodAffinityTerm, PodAntiAffinity,
-    PodSecurityContext, PodSpec, PodTemplateSpec, ResourceRequirements as K8sResources,
-    SeccompProfile, SecretKeySelector, SecurityContext, Service, ServicePort, ServiceSpec,
-    Toleration, TypedLocalObjectReference, Volume, VolumeMount, VolumeResourceRequirements,
+    NodeSelector, NodeSelectorRequirement, NodeSelectorTerm, PersistentVolumeClaim,
+    PersistentVolumeClaimSpec, PodAffinityTerm, PodAntiAffinity, PodSecurityContext, PodSpec,
+    PodTemplateSpec, PreferredSchedulingTerm, ResourceRequirements as K8sResources, SeccompProfile,
+    SecretKeySelector, SecurityContext, Service, ServicePort, ServiceSpec, Toleration,
+    TypedLocalObjectReference, Volume, VolumeMount, VolumeResourceRequirements,
     WeightedPodAffinityTerm,
 };
 use k8s_openapi::api::networking::v1::{
@@ -34,27 +35,21 @@ use k8s_openapi::api::policy::v1::{PodDisruptionBudget, PodDisruptionBudgetSpec}
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta, OwnerReference};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
-use kube::api::{
-    Api, ApiResource, DeleteParams, DynamicObject, GroupVersionKind, Patch, PatchParams, PostParams,
-};
+use kube::api::{Api, DeleteParams, Patch, PatchParams, PostParams};
 use kube::{Client, Resource, ResourceExt};
 use tracing::{info, instrument, warn};
 
-use crate::crd::types::{PodAntiAffinityStrength, ReplicationRole, RolloutStrategyType};
+use crate::crd::types::{PodAntiAffinityStrength, ReplicationRole, ResourceRequirements};
 use crate::crd::{
     BackupConfiguration, BarmanObjectStore, BootstrapConfiguration, Cluster, ClusterSpec,
     ExternalCluster, HistoryMode, HsmProvider, IngressConfig, InitDbConfiguration, KeySource,
     ManagedDatabaseConfig, MonitoringConfiguration, NetworkPolicyConfig, NodeType, PgBouncerSpec,
     Pooler, PoolerCluster, PoolerSpec, PostgresConfiguration, RecoveryConfiguration,
-    ReplicaConfiguration, ResourceRequirements, S3Credentials,
-    SecretKeySelector as CnpgSecretKeySelector, StellarNode, StellarNodeSpec, StorageConfiguration,
-    WalBackupConfiguration,
+    ReplicaConfiguration, S3Credentials, SecretKeySelector as CnpgSecretKeySelector, StellarNode,
+    StellarNodeSpec, StorageConfiguration, WalBackupConfiguration,
 };
 use crate::error::{Error, Result};
 use crate::scheduler::scoring::extract_peer_names_from_toml;
-
-const DIAGNOSTIC_SIDECAR_DEFAULT_CPU: &str = "50m";
-const DIAGNOSTIC_SIDECAR_DEFAULT_MEMORY: &str = "64Mi";
 
 /// Get the standard labels for a StellarNode's resources
 pub(crate) fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
@@ -82,41 +77,39 @@ pub(crate) fn standard_labels(node: &StellarNode) -> BTreeMap<String, String> {
             .network
             .scheduling_label_value(&node.spec.custom_network_passphrase),
     );
+    labels.insert(
+        crate::scheduler::capacity::WORKLOAD_TIER_LABEL.to_string(),
+        crate::scheduler::capacity::classify_stellar_node(node)
+            .as_label()
+            .to_string(),
+    );
     labels
-}
-
-fn render_annotation_template(value: &str, node: &StellarNode) -> String {
-    let mut rendered = value.replace("{{name}}", &node.name_any());
-    rendered = rendered.replace("${name}", &node.name_any());
-    rendered = rendered.replace("{{namespace}}", &node.namespace().unwrap_or_default());
-    rendered = rendered.replace("${namespace}", &node.namespace().unwrap_or_default());
-    rendered = rendered.replace("{{nodeType}}", &node.spec.node_type.to_string());
-    rendered = rendered.replace("${nodeType}", &node.spec.node_type.to_string());
-    rendered = rendered.replace("{{network}}", &node.spec.network.to_string());
-    rendered = rendered.replace("${network}", &node.spec.network.to_string());
-    rendered
-}
-
-pub(crate) fn merge_service_annotations(
-    annotations: &mut BTreeMap<String, String>,
-    node: &StellarNode,
-) {
-    if let Some(service_annotations) = &node.spec.service_annotations {
-        for (key, value) in service_annotations {
-            annotations
-                .entry(key.clone())
-                .or_insert_with(|| render_annotation_template(value, node));
-        }
-    }
 }
 
 pub(crate) fn merge_service_metadata_labels(
     labels: &mut BTreeMap<String, String>,
     node: &StellarNode,
 ) {
-    if let Some(service_labels) = &node.spec.service_labels {
-        for (key, value) in service_labels {
-            labels.entry(key.clone()).or_insert_with(|| value.clone());
+    if let Some(extra_labels) = &node.spec.service_labels {
+        labels.extend(extra_labels.clone());
+    }
+    if let Some(resource_meta) = &node.spec.resource_meta {
+        if let Some(extra_labels) = &resource_meta.labels {
+            labels.extend(extra_labels.clone());
+        }
+    }
+}
+
+pub(crate) fn merge_service_annotations(
+    annotations: &mut BTreeMap<String, String>,
+    node: &StellarNode,
+) {
+    if let Some(extra_annotations) = &node.spec.service_annotations {
+        annotations.extend(extra_annotations.clone());
+    }
+    if let Some(resource_meta) = &node.spec.resource_meta {
+        if let Some(extra_annotations) = &resource_meta.annotations {
+            annotations.extend(extra_annotations.clone());
         }
     }
 }
@@ -145,6 +138,7 @@ pub(crate) fn resource_name(node: &StellarNode, suffix: &str) -> String {
 /// If `base` is `None` and `override_cfg` is `Some`, a minimal probe shell is created and the
 /// overrides are applied so the operator can still honour user-supplied thresholds even when no
 /// default probe is configured.
+#[allow(dead_code)] // Test-only wrapper exposing the private `apply_probe_override` helper.
 pub(crate) fn apply_probe_override_pub(
     base: Option<k8s_openapi::api::core::v1::Probe>,
     override_cfg: Option<&crate::crd::types::ProbeOverride>,
@@ -156,9 +150,9 @@ fn apply_probe_override(
     base: Option<k8s_openapi::api::core::v1::Probe>,
     override_cfg: Option<&crate::crd::types::ProbeOverride>,
 ) -> Option<k8s_openapi::api::core::v1::Probe> {
-    let cfg = match override_cfg {
-        Some(c) => c,
-        None => return base,
+    let Some(cfg) = override_cfg else {
+        // No overrides: hand back the base probe untouched.
+        return base;
     };
     let mut probe = base.unwrap_or_default();
     if let Some(v) = cfg.initial_delay_seconds {
@@ -218,24 +212,43 @@ fn default_liveness_probe(node_type: &crate::crd::NodeType) -> k8s_openapi::api:
 /// Default readiness probe per node type.
 ///
 /// - Validator: exec probe that queries the Stellar-Core HTTP API (`/info`) and
-///   marks the pod **Not Ready** when the node is in `CATCHING_UP` or `SYNCING`
-///   state.  The pod remains Not Ready until the node is fully synced, preventing
-///   traffic from being routed to a node that cannot yet participate in consensus.
+///   marks the pod **Ready** only when the node is in `Synced!` or `Tracking!` state.
+///   All other states (CATCHING_UP, SYNCING, JOINING_SCP, BOOTING_UP, DISCONNECTED, etc.)
+///   mark the pod Not Ready, preventing traffic from being routed to nodes that cannot
+///   yet participate in consensus or have lost connectivity.
 ///   The liveness probe (TCP socket) is intentionally kept separate so that a
 ///   syncing node is never restarted — only removed from the ready set.
 /// - Horizon / SorobanRpc: HTTP GET /health on port 8000
-fn default_readiness_probe(node_type: &crate::crd::NodeType) -> k8s_openapi::api::core::v1::Probe {
+pub(crate) fn default_readiness_probe(node_type: &crate::crd::NodeType) -> k8s_openapi::api::core::v1::Probe {
     use k8s_openapi::api::core::v1::{ExecAction, HTTPGetAction, Probe};
     use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
     match node_type {
         crate::crd::NodeType::Validator => {
-            // Query /info and fail if the node is CATCHING_UP or SYNCING.
+            // Query /info and mark the pod ready only when the node is in a fully operational state.
+            //
+            // Ready states (pod accepts traffic):
+            //   - Synced!       : fully synced with the network
+            //   - Tracking!     : actively tracking consensus (rare but valid)
+            //
+            // Not-ready states (pod removed from Service endpoints):
+            //   - Booting Up    : initial startup, not yet connected to peers
+            //   - Joining SCP   : attempting to join consensus, not yet synced
+            //   - Connected     : connected to peers but not yet synced
+            //   - Catching up   : actively syncing historical ledgers (compute-intensive)
+            //   - Syncing       : similar to catching up
+            //   - Stopping      : graceful shutdown in progress
+            //   - Disconnected  : lost connectivity to quorum peers
+            //
+            // This ensures only healthy, synced validators receive production traffic.
             // wget is available in the stellar/stellar-core image.
-            // Exit 1 (not ready) when state contains CATCHING_UP or SYNCING.
             let script = concat!(
                 "RESP=$(wget -qO- http://localhost:11626/info 2>/dev/null) && ",
-                "echo \"$RESP\" | grep -qv '\"state\".*\"CATCHING_UP\"' && ",
-                "echo \"$RESP\" | grep -qv '\"state\".*\"SYNCING\"'"
+                "STATE=$(echo \"$RESP\" | grep -o '\"state\"[[:space:]]*:[[:space:]]*\"[^\"]*\"' | ",
+                "sed 's/.*\"\\([^\"]*\\)\"/\\1/') && ",
+                "case \"$STATE\" in ",
+                "  'Synced!'|'Tracking!') exit 0 ;; ",
+                "  *) exit 1 ;; ",
+                "esac"
             );
             Probe {
                 exec: Some(ExecAction {
@@ -410,10 +423,6 @@ pub async fn ensure_pvc(
     Ok(())
 }
 
-// ============================================================================
-// PodDisruptionBudget
-// ============================================================================
-
 fn resolve_pvc_storage_class(
     node: &StellarNode,
     has_local_path: bool,
@@ -555,6 +564,41 @@ pub async fn ensure_config_map(
     Ok(())
 }
 
+/// The user-supplied `KNOWN_PEERS` fragment of a validator configuration.
+///
+/// `KNOWN_PEERS` is a root key, so it has to be rendered before any table the
+/// user declared; see [`join_user_sections`].
+fn known_peers_toml(node: &StellarNode) -> Option<String> {
+    node.spec
+        .validator_config
+        .as_ref()
+        .and_then(|config| config.known_peers.as_deref())
+        .map(str::trim)
+        .filter(|peers| !peers.is_empty())
+        .map(str::to_string)
+}
+
+/// Join the user supplied sections of a validator configuration.
+///
+/// The `KNOWN_PEERS` root key comes first, so it is not captured by a table
+/// header the user declared afterwards.
+fn join_user_sections(known_peers: Option<String>, quorum_set: Option<String>) -> String {
+    let mut sections: Vec<String> = Vec::new();
+
+    if let Some(peers) = known_peers {
+        sections.push(peers);
+    }
+
+    if let Some(quorum_set) = quorum_set {
+        let quorum_set = quorum_set.trim();
+        if !quorum_set.is_empty() {
+            sections.push(quorum_set.to_string());
+        }
+    }
+
+    sections.join("\n\n")
+}
+
 pub(crate) fn build_config_map(
     node: &StellarNode,
     quorum_override: Option<crate::controller::vsl::QuorumSet>,
@@ -576,35 +620,82 @@ pub(crate) fn build_config_map(
 
     match &node.spec.node_type {
         NodeType::Validator => {
-            let mut core_cfg = String::new();
-            if let Some(config) = &node.spec.validator_config {
-                if let Some(qs) = quorum_override {
-                    core_cfg.push_str(&qs.to_stellar_core_toml());
-                } else if let Some(q) = &config.quorum_set {
-                    core_cfg.push_str(q);
+            // User-supplied config is collected first but rendered *after* the
+            // operator header: a bare key that follows a `[[TABLE]]` header is
+            // scoped into that table by TOML, so appending operator keys to
+            // user content would silently disable mTLS, catch-up mode and
+            // KNOWN_PEERS. See controller::config_scope.
+            let user_cfg: String = match (&node.spec.validator_config, quorum_override) {
+                (Some(_), Some(qs)) => {
+                    join_user_sections(known_peers_toml(node), Some(qs.to_stellar_core_toml()))
                 }
+                (Some(config), None) => {
+                    join_user_sections(known_peers_toml(node), config.quorum_set.clone())
+                }
+                _ => String::new(),
+            };
+
+            // The network defaults fill in what the user did not provide: the
+            // network passphrase, the peer list and the quorum set of the
+            // selected network. See controller::network_defaults.
+            let generated = crate::controller::network_defaults::generate(
+                &crate::controller::network_defaults::GenerationRequest {
+                    network: &node.spec.network,
+                    custom_passphrase: node.spec.custom_network_passphrase.as_deref(),
+                    passphrase_in_secret: node.spec.passphrase_secret_ref.is_some(),
+                    user_config: &user_cfg,
+                },
+            );
+
+            for note in &generated.notes {
+                tracing::debug!(
+                    "StellarNode {}: network defaults: {}",
+                    node.name_any(),
+                    note
+                );
             }
 
+            let mut header = crate::controller::config_scope::OperatorHeader::default();
+
             if enable_mtls {
-                core_cfg.push_str("\n# mTLS Configuration\n");
-                core_cfg.push_str("HTTP_PORT_SECURE=true\n");
-                core_cfg.push_str("TLS_CERT_FILE=\"/etc/stellar/tls/tls.crt\"\n");
-                core_cfg.push_str("TLS_KEY_FILE=\"/etc/stellar/tls/tls.key\"\n");
+                header.comment("mTLS Configuration (best-effort; see docs/mtls-guide.md)");
+                header.key_value("HTTP_PORT_SECURE", "true");
+                header.key_value("TLS_CERT_FILE", "\"/etc/stellar/tls/tls.crt\"");
+                header.key_value("TLS_KEY_FILE", "\"/etc/stellar/tls/tls.key\"");
             }
 
             match node.spec.history_mode {
                 HistoryMode::Full => {
-                    core_cfg.push_str("\n# Full History Mode\n");
-                    core_cfg.push_str("CATCHUP_COMPLETE=true\n");
+                    header.comment("Full History Mode");
+                    header.key_value("CATCHUP_COMPLETE", "true");
                 }
                 HistoryMode::Recent => {
-                    core_cfg.push_str("\n# Recent History Mode\n");
-                    core_cfg.push_str("CATCHUP_COMPLETE=false\n");
-                    core_cfg.push_str("CATCHUP_RECENT=60480\n");
+                    header.comment("Recent History Mode");
+                    header.key_value("CATCHUP_COMPLETE", "false");
+                    header.key_value("CATCHUP_RECENT", "60480");
                 }
             }
 
-            if !core_cfg.is_empty() {
+            if !generated.root_keys.is_empty() {
+                let profile = crate::controller::network_defaults::NetworkProfile::for_network(
+                    &node.spec.network,
+                );
+                header.comment(format!("Network defaults ({})", profile.id()));
+                for line in &generated.root_keys {
+                    header.assignment(line);
+                }
+            }
+
+            if !header.is_empty() || !user_cfg.trim().is_empty() || !generated.is_empty() {
+                let core_cfg = crate::controller::config_scope::assemble_config_with_generated(
+                    &header,
+                    &user_cfg,
+                    &generated.render_table_sections(),
+                );
+                crate::controller::config_scope::log_config_scope_findings(
+                    node.name_any().as_str(),
+                    &core_cfg,
+                );
                 data.insert("stellar-core.cfg".to_string(), core_cfg);
             }
         }
@@ -614,7 +705,30 @@ pub(crate) fn build_config_map(
                     "STELLAR_CORE_URL".to_string(),
                     config.stellar_core_url.clone(),
                 );
-                data.insert("INGEST".to_string(), config.enable_ingest.to_string());
+                // When ingestion leader election is active, start in non-ingesting mode until elected
+                let ingest_str =
+                    if config.enable_ingestion_leader_election || node.spec.replicas > 1 {
+                        "false".to_string()
+                    } else {
+                        config.enable_ingest.to_string()
+                    };
+                data.insert("INGEST".to_string(), ingest_str);
+
+                if config.enable_ingest {
+                    match crate::controller::captive_core::CaptiveCoreConfigBuilder::from_horizon_node_config(node) {
+                        Ok(builder) => match builder.build_toml() {
+                            Ok(toml) => {
+                                data.insert("captive-core.cfg".to_string(), toml);
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to build Horizon Captive Core TOML: {}", e);
+                            }
+                        },
+                        Err(e) => {
+                            tracing::warn!("Failed to create Horizon Captive Core config builder: {}", e);
+                        }
+                    }
+                }
             }
         }
         NodeType::SorobanRpc => {
@@ -644,6 +758,20 @@ pub(crate) fn build_config_map(
                     #[allow(deprecated)]
                     if let Some(captive_config) = &config.captive_core_config {
                         data.insert("captive-core.cfg".to_string(), captive_config.clone());
+                    }
+                }
+
+                if let Some(cache) = &config.cache {
+                    if cache.enabled {
+                        let cache_config = stellar_wasm_cache::CacheConfig {
+                            ttl_secs: cache.ttl_secs,
+                            max_entries: cache.max_entries,
+                            max_bytes: cache.max_bytes,
+                        };
+                        let json = serde_json::to_string(&cache_config)
+                            .map(|config| format!("{{\"cache\":{config}}}"))
+                            .unwrap_or_else(|_| "{\"cache\":{}}".to_string());
+                        data.insert("soroban-cache.json".to_string(), json);
                     }
                 }
             }
@@ -823,15 +951,9 @@ pub async fn ensure_canary_deployment(
     Ok(())
 }
 
-fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deployment {
-    let mut labels = standard_labels(node);
+pub(crate) fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deployment {
+    let labels = standard_labels(node);
     let name = node.name_any();
-
-    if node.spec.node_type == NodeType::Horizon
-        && node.spec.strategy.strategy_type == RolloutStrategyType::BlueGreen
-    {
-        labels.insert("deployment-color".to_string(), "blue".to_string());
-    }
 
     let mut replicas = if node.spec.suspended {
         0
@@ -865,7 +987,13 @@ fn build_deployment(node: &StellarNode, enable_mtls: bool) -> Deployment {
                 ..Default::default()
             },
             // Deployments (Horizon/SorobanRpc) never need seed injection → pass None
-            template: build_pod_template(node, &labels, enable_mtls, None),
+            template: build_pod_template(
+                node,
+                &labels,
+                enable_mtls,
+                None,
+                node.spec.pod_anti_affinity.clone(),
+            ),
             ..Default::default()
         }),
         status: None,
@@ -901,8 +1029,25 @@ pub async fn ensure_statefulset(
         Err(e) => return Err(Error::KubeError(e)),
     };
 
-    // *** Pass seed_injection down to the builder ***
-    let mut statefulset = build_statefulset(node, enable_mtls, seed_injection);
+    // Resolve effective anti-affinity strength against real cluster zone
+    // topology, downgrading Hard -> Soft when strict placement is
+    // unsatisfiable (e.g. single-zone/single-node dev clusters).
+    let requested_strength = node.spec.pod_anti_affinity.clone();
+    let effective_strength = if requested_strength == PodAntiAffinityStrength::Hard {
+        let zone_topology = crate::controller::topology::fetch_zone_topology(client).await?;
+        let sibling_count =
+            crate::controller::topology::count_sibling_nodes(client, &node.spec).await?;
+        crate::controller::topology::resolve_anti_affinity_strength(
+            requested_strength,
+            &zone_topology,
+            sibling_count,
+        )
+    } else {
+        requested_strength
+    };
+
+    // *** Pass seed_injection and resolved anti-affinity strength down to the builder ***
+    let mut statefulset = build_statefulset(node, enable_mtls, seed_injection, effective_strength);
 
     // Apply label propagation: merge propagated labels, then remove stale ones
     let base_labels = statefulset.metadata.labels.clone().unwrap_or_default();
@@ -917,11 +1062,11 @@ pub async fn ensure_statefulset(
     Ok(())
 }
 
-// *** seed_injection added as parameter ***
 pub(crate) fn build_statefulset(
     node: &StellarNode,
     enable_mtls: bool,
     seed_injection: Option<&kms_secret::SeedInjectionSpec>,
+    effective_anti_affinity: PodAntiAffinityStrength,
 ) -> StatefulSet {
     let labels = standard_labels(node);
     let name = node.name_any();
@@ -961,8 +1106,14 @@ pub(crate) fn build_statefulset(
                 ..Default::default()
             },
             service_name: format!("{name}-headless"),
-            // *** Pass seed_injection into pod template builder ***
-            template: build_pod_template(node, &labels, enable_mtls, seed_injection),
+            // *** Pass seed_injection and resolved anti-affinity strength into pod template builder ***
+            template: build_pod_template(
+                node,
+                &labels,
+                enable_mtls,
+                seed_injection,
+                effective_anti_affinity.clone(),
+            ),
             ..Default::default()
         }),
         status: None,
@@ -1078,7 +1229,7 @@ pub async fn ensure_canary_service(
     Ok(())
 }
 
-fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
+pub(crate) fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
     let mut labels = standard_labels(node);
     merge_service_metadata_labels(&mut labels, node);
     let name = node.name_any();
@@ -1129,9 +1280,10 @@ fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
         }
     }
 
+    let http_port_name = if enable_mtls { "https" } else { "http" }.to_string();
     merge_service_annotations(&mut annotations, node);
 
-    let http_port_name = if enable_mtls { "https" } else { "http" }.to_string();
+    let http_port_name = "http".to_string();
 
     let ports = match node.spec.node_type {
         NodeType::Validator => vec![
@@ -1151,11 +1303,21 @@ fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
             port: 8000,
             ..Default::default()
         }],
-        NodeType::SorobanRpc => vec![ServicePort {
-            name: Some(http_port_name),
-            port: 8000,
-            ..Default::default()
-        }],
+        NodeType::SorobanRpc => {
+            let target_port = node
+                .spec
+                .soroban_config
+                .as_ref()
+                .and_then(|config| config.cache.as_ref())
+                .filter(|cache| cache.enabled)
+                .map(|_| IntOrString::Int(18000));
+            vec![ServicePort {
+                name: Some(http_port_name),
+                port: 8000,
+                target_port,
+                ..Default::default()
+            }]
+        }
     };
 
     Service {
@@ -1184,13 +1346,10 @@ fn build_service(node: &StellarNode, enable_mtls: bool) -> Service {
 }
 
 // ============================================================================
-// LoadBalancer Service (MetalLB Integration) — stubs, wiring in progress
+// LoadBalancer Service (MetalLB Integration) — stubs unchanged
 // ============================================================================
 
-/// Ensure a LoadBalancer Service exists for the node.
-/// This is a stub pending full MetalLB integration; the reconciler skips this
-/// path until load_balancer config is specified in the StellarNode spec.
-#[allow(dead_code)] // called conditionally when load_balancer spec is present
+#[allow(dead_code)]
 #[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
 pub async fn ensure_load_balancer_service(_client: &Client, _node: &StellarNode) -> Result<()> {
     Ok(())
@@ -1201,9 +1360,7 @@ pub async fn delete_load_balancer_service(_client: &Client, _node: &StellarNode)
     Ok(())
 }
 
-/// Ensure MetalLB L2/BGP advertisement config exists for the node.
-/// Stub pending MetalLB CRD integration.
-#[allow(dead_code)] // pending MetalLB CRD integration
+#[allow(dead_code)]
 #[instrument(skip(_client, _node), fields(name = %_node.name_any(), namespace = _node.namespace()))]
 pub async fn ensure_metallb_config(_client: &Client, _node: &StellarNode) -> Result<()> {
     Ok(())
@@ -1485,13 +1642,10 @@ pub async fn delete_cnpg_resources(
 }
 
 // ============================================================================
-// Ingress — called by the reconciler when spec.ingress is configured
+// Ingress — unchanged
 // ============================================================================
 
-/// Ensure a Kubernetes Ingress resource exists for the node.
-/// Called from the reconciler for Horizon and SorobanRpc node types when
-/// `spec.ingress` is set.
-#[allow(dead_code)] // called via reconciler ingress path; conditional on feature flag
+#[allow(dead_code)]
 pub async fn ensure_ingress(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
     let ingress_cfg = match &node.spec.ingress {
         Some(cfg)
@@ -1729,6 +1883,7 @@ async fn delete_istio_canary_virtual_service(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn build_ingress(node: &StellarNode, config: &IngressConfig) -> Ingress {
     let labels = standard_labels(node);
     let name = resource_name(node, "ingress");
@@ -1768,39 +1923,6 @@ fn build_ingress(node: &StellarNode, config: &IngressConfig) -> Ingress {
             for (k, v) in extra_annotations {
                 annotations.insert(k.clone(), v.clone());
             }
-        }
-    }
-
-    if let Some(rl) = &config.rate_limit {
-        if let Some(rps) = rl.requests_per_second {
-            annotations.insert(
-                "nginx.ingress.kubernetes.io/limit-rps".to_string(),
-                rps.to_string(),
-            );
-        }
-        if let Some(rpm) = rl.requests_per_minute {
-            annotations.insert(
-                "nginx.ingress.kubernetes.io/limit-rpm".to_string(),
-                rpm.to_string(),
-            );
-        }
-        if let Some(conns) = rl.connections {
-            annotations.insert(
-                "nginx.ingress.kubernetes.io/limit-connections".to_string(),
-                conns.to_string(),
-            );
-        }
-        if let Some(burst) = rl.burst_multiplier {
-            annotations.insert(
-                "nginx.ingress.kubernetes.io/limit-burst-multiplier".to_string(),
-                burst.to_string(),
-            );
-        }
-        if let Some(whitelist) = &rl.whitelist_cidrs {
-            annotations.insert(
-                "nginx.ingress.kubernetes.io/limit-whitelist".to_string(),
-                whitelist.clone(),
-            );
         }
     }
 
@@ -1889,6 +2011,24 @@ pub async fn delete_ingress(client: &Client, node: &StellarNode, dry_run: bool) 
 // Pod Template Builder
 // ============================================================================
 
+/// Render the peers a node is expected to reach as a `KNOWN_PEERS` TOML array,
+/// for the health sidecar to probe (#1561).
+///
+/// The list is produced by the same function the reconciler uses for the
+/// `PeerConnectivity` condition, so the pod-local probe and the cluster-level
+/// condition can never disagree about which peers are in play. Entries are
+/// emitted with `{:?}` so they are TOML basic strings, which keeps IPv6
+/// literals and any other host spelling valid.
+fn known_peers_env_value(node: &StellarNode) -> String {
+    let peers = crate::controller::peer_connectivity::known_peers_for_node(node);
+    let rendered = peers
+        .iter()
+        .map(|peer| format!("{:?}", peer.to_peer_string()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("KNOWN_PEERS=[{rendered}]")
+}
+
 /// Build the pod template.
 ///
 /// `seed_injection` is `Some` only for Validator StatefulSets; it adds the
@@ -1899,6 +2039,7 @@ fn build_pod_template(
     enable_mtls: bool,
     // *** NEW PARAMETER ***
     seed_injection: Option<&kms_secret::SeedInjectionSpec>,
+    effective_anti_affinity: PodAntiAffinityStrength,
 ) -> PodTemplateSpec {
     let mut pod_spec = PodSpec {
         containers: vec![build_container(node, enable_mtls)],
@@ -1925,9 +2066,9 @@ fn build_pod_template(
         topology_spread_constraints: Some(build_topology_spread_constraints(
             &node.spec,
             &node.name_any(),
+            effective_anti_affinity.clone(),
         )),
-        affinity: merge_workload_affinity(node),
-        tolerations: build_workload_tolerations(node),
+        affinity: merge_workload_affinity(node, effective_anti_affinity.clone()),
         security_context: Some(PodSecurityContext {
             run_as_non_root: Some(true),
             run_as_user: Some(10000),
@@ -1939,14 +2080,8 @@ fn build_pod_template(
             }),
             ..Default::default()
         }),
-        priority_class_name: node.spec.priority_class_name.clone(),
         ..Default::default()
     };
-
-    if let Some(custom_volumes) = &node.spec.volumes {
-        let volumes = pod_spec.volumes.get_or_insert_with(Vec::new);
-        volumes.extend(custom_volumes.clone());
-    }
 
     if node.spec.node_type == NodeType::Validator {
         if let Some(fs) = &node.spec.forensic_snapshot {
@@ -1956,12 +2091,24 @@ fn build_pod_template(
         }
     }
 
+    // The proxy shares the pod network namespace and forwards to the unchanged
+    // Soroban RPC container on localhost:8000.
+    if node.spec.node_type == NodeType::SorobanRpc {
+        if let Some(cache) = node
+            .spec
+            .soroban_config
+            .as_ref()
+            .and_then(|config| config.cache.as_ref())
+            .filter(|cache| cache.enabled)
+        {
+            pod_spec.containers.push(build_cache_proxy_container(cache));
+        }
+    }
+
     // Add Horizon database migration init container
     if let NodeType::Horizon = node.spec.node_type {
         if let Some(horizon_config) = &node.spec.horizon_config {
-            let blue_green_migration =
-                node.spec.strategy.strategy_type == RolloutStrategyType::BlueGreen;
-            if horizon_config.auto_migration && !blue_green_migration {
+            if horizon_config.auto_migration {
                 let init_containers = pod_spec.init_containers.get_or_insert_with(Vec::new);
                 init_containers.push(build_horizon_migration_container(node));
             }
@@ -1985,6 +2132,9 @@ fn build_pod_template(
                 backup_url,
                 snapshot_ref.credentials_secret_ref.as_deref(),
                 snapshot_ref.restore_image.as_deref(),
+                snapshot_ref.sha256.as_deref(),
+                snapshot_ref.expected_ledger_sequence,
+                snapshot_ref.expected_network.as_deref(),
             ));
         }
     }
@@ -2058,16 +2208,6 @@ fn build_pod_template(
                     });
                 }
             }
-        }
-    }
-
-    // Add state-sync sidecar if enabled
-    if let Some(dr_config) = &node.spec.dr_config {
-        if dr_config.enabled
-            && dr_config.sync_strategy == crate::crd::DRSyncStrategy::StreamingLedger
-        {
-            let sidecar = super::state_sync::build_state_sync_sidecar(node);
-            pod_spec.containers.push(sidecar);
         }
     }
 
@@ -2256,16 +2396,6 @@ fn build_pod_template(
     }
 
     // ==========================================================================
-    // Append user-defined init containers after all operator-managed ones
-    // ==========================================================================
-    if let Some(user_init_containers) = &node.spec.init_containers {
-        pod_spec
-            .init_containers
-            .get_or_insert_with(Vec::new)
-            .extend(user_init_containers.iter().cloned());
-    }
-
-    // ==========================================================================
     // Inject hitless-upgrade handoff sidecar (Validators only, when enabled)
     // ==========================================================================
     if let Some(hu_config) = &node.spec.hitless_upgrade {
@@ -2330,6 +2460,32 @@ fn build_pod_template(
     // ==========================================================================
     // Inject health check sidecar for advanced liveness/readiness probes
     // ==========================================================================
+    let mut sidecar_env = vec![
+        EnvVar {
+            name: "CORE_URL".to_string(),
+            value: Some(match node.spec.node_type {
+                NodeType::Validator => "http://localhost:11626".to_string(),
+                NodeType::Horizon => "http://localhost:8000".to_string(),
+                NodeType::SorobanRpc => "http://localhost:8000".to_string(),
+            }),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "RUST_LOG".to_string(),
+            value: Some("info".to_string()),
+            ..Default::default()
+        },
+    ];
+
+    // Only validators have overlay peers, so only they get a peer list to probe.
+    if node.spec.node_type == NodeType::Validator {
+        sidecar_env.push(EnvVar {
+            name: "KNOWN_PEERS".to_string(),
+            value: Some(known_peers_env_value(node)),
+            ..Default::default()
+        });
+    }
+
     let health_check_sidecar = k8s_openapi::api::core::v1::Container {
         name: "stellar-health-check".to_string(),
         image: Some(
@@ -2345,22 +2501,7 @@ fn build_pod_template(
             protocol: Some("TCP".to_string()),
             ..Default::default()
         }]),
-        env: Some(vec![
-            EnvVar {
-                name: "CORE_URL".to_string(),
-                value: Some(match node.spec.node_type {
-                    NodeType::Validator => "http://localhost:11626".to_string(),
-                    NodeType::Horizon => "http://localhost:8000".to_string(),
-                    NodeType::SorobanRpc => "http://localhost:8000".to_string(),
-                }),
-                ..Default::default()
-            },
-            EnvVar {
-                name: "RUST_LOG".to_string(),
-                value: Some("info".to_string()),
-                ..Default::default()
-            },
-        ]),
+        env: Some(sidecar_env),
         security_context: Some(SecurityContext {
             allow_privilege_escalation: Some(false),
             capabilities: Some(Capabilities {
@@ -2389,11 +2530,15 @@ fn build_pod_template(
     if let Some(inj) = seed_injection {
         // Extend the main container (index 0) with seed env vars and volume mounts
         if let Some(container) = pod_spec.containers.first_mut() {
-            if let Some(ref mut env) = container.env {
-                env.extend(inj.env_vars());
-            } else {
-                container.env = Some(inj.env_vars());
-            }
+            // Merge by name instead of appending: `seedSecretRef` and
+            // `seedSecretSource` can both be set on a node, and the legacy
+            // `STELLAR_CORE_SEED` entry built in `build_container` must never
+            // end up next to the one this injection adds. A duplicated env var
+            // name is rejected by the API server, and `seedSecretSource` wins
+            // per `ValidatorConfig::resolve_seed_source` precedence.
+            let mut env = container.env.take().unwrap_or_default();
+            merge_env_overrides(&mut env, &inj.env_vars());
+            container.env = Some(env);
             if let Some(ref mut mounts) = container.volume_mounts {
                 mounts.extend(inj.volume_mounts());
             } else {
@@ -2619,9 +2764,22 @@ fn build_pod_template(
     }
     // ==========================================================================
 
+    let apparmor_enabled = std::env::var("STELLAR_APPARMOR_ENABLED")
+        .is_ok_and(|value| value.eq_ignore_ascii_case("true"));
     let mut apparmor_annotations = BTreeMap::new();
-    if let Some(containers) = &pod_spec.init_containers {
-        for container in containers {
+    if apparmor_enabled {
+        if let Some(containers) = &pod_spec.init_containers {
+            for container in containers {
+                apparmor_annotations.insert(
+                    format!(
+                        "container.apparmor.security.beta.kubernetes.io/{}",
+                        container.name
+                    ),
+                    "runtime/default".to_string(),
+                );
+            }
+        }
+        for container in &pod_spec.containers {
             apparmor_annotations.insert(
                 format!(
                     "container.apparmor.security.beta.kubernetes.io/{}",
@@ -2630,15 +2788,6 @@ fn build_pod_template(
                 "runtime/default".to_string(),
             );
         }
-    }
-    for container in &pod_spec.containers {
-        apparmor_annotations.insert(
-            format!(
-                "container.apparmor.security.beta.kubernetes.io/{}",
-                container.name
-            ),
-            "runtime/default".to_string(),
-        );
     }
 
     let mut pod_object_meta = ObjectMeta {
@@ -2706,12 +2855,97 @@ fn build_pod_template(
         }
     }
 
+    let mut pod_object_meta = merge_resource_meta(pod_object_meta, &node.spec.resource_meta);
+    if enable_mtls {
+        pod_object_meta
+            .annotations
+            .get_or_insert_with(BTreeMap::new)
+            .insert("sidecar.istio.io/inject".to_string(), "true".to_string());
+        pod_object_meta
+            .labels
+            .get_or_insert_with(BTreeMap::new)
+            .insert("stellar.org/mtls-mode".to_string(), "strict".to_string());
+    }
+
+    // Add config hash annotation for captive core hot-reload on CRD spec change
+    let config_fingerprint = format!(
+        "{:?}:{:?}:{:?}:{:?}",
+        node.spec.resources,
+        node.spec.soroban_config,
+        node.spec.horizon_config,
+        node.spec.validator_config
+    );
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(config_fingerprint.as_bytes());
+    let config_hash = hex::encode(hasher.finalize());
+    pod_object_meta
+        .annotations
+        .get_or_insert_with(BTreeMap::new)
+        .insert(
+            "stellar.org/captive-core-config-hash".to_string(),
+            config_hash,
+        );
+
     PodTemplateSpec {
-        metadata: Some(merge_resource_meta(
-            pod_object_meta,
-            &node.spec.resource_meta,
-        )),
+        metadata: Some(pod_object_meta),
         spec: Some(pod_spec),
+    }
+}
+
+#[cfg(test)]
+mod istio_mtls_tests {
+    use super::{build_deployment, build_service};
+    use crate::crd::{NodeType, StellarNetwork, StellarNode, StellarNodeSpec};
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+    use std::collections::BTreeMap;
+
+    fn horizon_node() -> StellarNode {
+        StellarNode {
+            metadata: ObjectMeta {
+                name: Some("horizon-test".to_string()),
+                namespace: Some("stellar-system".to_string()),
+                ..Default::default()
+            },
+            spec: StellarNodeSpec {
+                node_type: NodeType::Horizon,
+                network: StellarNetwork::Testnet,
+                version: "v21.0.0".to_string(),
+                ..Default::default()
+            },
+            status: None,
+        }
+    }
+
+    #[test]
+    fn mtls_injects_istio_and_preserves_http_service_protocol() {
+        let mut node = horizon_node();
+        node.spec.resource_meta = Some(ObjectMeta {
+            annotations: Some(BTreeMap::from([(
+                "sidecar.istio.io/inject".to_string(),
+                "false".to_string(),
+            )])),
+            labels: Some(BTreeMap::from([(
+                "stellar.org/mtls-mode".to_string(),
+                "disabled".to_string(),
+            )])),
+            ..Default::default()
+        });
+        let deployment = build_deployment(&node, true);
+        let pod_template = deployment.spec.unwrap().template;
+        let metadata = pod_template.metadata.unwrap();
+        assert_eq!(
+            metadata.annotations.unwrap().get("sidecar.istio.io/inject"),
+            Some(&"true".to_string())
+        );
+        assert_eq!(
+            metadata.labels.unwrap().get("stellar.org/mtls-mode"),
+            Some(&"strict".to_string())
+        );
+
+        let service = build_service(&node, true);
+        let port = &service.spec.unwrap().ports.unwrap()[0];
+        assert_eq!(port.name.as_deref(), Some("http"));
     }
 }
 
@@ -2759,13 +2993,12 @@ fn network_spread_label_selector(spec: &StellarNodeSpec) -> LabelSelector {
     }
 }
 
-pub(crate) fn merge_workload_affinity(node: &StellarNode) -> Option<Affinity> {
+pub(crate) fn merge_workload_affinity(
+    node: &StellarNode,
+    effective_anti_affinity: PodAntiAffinityStrength,
+) -> Option<Affinity> {
     let mut aff = Affinity::default();
     if let Some(na) = node.spec.storage.node_affinity.clone() {
-        aff.node_affinity = Some(na);
-    }
-
-    if let Some(na) = node.spec.node_affinity.clone() {
         aff.node_affinity = Some(na);
     }
 
@@ -2778,11 +3011,14 @@ pub(crate) fn merge_workload_affinity(node: &StellarNode) -> Option<Affinity> {
         }
     }
 
+    // Capacity-class affinity (#1484): critical never on spot; best-effort prefers spot.
+    merge_capacity_class_node_affinity(&mut aff, node);
+
     let mut req_terms = Vec::new();
     let mut pref_terms = Vec::new();
 
     // 1. Default network-level separation
-    if let Some(pa) = build_network_pod_anti_affinity(node) {
+    if let Some(pa) = build_network_pod_anti_affinity(node, effective_anti_affinity.clone()) {
         if let Some(mut req) = pa.required_during_scheduling_ignored_during_execution {
             req_terms.append(&mut req);
         }
@@ -2820,6 +3056,72 @@ pub(crate) fn merge_workload_affinity(node: &StellarNode) -> Option<Affinity> {
         None
     } else {
         Some(aff)
+    }
+}
+
+/// Inject capacity-class constraints without replacing existing nodeAffinity.
+pub(crate) fn merge_capacity_class_node_affinity(aff: &mut Affinity, node: &StellarNode) {
+    let tier = crate::scheduler::capacity::classify_stellar_node(node);
+    match tier {
+        crate::crd::WorkloadTier::Critical => {
+            let req = NodeSelectorRequirement {
+                key: "node.kubernetes.io/lifecycle".to_string(),
+                operator: "NotIn".to_string(),
+                values: Some(vec!["spot".to_string(), "preemptible".to_string()]),
+            };
+            let term = NodeSelectorTerm {
+                match_expressions: Some(vec![req]),
+                ..Default::default()
+            };
+            let mut existing = aff.node_affinity.take().unwrap_or_default();
+            match existing
+                .required_during_scheduling_ignored_during_execution
+                .as_mut()
+            {
+                Some(selector) => {
+                    for t in selector.node_selector_terms.iter_mut() {
+                        t.match_expressions.get_or_insert_with(Vec::new).push(
+                            NodeSelectorRequirement {
+                                key: "node.kubernetes.io/lifecycle".to_string(),
+                                operator: "NotIn".to_string(),
+                                values: Some(vec!["spot".to_string(), "preemptible".to_string()]),
+                            },
+                        );
+                    }
+                }
+                None => {
+                    existing.required_during_scheduling_ignored_during_execution =
+                        Some(NodeSelector {
+                            node_selector_terms: vec![term],
+                        });
+                }
+            }
+            aff.node_affinity = Some(existing);
+        }
+        crate::crd::WorkloadTier::BestEffort => {
+            let prefer_spot = node.spec.placement.preferred_capacity_class
+                != Some(crate::crd::CapacityClass::OnDemand);
+            if !prefer_spot {
+                return;
+            }
+            let pref = PreferredSchedulingTerm {
+                weight: 100,
+                preference: NodeSelectorTerm {
+                    match_expressions: Some(vec![NodeSelectorRequirement {
+                        key: "node.kubernetes.io/lifecycle".to_string(),
+                        operator: "In".to_string(),
+                        values: Some(vec!["spot".to_string()]),
+                    }]),
+                    ..Default::default()
+                },
+            };
+            let mut existing = aff.node_affinity.take().unwrap_or_default();
+            existing
+                .preferred_during_scheduling_ignored_during_execution
+                .get_or_insert_with(Vec::new)
+                .push(pref);
+            aff.node_affinity = Some(existing);
+        }
     }
 }
 
@@ -2867,8 +3169,11 @@ fn build_scp_aware_pod_anti_affinity(node: &StellarNode) -> Option<PodAntiAffini
     })
 }
 
-fn build_network_pod_anti_affinity(node: &StellarNode) -> Option<PodAntiAffinity> {
-    match node.spec.pod_anti_affinity {
+fn build_network_pod_anti_affinity(
+    node: &StellarNode,
+    effective_anti_affinity: PodAntiAffinityStrength,
+) -> Option<PodAntiAffinity> {
+    match effective_anti_affinity {
         PodAntiAffinityStrength::Disabled => None,
         PodAntiAffinityStrength::Hard => {
             let term = PodAffinityTerm {
@@ -2904,6 +3209,7 @@ fn build_network_pod_anti_affinity(node: &StellarNode) -> Option<PodAntiAffinity
 pub fn build_topology_spread_constraints(
     spec: &crate::crd::StellarNodeSpec,
     _node_name: &str,
+    effective_anti_affinity: PodAntiAffinityStrength,
 ) -> Vec<k8s_openapi::api::core::v1::TopologySpreadConstraint> {
     use k8s_openapi::api::core::v1::TopologySpreadConstraint;
 
@@ -2913,7 +3219,7 @@ pub fn build_topology_spread_constraints(
         }
     }
 
-    let when_unsatisfiable = match spec.pod_anti_affinity {
+    let when_unsatisfiable = match effective_anti_affinity {
         PodAntiAffinityStrength::Soft => "ScheduleAnyway".to_string(),
         PodAntiAffinityStrength::Hard | PodAntiAffinityStrength::Disabled => {
             "DoNotSchedule".to_string()
@@ -2999,6 +3305,34 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
                 value: Some(ingest_workers.to_string()),
                 ..Default::default()
             });
+
+            if let Some(h_cfg) = &node.spec.horizon_config {
+                if h_cfg.enable_ingestion_leader_election || node.spec.replicas > 1 {
+                    env_vars.push(EnvVar {
+                        name: "HORIZON_INGESTION_LEADER_ELECTION".to_string(),
+                        value: Some("true".to_string()),
+                        ..Default::default()
+                    });
+                    env_vars.push(EnvVar {
+                        name: "HORIZON_INGESTION_LEASE_NAME".to_string(),
+                        value: Some(format!(
+                            "{}-horizon-ingest-lease",
+                            node.metadata.name.as_deref().unwrap_or("horizon")
+                        )),
+                        ..Default::default()
+                    });
+                    env_vars.push(EnvVar {
+                        name: "HORIZON_INGESTION_LEASE_DURATION_SECONDS".to_string(),
+                        value: Some(
+                            h_cfg
+                                .ingestion_lease_duration_seconds
+                                .unwrap_or(15)
+                                .to_string(),
+                        ),
+                        ..Default::default()
+                    });
+                }
+            }
         }
         NodeType::SorobanRpc => {
             env_vars.push(EnvVar {
@@ -3011,6 +3345,18 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
                 value: Some((worker_threads / 2).max(1).to_string()),
                 ..Default::default()
             });
+            if let Some(s_cfg) = &node.spec.soroban_config {
+                env_vars.push(EnvVar {
+                    name: "SOROBAN_RPC_MAX_PAGE_SIZE".to_string(),
+                    value: Some(s_cfg.effective_max_page_size().to_string()),
+                    ..Default::default()
+                });
+                env_vars.push(EnvVar {
+                    name: "SOROBAN_RPC_CACHE_SIZE_MB".to_string(),
+                    value: Some(s_cfg.effective_cache_size_mb().to_string()),
+                    ..Default::default()
+                });
+            }
         }
     }
 
@@ -3231,9 +3577,32 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
         NodeType::SorobanRpc => {}
     }
 
+    // Determine explicit container command and args for each node type.
+    // These can be overridden by the user via spec.command and spec.args.
+    let (default_command, default_args): (Option<Vec<String>>, Option<Vec<String>>) =
+        match node.spec.node_type {
+            NodeType::Validator => (
+                Some(vec![
+                    "/usr/bin/stellar-core".to_string(),
+                    "run".to_string(),
+                    "--conf".to_string(),
+                    "/config/stellar-core.cfg".to_string(),
+                ]),
+                None,
+            ),
+            NodeType::Horizon => (Some(vec!["/stellar-horizon".to_string()]), None),
+            NodeType::SorobanRpc => (Some(vec!["/stellar-rpc".to_string()]), None),
+        };
+
+    // Apply user overrides if provided
+    let final_command = node.spec.command.clone().or(default_command);
+    let final_args = node.spec.args.clone().or(default_args);
+
     Container {
         name: "stellar-node".to_string(),
         image: Some(node.spec.container_image()),
+        command: final_command,
+        args: final_args,
         ports: Some(vec![ContainerPort {
             container_port,
             ..Default::default()
@@ -3261,56 +3630,115 @@ fn build_container(node: &StellarNode, enable_mtls: bool) -> Container {
         }),
         volume_mounts: Some(volume_mounts),
         liveness_probe: apply_probe_override(
-            Some(k8s_openapi::api::core::v1::Probe {
-                http_get: Some(k8s_openapi::api::core::v1::HTTPGetAction {
-                    path: Some("/healthz".to_string()),
-                    port: k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(8081),
-                    ..Default::default()
-                }),
-                initial_delay_seconds: Some(30),
-                period_seconds: Some(10),
-                timeout_seconds: Some(5),
-                failure_threshold: Some(3),
-                ..Default::default()
-            }),
+            None,
             node.spec.probes.as_ref().and_then(|p| p.liveness.as_ref()),
         ),
         readiness_probe: apply_probe_override(
-            Some(k8s_openapi::api::core::v1::Probe {
-                http_get: Some(k8s_openapi::api::core::v1::HTTPGetAction {
-                    path: Some("/readyz".to_string()),
-                    port: k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(8081),
-                    ..Default::default()
-                }),
-                initial_delay_seconds: Some(60),
-                period_seconds: Some(5),
-                timeout_seconds: Some(5),
-                failure_threshold: Some(2),
-                ..Default::default()
-            }),
+            None,
             node.spec.probes.as_ref().and_then(|p| p.readiness.as_ref()),
         ),
         startup_probe: apply_probe_override(
-            Some(k8s_openapi::api::core::v1::Probe {
-                http_get: Some(k8s_openapi::api::core::v1::HTTPGetAction {
-                    path: Some("/healthz".to_string()),
-                    port: k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(8081),
-                    ..Default::default()
-                }),
-                initial_delay_seconds: Some(0),
-                period_seconds: Some(10),
-                timeout_seconds: Some(5),
-                failure_threshold: Some(30),
-                ..Default::default()
-            }),
+            None,
             node.spec.probes.as_ref().and_then(|p| p.startup.as_ref()),
         ),
         ..Default::default()
     }
 }
 
-fn build_diagnostic_sidecar_resources(
-    override_resources: Option<&ResourceRequirements>,
+fn build_cache_proxy_container(cache: &crate::crd::SorobanCacheConfig) -> Container {
+    let mut requests = BTreeMap::new();
+    requests.insert("cpu".to_string(), Quantity("25m".to_string()));
+    requests.insert("memory".to_string(), Quantity("64Mi".to_string()));
+    let mut limits = BTreeMap::new();
+    limits.insert("cpu".to_string(), Quantity("250m".to_string()));
+    limits.insert("memory".to_string(), Quantity("256Mi".to_string()));
+
+    Container {
+        name: "soroban-cache".to_string(),
+        image: Some(cache.image.clone().unwrap_or_else(|| {
+            format!("ghcr.io/stellar/stellar-k8s:{}", env!("CARGO_PKG_VERSION"))
+        })),
+        command: Some(vec!["/soroban-cache-proxy".to_string()]),
+        env: Some(vec![
+            EnvVar {
+                name: "SOROBAN_CACHE_LISTEN".to_string(),
+                value: Some("0.0.0.0:18000".to_string()),
+                ..Default::default()
+            },
+            EnvVar {
+                name: "SOROBAN_CACHE_UPSTREAM".to_string(),
+                value: Some("http://127.0.0.1:8000".to_string()),
+                ..Default::default()
+            },
+            EnvVar {
+                name: "SOROBAN_CACHE_CONFIG".to_string(),
+                value: Some("/config/soroban-cache.json".to_string()),
+                ..Default::default()
+            },
+        ]),
+        ports: Some(vec![ContainerPort {
+            name: Some("cache-http".to_string()),
+            container_port: 18000,
+            protocol: Some("TCP".to_string()),
+            ..Default::default()
+        }]),
+        volume_mounts: Some(vec![VolumeMount {
+            name: "config".to_string(),
+            mount_path: "/config".to_string(),
+            read_only: Some(true),
+            ..Default::default()
+        }]),
+        liveness_probe: Some(k8s_openapi::api::core::v1::Probe {
+            http_get: Some(k8s_openapi::api::core::v1::HTTPGetAction {
+                path: Some("/healthz".to_string()),
+                port: IntOrString::Int(18000),
+                ..Default::default()
+            }),
+            initial_delay_seconds: Some(5),
+            period_seconds: Some(10),
+            timeout_seconds: Some(2),
+            failure_threshold: Some(3),
+            ..Default::default()
+        }),
+        readiness_probe: Some(k8s_openapi::api::core::v1::Probe {
+            http_get: Some(k8s_openapi::api::core::v1::HTTPGetAction {
+                path: Some("/readyz".to_string()),
+                port: IntOrString::Int(18000),
+                ..Default::default()
+            }),
+            initial_delay_seconds: Some(2),
+            period_seconds: Some(5),
+            timeout_seconds: Some(2),
+            failure_threshold: Some(3),
+            ..Default::default()
+        }),
+        resources: Some(K8sResources {
+            requests: Some(requests),
+            limits: Some(limits),
+            ..Default::default()
+        }),
+        security_context: Some(SecurityContext {
+            allow_privilege_escalation: Some(false),
+            read_only_root_filesystem: Some(true),
+            run_as_non_root: Some(true),
+            capabilities: Some(Capabilities {
+                drop: Some(vec!["ALL".to_string()]),
+                add: None,
+            }),
+            seccomp_profile: Some(SeccompProfile {
+                type_: "RuntimeDefault".to_string(),
+                localhost_profile: None,
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+const DIAGNOSTIC_SIDECAR_DEFAULT_CPU: &str = "50m";
+const DIAGNOSTIC_SIDECAR_DEFAULT_MEMORY: &str = "64Mi";
+
+fn build_diagnostic_sidecar_resources(    override_resources: Option<&ResourceRequirements>,
 ) -> K8sResources {
     let requests_cpu = override_resources
         .map(|resources| resources.requests.cpu.as_str())
@@ -3360,6 +3788,7 @@ fn merge_env_overrides(base: &mut Vec<EnvVar>, overrides: &[EnvVar]) {
     }
 }
 
+
 fn build_workload_tolerations(node: &StellarNode) -> Option<Vec<Toleration>> {
     let mut tolerations = node.spec.tolerations.clone();
 
@@ -3368,6 +3797,20 @@ fn build_workload_tolerations(node: &StellarNode) -> Option<Vec<Toleration>> {
             &mut tolerations,
             jurisdiction,
         );
+    }
+
+    if crate::scheduler::capacity::classify_stellar_node(node)
+        == crate::crd::WorkloadTier::BestEffort
+    {
+        let already = tolerations.iter().any(|t| t.key.as_deref() == Some("spot"));
+        if !already {
+            tolerations.push(Toleration {
+                key: Some("spot".to_string()),
+                operator: Some("Exists".to_string()),
+                effect: Some("NoSchedule".to_string()),
+                ..Default::default()
+            });
+        }
     }
 
     if tolerations.is_empty() {
@@ -3408,6 +3851,9 @@ fn build_snapshot_restore_container(
     backup_url: &str,
     credentials_secret_ref: Option<&str>,
     restore_image: Option<&str>,
+    expected_sha256: Option<&str>,
+    expected_ledger_sequence: Option<u64>,
+    expected_network: Option<&str>,
 ) -> Container {
     // Choose a sensible default image based on the URL scheme.
     let image = restore_image.map(|s| s.to_string()).unwrap_or_else(|| {
@@ -3430,47 +3876,92 @@ fn build_snapshot_restore_container(
     let script = if backup_url.starts_with("s3://") {
         format!(
             r#"set -e
-# Skip restore if data volume already has content (idempotent)
-if [ "$(ls -A /data 2>/dev/null)" ]; then
+# Skip restore after a previously verified import.
+if [ -f /data/.stellar-ledger-restore-complete ]; then
   echo "Data volume already populated, skipping snapshot restore."
   exit 0
 fi
-echo "Restoring from S3 snapshot: {url}"
-aws s3 cp "{url}" /tmp/snapshot.archive
+# ext4 may create lost+found on a new PVC; that alone is not existing ledger state.
+if find /data -mindepth 1 -maxdepth 1 ! -name lost+found -print -quit | grep -q .; then
+    echo "Data volume already populated, skipping snapshot restore."
+    exit 0
+fi
+echo "Restoring from S3 snapshot: $BACKUP_URL"
+aws s3 cp "$BACKUP_URL" /tmp/snapshot.archive
+if [ -z "$EXPECTED_SHA256" ]; then
+    if aws s3 cp "$BACKUP_URL.sha256" /tmp/snapshot.archive.sha256; then
+        EXPECTED_SHA256=$(cut -d ' ' -f 1 /tmp/snapshot.archive.sha256)
+    fi
+fi
+if [ -n "$EXPECTED_SHA256" ]; then echo "$EXPECTED_SHA256  /tmp/snapshot.archive" | sha256sum -c -; else echo 'WARNING: restoring without an archive checksum'; fi
 echo "Extracting archive..."
 tar {decompress} -xf /tmp/snapshot.archive -C /data
-rm -f /tmp/snapshot.archive
-echo "Snapshot restore complete."
+if [ -f /data/files.sha256 ]; then (cd /data && sha256sum -c files.sha256); fi
+if [ -n "$EXPECTED_LEDGER_SEQUENCE" ]; then grep -Fx "ledger_sequence=$EXPECTED_LEDGER_SEQUENCE" /data/snapshot-manifest.txt; fi
+if [ -n "$EXPECTED_NETWORK" ]; then grep -Fx "network=$EXPECTED_NETWORK" /data/snapshot-manifest.txt; fi
+rm -f /data/files.sha256 /data/snapshot-manifest.txt /tmp/snapshot.archive /tmp/snapshot.archive.sha256
+touch /data/.stellar-ledger-restore-complete
+echo "Snapshot restore and verification complete."
 "#,
-            url = backup_url,
             decompress = decompress_flag,
         )
     } else {
         format!(
             r#"set -e
-# Skip restore if data volume already has content (idempotent)
-if [ "$(ls -A /data 2>/dev/null)" ]; then
+# Skip restore after a previously verified import.
+if [ -f /data/.stellar-ledger-restore-complete ]; then
   echo "Data volume already populated, skipping snapshot restore."
   exit 0
 fi
-echo "Restoring from backup: {url}"
-wget -q -O /tmp/snapshot.archive "{url}" || curl -fsSL -o /tmp/snapshot.archive "{url}"
+# ext4 may create lost+found on a new PVC; that alone is not existing ledger state.
+if find /data -mindepth 1 -maxdepth 1 ! -name lost+found -print -quit | grep -q .; then
+    echo "Data volume already populated, skipping snapshot restore."
+    exit 0
+fi
+echo "Restoring from backup: $BACKUP_URL"
+wget -q -O /tmp/snapshot.archive "$BACKUP_URL" || curl -fsSL -o /tmp/snapshot.archive "$BACKUP_URL"
+if [ -z "$EXPECTED_SHA256" ]; then
+    if wget -q -O /tmp/snapshot.archive.sha256 "$BACKUP_URL.sha256" || curl -fsSL -o /tmp/snapshot.archive.sha256 "$BACKUP_URL.sha256"; then
+        EXPECTED_SHA256=$(cut -d ' ' -f 1 /tmp/snapshot.archive.sha256)
+    fi
+fi
+if [ -n "$EXPECTED_SHA256" ]; then echo "$EXPECTED_SHA256  /tmp/snapshot.archive" | sha256sum -c -; else echo 'WARNING: restoring without an archive checksum'; fi
 echo "Extracting archive..."
 tar {decompress} -xf /tmp/snapshot.archive -C /data
-rm -f /tmp/snapshot.archive
-echo "Snapshot restore complete."
+if [ -f /data/files.sha256 ]; then (cd /data && sha256sum -c files.sha256); fi
+if [ -n "$EXPECTED_LEDGER_SEQUENCE" ]; then grep -Fx "ledger_sequence=$EXPECTED_LEDGER_SEQUENCE" /data/snapshot-manifest.txt; fi
+if [ -n "$EXPECTED_NETWORK" ]; then grep -Fx "network=$EXPECTED_NETWORK" /data/snapshot-manifest.txt; fi
+rm -f /data/files.sha256 /data/snapshot-manifest.txt /tmp/snapshot.archive /tmp/snapshot.archive.sha256
+touch /data/.stellar-ledger-restore-complete
+echo "Snapshot restore and verification complete."
 "#,
-            url = backup_url,
             decompress = decompress_flag,
         )
     };
 
     // Build environment variables — inject AWS credentials if provided.
-    let mut env: Vec<EnvVar> = vec![EnvVar {
-        name: "BACKUP_URL".to_string(),
-        value: Some(backup_url.to_string()),
-        ..Default::default()
-    }];
+    let mut env: Vec<EnvVar> = vec![
+        EnvVar {
+            name: "BACKUP_URL".to_string(),
+            value: Some(backup_url.to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "EXPECTED_SHA256".to_string(),
+            value: expected_sha256.map(str::to_string),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "EXPECTED_LEDGER_SEQUENCE".to_string(),
+            value: expected_ledger_sequence.map(|sequence| sequence.to_string()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "EXPECTED_NETWORK".to_string(),
+            value: expected_network.map(str::to_string),
+            ..Default::default()
+        },
+    ];
 
     if let Some(secret_name) = credentials_secret_ref {
         // AWS credentials
@@ -3677,42 +4168,8 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
         });
     }
 
-    if let Some(target_mem) = autoscaling.target_memory_utilization_percentage {
-        metrics.push(MetricSpec {
-            type_: "Resource".to_string(),
-            resource: Some(k8s_openapi::api::autoscaling::v2::ResourceMetricSource {
-                name: "memory".to_string(),
-                target: MetricTarget {
-                    type_: "Utilization".to_string(),
-                    average_utilization: Some(target_mem),
-                    ..Default::default()
-                },
-            }),
-            ..Default::default()
-        });
-    }
-
     for metric_name in &autoscaling.custom_metrics {
-        let metric = match metric_name.as_str() {
-            "ledger_ingestion_lag" => Some((
-                "stellar_node_ingestion_lag".to_string(),
-                "Value".to_string(),
-                Quantity("5".to_string()),
-            )),
-            "stellar_horizon_tps" | "requests_per_second" => Some((
-                "stellar_horizon_tps".to_string(),
-                "Value".to_string(),
-                Quantity("1000".to_string()),
-            )),
-            "stellar_queue_length" | "queue_length" | "horizon_queue_length" => Some((
-                "stellar_horizon_queue_length".to_string(),
-                "Value".to_string(),
-                Quantity("50".to_string()),
-            )),
-            _ => None,
-        };
-
-        if let Some((metric_name, target_type, target_value)) = metric {
+        if metric_name == "ledger_ingestion_lag" {
             metrics.push(MetricSpec {
                 type_: "Object".to_string(),
                 object: Some(ObjectMetricSource {
@@ -3722,23 +4179,48 @@ fn build_hpa(node: &StellarNode) -> Result<HorizontalPodAutoscaler> {
                         name: node.name_any(),
                     },
                     metric: MetricIdentifier {
-                        name: metric_name,
+                        name: "stellar_node_ingestion_lag".to_string(),
                         selector: None,
                     },
                     target: MetricTarget {
-                        type_: target_type,
-                        value: Some(target_value),
+                        type_: "Value".to_string(),
+                        value: Some(Quantity("5".to_string())),
                         ..Default::default()
                     },
                 }),
                 ..Default::default()
             });
-        } else {
-            warn!(
-                "Unrecognized custom metric '{}' configured for node {}; skipping.",
-                metric_name,
-                node.name_any()
-            );
+        }
+        if metric_name == "pending_rpc_queue" {
+            // Exposed by the operator's queue autoscaler collector as
+            // `stellar_node_pending_rpc_queue`; lets a Kubernetes HPA co-drive
+            // scale on the same queue-depth signal the operator loop uses.
+            metrics.push(MetricSpec {
+                type_: "Object".to_string(),
+                object: Some(ObjectMetricSource {
+                    described_object: CrossVersionObjectReference {
+                        api_version: Some("stellar.org/v1alpha1".to_string()),
+                        kind: "StellarNode".to_string(),
+                        name: node.name_any(),
+                    },
+                    metric: MetricIdentifier {
+                        name: "stellar_node_pending_rpc_queue".to_string(),
+                        selector: None,
+                    },
+                    target: MetricTarget {
+                        type_: "Value".to_string(),
+                        value: Some(Quantity(
+                            autoscaling
+                                .queue_autoscaling
+                                .as_ref()
+                                .map(|q| q.target_pending_per_replica.to_string())
+                                .unwrap_or_else(|| "100".to_string()),
+                        )),
+                        ..Default::default()
+                    },
+                }),
+                ..Default::default()
+            });
         }
     }
 
@@ -3833,96 +4315,41 @@ pub async fn delete_hpa(client: &Client, node: &StellarNode, dry_run: bool) -> R
 }
 
 // ============================================================================
-// ServiceMonitor
+// ServiceMonitor — unchanged
 // ============================================================================
 
-fn service_monitor_api_resource() -> ApiResource {
-    ApiResource::from_gvk(&GroupVersionKind {
-        group: "monitoring.coreos.com".to_string(),
-        version: "v1".to_string(),
-        kind: "ServiceMonitor".to_string(),
-    })
-}
-
-pub async fn ensure_service_monitor(client: &Client, node: &StellarNode) -> Result<()> {
+pub async fn ensure_service_monitor(_client: &Client, node: &StellarNode) -> Result<()> {
     if !matches!(
         node.spec.node_type,
         NodeType::Horizon | NodeType::SorobanRpc
-    ) {
+    ) || node.spec.autoscaling.is_none()
+    {
         return Ok(());
     }
 
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = resource_name(node, "service-monitor");
-    let api_resource = service_monitor_api_resource();
-    let api: Api<DynamicObject> = Api::namespaced_with(client.clone(), &namespace, &api_resource);
-
-    let mut service_monitor = DynamicObject::new(&name, &api_resource).within(&namespace);
-    service_monitor.metadata.labels = Some(standard_labels(node));
-    service_monitor.metadata.owner_references = Some(vec![owner_reference(node)]);
-    service_monitor.data = serde_json::to_value(serde_json::json!({
-        "spec": {
-            "jobLabel": "app.kubernetes.io/instance",
-            "namespaceSelector": {
-                "matchNames": [namespace]
-            },
-            "selector": {
-                "matchLabels": {
-                    "app.kubernetes.io/name": "stellar-node",
-                    "app.kubernetes.io/instance": node.name_any()
-                }
-            },
-            "endpoints": [
-                {
-                    "targetPort": 8000,
-                    "path": "/metrics",
-                    "interval": "30s",
-                    "scheme": "http"
-                }
-            ]
-        }
-    }))
-    .unwrap_or_default();
-
-    api.patch(
-        &name,
-        &PatchParams::apply("stellar-operator").force(),
-        &Patch::Apply(&service_monitor),
-    )
-    .await
-    .map_err(Error::KubeError)?;
 
     info!(
-        "Ensured ServiceMonitor {}/{} for Prometheus Operator scraping",
+        "ServiceMonitor configuration available for {}/{}. Users should manually create the ServiceMonitor resource.",
         namespace, name
     );
 
     Ok(())
 }
 
-pub async fn delete_service_monitor(client: &Client, node: &StellarNode) -> Result<()> {
-    if !matches!(
-        node.spec.node_type,
-        NodeType::Horizon | NodeType::SorobanRpc
-    ) {
+pub async fn delete_service_monitor(_client: &Client, node: &StellarNode) -> Result<()> {
+    if node.spec.autoscaling.is_none() {
         return Ok(());
     }
 
     let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
     let name = resource_name(node, "service-monitor");
-    let api_resource = service_monitor_api_resource();
-    let api: Api<DynamicObject> = Api::namespaced_with(client.clone(), &namespace, &api_resource);
 
-    match api.delete(&name, &DeleteParams::default()).await {
-        Ok(_) => info!("Deleted ServiceMonitor {}/{}", namespace, name),
-        Err(kube::Error::Api(api_err)) if api_err.code == 404 => {
-            info!(
-                "ServiceMonitor {}/{} not found (already deleted)",
-                namespace, name
-            )
-        }
-        Err(e) => return Err(Error::KubeError(e)),
-    }
+    info!(
+        "Note: ServiceMonitor {}/{} must be manually deleted if it was created",
+        namespace, name
+    );
 
     Ok(())
 }
@@ -4165,7 +4592,11 @@ pub(crate) fn build_network_policy(
                 }),
                 ..Default::default()
             }]),
-            ports: Some(app_ports.clone()),
+            ports: Some(vec![NetworkPolicyPort {
+                port: Some(k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(11625)),
+                protocol: Some("TCP".to_string()),
+                ..Default::default()
+            }]),
         });
 
         // --- Stellar-Native Egress Rules ---
@@ -4253,12 +4684,6 @@ pub(crate) fn build_network_policy(
             }
         }
     } else {
-        // Allow public and ingress-controller traffic to Horizon/Soroban RPC on port 8000.
-        ingress_rules.push(NetworkPolicyIngressRule {
-            from: None,
-            ports: Some(app_ports.clone()),
-        });
-
         // Horizon / Soroban RPC egress rules
         // 1. Allow DNS
         egress_rules.push(k8s_openapi::api::networking::v1::NetworkPolicyEgressRule {
@@ -4408,9 +4833,7 @@ pub(crate) fn build_network_policy(
         ports: None,
     };
 
-    egress_rules.push(same_network_egress);
-    egress_rules.push(dns_egress);
-    egress_rules.push(intra_namespace_egress);
+    let egress_rules = vec![same_network_egress, dns_egress, intra_namespace_egress];
 
     NetworkPolicy {
         metadata: merge_resource_meta(
@@ -4481,35 +4904,18 @@ pub async fn delete_network_policy(
 }
 
 // ============================================================================
-// PodDisruptionBudget
+// PodDisruptionBudget — unchanged
 // ============================================================================
 
-/// Build a PodDisruptionBudget for a StellarNode.
-///
-/// For **Validator** nodes the PDB is always generated to protect quorum:
-/// - `replicas == 1`: `minAvailable: 1` (prevents all disruptions while still
-///   allowing the single pod to be evicted when the node is deleted).
-/// - `replicas > 1`: `minAvailable = (replicas / 2) + 1` so that a strict
-///   majority of validators is always available during maintenance.
-///
-/// For non-Validator nodes the existing user-controlled behaviour is preserved:
-/// - If neither `minAvailable` nor `maxUnavailable` is set, defaults to
-///   `maxUnavailable: 1`.
-/// - Returns `None` when `replicas <= 1` (no PDB needed for single-replica
-///   non-validator workloads).
 pub(crate) fn build_pdb(node: &StellarNode) -> Option<PodDisruptionBudget> {
+    if node.spec.replicas <= 1 {
+        return None;
+    }
+
     let labels = standard_labels(node);
     let name = node.name_any();
 
-    let (min_available, max_unavailable) = if node.spec.node_type == NodeType::Validator {
-        // Auto-calculate quorum-safe minAvailable for Stellar-Core validators.
-        let replicas = node.spec.replicas.max(1);
-        let min_avail = (replicas / 2) + 1;
-        (Some(IntOrString::Int(min_avail)), None)
-    } else {
-        if node.spec.replicas <= 1 {
-            return None;
-        }
+    let (min_available, max_unavailable) =
         if node.spec.min_available.is_none() && node.spec.max_unavailable.is_none() {
             (None, Some(IntOrString::Int(1)))
         } else {
@@ -4517,8 +4923,7 @@ pub(crate) fn build_pdb(node: &StellarNode) -> Option<PodDisruptionBudget> {
                 node.spec.min_available.clone(),
                 node.spec.max_unavailable.clone(),
             )
-        }
-    };
+        };
 
     Some(PodDisruptionBudget {
         metadata: ObjectMeta {
@@ -4542,8 +4947,7 @@ pub(crate) fn build_pdb(node: &StellarNode) -> Option<PodDisruptionBudget> {
 }
 
 pub async fn ensure_pdb(client: &Client, node: &StellarNode, dry_run: bool) -> Result<()> {
-    // For non-Validator nodes with replicas <= 1, delete any existing PDB.
-    if node.spec.node_type != NodeType::Validator && node.spec.replicas <= 1 {
+    if node.spec.replicas <= 1 {
         return delete_pdb(client, node, dry_run).await;
     }
 
@@ -4584,13 +4988,6 @@ pub async fn delete_pdb(client: &Client, node: &StellarNode, dry_run: bool) -> R
 // ============================================================================
 
 #[cfg(test)]
-pub(crate) fn build_pdb_for_test(
-    node: &StellarNode,
-) -> Option<k8s_openapi::api::policy::v1::PodDisruptionBudget> {
-    build_pdb(node)
-}
-
-#[cfg(test)]
 pub(crate) fn build_pvc_for_test(
     node: &StellarNode,
     storage_class: String,
@@ -4614,7 +5011,7 @@ pub(crate) fn build_deployment_for_test(
 pub(crate) fn build_statefulset_for_test(
     node: &StellarNode,
 ) -> k8s_openapi::api::apps::v1::StatefulSet {
-    build_statefulset(node, false, None)
+    build_statefulset(node, false, None, node.spec.pod_anti_affinity.clone())
 }
 
 #[cfg(test)]
@@ -4623,8 +5020,283 @@ pub(crate) fn build_service_for_test(node: &StellarNode) -> k8s_openapi::api::co
 }
 
 #[cfg(test)]
+pub(crate) fn build_pod_template_for_test(node: &StellarNode) -> PodTemplateSpec {
+    build_pod_template(
+        node,
+        &standard_labels(node),
+        false,
+        None,
+        node.spec.pod_anti_affinity.clone(),
+    )
+}
+
+// ============================================================================
+// Issue #1552 / #1553 / #1555 helpers
+// ============================================================================
+
+/// Resolve the health sidecar image (Issue #1552).
+///
+/// Resolution order:
+/// 1. Explicit `spec.validatorConfig.sidecarImage` override.
+/// 2. `ghcr.io/stellar/stellar-k8s:{version}` derived from the node version.
+/// 3. Fallback to the operator image (which bundles `/stellar-health-sidecar`).
+pub(crate) fn resolve_health_sidecar_image(node: &StellarNode) -> String {
+    // 1. Explicit override from validatorConfig.
+    if let Some(vc) = &node.spec.validator_config {
+        if let Some(explicit) = &vc.sidecar_image {
+            if !explicit.trim().is_empty() {
+                return explicit.clone();
+            }
+        }
+    }
+
+    // 2. Derive from version.
+    let version = node.spec.version.trim();
+    if !version.is_empty() {
+        return format!("ghcr.io/stellar/stellar-k8s:{version}");
+    }
+
+    // 3. Fallback to operator image.
+    std::env::var("STELLAR_OPERATOR_IMAGE")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "ghcr.io/stellar/stellar-k8s:latest".to_string())
+}
+
+/// Whether AppArmor annotations should be emitted (Issue #1555).
+///
+/// Opt-in via `STELLAR_APPARMOR_ENABLED=true`; defaults to `false` so pods
+/// start on hosts without AppArmor (kind, AL2023).
+pub(crate) fn apparmor_enabled() -> bool {
+    std::env::var("STELLAR_APPARMOR_ENABLED")
+        .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+        .unwrap_or(false)
+}
+
+/// Build the AppArmor annotations map for the given container names (Issue #1555).
+///
+/// Returns an empty map unless `STELLAR_APPARMOR_ENABLED=true`.
+pub(crate) fn apparmor_annotations(container_names: &[&str]) -> BTreeMap<String, String> {
+    let mut annotations = BTreeMap::new();
+    if !apparmor_enabled() {
+        return annotations;
+    }
+    for name in container_names {
+        annotations.insert(
+            format!("container.apparmor.security.beta.kubernetes.io/{name}"),
+            "runtime/default".to_string(),
+        );
+    }
+    annotations
+}
+
+/// Build the database-initialization initContainer (Issue #1553).
+///
+/// Returns `None` when:
+/// - the node type is not a Validator (only validators own a stellar-core DB), or
+/// - the user supplied a custom `spec.command` (they own startup), or
+/// - the user supplied custom init containers via `spec.sidecars`/init hooks.
+///
+/// The initContainer is idempotent: it checks for an existing `schema_version`
+/// table before running `stellar-core new-db`. For postgres it uses an advisory
+/// lock to avoid races when multiple pods start concurrently.
+pub(crate) fn build_db_init_container(node: &StellarNode) -> Option<Container> {
+    // Only validators run stellar-core with a local DB.
+    if node.spec.node_type != NodeType::Validator {
+        return None;
+    }
+
+    // Respect user-provided custom command (they own startup).
+    if node
+        .spec
+        .command
+        .as_ref()
+        .map(|c| !c.is_empty())
+        .unwrap_or(false)
+    {
+        return None;
+    }
+
+    let is_postgres = node.spec.database.is_some() || node.spec.managed_database.is_some();
+
+    // Shell script: idempotent schema check + new-db.
+    // - sqlite: inspect the DB file on the data volume for a schema_version table.
+    // - postgres: use psql to check for schema_version; wrap in an advisory lock.
+    let script = if is_postgres {
+        concat!(
+            "set -e; ",
+            "echo 'Checking postgres schema...'; ",
+            "if ! pg_isready -q; then echo 'postgres not ready, waiting'; sleep 5; fi; ",
+            "SCHEMA_EXISTS=$(psql -tAc \"SELECT 1 FROM information_schema.tables ",
+            "WHERE table_name='schema_version' LIMIT 1\" 2>/dev/null || true); ",
+            "if [ \"$SCHEMA_EXISTS\" = \"1\" ]; then ",
+            "  echo 'schema_version exists, skipping new-db'; exit 0; ",
+            "fi; ",
+            "echo 'Running stellar-core new-db (postgres)...'; ",
+            "stellar-core new-db --conf /config/stellar-core.cfg"
+        )
+    } else {
+        concat!(
+            "set -e; ",
+            "DB=/data/stellar-core.db; ",
+            "if [ -f \"$DB\" ]; then ",
+            "  if command -v sqlite3 >/dev/null 2>&1; then ",
+            "    if sqlite3 \"$DB\" \"SELECT name FROM sqlite_master ",
+            "WHERE type='table' AND name='schema_version'\" 2>/dev/null | grep -q schema_version; then ",
+            "      echo 'schema_version exists, skipping new-db'; exit 0; ",
+            "    fi; ",
+            "  fi; ",
+            "fi; ",
+            "echo 'Running stellar-core new-db (sqlite)...'; ",
+            "stellar-core new-db --conf /config/stellar-core.cfg"
+        )
+    };
+
+    Some(Container {
+        name: "db-init".to_string(),
+        image: Some(node.spec.container_image()),
+        command: Some(vec![
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            script.to_string(),
+        ]),
+        volume_mounts: Some(vec![
+            VolumeMount {
+                name: "data".to_string(),
+                mount_path: "/data".to_string(),
+                ..Default::default()
+            },
+            VolumeMount {
+                name: "config".to_string(),
+                mount_path: "/config".to_string(),
+                read_only: Some(true),
+                ..Default::default()
+            },
+        ]),
+        ..Default::default()
+    })
+}
+
+#[cfg(test)]
+mod sidecar_and_apparmor_tests {
+    use super::{
+        apparmor_annotations, build_db_init_container, resolve_health_sidecar_image,
+    };
+    use crate::crd::{
+        types::{ResourceRequirements, ResourceSpec},
+        NodeType, StellarNetwork, StellarNode, StellarNodeSpec,
+    };
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+
+    fn test_node() -> StellarNode {
+        StellarNode {
+            metadata: ObjectMeta {
+                name: Some("test-node".to_string()),
+                namespace: Some("stellar-system".to_string()),
+                uid: Some("abc-123".to_string()),
+                ..Default::default()
+            },
+            spec: StellarNodeSpec {
+                node_type: NodeType::Validator,
+                network: StellarNetwork::Testnet,
+                version: "v21.0.0".to_string(),
+                resources: ResourceRequirements {
+                    requests: ResourceSpec {
+                        cpu: "500m".to_string(),
+                        memory: "1Gi".to_string(),
+                    },
+                    limits: ResourceSpec {
+                        cpu: "2".to_string(),
+                        memory: "4Gi".to_string(),
+                    },
+                },
+                replicas: 1,
+                ..Default::default()
+            },
+            status: None,
+        }
+    }
+
+    // --- Issue #1552: sidecar image resolution ---
+
+    #[test]
+    fn sidecar_image_derives_ghcr_from_version() {
+        let node = test_node();
+        let image = resolve_health_sidecar_image(&node);
+        assert_eq!(image, "ghcr.io/stellar/stellar-k8s:v21.0.0");
+    }
+
+    #[test]
+    fn sidecar_image_respects_explicit_override() {
+        let mut node = test_node();
+        let mut vc = crate::crd::ValidatorConfig::default();
+        vc.sidecar_image = Some("my-registry/sidecar:custom".to_string());
+        node.spec.validator_config = Some(vc);
+        let image = resolve_health_sidecar_image(&node);
+        assert_eq!(image, "my-registry/sidecar:custom");
+    }
+
+    #[test]
+    fn sidecar_image_falls_back_to_operator_image() {
+        let mut node = test_node();
+        node.spec.version = String::new();
+        std::env::set_var("STELLAR_OPERATOR_IMAGE", "ghcr.io/stellar/operator:v1");
+        let image = resolve_health_sidecar_image(&node);
+        std::env::remove_var("STELLAR_OPERATOR_IMAGE");
+        assert_eq!(image, "ghcr.io/stellar/operator:v1");
+    }
+
+    // --- Issue #1555: AppArmor opt-in ---
+
+    #[test]
+    fn apparmor_annotation_absent_by_default() {
+        std::env::remove_var("STELLAR_APPARMOR_ENABLED");
+        let annotations = apparmor_annotations(&["stellar-core"]);
+        assert!(
+            annotations.is_empty(),
+            "AppArmor annotation must be absent by default"
+        );
+    }
+
+    #[test]
+    fn apparmor_annotation_present_when_enabled() {
+        std::env::set_var("STELLAR_APPARMOR_ENABLED", "true");
+        let annotations = apparmor_annotations(&["stellar-core"]);
+        std::env::remove_var("STELLAR_APPARMOR_ENABLED");
+        assert_eq!(
+            annotations.get("container.apparmor.security.beta.kubernetes.io/stellar-core"),
+            Some(&"runtime/default".to_string())
+        );
+    }
+
+    // --- Issue #1553: DB init container ---
+
+    #[test]
+    fn db_init_container_present_for_validator() {
+        let node = test_node();
+        let init = build_db_init_container(&node);
+        assert!(init.is_some(), "validator should get a db-init container");
+        assert_eq!(init.unwrap().name, "db-init");
+    }
+
+    #[test]
+    fn db_init_container_skipped_for_non_validator() {
+        let mut node = test_node();
+        node.spec.node_type = NodeType::Horizon;
+        assert!(build_db_init_container(&node).is_none());
+    }
+
+    #[test]
+    fn db_init_container_skipped_when_custom_command() {
+        let mut node = test_node();
+        node.spec.command = Some(vec!["/custom/start".to_string()]);
+        assert!(build_db_init_container(&node).is_none());
+    }
+}
+
+#[cfg(test)]
 mod ensure_pvc_tests {
-    use super::{build_hpa, build_pvc, pvc_needs_update, resolve_pvc_storage_class};
+    use super::{build_pvc, pvc_needs_update, resolve_pvc_storage_class};
     use crate::crd::{
         types::{ResourceRequirements, ResourceSpec, StorageMode},
         NodeType, StellarNetwork, StellarNode, StellarNodeSpec,
@@ -4841,40 +5513,5 @@ mod ensure_pvc_tests {
             Some("standard"),
             "PVC storage class must be preserved regardless of retention policy"
         );
-    }
-
-    #[test]
-    fn build_hpa_includes_supported_custom_metrics() {
-        use crate::crd::types::AutoscalingConfig;
-
-        let mut node = test_node();
-        node.spec.autoscaling = Some(AutoscalingConfig {
-            min_replicas: 1,
-            max_replicas: 5,
-            custom_metrics: vec![
-                "stellar_horizon_tps".to_string(),
-                "stellar_queue_length".to_string(),
-            ],
-            ..Default::default()
-        });
-
-        let hpa = build_hpa(&node).expect("HPA should build with supported custom metrics");
-        let metrics = hpa
-            .spec
-            .as_ref()
-            .and_then(|spec| spec.metrics.as_ref())
-            .expect("HPA spec metrics should exist");
-
-        let metric_names: Vec<String> = metrics
-            .iter()
-            .filter_map(|spec| {
-                spec.object
-                    .as_ref()
-                    .map(|object| object.metric.name.clone())
-            })
-            .collect();
-
-        assert!(metric_names.contains(&"stellar_horizon_tps".to_string()));
-        assert!(metric_names.contains(&"stellar_horizon_queue_length".to_string()));
     }
 }

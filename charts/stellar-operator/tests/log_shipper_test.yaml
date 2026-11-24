@@ -1,0 +1,76 @@
+# Helm unit tests for the per-node log shipper (issue #1381).
+# Run: helm unittest charts/stellar-operator --strict
+suite: log-shipper/daemonset
+templates:
+  - templates/log-shipper.yaml
+
+tests:
+  - it: renders nothing when logShipper.enabled is false (default)
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders ConfigMap, ServiceAccount, RBAC, and DaemonSet when enabled
+    set:
+      logShipper:
+        enabled: true
+    asserts:
+      - hasDocuments:
+          count: 5
+      - isKind:
+          of: ConfigMap
+        documentIndex: 0
+      - isKind:
+          of: ServiceAccount
+        documentIndex: 1
+      - isKind:
+          of: ClusterRole
+        documentIndex: 2
+      - isKind:
+          of: ClusterRoleBinding
+        documentIndex: 3
+      - isKind:
+          of: DaemonSet
+        documentIndex: 4
+
+  - it: uses the configured image and pull policy on the DaemonSet
+    set:
+      logShipper:
+        enabled: true
+        image:
+          repository: fluent/fluent-bit
+          tag: "3.0.0"
+          pullPolicy: Always
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: fluent/fluent-bit:3.0.0
+        documentIndex: 4
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+        documentIndex: 4
+
+  - it: configures the Loki output when logShipper.loki.enabled is true
+    set:
+      logShipper:
+        enabled: true
+        loki:
+          enabled: true
+    asserts:
+      - matchRegex:
+          path: data.fluent-bit.conf
+          pattern: "(?m)^\\s+Name          loki$"
+        documentIndex: 0
+
+  - it: configures the Elasticsearch output when logShipper.elasticsearch.enabled is true
+    set:
+      logShipper:
+        enabled: true
+        elasticsearch:
+          enabled: true
+    asserts:
+      - matchRegex:
+          path: data.fluent-bit.conf
+          pattern: "(?m)^\\s+Name          es$"
+        documentIndex: 0

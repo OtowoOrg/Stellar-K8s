@@ -1,19 +1,28 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+mod common;
+
+use common::skip_if_tools_missing;
+// Issue #934: import RAII teardown guards from common so new tests can use
+// TestHarnessGuard (cluster + resources) instead of ad-hoc local Drop impls.
+#[allow(unused_imports)]
+use common::{KindClusterGuard, TempFileGuard, TestHarnessGuard};
 use std::collections::HashMap;
 use std::error::Error;
 use std::process::{Command, Stdio};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 use tracing::info;
-
-/// Returns true if the given binary is accessible in PATH.
-fn tool_available(binary: &str) -> bool {
-    Command::new(binary)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok()
-}
 
 const OPERATOR_NAMESPACE: &str = "stellar-system";
 const TEST_NAMESPACE: &str = "stellar-e2e";
@@ -45,11 +54,8 @@ const UPGRADE_NODE_NAME: &str = "upgrade-soroban";
 fn e2e_stellarnode_reconciliation() -> Result<(), Box<dyn std::error::Error>> {
     // ── Prerequisite check ─────────────────────────────────────────────────────
     // Skip gracefully when the required cluster tools are not installed.
-    for tool in &["kind", "kubectl", "docker"] {
-        if !tool_available(tool) {
-            eprintln!("Skipping e2e test: `{tool}` not found in PATH.");
-            return Ok(());
-        }
+    if skip_if_tools_missing(&["kind", "kubectl", "docker"]) {
+        return Ok(());
     }
 
     let cluster_name = std::env::var("KIND_CLUSTER_NAME").unwrap_or_else(|_| "stellar-e2e".into());
@@ -389,6 +395,11 @@ spec:
 }
 
 /// RAII cleanup guard for the e2e reconciliation test.
+/// Local teardown guard for `e2e_stellarnode_reconciliation`.
+///
+/// **New tests** should use [`common::TestHarnessGuard`] instead — it handles
+/// cluster-level teardown as well as resource cleanup and is shared across all
+/// E2E test files (issue #934).
 struct E2eCleanup {
     operator_manifest: String,
     node_name: &'static str,
@@ -2210,6 +2221,22 @@ fn teardown_recovery_cluster(op_yaml: &str) {
     );
 }
 
+struct RecoveryCleanup {
+    operator_manifest: String,
+}
+
+impl RecoveryCleanup {
+    fn new(operator_manifest: String) -> Self {
+        Self { operator_manifest }
+    }
+}
+
+impl Drop for RecoveryCleanup {
+    fn drop(&mut self) {
+        teardown_recovery_cluster(&self.operator_manifest);
+    }
+}
+
 fn running_pod_name(namespace: &str, instance: &str) -> Result<String, Box<dyn Error>> {
     run_cmd(
         "kubectl",
@@ -2239,6 +2266,7 @@ fn e2e_recovery_node_crash() -> Result<(), Box<dyn Error>> {
     let image =
         std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
     let op_yaml = setup_recovery_cluster(&cluster, &image)?;
+    let _cleanup = RecoveryCleanup::new(op_yaml.clone());
 
     let original_pod = running_pod_name(RECOVERY_NAMESPACE, RECOVERY_NODE)?;
     // Force-delete pod to simulate crash
@@ -2281,7 +2309,6 @@ fn e2e_recovery_node_crash() -> Result<(), Box<dyn Error>> {
     })
     .map_err(|_| -> Box<dyn Error> { "StellarNode did not recover after crash".into() })?;
 
-    teardown_recovery_cluster(&op_yaml);
     Ok(())
 }
 
@@ -2297,6 +2324,7 @@ fn e2e_recovery_disk_full() -> Result<(), Box<dyn Error>> {
     let image =
         std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
     let op_yaml = setup_recovery_cluster(&cluster, &image)?;
+    let _cleanup = RecoveryCleanup::new(op_yaml.clone());
 
     let pvc = format!("{RECOVERY_NODE}-data");
 
@@ -2438,7 +2466,6 @@ spec:
     )
     .map_err(|_| -> Box<dyn Error> { "StellarNode did not recover after disk-full".into() })?;
 
-    teardown_recovery_cluster(&op_yaml);
     Ok(())
 }
 
@@ -2454,6 +2481,7 @@ fn e2e_recovery_network_partition() -> Result<(), Box<dyn Error>> {
     let image =
         std::env::var("E2E_OPERATOR_IMAGE").unwrap_or_else(|_| "stellar-operator:e2e".into());
     let op_yaml = setup_recovery_cluster(&cluster, &image)?;
+    let _cleanup = RecoveryCleanup::new(op_yaml.clone());
 
     // Deny all traffic to the node pod — simulates network partition
     let deny_policy = format!(
@@ -2527,6 +2555,5 @@ spec:
         "StellarNode did not recover after network partition".into()
     })?;
 
-    teardown_recovery_cluster(&op_yaml);
     Ok(())
 }

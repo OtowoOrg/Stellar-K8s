@@ -23,7 +23,7 @@ See `examples/operators/` for three reference implementations:
 
 1. `metrics_exporter.rs` - ReconcileHook
 2. `log_shipper.rs` - SidecarInjector
-3. `registry_validator.rs` - Admission policy integration
+3. `registry_validator.rs` - Admission policy integration via `check_admission`
 
 ## Register a Plugin
 
@@ -37,7 +37,10 @@ let registry = std::sync::Arc::new(
 
 ## CI/CD Template
 
-Use `.github/workflows/operator-extension.yml` as a starting point for extension CI.
+Use [`.github/workflows/ci.yml`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/.github/workflows/ci.yml) as the starting point
+for extension CI (lint, test, helm, and security-scan jobs). Reuse composite actions
+under `.github/actions/` (especially `setup-rust` and `security-scan`) rather than
+copying inline bootstrap.
 
 ## Tutorial
 

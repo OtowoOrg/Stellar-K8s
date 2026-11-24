@@ -25,6 +25,10 @@ spec:
     size: "500Gi"
   validatorConfig:
     seedSecretRef: "mainnet-validator-seed"
+    # Optional: explicitly pin the health sidecar image. When omitted, the
+    # operator falls back to its own image (which contains the
+    # /stellar-health-sidecar binary). Do NOT derive it from the core image.
+    # sidecarImage: "ghcr.io/stellar/stellar-k8s:v21.0.0"
   probes:
     liveness:
       # Allow 2 minutes before the first liveness check (ledger sync can be slow)

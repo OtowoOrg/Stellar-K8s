@@ -1,0 +1,40 @@
+{
+  "webhook": {
+    "name": "stellar-operator-webhook",
+    "namespace": "stellar-system",
+    "path": "/convert",
+    "port": 443
+  },
+  "graphs": [
+    {
+      "crd_kind": "StellarNode",
+      "current_storage_version": "v1alpha1",
+      "supported_versions": ["v1alpha1"],
+      "migrations": {}
+    },
+    {
+      "crd_kind": "StellarFederation",
+      "current_storage_version": "v1alpha1",
+      "supported_versions": ["v1alpha1"],
+      "migrations": {}
+    },
+    {
+      "crd_kind": "ContractWASM",
+      "current_storage_version": "v1alpha1",
+      "supported_versions": ["v1alpha1"],
+      "migrations": {}
+    },
+    {
+      "crd_kind": "ContractInstance",
+      "current_storage_version": "v1alpha1",
+      "supported_versions": ["v1alpha1"],
+      "migrations": {}
+    },
+    {
+      "crd_kind": "FederatedStellarNode",
+      "current_storage_version": "v1alpha1",
+      "supported_versions": ["v1alpha1"],
+      "migrations": {}
+    }
+  ]
+}

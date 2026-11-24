@@ -10,7 +10,7 @@ Stellar-K8s is a Kubernetes operator for managing Stellar Core infrastructure us
 
 ### Linux
 - Install `kubectl`, `kind` or `minikube`, `docker`, `rust`, and `cargo`.
-- Run `cargo test` and `make lint` after cloning the repository.
+- After cloning, run `make health` (or `make ci-local` for the full gate).
 
 ### macOS
 - Use Homebrew to install dependencies: `brew install kubectl kind docker rustup`.
@@ -19,7 +19,10 @@ Stellar-K8s is a Kubernetes operator for managing Stellar Core infrastructure us
 ### Windows / WSL2
 - Use WSL2 for development.
 - Install `kubectl`, `docker`, and `rustup` inside WSL.
-- Run `docs/installation-wsl2.md` for additional guidance.
+- See `docs/installation-wsl2.md` for additional guidance.
+
+For the full command checklist and rationale, see
+[docs/development/repo-health-checklist.md](../development/repo-health-checklist.md).
 
 ## 3. Repository Tour
 
@@ -39,9 +42,9 @@ Stellar-K8s is a Kubernetes operator for managing Stellar Core infrastructure us
 
 ### Tutorial 1: Build and Run Locally
 1. Clone the repo.
-2. Run `cargo build`.
+2. Run `make build`.
 3. Start a local Kubernetes cluster with `kind create cluster`.
-4. Deploy the operator using `make deploy` or `helm install`.
+4. Deploy the operator using `make quickstart-deploy` or `helm install`.
 5. Apply an example `StellarNode` manifest from `examples/`.
 
 ### Tutorial 2: Add a New Feature
@@ -58,14 +61,15 @@ Stellar-K8s is a Kubernetes operator for managing Stellar Core infrastructure us
 
 ## 5. Coding Standards and Best Practices
 
-- Follow Rust formatting with `cargo fmt`.
-- Run linting and static analysis before submitting changes.
+- Format and lint with `make fmt` and `make lint` (prefer Make over raw `cargo`).
 - Keep CRD and API docs in sync with schema changes.
 - Add tests for both controller logic and API behavior.
+- Before opening a PR, complete the
+  [Canonical Repository Health Checklist](../development/repo-health-checklist.md).
 
 ## 6. Testing Strategy
 
-- Unit tests: `cargo test` for Rust modules.
+- Unit / workspace tests: `make test`.
 - Integration tests: `tests/` for CRD reconciliation and Kubernetes behavior.
 - E2E tests: deploy the operator in a cluster and validate application workflows.
 
@@ -73,5 +77,5 @@ Stellar-K8s is a Kubernetes operator for managing Stellar Core infrastructure us
 
 - Use `kubectl describe` and `kubectl get events` for failed workloads.
 - Confirm CRD status conditions and operator readiness.
-- Use `cargo test` for code-level issues and `kubectl logs` for runtime issues.
+- Use `make test` for code-level issues and `kubectl logs` for runtime issues.
 - Review `docs/faq.md` and troubleshooting guides before filing issues.

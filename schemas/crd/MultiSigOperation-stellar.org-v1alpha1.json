@@ -1,0 +1,269 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "MultiSigOperation custom resource",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "operationType",
+        "transactionXdrPayload",
+        "transactionHash",
+        "thresholdM",
+        "totalSignersN",
+        "signers"
+      ],
+      "properties": {
+        "operationType": {
+          "type": "string",
+          "enum": [
+            "SettingsUpgrade",
+            "SignerUpdate",
+            "ProtocolUpgrade",
+            "FeePoolChange",
+            "AnchorTrustline",
+            "Custom"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "targetNetwork": {
+          "type": "string",
+          "default": "Testnet"
+        },
+        "transactionXdrPayload": {
+          "type": "string"
+        },
+        "transactionHash": {
+          "type": "string"
+        },
+        "thresholdM": {
+          "type": "integer"
+        },
+        "totalSignersN": {
+          "type": "integer"
+        },
+        "signers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "signerId",
+              "publicKey"
+            ],
+            "properties": {
+              "signerId": {
+                "type": "string"
+              },
+              "publicKey": {
+                "type": "string"
+              },
+              "sidecarEndpoint": {
+                "type": "string"
+              },
+              "secretRef": {
+                "type": "string"
+              },
+              "weight": {
+                "type": "integer",
+                "default": 1
+              }
+            }
+          }
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "default": 7200
+        },
+        "autoSubmitOnQuorum": {
+          "type": "boolean",
+          "default": true
+        },
+        "submissionEndpoint": {
+          "type": "string"
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": [
+            "Pending",
+            "Collecting",
+            "QuorumReached",
+            "Submitting",
+            "Submitted",
+            "Expired",
+            "Failed"
+          ]
+        },
+        "quorumProgress": {
+          "type": "string"
+        },
+        "signaturesCollected": {
+          "type": "integer"
+        },
+        "signaturesRequired": {
+          "type": "integer"
+        },
+        "quorumReached": {
+          "type": "boolean"
+        },
+        "collectedSignatures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "signerId": {
+                "type": "string"
+              },
+              "publicKey": {
+                "type": "string"
+              },
+              "signature": {
+                "type": "string"
+              },
+              "signedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "source": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "missingSigners": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "submissionResult": {
+          "type": "object",
+          "properties": {
+            "submittedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "transactionHash": {
+              "type": "string"
+            },
+            "ledgerSequence": {
+              "type": "integer"
+            },
+            "success": {
+              "type": "boolean"
+            },
+            "responseCode": {
+              "type": "string"
+            },
+            "errorMessage": {
+              "type": "string"
+            }
+          }
+        },
+        "auditTrail": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "actor": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "details": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "lastTransitionTime": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "MultiSigOperation"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "MultiSigOperation"
+    }
+  ]
+}

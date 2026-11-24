@@ -519,3 +519,7 @@ For issues or questions about archive pruning:
 - Open an issue on [GitHub](https://github.com/OtowoOrg/Stellar-K8s/issues)
 - Check existing documentation in the `docs/` directory
 - Review error logs for detailed diagnostics
+
+---
+
+*Last verified: 2026-07-29 (TODO exemption hygiene for archive prune paths).*

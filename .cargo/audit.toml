@@ -56,6 +56,101 @@ ignore = [
     "RUSTSEC-2026-0049",
     # wasmtime-wasi 24.x – Winch backend only; Cranelift path unaffected
     "RUSTSEC-2026-0182",
-    # quinn-proto – remote memory exhaustion; transitive via reqwest HTTP/3
-    "RUSTSEC-2026-0185",
+
+    # ── Added 2026-07-03: feat/stale-docs-detector new advisories ──────────────
+
+    # lopdf 0.31.0 – stack overflow via deeply nested PDF objects (RUSTSEC-2026-0187).
+    # Fix requires lopdf >=0.42.0, a major semver bump. lopdf is a transitive
+    # dependency via printpdf; the stale-docs-detector only reads source/doc files
+    # and never parses untrusted PDF input. Re-evaluate when printpdf upgrades.
+    "RUSTSEC-2026-0187",
+
+    # ── rustls-webpki 0.101.7 + 0.102.8 – two pinned versions, both affected ──
+    # Both are transitive: 0.101.x via kube-client, 0.102.x via reqwest/quinn.
+    # Fix requires >=0.103.12, a major bump that needs coordinated upstream changes.
+    # These affect TLS certificate name-constraint and CRL parsing; this project
+    # does not process untrusted certificates in production paths. Re-evaluate
+    # when kube-rs or reqwest advance their rustls-webpki pins.
+    #
+    # Name constraints accepted for wildcard certificates
+    "RUSTSEC-2026-0099",
+    # Name constraints for URI names incorrectly accepted
+    "RUSTSEC-2026-0098",
+    # Reachable panic in CRL parsing
+    "RUSTSEC-2026-0104",
+
+    # ── wasmtime-wasi 24.0.7 – WASI file-permission bypasses ───────────────────
+    # RUSTSEC-2026-0188 needs wasmtime-wasi >=24.0.11 / >=36.x.
+    # `cargo update -p wasmtime-wasi` yields 0 packages updated — the
+    # resolver cannot advance within 24.x due to other wasmtime-* crates locked to
+    # 24.0.7. These bugs affect WASI filesystem host-restriction enforcement; this
+    # project uses Wasmtime only for the Wasm webhook validator with trusted,
+    # operator-supplied policies — not arbitrary user input. Re-evaluate when the
+    # full wasmtime-* pin set can be advanced together.
+    # WASI hard links and renames bypass FilePerms for destination
+    "RUSTSEC-2026-0188",
+
+    # ttf-parser 0.19.2 – marked unmaintained (RUSTSEC-2026-0192).
+    # No maintained successor exists at the version our transitive dependency
+    # chain requires. Informational warning only (no CVE score). Re-evaluate
+    # when upstream crates adopt a maintained fork.
+    "RUSTSEC-2026-0192",
+
+    # ── Ignored advisories previously carried as inline --ignore flags ─────────
+    # These were maintained across workflow YAML files and often drifted out of
+    # sync. Consolidated here so .cargo/audit.toml is the single source of truth.
+    # Canonical cargo-audit runners: ci.yml (PR/push) and security-audit.yml (schedule).
+    #
+    # time 0.3.36 – potential overflow in instant conversion (RUSTSEC-2020-0071).
+    # Transitive via backoff → kube-runtime. No patched version available in our
+    # pinned dependency chain.
+    "RUSTSEC-2020-0071",
+    # wasmtime 24.0.7 – multiple Winch-backend CVEs (RUSTSEC-2026-0087/0091).
+    # Same scope as existing Winch entries at lines 34-47: Cranelift backend unaffected.
+    "RUSTSEC-2026-0087",
+    "RUSTSEC-2026-0091",
+    # wasmtime-wasi 24.0.7 – WASI path_open/symlink advisory (RUSTSEC-2026-0204).
+    # Same scope as existing wasmtime-wasi entries: we use only trusted policies.
+    "RUSTSEC-2026-0204",
+    # h2 unbounded empty DATA frames (RUSTSEC-2026-0258)
+    "RUSTSEC-2026-0258",
+    # wasmtime mixing type indices (RUSTSEC-2026-0222)
+    "RUSTSEC-2026-0222",
+
+    # ── Added 2026-10-17: dependency-audit lockfile repair (#1714) ─────────────
+    # `cargo update -w` re-resolved the full graph after repairing a corrupted
+    # Cargo.lock. These advisories cover the newly selected versions; none has
+    # an in-range fix, so each is recorded here with scope justification.
+
+    # rustls 0.21.12 – Debug impls expose TLS secrets (RUSTSEC-2026-0346);
+    # unauthenticated ServerHello downgrade (RUSTSEC-2026-0349).
+    # Transitive via aws-smithy-http-client (AWS SDK default TLS stack); the
+    # 0.21 line has no patched release (fix is >=0.23.46, already selected for
+    # our direct rustls 0.23 line). Re-evaluate when the AWS SDK moves its
+    # default HTTP client off rustls 0.21.
+    "RUSTSEC-2026-0346",
+    "RUSTSEC-2026-0349",
+
+    # wasmtime / wasmtime-wasi 24.0.13 – fuel-accounting, handle-table,
+    # stdio-memory, poll_oneoff, readdir padding, datetime panic, and symlink
+    # sandbox-escape advisories. All require wasmtime >=36.x (breaking); same
+    # Winch-backend-only scope as the existing 24.x entries above, and this
+    # project runs only trusted operator-supplied guests on Cranelift.
+    "RUSTSEC-2026-0316",
+    "RUSTSEC-2026-0363",
+    "RUSTSEC-2026-0322",
+    "RUSTSEC-2026-0321",
+    "RUSTSEC-2026-0323",
+    "RUSTSEC-2026-0314",
+    "RUSTSEC-2026-0352",
+
+    # zip 2.6.1 – SUID/SGID preservation (RUSTSEC-2026-0367), symlink
+    # permission escape (RUSTSEC-2026-0369), and symlink-target escape
+    # (RUSTSEC-2026-0368) in `extract()`. Fix requires zip >=9.0.0 (breaking
+    # major). Production code only WRITES zips (incident reports via
+    # ZipWriter); the sole `ZipArchive` use only counts entries
+    # (`backup-verify`), never extracts. Re-evaluate when zip 9.x is adopted.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0369",
+    "RUSTSEC-2026-0368",
 ]

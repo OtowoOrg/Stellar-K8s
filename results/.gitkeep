@@ -1,0 +1,3 @@
+# Benchmark run outputs are generated locally / in CI and must not be committed.
+# Keep this directory present so scripts can write results/benchmark-summary.json
+# and results/regression-report.json without mkdir races.

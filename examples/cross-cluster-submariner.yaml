@@ -55,7 +55,7 @@ spec:
   # Cross-cluster communication configuration
   crossCluster:
     enabled: true
-    mode: ServiceMesh
+    mode: serviceMesh
 
     # Submariner service mesh configuration
     serviceMesh:
@@ -72,7 +72,7 @@ spec:
         targetClusters: []
 
       # Traffic policy for cross-cluster routing
-      trafficPolicy: LocalPreferred
+      trafficPolicy: localPreferred
 
     # Peer clusters configuration
     peerClusters:
@@ -158,7 +158,7 @@ spec:
 
   crossCluster:
     enabled: true
-    mode: ServiceMesh
+    mode: serviceMesh
 
     serviceMesh:
       meshType: submariner
@@ -166,7 +166,7 @@ spec:
       mtlsEnabled: true
       serviceExport:
         enabled: true
-      trafficPolicy: LocalPreferred
+      trafficPolicy: localPreferred
 
     peerClusters:
       - clusterId: "us-east-1"

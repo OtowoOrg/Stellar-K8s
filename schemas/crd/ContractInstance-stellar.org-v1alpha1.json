@@ -1,0 +1,161 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "ContractInstance custom resource",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "rpcUrl",
+        "wasm",
+        "wasmHash",
+        "contractId",
+        "contractLedgerKeyXdr",
+        "deploymentTransactionXdr"
+      ],
+      "properties": {
+        "rpcUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "wasm": {
+          "type": "string",
+          "minLength": 1
+        },
+        "wasmHash": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        },
+        "contractId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contractLedgerKeyXdr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deploymentTransactionXdr": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Signed Soroban transaction envelope for contract creation."
+        },
+        "storage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "keyXdr",
+              "valueXdr",
+              "durability",
+              "ttlLedgers",
+              "transactionXdr"
+            ],
+            "properties": {
+              "keyXdr": {
+                "type": "string"
+              },
+              "valueXdr": {
+                "type": "string"
+              },
+              "durability": {
+                "type": "string",
+                "enum": [
+                  "Temporary",
+                  "Persistent"
+                ]
+              },
+              "ttlLedgers": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 1
+              },
+              "transactionXdr": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": [
+            "Pending",
+            "Submitted",
+            "Ready",
+            "Failed"
+          ]
+        },
+        "contractId": {
+          "type": "string"
+        },
+        "transactionHash": {
+          "type": "string"
+        },
+        "storageIndex": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "deploymentComplete": {
+          "type": "boolean"
+        },
+        "lastError": {
+          "type": "string"
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "ContractInstance"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "spec",
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "ContractInstance"
+    }
+  ]
+}

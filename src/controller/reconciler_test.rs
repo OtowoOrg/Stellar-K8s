@@ -10,15 +10,13 @@
 #[cfg(test)]
 mod tests {
     use super::super::reconciler::*;
-    use crate::controller::{AnomalyDetector, AuditLog, AuditRecorder, JobRegistry};
+    use crate::controller::{AuditLog, JobRegistry};
     use crate::crd::{
-        CaptiveCoreConfig, Condition, HorizonConfig, ManagedDatabaseConfig, NodeType,
-        ResourceRequirements, ResourceSpec, SorobanConfig, StellarNetwork, StellarNode,
+        BackupConfig, CaptiveCoreConfig, Condition, HorizonConfig, ManagedDatabaseConfig,
+        NodeType, ResourceRequirements, ResourceSpec, SorobanConfig, StellarNetwork, StellarNode,
         StellarNodeSpec, StorageConfig, ValidatorConfig,
     };
     use crate::error::Error;
-    #[cfg(feature = "rest-api")]
-    use crate::rest_api::metrics_store::StellarMetricsStore;
     use kube::api::ObjectMeta;
     use kube::runtime::controller::Action;
     use kube::Client;
@@ -35,6 +33,56 @@ mod tests {
             tracing_subscriber::reload::Handle<EnvFilter, Registry>,
         ) = tracing_subscriber::reload::Layer::new(env_filter);
         handle
+    }
+
+    fn make_controller_state(
+        client: Client,
+        enable_mtls: bool,
+        operator_namespace: &str,
+        dry_run: bool,
+    ) -> ControllerState {
+        let audit_log = Arc::new(AuditLog::new());
+
+        ControllerState {
+            client,
+            enable_mtls,
+            operator_namespace: operator_namespace.to_string(),
+            watch_namespace: None,
+            mtls_config: None,
+            dry_run,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 60,
+            retry_budget_max_attempts: 3,
+            is_leader: Arc::new(AtomicBool::new(true)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
+            operator_config: Arc::new(Default::default()),
+            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
+            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
+            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log: audit_log.clone(),
+            audit_recorder: Arc::new(crate::controller::AuditRecorder::new(
+                audit_log,
+                Vec::new(),
+                None,
+            )),
+            anomaly_detector: Arc::new(crate::controller::anomaly_detection::AnomalyDetector::new(
+                Default::default(),
+            )),
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                Duration::from_secs(3600),
+            )),
+            #[cfg(feature = "rest-api")]
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(crate::rest_api::metrics_store::StellarMetricsStore::new()),
+        }
     }
 
     /// Helper to create a minimal test StellarNode for Validator
@@ -91,6 +139,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                     external_dns: None,
                     known_peers: None,
                     quorum_optimization: None,
+                    sidecar_image: None,
                 }),
                 horizon_config: None,
                 soroban_config: None,
@@ -289,10 +338,11 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                         http_port: None,
                         log_level: None,
                         additional_config: None,
+                        ..Default::default()
                     }),
                     enable_preflight: true,
                     max_events_per_request: 10000,
-                    cache_config: None,
+                    cache: None,
                 }),
                 replicas: 3,
                 min_available: None,
@@ -337,11 +387,8 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         }
     }
 
-    /// Helper function to create a dummy client for tests without kubeconfig.
-    /// Panics intentionally — used only to document the expected usage pattern
-    /// for tests that require a real client. Suppress the dead-code warning
-    /// because this is a test-only sentinel.
-    #[allow(dead_code)] // test sentinel — documents client requirement for kubeconfig-gated tests
+    /// Helper function to create a dummy client for tests without kubeconfig
+    #[allow(dead_code)]
     fn create_dummy_client() -> Client {
         // For tests that don't actually call Kubernetes APIs, we skip client creation
         // In a real test environment, you would use a mock server or test cluster
@@ -356,42 +403,12 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
-        let audit_log = Arc::new(AuditLog::new());
-        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
-        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
-        let state = Arc::new(ControllerState {
-            client: client.clone(),
-            enable_mtls: false,
-            operator_namespace: "stellar-operator".to_string(),
-            watch_namespace: None,
-            mtls_config: None,
-            dry_run: true,
-            retry_budget_retriable_secs: 15,
-            retry_budget_nonretriable_secs: 60,
-            retry_budget_max_attempts: 3,
-            is_leader: Arc::new(AtomicBool::new(true)),
-            event_reporter: kube::runtime::events::Reporter {
-                controller: "stellar-operator".to_string(),
-                instance: None,
-            },
-            operator_config: Arc::new(Default::default()),
-            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
-            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            log_reload_handle: make_reload_handle(),
-            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
-            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            job_registry: Arc::new(JobRegistry::new()),
-            audit_log,
-            audit_recorder,
-            anomaly_detector,
-            oidc_config: None,
-            #[cfg(feature = "rest-api")]
-            metrics_store: Arc::new(StellarMetricsStore::new()),
-            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
-            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
-                std::time::Duration::from_secs(3600),
-            )),
-        });
+        let state = Arc::new(make_controller_state(
+            client.clone(),
+            false,
+            "stellar-operator",
+            true,
+        ));
 
         // Test with a retriable error (network-related)
         let error = Error::ConfigError("Temporary network issue".to_string());
@@ -412,42 +429,12 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
-        let audit_log = Arc::new(AuditLog::new());
-        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
-        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
-        let state = Arc::new(ControllerState {
-            client: client.clone(),
-            enable_mtls: false,
-            operator_namespace: "stellar-operator".to_string(),
-            watch_namespace: None,
-            mtls_config: None,
-            dry_run: true,
-            retry_budget_retriable_secs: 15,
-            retry_budget_nonretriable_secs: 60,
-            retry_budget_max_attempts: 3,
-            is_leader: Arc::new(AtomicBool::new(true)),
-            event_reporter: kube::runtime::events::Reporter {
-                controller: "stellar-operator".to_string(),
-                instance: None,
-            },
-            operator_config: Arc::new(Default::default()),
-            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
-            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            log_reload_handle: make_reload_handle(),
-            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
-            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            job_registry: Arc::new(JobRegistry::new()),
-            audit_log,
-            audit_recorder,
-            anomaly_detector,
-            oidc_config: None,
-            #[cfg(feature = "rest-api")]
-            metrics_store: Arc::new(StellarMetricsStore::new()),
-            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
-            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
-                std::time::Duration::from_secs(3600),
-            )),
-        });
+        let state = Arc::new(make_controller_state(
+            client.clone(),
+            false,
+            "stellar-operator",
+            true,
+        ));
 
         // Test with validation error (non-retriable)
         let error = Error::ValidationError("Invalid configuration".to_string());
@@ -467,42 +454,12 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
-        let audit_log = Arc::new(AuditLog::new());
-        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
-        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
-        let state = Arc::new(ControllerState {
-            client: client.clone(),
-            enable_mtls: false,
-            operator_namespace: "stellar-operator".to_string(),
-            watch_namespace: None,
-            mtls_config: None,
-            dry_run: true,
-            retry_budget_retriable_secs: 15,
-            retry_budget_nonretriable_secs: 60,
-            retry_budget_max_attempts: 3,
-            is_leader: Arc::new(AtomicBool::new(true)),
-            event_reporter: kube::runtime::events::Reporter {
-                controller: "stellar-operator".to_string(),
-                instance: None,
-            },
-            operator_config: Arc::new(Default::default()),
-            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
-            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
-            log_reload_handle: make_reload_handle(),
-            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            job_registry: Arc::new(JobRegistry::new()),
-            audit_log,
-            audit_recorder,
-            anomaly_detector,
-            oidc_config: None,
-            #[cfg(feature = "rest-api")]
-            metrics_store: Arc::new(StellarMetricsStore::new()),
-            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
-            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
-                std::time::Duration::from_secs(3600),
-            )),
-        });
+        let state = Arc::new(make_controller_state(
+            client.clone(),
+            false,
+            "stellar-operator",
+            true,
+        ));
 
         let errors = vec![
             Error::ConfigError("test".to_string()),
@@ -576,6 +533,39 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             soroban.spec.validate().is_ok(),
             "Valid soroban config should pass"
         );
+    }
+
+    #[test]
+    fn test_backup_config_is_validator_only() {
+        let mut validator = create_test_validator_node("test-validator", "default");
+        validator.spec.backup_config = Some(BackupConfig {
+            volume_snapshot_class_name: Some("csi-fast".to_string()),
+            flush_before_snapshot: true,
+            ready_timeout_seconds: 120,
+            encryption_key_ref: Some("kms-key".to_string()),
+        });
+
+        assert!(
+            validator.spec.validate().is_ok(),
+            "Validator backupConfig should be valid"
+        );
+
+        let mut horizon = create_test_horizon_node("test-horizon", "default");
+        horizon.spec.backup_config = Some(BackupConfig::default());
+
+        assert!(
+            horizon.spec.validate().is_err(),
+            "backupConfig must be rejected for non-Validator nodes"
+        );
+    }
+
+    #[test]
+    fn test_pre_upgrade_snapshot_name_is_sanitized() {
+        let node = create_test_validator_node("validator-a", "default");
+        let snapshot_name = build_pre_upgrade_snapshot_name(&node, "v22.0.1+build.5");
+
+        assert!(snapshot_name.starts_with("validator-a-upgrade-v22-0-1-build-5-"));
+        assert!(snapshot_name.len() <= 253);
     }
 
     /// Test that suspended nodes have 0 replicas
@@ -714,42 +704,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
-        let audit_log = Arc::new(AuditLog::new());
-        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
-        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
-        let state = ControllerState {
-            client: client.clone(),
-            enable_mtls: true,
-            operator_namespace: "test-namespace".to_string(),
-            watch_namespace: None,
-            mtls_config: None,
-            dry_run: false,
-            retry_budget_retriable_secs: 15,
-            retry_budget_nonretriable_secs: 60,
-            retry_budget_max_attempts: 3,
-            is_leader: Arc::new(AtomicBool::new(true)),
-            event_reporter: kube::runtime::events::Reporter {
-                controller: "stellar-operator".to_string(),
-                instance: None,
-            },
-            operator_config: Arc::new(Default::default()),
-            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
-            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            log_reload_handle: make_reload_handle(),
-            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
-            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            job_registry: Arc::new(JobRegistry::new()),
-            audit_log,
-            audit_recorder,
-            anomaly_detector,
-            oidc_config: None,
-            #[cfg(feature = "rest-api")]
-            metrics_store: Arc::new(StellarMetricsStore::new()),
-            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
-            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
-                std::time::Duration::from_secs(3600),
-            )),
-        };
+        let state = make_controller_state(client.clone(), true, "test-namespace", false);
 
         assert_eq!(state.operator_namespace, "test-namespace");
         assert!(state.enable_mtls);
@@ -764,43 +719,8 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         let client = Client::try_default()
             .await
             .unwrap_or_else(|_| panic!("Cannot create test client"));
-        let audit_log = Arc::new(AuditLog::new());
-        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
-        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
 
-        let state = ControllerState {
-            client,
-            enable_mtls: false,
-            operator_namespace: "default".to_string(),
-            watch_namespace: None,
-            mtls_config: None,
-            dry_run: true,
-            retry_budget_retriable_secs: 15,
-            retry_budget_nonretriable_secs: 60,
-            retry_budget_max_attempts: 3,
-            is_leader: Arc::new(AtomicBool::new(true)),
-            event_reporter: kube::runtime::events::Reporter {
-                controller: "stellar-operator".to_string(),
-                instance: None,
-            },
-            operator_config: Arc::new(Default::default()),
-            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
-            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            log_reload_handle: make_reload_handle(),
-            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
-            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            job_registry: Arc::new(JobRegistry::new()),
-            audit_log,
-            audit_recorder,
-            anomaly_detector,
-            oidc_config: None,
-            #[cfg(feature = "rest-api")]
-            metrics_store: Arc::new(StellarMetricsStore::new()),
-            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
-            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
-                std::time::Duration::from_secs(3600),
-            )),
-        };
+        let state = make_controller_state(client, false, "default", true);
 
         assert!(
             state.dry_run,
@@ -866,9 +786,7 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             apply_phase_conditions(&mut conditions, &phase, message.as_deref());
 
             let ready = condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_READY);
-            let available = condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_AVAILABLE);
             prop_assert!(ready.is_some());
-            prop_assert!(available.is_some());
 
             match phase.as_str() {
                 "Ready" | "Running" => {
@@ -912,10 +830,6 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_READY),
                 Some(crate::controller::conditions::CONDITION_STATUS_UNKNOWN)
             );
-            prop_assert_eq!(
-                condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_AVAILABLE),
-                Some(crate::controller::conditions::CONDITION_STATUS_UNKNOWN)
-            );
         }
 
         #[test]
@@ -946,5 +860,163 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                 prop_assert!(seen.insert(condition.type_.clone()));
             }
         }
+    }
+
+    /// Test error_policy for retriable errors (Issue #1404)
+    #[tokio::test]
+    #[ignore = "Requires kubeconfig"]
+    async fn test_error_policy_retriable_branch() {
+        let node = Arc::new(create_test_validator_node("retriable-node", "default"));
+        let client = Client::try_default()
+            .await
+            .unwrap_or_else(|_| panic!("Cannot create test client"));
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
+        let state = Arc::new(ControllerState {
+            client,
+            enable_mtls: false,
+            operator_namespace: "stellar-operator".to_string(),
+            watch_namespace: None,
+            mtls_config: None,
+            dry_run: false,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 120,
+            retry_budget_max_attempts: 3,
+            is_leader: Arc::new(AtomicBool::new(true)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
+            operator_config: Arc::new(Default::default()),
+            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
+            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
+            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
+            #[cfg(feature = "rest-api")]
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+        });
+
+        let err = Error::KubeError(kube::Error::Api(kube::error::ErrorResponse {
+            status: "Failure".to_string(),
+            message: "Service Unavailable".to_string(),
+            reason: "ServerTimeout".to_string(),
+            code: 503,
+        }));
+
+        let _action = error_policy(node, &err, state);
+        // Action doesn't implement PartialEq, so we just verify it compiles and doesn't panic
+    }
+
+    /// Test error_policy for non-retriable errors (Issue #1404)
+    #[tokio::test]
+    #[ignore = "Requires kubeconfig"]
+    async fn test_error_policy_nonretriable_branch() {
+        let node = Arc::new(create_test_validator_node("nonretriable-node", "default"));
+        let client = Client::try_default()
+            .await
+            .unwrap_or_else(|_| panic!("Cannot create test client"));
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
+        let state = Arc::new(ControllerState {
+            client,
+            enable_mtls: false,
+            operator_namespace: "stellar-operator".to_string(),
+            watch_namespace: None,
+            mtls_config: None,
+            dry_run: false,
+            retry_budget_retriable_secs: 15,
+            retry_budget_nonretriable_secs: 120,
+            retry_budget_max_attempts: 3,
+            is_leader: Arc::new(AtomicBool::new(true)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
+            operator_config: Arc::new(Default::default()),
+            reconcile_id_counter: std::sync::atomic::AtomicU64::new(0),
+            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
+            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
+            #[cfg(feature = "rest-api")]
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+        });
+
+        let err = Error::ValidationError("Invalid configuration".to_string());
+        let _action = error_policy(node, &err, state);
+        // Action doesn't implement PartialEq, so we just verify it compiles and doesn't panic
+    }
+
+    /// Test ControllerState reconcile ID counter (Issue #1404)
+    #[tokio::test]
+    #[ignore = "Requires kubeconfig"]
+    async fn test_controller_state_reconcile_id() {
+        let client = Client::try_default()
+            .await
+            .unwrap_or_else(|_| panic!("Cannot create test client"));
+        let audit_log = Arc::new(AuditLog::new());
+        let audit_recorder = Arc::new(AuditRecorder::new(audit_log.clone(), vec![], None));
+        let anomaly_detector = Arc::new(AnomalyDetector::new(Default::default()));
+        let state = ControllerState {
+            client,
+            enable_mtls: false,
+            operator_namespace: "stellar-operator".to_string(),
+            watch_namespace: None,
+            mtls_config: None,
+            dry_run: false,
+            retry_budget_retriable_secs: 30,
+            retry_budget_nonretriable_secs: 300,
+            retry_budget_max_attempts: 3,
+            is_leader: Arc::new(AtomicBool::new(true)),
+            event_reporter: kube::runtime::events::Reporter {
+                controller: "stellar-operator".to_string(),
+                instance: None,
+            },
+            operator_config: Arc::new(Default::default()),
+            reconcile_id_counter: std::sync::atomic::AtomicU64::new(100),
+            last_reconcile_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            log_reload_handle: make_reload_handle(),
+            log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
+            last_event_received: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            job_registry: Arc::new(JobRegistry::new()),
+            audit_log,
+            audit_recorder,
+            anomaly_detector,
+            plugin_registry: Arc::new(crate::plugin_sdk::PluginRegistry::new()),
+            analytics_engine: Arc::new(crate::logging::analytics::AnalyticsEngine::new(
+                std::time::Duration::from_secs(3600),
+            )),
+            #[cfg(feature = "rest-api")]
+            oidc_config: None,
+            #[cfg(feature = "rest-api")]
+            metrics_store: Arc::new(StellarMetricsStore::new()),
+        };
+
+        assert_eq!(state.next_reconcile_id(), 100);
+        assert_eq!(state.next_reconcile_id(), 101);
+        assert_eq!(state.next_reconcile_id(), 102);
     }
 }

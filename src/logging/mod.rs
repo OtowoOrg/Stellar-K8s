@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Structured Logging and Analytics Module
 //!
 //! This module provides a consistent schema for structured logs, intelligent
@@ -5,8 +17,20 @@
 
 pub mod alerting;
 pub mod analytics;
+/// Standardised log field name constants (Issue #1115).
+///
+/// Import as `use stellar_k8s::logging::fields as F;` and reference
+/// `F::NODE`, `F::NAMESPACE`, etc. in every `tracing::*!` call so
+/// field names stay consistent across CI pipelines and runtime diagnostics.
+pub mod fields;
 pub mod sampling;
 pub mod storage;
+pub mod subscriber;
+
+pub use subscriber::{
+    init_binary_subscriber, init_subscriber, LogOutputFormat, SubscriberConfig, SubscriberGuard,
+    SubscriberInit,
+};
 
 use analytics::AnalyticsEngine;
 use chrono::Utc;
@@ -43,15 +67,28 @@ pub struct StructuredLog {
     /// OpenTelemetry Span ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub span_id: Option<String>,
-    /// Kubernetes Node Name
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Kubernetes Node Name — wire name is `k8s_node` (matches `fields::K8S_NODE`).
+    #[serde(rename = "k8s_node", skip_serializing_if = "Option::is_none")]
     pub k8s_node: Option<String>,
-    /// Kubernetes Namespace
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Kubernetes Namespace — wire name is `namespace` (matches `fields::NAMESPACE`).
+    #[serde(rename = "namespace", skip_serializing_if = "Option::is_none")]
     pub k8s_namespace: Option<String>,
-    /// Controller reconcile ID
+    /// Controller reconcile ID — stored as a string for forward compatibility
+    /// with u64 values emitted from tracing spans.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reconcile_id: Option<String>,
+    /// Request correlation ID across service boundaries
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+    /// Observability contract version (issue #1481)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stellar_observability_contract_version: Option<String>,
+    /// Canonical pod name for log-to-trace pivots
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub k8s_pod_name: Option<String>,
+    /// Service instance identity (pod UID)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_instance_id: Option<String>,
     /// Arbitrary additional context
     #[serde(flatten)]
     pub extras: HashMap<String, serde_json::Value>,
@@ -115,11 +152,128 @@ impl tracing::field::Visit for MessageVisitor {
     }
 }
 
+/// A builder that assembles a consistent set of key-value context fields to be
+/// attached to a `tracing` span.
+///
+/// All field names are sourced from [`fields`] to prevent drift between
+/// call-sites and log aggregation pipelines.
+///
+/// # Example
+///
+/// ```rust
+/// use stellar_k8s::logging::{LogContext, fields as F};
+///
+/// let ctx = LogContext::new()
+///     .node("my-validator")
+///     .namespace("stellar")
+///     .reconcile_id(42)
+///     .component("controller");
+///
+/// let span = tracing::info_span!(
+///     "reconcile",
+///     { F::NODE }         = ctx.node.as_deref().unwrap_or(""),
+///     { F::NAMESPACE }    = ctx.namespace.as_deref().unwrap_or(""),
+///     { F::RECONCILE_ID } = ctx.reconcile_id.unwrap_or(0),
+///     { F::COMPONENT }    = ctx.component.as_deref().unwrap_or(""),
+/// );
+/// ```
+#[derive(Debug, Default, Clone)]
+pub struct LogContext {
+    /// StellarNode resource name (`node`).
+    pub node: Option<String>,
+    /// Kubernetes namespace (`namespace`).
+    pub namespace: Option<String>,
+    /// Monotonic reconcile counter (`reconcile_id`).
+    pub reconcile_id: Option<u64>,
+    /// Sub-system emitting the log (`component`).
+    pub component: Option<String>,
+    /// Lifecycle phase (`phase`).
+    pub phase: Option<String>,
+    /// Kubernetes node (host) name (`k8s_node`).
+    pub k8s_node: Option<String>,
+    /// Cloud/geographic region (`region`).
+    pub region: Option<String>,
+    /// Request correlation ID (`correlation_id`).
+    pub correlation_id: Option<String>,
+    /// Remote peer address (`peer_addr`).
+    pub peer_addr: Option<String>,
+    /// Inbound request ID (`request_id`).
+    pub request_id: Option<String>,
+}
+
+impl LogContext {
+    /// Create an empty context.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the `node` field.
+    pub fn node(mut self, v: impl Into<String>) -> Self {
+        self.node = Some(v.into());
+        self
+    }
+
+    /// Set the `namespace` field.
+    pub fn namespace(mut self, v: impl Into<String>) -> Self {
+        self.namespace = Some(v.into());
+        self
+    }
+
+    /// Set the `reconcile_id` field.
+    pub fn reconcile_id(mut self, v: u64) -> Self {
+        self.reconcile_id = Some(v);
+        self
+    }
+
+    /// Set the `component` field.
+    pub fn component(mut self, v: impl Into<String>) -> Self {
+        self.component = Some(v.into());
+        self
+    }
+
+    /// Set the `phase` field.
+    pub fn phase(mut self, v: impl Into<String>) -> Self {
+        self.phase = Some(v.into());
+        self
+    }
+
+    /// Set the `k8s_node` field.
+    pub fn k8s_node(mut self, v: impl Into<String>) -> Self {
+        self.k8s_node = Some(v.into());
+        self
+    }
+
+    /// Set the `region` field.
+    pub fn region(mut self, v: impl Into<String>) -> Self {
+        self.region = Some(v.into());
+        self
+    }
+
+    /// Set the `correlation_id` field.
+    pub fn correlation_id(mut self, v: impl Into<String>) -> Self {
+        self.correlation_id = Some(v.into());
+        self
+    }
+
+    /// Set the `peer_addr` field.
+    pub fn peer_addr(mut self, v: impl Into<String>) -> Self {
+        self.peer_addr = Some(v.into());
+        self
+    }
+
+    /// Set the `request_id` field.
+    pub fn request_id(mut self, v: impl Into<String>) -> Self {
+        self.request_id = Some(v.into());
+        self
+    }
+}
+
 /// Helper to build the structured log object from a tracing event
 pub fn build_structured_log(event: &Event<'_>) -> StructuredLog {
     let metadata = event.metadata();
     let mut visitor = FullVisitor::default();
     event.record(&mut visitor);
+    let contract = crate::observability_contract::log_correlation_fields();
 
     StructuredLog {
         timestamp: Utc::now().to_rfc3339(),
@@ -129,15 +283,37 @@ pub fn build_structured_log(event: &Event<'_>) -> StructuredLog {
         module: metadata.module_path().map(|s| s.to_string()),
         file: metadata.file().map(|s| s.to_string()),
         line: metadata.line(),
-        trace_id: None, // Injected by OtelTraceIdLayer
-        span_id: None,
+        trace_id: crate::telemetry::current_trace_context().map(|(tid, _)| tid),
+        span_id: crate::telemetry::current_trace_context().map(|(_, sid)| sid),
         k8s_node: std::env::var("K8S_NODE_NAME").ok(),
         k8s_namespace: std::env::var("K8S_NAMESPACE").ok(),
         reconcile_id: visitor
             .extras
             .get("reconcile_id")
+            .map(|v| match v {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Number(n) => n.to_string(),
+                other => other.to_string(),
+            }),
+        correlation_id: visitor
+            .extras
+            .get("correlation_id")
+            .or_else(|| visitor.extras.get("x_correlation_id"))
             .and_then(|v| v.as_str().map(|s| s.to_string())),
-        extras: visitor.extras,
+        stellar_observability_contract_version: Some(
+            crate::observability_contract::CONTRACT_VERSION.to_string(),
+        ),
+        k8s_pod_name: contract.get("k8s.pod.name").cloned(),
+        service_instance_id: contract.get("service.instance.id").cloned(),
+        extras: {
+            let mut extras = visitor.extras;
+            for (key, value) in contract {
+                extras
+                    .entry(key)
+                    .or_insert_with(|| serde_json::Value::String(value));
+            }
+            extras
+        },
     }
 }
 
@@ -180,8 +356,100 @@ impl tracing::field::Visit for FullVisitor {
             .insert(field.name().to_string(), serde_json::json!(value));
     }
 
+    fn record_f64(&mut self, field: &tracing::field::Field, value: f64) {
+        self.extras
+            .insert(field.name().to_string(), serde_json::json!(value));
+    }
+
     fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
         self.extras
             .insert(field.name().to_string(), serde_json::json!(value));
+    }
+
+    fn record_error(
+        &mut self,
+        field: &tracing::field::Field,
+        value: &(dyn std::error::Error + 'static),
+    ) {
+        self.extras.insert(
+            field.name().to_string(),
+            serde_json::json!(value.to_string()),
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_structured_log_serialization() {
+        let mut extras = HashMap::new();
+        extras.insert("component".to_string(), serde_json::json!("controller"));
+        extras.insert("duration_ms".to_string(), serde_json::json!(42));
+
+        let log = StructuredLog {
+            timestamp: "2026-07-26T10:00:00Z".to_string(),
+            level: "INFO".to_string(),
+            message: "Reconciliation successful".to_string(),
+            target: "stellar_k8s::controller".to_string(),
+            module: Some("stellar_k8s::controller".to_string()),
+            file: Some("src/controller/mod.rs".to_string()),
+            line: Some(100),
+            trace_id: Some("4bf92f3577b34da6a3ce929d0e0e4736".to_string()),
+            span_id: Some("00f067aa0ba902b7".to_string()),
+            k8s_node: Some("node-1".to_string()),
+            k8s_namespace: Some("default".to_string()),
+            reconcile_id: Some("rec-123".to_string()),
+            correlation_id: Some("corr-456".to_string()),
+            stellar_observability_contract_version: Some("1.0.0".to_string()),
+            k8s_pod_name: Some("stellar-operator-0".to_string()),
+            service_instance_id: Some("uid-1".to_string()),
+            extras,
+        };
+
+        let json_str = serde_json::to_string(&log).expect("Failed to serialize StructuredLog");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json_str).expect("Failed to parse JSON");
+
+        assert_eq!(parsed["level"], "INFO");
+        assert_eq!(parsed["message"], "Reconciliation successful");
+        assert_eq!(parsed["target"], "stellar_k8s::controller");
+        assert_eq!(parsed["component"], "controller");
+        assert_eq!(parsed["duration_ms"], 42);
+        assert_eq!(parsed["reconcile_id"], "rec-123");
+    }
+
+    #[test]
+    fn test_structured_log_deserialization_roundtrip() {
+        let mut extras = HashMap::new();
+        extras.insert("custom_key".to_string(), serde_json::json!("custom_value"));
+
+        let log = StructuredLog {
+            timestamp: Utc::now().to_rfc3339(),
+            level: "WARN".to_string(),
+            message: "High memory usage detected".to_string(),
+            target: "stellar_k8s::monitoring".to_string(),
+            module: None,
+            file: None,
+            line: None,
+            trace_id: None,
+            span_id: None,
+            k8s_node: None,
+            k8s_namespace: None,
+            reconcile_id: None,
+            correlation_id: None,
+            stellar_observability_contract_version: None,
+            k8s_pod_name: None,
+            service_instance_id: None,
+            extras,
+        };
+
+        let json = serde_json::to_string(&log).unwrap();
+        let log_back: StructuredLog = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(log_back.level, "WARN");
+        assert_eq!(log_back.message, "High memory usage detected");
+        assert_eq!(log_back.extras.get("custom_key").unwrap(), "custom_value");
     }
 }

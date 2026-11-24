@@ -1,0 +1,153 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Spot Instance Configuration for Non-Critical Workloads
+# This configuration enables spot instances for cost optimization
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spot-instance-config
+  namespace: stellar
+  labels:
+    app: stellar-operator
+    component: cost-optimization
+data:
+  spot-config.yaml: |
+    enabled: true
+    max_price_per_hour_usd: 0.50
+    instance_types:
+      - t3.medium
+      - t3.large
+      - m5.large
+      - c5.large
+      - r5.large
+    availability_zones:
+      - us-east-1a
+      - us-east-1b
+      - us-east-1c
+    interruption_handling:
+      notice_period_seconds: 120
+      graceful_shutdown_timeout_seconds: 60
+      preemption_strategy: GracefulDrain
+    fallback_to_ondemand: true
+    
+    # Workloads eligible for spot instances
+    eligible_workloads:
+      - name: stellar-indexer
+        priority: low
+        max interruptions_per_day: 3
+      - name: stellar-monitoring
+        priority: low
+        max interruptions_per_day: 5
+      - name: stellar-testing
+        priority: low
+        max_iterations: 0
+    
+    # Workloads NOT eligible for spot instances
+    excluded_workloads:
+      - name: stellar-validator
+        reason: Critical consensus node
+      - name: stellar-horizon
+        reason: Public API endpoint
+      - name: stellar-core
+        reason: Blockchain processing
+---
+# Spot instance Pod Disruption Budget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: stellar-spot-pdb
+  namespace: stellar
+  labels:
+    app: stellar-operator
+    component: cost-optimization
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      stellar.org/workload-type: spot-eligible
+---
+# Spot instance priority class
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: spot-instance-priority
+  labels:
+    app: stellar-operator
+    component: cost-optimization
+value: 100
+globalDefault: false
+description: "Priority class for spot instance workloads"
+---
+# Spot instance node affinity for non-critical workloads
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stellar-indexer-spot
+  namespace: stellar
+  labels:
+    app: stellar-indexer
+    component: cost-optimization
+    stellar.org/workload-type: spot-eligible
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: stellar-indexer
+  template:
+    metadata:
+      labels:
+        app: stellar-indexer
+        stellar.org/workload-type: spot-eligible
+    spec:
+      priorityClassName: spot-instance-priority
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node.kubernetes.io/capacity-type
+                operator: In
+                values:
+                - spot
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 50
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - stellar-indexer
+              topologyKey: kubernetes.io/hostname
+      tolerations:
+      - key: "spot"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: indexer
+        image: stellar-indexer:latest
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        env:
+        - name: SPOT_INSTANCE
+          value: "true"
+        - name: GRACEFUL_SHUTDOWN_TIMEOUT
+          value: "60"

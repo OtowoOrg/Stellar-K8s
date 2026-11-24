@@ -49,6 +49,7 @@
 //! - Removes finalizer only after successful cleanup
 
 pub mod benchmark;
+pub mod egress_policy_synthesis;
 pub mod blue_green;
 pub mod canary;
 pub mod cross_cloud_failover;
@@ -64,6 +65,7 @@ pub mod maintenance;
 pub mod migration;
 pub mod network_isolation;
 pub mod predictive_scaling;
+pub mod progressive_delivery;
 pub mod pss;
 pub mod quota;
 pub mod registry_controller;

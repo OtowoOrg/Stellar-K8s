@@ -5,6 +5,7 @@
 pub mod compliance;
 pub mod kms;
 pub mod policy;
+pub mod provenance;
 pub mod remediation;
 pub mod runtime;
 pub mod secret_audit;

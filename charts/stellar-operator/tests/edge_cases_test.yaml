@@ -1,0 +1,326 @@
+# Helm edge-case coverage for resources, scheduling, and production-like values.
+# Issue #1289. Run: helm unittest charts/stellar-operator --strict
+suite: edge-cases/resources-scheduling
+templates:
+  - templates/deployment.yaml
+
+tests:
+  - it: default resource requests and limits match values.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 100m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 128Mi
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 500m
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 256Mi
+
+  - it: minimal resource values are rendered on the operator container
+    set:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 50m
+          memory: 64Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 10m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 32Mi
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 50m
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 64Mi
+
+  - it: production-like resource values are rendered on the operator container
+    set:
+      resources:
+        requests:
+          cpu: "2"
+          memory: 4Gi
+        limits:
+          cpu: "4"
+          memory: 8Gi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: "2"
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 4Gi
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: "4"
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 8Gi
+
+  - it: empty resources object still renders a Deployment
+    set:
+      resources: {}
+    asserts:
+      - isKind:
+          of: Deployment
+      - isNullOrEmpty:
+          path: spec.template.spec.containers[0].resources.limits
+
+  - it: nodeSelector is omitted when unset
+    asserts:
+      - notExists:
+          path: spec.template.spec.nodeSelector
+
+  - it: single nodeSelector label is placed on the pod spec
+    set:
+      nodeSelector:
+        disktype: ssd
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector.disktype
+          value: ssd
+
+  - it: multiple nodeSelector labels are placed on the pod spec
+    set:
+      nodeSelector:
+        kubernetes.io/os: linux
+        kubernetes.io/arch: amd64
+        stellar.org/node-pool: operator
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector["kubernetes.io/os"]
+          value: linux
+      - equal:
+          path: spec.template.spec.nodeSelector["kubernetes.io/arch"]
+          value: amd64
+      - equal:
+          path: spec.template.spec.nodeSelector["stellar.org/node-pool"]
+          value: operator
+
+  - it: production-like nodeSelector is placed on the pod spec
+    set:
+      nodeSelector:
+        stellar.org/node-pool: operator
+        topology.kubernetes.io/zone: us-east-1a
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector["stellar.org/node-pool"]
+          value: operator
+      - equal:
+          path: spec.template.spec.nodeSelector["topology.kubernetes.io/zone"]
+          value: us-east-1a
+
+  - it: custom node affinity is rendered when provided
+    set:
+      replicaCount: 1
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: kubernetes.io/arch
+      - notExists:
+          path: spec.template.spec.affinity.podAntiAffinity
+
+  - it: pod anti-affinity is rendered when provided
+    set:
+      replicaCount: 1
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: stellar-operator
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: kubernetes.io/hostname
+
+  - it: pod affinity is rendered when provided
+    set:
+      replicaCount: 1
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 80
+              podAffinityTerm:
+                topologyKey: topology.kubernetes.io/zone
+                labelSelector:
+                  matchLabels:
+                    stellar.org/role: operator
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 80
+      - equal:
+          path: spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey
+          value: topology.kubernetes.io/zone
+
+  - it: production-like zone anti-affinity is rendered
+    set:
+      replicaCount: 3
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: topology.kubernetes.io/zone
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: In
+                      values:
+                        - stellar-operator
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey
+          value: topology.kubernetes.io/zone
+      - equal:
+          path: spec.template.spec.replicas
+          value: 3
+
+  - it: OTEL endpoint env is injected when tracing is enabled
+    set:
+      otel:
+        enabled: true
+        endpoint: "http://jaeger:4317"
+        samplingRatio: "0.2"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "http://jaeger:4317"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OTEL_SERVICE_NAME
+            value: stellar-operator
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OTEL_TRACES_SAMPLER_ARG
+            value: "0.2"
+
+  - it: OTEL env is omitted when tracing is disabled
+    set:
+      otel:
+        enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "http://stellar-operator-otel-collector:4317"
+
+  - it: REST API and metrics ports follow production-like overrides
+    set:
+      operator:
+        restApiEnabled: true
+        restApiPort: 8080
+        metricsPort: 9090
+        logLevel: warn
+        watchNamespace: stellar-system
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REST_API_PORT
+            value: "8080"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --log-level=warn
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --watch-namespace=stellar-system
+
+  # ── tolerations (issue #1368) ──────────────────────────────────────────
+  # `templates/deployment.yaml` has two independent sources for
+  # `spec.template.spec.tolerations`: `.Values.tolerations` (arbitrary
+  # user-supplied list) and `.Values.arch` (auto-appends a
+  # "kubernetes.io/arch" toleration). `upgrade_preservation_test.yaml`
+  # already covers `.Values.tolerations` alone under production values, but
+  # neither `.Values.arch` alone nor the two combined had a test — the
+  # combined case in particular is the one place the template's two `{{- if
+  # }}` blocks interact (see the template comment above `tolerations:`).
+  - it: tolerations is omitted when neither tolerations nor arch is set
+    asserts:
+      - notExists:
+          path: spec.template.spec.tolerations
+
+  - it: custom tolerations alone are rendered as-is
+    set:
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: stellar
+          effect: NoSchedule
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.tolerations
+          count: 1
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: dedicated
+      - equal:
+          path: spec.template.spec.tolerations[0].effect
+          value: NoSchedule
+
+  - it: arch alone renders only the kubernetes.io/arch toleration
+    set:
+      arch: arm64
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.tolerations
+          count: 1
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: kubernetes.io/arch
+      - equal:
+          path: spec.template.spec.tolerations[0].value
+          value: arm64
+      - equal:
+          path: spec.template.spec.tolerations[0].operator
+          value: Equal
+      - equal:
+          path: spec.template.spec.tolerations[0].effect
+          value: NoSchedule
+
+  - it: custom tolerations and arch together produce both entries without a duplicate key
+    set:
+      arch: arm64
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: stellar
+          effect: NoSchedule
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.tolerations
+          count: 2
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: dedicated
+      - equal:
+          path: spec.template.spec.tolerations[1].key
+          value: kubernetes.io/arch
+      - equal:
+          path: spec.template.spec.tolerations[1].value
+          value: arm64

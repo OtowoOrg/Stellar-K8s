@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "ValidatorLeaderboard custom resource",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "properties": {
+        "federationRef": {
+          "type": "string"
+        },
+        "refreshIntervalSeconds": {
+          "type": "integer",
+          "default": 3600
+        },
+        "topN": {
+          "type": "integer",
+          "default": 100
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "lastAggregatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "totalValidators": {
+          "type": "integer"
+        },
+        "medianScore": {
+          "type": "number"
+        },
+        "networkHealthIndex": {
+          "type": "number"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "rank": {
+                "type": "integer"
+              },
+              "validatorName": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "compositeScore": {
+                "type": "number"
+              },
+              "grade": {
+                "type": "string"
+              },
+              "uptimePct": {
+                "type": "number"
+              },
+              "consensusRate": {
+                "type": "number"
+              },
+              "archiveCompletenessPct": {
+                "type": "number"
+              },
+              "region": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "ValidatorLeaderboard"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "ValidatorLeaderboard"
+    }
+  ]
+}

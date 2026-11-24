@@ -41,7 +41,7 @@ The Wasm webhook system provides:
 
 ### 1. Build a Plugin
 
-See the [example plugin](../examples/plugins/image-registry-validator/) for a complete example.
+See the [example plugin](https://github.com/OtowoOrg/Stellar-K8s/tree/main/examples/plugins/image-registry-validator) for a complete example.
 
 ```rust
 #[no_mangle]
@@ -587,10 +587,10 @@ DELETE /plugins/:name
 
 ## Examples
 
-See the [examples/plugins](../examples/plugins/) directory for complete examples:
+See the [examples/plugins](https://github.com/OtowoOrg/Stellar-K8s/tree/main/examples/plugins) directory for complete examples:
 
-- [image-registry-validator](../examples/plugins/image-registry-validator/) - Validates image registries
-- [example-validator](../examples/plugins/example-validator/) - Basic validation template
+- [image-registry-validator](https://github.com/OtowoOrg/Stellar-K8s/tree/main/examples/plugins/image-registry-validator) - Validates image registries
+- [example-validator](https://github.com/OtowoOrg/Stellar-K8s/tree/main/examples/plugins/example-validator) - Basic validation template
 
 ## References
 
@@ -598,3 +598,16 @@ See the [examples/plugins](../examples/plugins/) directory for complete examples
 - [Wasmtime](https://wasmtime.dev/)
 - [Kubernetes Admission Webhooks](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/)
 - [Rust Wasm Book](https://rustwasm.github.io/docs/book/)
+
+---
+
+## Payload contract tests
+
+Malformed and boundary AdmissionReview payloads are covered by hermetic HTTP
+contract tests in `tests/webhook_payload_contract.rs` (issue #1152). These
+exercise empty/non-JSON/truncated bodies, missing requests, oversized payloads,
+and mutate/validate parity without a live Kubernetes API server.
+
+---
+
+*Last verified: 2026-07-29 (webhook payload contract tests #1152; TODO exemption hygiene).*

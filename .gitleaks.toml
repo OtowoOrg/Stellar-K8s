@@ -1,0 +1,203 @@
+# Gitleaks configuration for Stellar-K8s
+# Secret scanning tool configuration — Issue #1285
+# Docs: https://github.com/gitleaks/gitleaks
+
+# ── Allowlist ──────────────────────────────────────────────────────────────────
+# False positives and legitimate patterns that should not be flagged.
+[allowlist]
+  description = "Global allowlist for Stellar-K8s"
+  paths = [
+    # Test fixtures and example values
+    '''tests/''',
+    '''examples/''',
+    '''config/samples/''',
+    # Generated files
+    '''target/''',
+    '''bundle/''',
+    '''charts/stellar-operator/rendered/''',
+    # Documentation (may contain example credentials)
+    '''docs/''',
+    '''*.md''',
+    # Lock files
+    '''Cargo\.lock''',
+    '''package-lock\.json''',
+    # Benchmark baselines (historical data)
+    '''benchmarks/baselines/''',
+    # Security tool configuration itself
+    '''\.gitleaks\.toml''',
+    '''\.cargo/audit\.toml''',
+    '''deny\.toml''',
+  ]
+  regexes = [
+    # PKCS8 private keys in Rust dependencies (transitive, not our code)
+    '''-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----''',
+    # Test/placeholder patterns
+    '''test[-_]?password''',
+    '''placeholder''',
+    '''changeme''',
+    '''your[-_]?(key|secret|token|password)''',
+    '''EXAMPLE''',
+    '''<[^>]+>''',
+    # Kubernetes Secret resource names (not credential values)
+    '''secretRef:\s*["']?[a-z][a-z0-9-]*["']?''',
+    # Env var references (not actual secrets)
+    '''\$\{[A-Z_]+\}''',
+    '''\$\{?SECRET_[A-Z_]+\}?''',
+    # cargo-deny / audit configuration (may contain advisory IDs)
+    '''RUSTSEC-\d{4}-\d+''',
+    # GitHub Actions variable references
+    '''\$\{\{\s*secrets\.[A-Z_]+\s*\}\}''',
+    # SHA256/512 hashes (not secrets)
+    '''[a-f0-9]{64}''',
+    '''[A-F0-9]{64}''',
+  ]
+
+# ── Rules ──────────────────────────────────────────────────────────────────────
+# Each rule defines a pattern to detect and its severity.
+[[rules]]
+  id = "stellar-seed"
+  description = "Stellar secret seed (S + 55 base58 characters)"
+  regex = '''S[A-Za-z0-9]{54}[^A-Za-z0-9]'''
+  tags = ["stellar", "secret", "key"]
+  [rules.allowlist]
+    paths = [
+      '''tests/''',
+      '''examples/''',
+      '''config/samples/''',
+      '''scripts/check-secrets\.sh''',
+      '''scripts/check-pipeline-log-redaction\.py''',
+    ]
+
+[[rules]]
+  id = "aws-access-key"
+  description = "AWS Access Key ID"
+  regex = '''(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}'''
+  tags = ["aws", "key"]
+  [rules.allowlist]
+    paths = [
+      '''tests/''',
+      '''examples/''',
+      '''docs/''',
+    ]
+
+[[rules]]
+  id = "aws-secret-key"
+  description = "AWS Secret Access Key"
+  regex = '''(?i)aws_secret_access_key\s*=\s*['\"][A-Za-z0-9/+=]{40}['\"]'''
+  tags = ["aws", "secret"]
+  [rules.allowlist]
+    paths = [
+      '''tests/''',
+      '''examples/''',
+    ]
+
+[[rules]]
+  id = "github-token"
+  description = "GitHub Personal Access Token"
+  regex = '''ghp_[A-Za-z0-9]{36}'''
+  tags = ["github", "token"]
+  [rules.allowlist]
+    paths = [
+      '''tests/''',
+      '''examples/''',
+    ]
+
+[[rules]]
+  id = "github-fine-grained-pat"
+  description = "GitHub Fine-Grained Personal Access Token"
+  regex = '''github_pat_[A-Za-z0-9_]{82}'''
+  tags = ["github", "token"]
+  [rules.allowlist]
+    paths = [
+      '''tests/''',
+      '''examples/''',
+    ]
+
+[[rules]]
+  id = "private-key-pem"
+  description = "PEM-encoded private key"
+  regex = '''-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'''
+  tags = ["key", "pem"]
+  [rules.allowlist]
+    paths = [
+      '''tests/''',
+      '''examples/''',
+      '''target/''',
+      '''.cargo/''',
+    ]
+
+[[rules]]
+  id = "generic-api-key"
+  description = "Generic API key assignment"
+  regex = '''(?i)(api[_-]?key|apikey)\s*=\s*['\"][A-Za-z0-9_\-]{20,}['\"]'''
+  tags = ["api-key"]
+  [rules.allowlist]
+    paths = [
+      '''tests/''',
+      '''examples/''',
+      '''docs/''',
+    ]
+
+[[rules]]
+  id = "generic-secret"
+  description = "Generic secret/password assignment"
+  regex = '''(?i)(secret|password|passwd|pwd)\s*=\s*['\"][^'\"]{8,}['\"]'''
+  tags = ["secret", "password"]
+  [rules.allowlist]
+    paths = [
+      '''tests/''',
+      '''examples/''',
+      '''config/samples/''',
+      '''scripts/check-secrets\.sh''',
+    ]
+    regexes = [
+      '''placeholder''',
+      '''changeme''',
+      '''your[-_]''',
+      '''test[-_]''',
+      '''example''',
+      '''<[^>]+>''',
+      '''\$\{''',
+      '''stellar-core-secret''',
+    ]
+
+[[rules]]
+  id = "docker-env-secret"
+  description = "Docker ENV/ARG with secret-like name"
+  regex = '''^(ENV|ARG)\s+(SECRET|PASSWORD|TOKEN|KEY|SEED|PRIVATE)[A-Z_]*\s*='''
+  tags = ["docker", "secret"]
+  path = '''Dockerfile.*'''
+  [rules.allowlist]
+    regexes = [
+      '''mount=type=secret''',
+    ]
+
+[[rules]]
+  id = "shell-echo-secret"
+  description = "Shell script echoing a secret variable"
+  regex = '''(echo|printf)\s+["']?\$[\{(]*(SECRET|PASSWORD|TOKEN|KEY|SEED|CERT|PRIVATE)[A-Z_]*[\])]?'''
+  tags = ["shell", "secret"]
+  path = '''\.sh$'''
+  [rules.allowlist]
+    paths = [
+      '''scripts/check-secrets\.sh''',
+    ]
+
+[[rules]]
+  id = "kubernetes-env-secret"
+  description = "Kubernetes Pod env var with secret-like name (valueFrom excluded)"
+  regex = '''name:\s*(SECRET|PASSWORD|TOKEN|KEY|SEED|PRIVATE)[A-Z_]*\s*\n\s*value:\s*['\"]'''
+  tags = ["kubernetes", "secret"]
+  path = '''\.ya?ml$'''
+
+[[rules]]
+  id = "connection-string"
+  description = "Database connection string with credentials"
+  regex = '''(?i)(mysql|postgres|mongodb|redis):\/\/[^:]+:[^@]+@[^\s]+'''
+  tags = ["database", "connection-string"]
+  [rules.allowlist]
+    paths = [
+      '''tests/''',
+      '''examples/''',
+      '''docs/''',
+    ]

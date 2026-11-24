@@ -14,6 +14,9 @@ LINK_REGEX = re.compile(r'!?\[([^\]]*?)\]\(([^)]+?)\)')
 
 # Set of planned/placeholder markdown documents that don't exist yet in the repo
 # and are allowed to skip link-checking to avoid failing the CI.
+# NOTE: testing.md, code-standards.md, operators.md, storage.md,
+# backup-restore.md and configure-ha-setup.md were removed here once their
+# targets existed or nav was repointed (#1692) — do not re-add them.
 IGNORED_MISSING_FILES = {
     "database-management.md",
     "testing-health-checks.md",
@@ -41,12 +44,6 @@ IGNORED_MISSING_FILES = {
     "../../security/advisories",
     "../../issues",
     "StellarReconciler.tla",
-    "testing.md",
-    "code-standards.md",
-    "operators.md",
-    "storage.md",
-    "backup-restore.md",
-    "configure-ha-setup.md",
     "deployment.md",
     "stellar-alerts.yaml",
     "METRICS_ARCHITECTURE.md",

@@ -1,0 +1,141 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+# Cost Optimization Alerts — PrometheusRule (issue #1413)
+#
+# Covers:
+#   - Cost anomaly detection (sudden spend spikes)
+#   - Right-sizing signal (waste above threshold)
+#   - Spot interruption rate
+#
+# Deploy:
+#   kubectl apply -f monitoring/cost-anomaly-alerts.yaml -n monitoring
+#
+# Prerequisites:
+#   - Prometheus Operator (kube-prometheus-stack or standalone)
+#   - Stellar-K8s operator scraped by Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-cost-optimization-alerts
+  namespace: monitoring
+  labels:
+    app: stellar-operator
+    component: cost-optimization
+    release: kube-prometheus-stack
+spec:
+  groups:
+    # ── Recording rules ─────────────────────────────────────────────────────
+    - name: stellar.cost.recording
+      interval: 60s
+      rules:
+        - record: stellar:cost_hourly_usd
+          expr: |
+            sum(stellar_cost_hourly_usd) by (namespace, workload)
+
+        - record: stellar:cost_daily_change_ratio
+          expr: |
+            (stellar_cost_total_monthly_usd - stellar_cost_total_monthly_usd offset 1d)
+              / clamp_min(stellar_cost_total_monthly_usd offset 1d, 1)
+
+        - record: stellar:resource_waste_ratio
+          expr: |
+            1 - (stellar_resource_cpu_p95_m / clamp_min(stellar_resource_cpu_request_m, 1))
+
+    # ── Cost anomaly alerts ─────────────────────────────────────────────────
+    - name: stellar.cost.anomaly
+      rules:
+        - alert: StellarCostSpikeDetected
+          expr: stellar:cost_daily_change_ratio > 0.20
+          for: 30m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Cloud cost spike detected (>20% day-on-day increase)"
+            description: >
+              Total monthly cost estimate has grown by
+              {{ $value | humanizePercentage }} compared to 24 hours ago.
+              Check for unintended resource provisioning or runaway autoscaling.
+            runbook_url: "https://docs.stellar.org/runbooks/cost-anomaly"
+
+        - alert: StellarCostSpikeCritical
+          expr: stellar:cost_daily_change_ratio > 0.50
+          for: 15m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Critical cloud cost spike (>50% day-on-day increase)"
+            description: >
+              Total monthly cost estimate has grown by
+              {{ $value | humanizePercentage }}.
+              Immediate investigation required.
+            runbook_url: "https://docs.stellar.org/runbooks/cost-anomaly-critical"
+
+        # ── Right-sizing waste alerts ──────────────────────────────────────
+        - alert: StellarResourceWasteHigh
+          expr: stellar:resource_waste_ratio > 0.60
+          for: 2h
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Workload {{ $labels.workload }} is >60% over-provisioned"
+            description: >
+              {{ $labels.workload }} in {{ $labels.namespace }} has a CPU waste
+              ratio of {{ $value | humanizePercentage }}.
+              Consider applying the right-sizing recommendation from
+              `stellar-operator cost recommend`.
+            runbook_url: "https://docs.stellar.org/runbooks/right-sizing"
+
+        # ── Spot instance health ───────────────────────────────────────────
+        - alert: StellarSpotInterruptionRateHigh
+          expr: |
+            rate(stellar_spot_interruptions_total[30m]) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "High spot instance interruption rate"
+            description: >
+              More than 0.1 spot interruptions per second in the last 30 minutes.
+              On-demand fallback may have been triggered; review costs.
+            runbook_url: "https://docs.stellar.org/runbooks/spot-interruptions"
+
+        - alert: StellarSpotFallbackActive
+          expr: stellar_spot_fallback_active > 0
+          for: 30m
+          labels:
+            severity: info
+            team: platform
+          annotations:
+            summary: "Spot instance fallback to on-demand is active"
+            description: >
+              {{ $value }} workload(s) are running on on-demand instances
+              because spot capacity was unavailable. Monitor costs closely.
+
+        # ── Monthly budget guard ────────────────────────────────────────────
+        - alert: StellarMonthlyBudgetExceeded
+          expr: stellar_cost_total_monthly_usd > stellar_cost_budget_monthly_usd
+          for: 1h
+          labels:
+            severity: critical
+            team: finops
+          annotations:
+            summary: "Monthly cloud budget exceeded"
+            description: >
+              Current monthly cost estimate ${{ $value | humanize }} exceeds
+              the configured budget. Review cost dashboards immediately.
+            runbook_url: "https://docs.stellar.org/runbooks/budget-exceeded"

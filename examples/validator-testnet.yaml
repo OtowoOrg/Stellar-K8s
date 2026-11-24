@@ -18,12 +18,12 @@ spec:
   # 'Testnet' uses the SDF Test Network passphrase and default archives.
   network: testnet
 
-  version: "v21.0.0"
-
   # Required rollout availability and spreading constraints.
   maxUnavailable: 0
   minAvailable: 1
   topologySpreadConstraints: []
+
+  version: "v21.0.0"
 
   # Balanced resources for a Testnet workload.
   resources:

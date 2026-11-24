@@ -1,0 +1,12 @@
+[package]
+name = "htlc-escrow"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = "20.0.0"

@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Thread-safe in-memory store for Stellar custom metrics
 //!
 //! The `StellarMetricsStore` is the central cache that bridges the operator's
@@ -27,6 +39,8 @@
 //!     ingestion_lag: 2,
 //!     ledger_sequence: 49_500_000,
 //!     active_connections: 15,
+//!     request_error_ratio: 0.02,
+//!     db_query_duration_seconds: 0.005,
 //!     updated_at: chrono::Utc::now(),
 //! });
 //!
@@ -74,6 +88,10 @@ pub struct StellarMetricsSnapshot {
     pub ledger_sequence: u64,
     /// Number of active peer connections.
     pub active_connections: i64,
+    /// Ratio (0.0–1.0) of Horizon API requests returning 4xx/5xx, derived from `/metrics`.
+    pub request_error_ratio: f64,
+    /// Average Horizon database query duration in seconds, derived from `/metrics`.
+    pub db_query_duration_seconds: f64,
     /// Wall-clock time when this snapshot was last written.
     pub updated_at: DateTime<Utc>,
 }
@@ -86,6 +104,8 @@ impl Default for StellarMetricsSnapshot {
             ingestion_lag: 0,
             ledger_sequence: 0,
             active_connections: 0,
+            request_error_ratio: 0.0,
+            db_query_duration_seconds: 0.0,
             updated_at: Utc::now(),
         }
     }
@@ -228,6 +248,8 @@ mod tests {
             ingestion_lag: 1,
             ledger_sequence: 50_000_000,
             active_connections: 8,
+            request_error_ratio: 0.0,
+            db_query_duration_seconds: 0.0,
             updated_at: Utc::now(),
         }
     }

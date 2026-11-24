@@ -347,6 +347,9 @@ Available for all commands:
 
 ## Exit Codes
 
+Every subcommand returns its error through `Error::exit_code()` (`src/error.rs`),
+so the code below is consistent across all commands rather than per-command.
+
 | Code | Meaning |
 |------|---------|
 | 0 | Success |

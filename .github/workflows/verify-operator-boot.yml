@@ -27,7 +27,7 @@ jobs:
   verify-operator-boot:
     name: Verify Operator Boot & Cluster Connection
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v7
@@ -51,16 +51,13 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # ── Build (AC #1) ─────────────────────────────────────────────────────
-      - name: Setup Rust
+      # ── Build (AC #1) — shared composite action (issue #1136) ──────────────
+      - name: Build operator binary
         if: steps.scope.outputs.run == 'true'
-        uses: ./.github/actions/setup-rust
+        uses: ./.github/actions/build-operator
         with:
           cache-key: "verify-boot"
-
-      - name: Build release binary
-        if: steps.scope.outputs.run == 'true'
-        run: cargo build --release --locked --bin stellar-operator
+          binary-only: "true"
 
       - name: Confirm binary exists
         if: steps.scope.outputs.run == 'true'
@@ -71,7 +68,7 @@ jobs:
       # ── Create kind cluster (AC #2) ───────────────────────────────────────
       - name: Install kind
         if: steps.scope.outputs.run == 'true'
-        uses: helm/kind-action@v1.14.0
+        uses: helm/kind-action@v1.15.1
         with:
           install_only: true
 
@@ -94,7 +91,7 @@ jobs:
       - name: Run operator and verify cluster connection
         if: steps.scope.outputs.run == 'true'
         run: |
-          ./target/release/stellar-operator run \
+          env -u GITHUB_REPOSITORY ./target/release/stellar-operator run \
             --namespace ${{ env.OPERATOR_NAMESPACE }} \
             > /tmp/operator.log 2>&1 &
           OPERATOR_PID=$!
@@ -136,7 +133,7 @@ jobs:
             echo "✅ No runtime errors detected"
           fi
 
-      # ── Upload log artifact ───────────────────────────────────────────────
+      # ── Upload log artifact (always-on boot log) ──────────────────────────
       - name: Upload operator log
         if: always() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
@@ -144,6 +141,17 @@ jobs:
           name: operator-boot-log-${{ github.run_id }}
           path: /tmp/operator.log
           retention-days: 7
+
+      # ── Unified failure diagnostics bundle (issue #1151) ─────────────────
+      - name: Upload failure diagnostics bundle
+        if: failure() && steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/collect-failure-diagnostics
+        with:
+          artifact-name: ci-diagnostics-verify-operator-boot-${{ github.run_id }}
+          operator-namespace: stellar-system
+          extra-paths: |
+            /tmp/operator.log
+          retention-days: "14"
 
       # ── Cleanup ───────────────────────────────────────────────────────────
       - name: Delete kind cluster

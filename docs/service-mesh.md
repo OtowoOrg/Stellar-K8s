@@ -834,7 +834,7 @@ Key behaviors to understand:
 
 - **mTLS is on by default** for all TCP connections between meshed pods. There is nothing to configure to enable it.
 - **No PERMISSIVE mode** — unlike Istio, Linkerd does not have a permissive mode concept. All meshed-to-meshed connections are always mTLS. There is no way to accidentally leave mTLS optional between two meshed pods.
-- **Non-meshed clients can still connect** to meshed pods. Linkerd does not enforce strict mode by default at the proxy level — a pod without the `linkerd-proxy` sidecar can still reach a meshed pod over plaintext. Use `Server` and `ServerAuthorization` (or `AuthorizationPolicy` for Linkerd 2.12+) to restrict inbound connections to meshed identities only (see [Server & ServerAuthorization](#server--serverauthorization) below).
+- **Non-meshed clients can still connect** to meshed pods. Linkerd does not enforce strict mode by default at the proxy level — a pod without the `linkerd-proxy` sidecar can still reach a meshed pod over plaintext. Use `Server` and `ServerAuthorization` (or `AuthorizationPolicy` for Linkerd 2.12+) to restrict inbound connections to meshed identities only (see [Server & ServerAuthorization](#server-serverauthorization) below).
 - **Certificate management is automatic** — the Linkerd identity controller issues short-lived X.509 SVIDs to each proxy and rotates them before expiry. No manual certificate management is required for pod-to-pod traffic.
 
 ### Server & ServerAuthorization

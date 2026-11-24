@@ -1,0 +1,388 @@
+# Generated from src/crd/control_plane_health.rs (ControlPlaneHealth::crd()).
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: controlplanehealths.stellar.org
+spec:
+  group: stellar.org
+  names:
+    categories: []
+    kind: ControlPlaneHealth
+    plural: controlplanehealths
+    shortNames:
+    - cph
+    singular: controlplanehealth
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.level
+      name: Level
+      type: string
+    - jsonPath: .status.levelSince
+      name: Since
+      type: date
+    - jsonPath: .spec.webhookMode
+      name: WebhookMode
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for ControlPlaneHealthSpec via `CustomResource`
+        properties:
+          spec:
+            description: Desired probing and webhook behaviour for control-plane degradation.
+            properties:
+              dns:
+                default:
+                  hostname: kubernetes.default.svc.cluster.local
+                properties:
+                  hostname:
+                    default: kubernetes.default.svc.cluster.local
+                    description: Name resolved through cluster DNS on every probe.
+                    type: string
+                type: object
+              failureThreshold:
+                default: 3
+                description: Consecutive failed probes before a component is marked unhealthy.
+                format: uint32
+                minimum: 0.0
+                type: integer
+              incidentHistory:
+                default: 10
+                description: Number of post-incident reports retained in status.
+                format: uint32
+                minimum: 0.0
+                type: integer
+              probeIntervalSeconds:
+                default: 10
+                description: Seconds between probe rounds.
+                format: uint32
+                minimum: 0.0
+                type: integer
+              probeTimeoutSeconds:
+                default: 3
+                description: Per-probe timeout in seconds.
+                format: uint32
+                minimum: 0.0
+                type: integer
+              recoveryThreshold:
+                default: 3
+                description: Consecutive successful probes before an unhealthy component recovers.
+                format: uint32
+                minimum: 0.0
+                type: integer
+              scheduler:
+                default:
+                  leaseName: kube-scheduler
+                  leaseNamespace: kube-system
+                properties:
+                  leaseName:
+                    default: kube-scheduler
+                    type: string
+                  leaseNamespace:
+                    default: kube-system
+                    description: Leader-election lease renewed by the active scheduler.
+                    type: string
+                type: object
+              webhook:
+                default:
+                  configurations:
+                  - kind: Validating
+                    name: stellar-webhook
+                  host: stellar-webhook.stellar-webhook.svc
+                  port: 443
+                properties:
+                  configurations:
+                    default:
+                    - kind: Validating
+                      name: stellar-webhook
+                    description: Webhook configurations governed by `webhookMode`.
+                    items:
+                      properties:
+                        kind:
+                          enum:
+                          - Validating
+                          - Mutating
+                          type: string
+                        name:
+                          type: string
+                      required:
+                      - kind
+                      - name
+                      type: object
+                    type: array
+                  host:
+                    default: stellar-webhook.stellar-webhook.svc
+                    description: Webhook service host probed for TCP reachability.
+                    type: string
+                  port:
+                    default: 443
+                    format: uint16
+                    minimum: 0.0
+                    type: integer
+                type: object
+              webhookMode:
+                default: Strict
+                description: How admission webhooks behave when the webhook layer is unavailable.
+                enum:
+                - Strict
+                - Permissive
+                type: string
+            type: object
+          status:
+            nullable: true
+            properties:
+              activeIncident:
+                description: Post-incident mode report covering one excursion away from `Normal`.
+                nullable: true
+                properties:
+                  components:
+                    description: Components that were unhealthy at any point during the incident.
+                    items:
+                      description: Control-plane component probed independently.
+                      enum:
+                      - Etcd
+                      - Dns
+                      - Webhook
+                      - Scheduler
+                      type: string
+                    type: array
+                  durationSeconds:
+                    format: uint64
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
+                  endedAt:
+                    nullable: true
+                    type: string
+                  id:
+                    type: string
+                  peakLevel:
+                    description: Declared degradation levels, ordered by severity.
+                    enum:
+                    - Normal
+                    - Reduced
+                    - Degraded
+                    - Frozen
+                    type: string
+                  startedAt:
+                    type: string
+                  suppressedActions:
+                    description: Operator actions withheld because the level did not permit them.
+                    format: uint64
+                    minimum: 0.0
+                    type: integer
+                  transitions:
+                    items:
+                      properties:
+                        at:
+                          type: string
+                        from:
+                          description: Declared degradation levels, ordered by severity.
+                          enum:
+                          - Normal
+                          - Reduced
+                          - Degraded
+                          - Frozen
+                          type: string
+                        reason:
+                          type: string
+                        to:
+                          description: Declared degradation levels, ordered by severity.
+                          enum:
+                          - Normal
+                          - Reduced
+                          - Degraded
+                          - Frozen
+                          type: string
+                      required:
+                      - at
+                      - from
+                      - reason
+                      - to
+                      type: object
+                    type: array
+                required:
+                - components
+                - id
+                - peakLevel
+                - startedAt
+                - suppressedActions
+                - transitions
+                type: object
+              components:
+                default: []
+                items:
+                  properties:
+                    component:
+                      description: Control-plane component probed independently.
+                      enum:
+                      - Etcd
+                      - Dns
+                      - Webhook
+                      - Scheduler
+                      type: string
+                    consecutiveFailures:
+                      format: uint32
+                      minimum: 0.0
+                      type: integer
+                    consecutiveSuccesses:
+                      format: uint32
+                      minimum: 0.0
+                      type: integer
+                    impliedLevel:
+                      description: Declared degradation levels, ordered by severity.
+                      enum:
+                      - Normal
+                      - Reduced
+                      - Degraded
+                      - Frozen
+                      type: string
+                    lastProbeTime:
+                      nullable: true
+                      type: string
+                    lastTransitionTime:
+                      nullable: true
+                      type: string
+                    message:
+                      nullable: true
+                      type: string
+                    state:
+                      enum:
+                      - Unknown
+                      - Healthy
+                      - Unhealthy
+                      type: string
+                  required:
+                  - component
+                  - consecutiveFailures
+                  - consecutiveSuccesses
+                  - impliedLevel
+                  - state
+                  type: object
+                type: array
+              incidents:
+                default: []
+                description: Most recent closed incidents, newest first.
+                items:
+                  description: Post-incident mode report covering one excursion away from `Normal`.
+                  properties:
+                    components:
+                      description: Components that were unhealthy at any point during the incident.
+                      items:
+                        description: Control-plane component probed independently.
+                        enum:
+                        - Etcd
+                        - Dns
+                        - Webhook
+                        - Scheduler
+                        type: string
+                      type: array
+                    durationSeconds:
+                      format: uint64
+                      minimum: 0.0
+                      nullable: true
+                      type: integer
+                    endedAt:
+                      nullable: true
+                      type: string
+                    id:
+                      type: string
+                    peakLevel:
+                      description: Declared degradation levels, ordered by severity.
+                      enum:
+                      - Normal
+                      - Reduced
+                      - Degraded
+                      - Frozen
+                      type: string
+                    startedAt:
+                      type: string
+                    suppressedActions:
+                      description: Operator actions withheld because the level did not permit them.
+                      format: uint64
+                      minimum: 0.0
+                      type: integer
+                    transitions:
+                      items:
+                        properties:
+                          at:
+                            type: string
+                          from:
+                            description: Declared degradation levels, ordered by severity.
+                            enum:
+                            - Normal
+                            - Reduced
+                            - Degraded
+                            - Frozen
+                            type: string
+                          reason:
+                            type: string
+                          to:
+                            description: Declared degradation levels, ordered by severity.
+                            enum:
+                            - Normal
+                            - Reduced
+                            - Degraded
+                            - Frozen
+                            type: string
+                        required:
+                        - at
+                        - from
+                        - reason
+                        - to
+                        type: object
+                      type: array
+                  required:
+                  - components
+                  - id
+                  - peakLevel
+                  - startedAt
+                  - suppressedActions
+                  - transitions
+                  type: object
+                type: array
+              level:
+                default: Normal
+                description: Declared degradation levels, ordered by severity.
+                enum:
+                - Normal
+                - Reduced
+                - Degraded
+                - Frozen
+                type: string
+              levelSince:
+                nullable: true
+                type: string
+              observedGeneration:
+                format: int64
+                nullable: true
+                type: integer
+              permitted:
+                default:
+                  disruptiveActions: false
+                  writes: false
+                description: Operator actions allowed at the current level.
+                properties:
+                  disruptiveActions:
+                    description: Actions that interrupt serving pods (restarts, deletions, evictions).
+                    type: boolean
+                  writes:
+                    description: Any write to the Kubernetes API.
+                    type: boolean
+                required:
+                - disruptiveActions
+                - writes
+                type: object
+            type: object
+        required:
+        - spec
+        title: ControlPlaneHealth
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

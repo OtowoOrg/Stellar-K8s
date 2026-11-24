@@ -1,0 +1,213 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "StellarConfigSnapshot custom resource",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.io/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "StellarConfigSnapshot"
+      ]
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "spec": {
+      "description": "Specification for a dataplane configuration snapshot",
+      "type": "object",
+      "required": [
+        "targetNodeSelector",
+        "dataplaneConfig"
+      ],
+      "properties": {
+        "targetNodeSelector": {
+          "description": "Label selector identifying StellarNode instances to snapshot. If empty, captures all nodes.\n",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "example": {
+            "stellar.io/network": "mainnet"
+          }
+        },
+        "dataplaneConfig": {
+          "description": "Complete bundled dataplane configuration (ConfigMap data, secrets,  routing tables, peer list, etc.). Content-addressed by Merkle root.\n",
+          "type": "object",
+          "x-kubernetes-preserve-unknown-fields": true
+        },
+        "merkleRoot": {
+          "description": "SHA-256 hash of (dataplaneConfig | sorted). Serves as content  address for caching and verification.\n",
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "deltaFrom": {
+          "description": "Optional reference to a prior snapshot. If set, dataplaneConfig contains only changed fields (delta). Reduces bandwidth for  large configs (e.g., 10k+ objects).\n",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "Name of the prior StellarConfigSnapshot",
+              "type": "string"
+            },
+            "merkleRoot": {
+              "description": "Expected Merkle root of prior snapshot (verification)",
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "snapshotTime": {
+              "description": "Timestamp of prior snapshot",
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "signature": {
+          "description": "ECDSA signature (base64-encoded) over (merkleRoot).  Agents verify this signature before atomic swap.\n",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/=]+$"
+        },
+        "generationTime": {
+          "description": "Timestamp when snapshot was generated",
+          "type": "string",
+          "format": "date-time"
+        },
+        "configSize": {
+          "description": "Byte size of serialized dataplaneConfig",
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "metadata": {
+          "description": "Optional user-defined metadata (e.g., change reason)",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "status": {
+      "description": "Status of the configuration snapshot",
+      "type": "object",
+      "properties": {
+        "phase": {
+          "description": "Current phase of snapshot lifecycle",
+          "type": "string",
+          "enum": [
+            "Pending",
+            "Generated",
+            "Signed",
+            "Applied",
+            "Failed"
+          ]
+        },
+        "appliedBy": {
+          "description": "List of agent names that have applied this snapshot",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "agentName": {
+                "type": "string"
+              },
+              "nodeName": {
+                "type": "string"
+              },
+              "appliedTime": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "Success",
+                  "Failed"
+                ]
+              }
+            }
+          }
+        },
+        "verificationStatus": {
+          "description": "Signature and content verification results",
+          "type": "object",
+          "properties": {
+            "signatureValid": {
+              "type": "boolean"
+            },
+            "merkleRootVerified": {
+              "type": "boolean"
+            },
+            "lastVerifiedTime": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "observedGeneration": {
+          "description": "Latest generation of spec that controller has observed",
+          "type": "integer"
+        },
+        "conditions": {
+          "description": "Array of condition objects",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "type",
+              "status",
+              "lastTransitionTime"
+            ],
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  true,
+                  false,
+                  "Unknown"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "lastTransitionTime": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "observedGeneration": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.io",
+      "version": "v1alpha1",
+      "kind": "StellarConfigSnapshot"
+    }
+  ]
+}

@@ -1,3 +1,15 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 ---
 # Kyverno ClusterPolicy Suite for Stellar-K8s
 # These policies enforce operational and security best practices for StellarNode resources
@@ -261,7 +273,7 @@ spec:
         message: "StellarNode resources should define minAvailable or maxUnavailable for pod disruption budgets"
         pattern:
           spec:
-            |(min_available | max_unavailable): "?*"
+            "|(min_available | max_unavailable)": "?*"
 
 ---
 apiVersion: kyverno.io/v1
@@ -283,3 +295,196 @@ spec:
           spec:
             storage:
               retentionPolicy: "?*"
+
+# =============================================================================
+# Epic #1477 — Supply-Chain Provenance Attestation Policies
+# =============================================================================
+
+---
+# Require Cosign signature on every Stellar operator Pod image (Epic #1477).
+# This policy verifies the image was signed by the repository's keyless OIDC
+# identity before the Pod is admitted. Requires Kyverno >= 1.11 with Cosign support.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-image-provenance
+  annotations:
+    policies.kyverno.io/title: Require Cosign Image Provenance
+    policies.kyverno.io/category: Supply-Chain Security
+    policies.kyverno.io/description: >-
+      Enforces SLSA provenance attestation and Cosign signature verification
+      for all Pods in the stellar-operator namespace (Epic #1477).
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: verify-image-signature
+      match:
+        resources:
+          kinds:
+            - Pod
+          namespaces:
+            - stellar-operator
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/otoworg/*"
+          attestors:
+            - count: 1
+              entries:
+                - keyless:
+                    subject: "https://github.com/OtowoOrg/Stellar-K8s/*"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"
+          attestations:
+            - type: "https://slsa.dev/provenance/v1"
+              conditions:
+                - all:
+                    - key: "{{ buildDefinition.buildType }}"
+                      operator: Equals
+                      value: "https://actions.github.io/buildtypes/workflow/v1"
+
+---
+# Require that Pods in stellar-operator namespace carry a non-empty image digest.
+# Digest pinning ensures the image cannot be silently swapped at the registry
+# (tag mutability attack). Works alongside require-image-provenance.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-image-digest-pin
+  annotations:
+    policies.kyverno.io/title: Require Image Digest Pin
+    policies.kyverno.io/category: Supply-Chain Security
+    policies.kyverno.io/description: >-
+      All container images must reference an explicit SHA-256 digest, not just
+      a mutable tag. This prevents tag-swap attacks (Epic #1477).
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-image-digest
+      match:
+        resources:
+          kinds:
+            - Pod
+          namespaces:
+            - stellar-operator
+      validate:
+        message: "All container images must be pinned to a specific digest (e.g. image@sha256:...)."
+        foreach:
+          - list: "request.object.spec.containers"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.image }}"
+                    operator: NotContains
+                    value: "@sha256:"
+
+# =============================================================================
+# Epic #1479 — Immutable Audit Chain Policies
+# =============================================================================
+
+---
+# Prevent deletion of the audit chain ConfigMap (tamper protection) (Epic #1479).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: protect-audit-chain-configmap
+  annotations:
+    policies.kyverno.io/title: Protect Audit Chain ConfigMap
+    policies.kyverno.io/category: Audit Integrity
+    policies.kyverno.io/description: >-
+      Prevents accidental or malicious deletion of the tamper-evident audit
+      chain ConfigMap (Epic #1479).
+spec:
+  validationFailureAction: Enforce
+  rules:
+    - name: deny-audit-chain-delete
+      match:
+        resources:
+          kinds:
+            - ConfigMap
+          names:
+            - "stellar-audit-chain-*"
+          namespaces:
+            - stellar-operator
+      exclude:
+        clusterRoles:
+          - cluster-admin
+      validate:
+        message: "Deletion of the stellar-audit-chain ConfigMap is not permitted."
+        deny:
+          conditions:
+            - key: "{{ request.operation }}"
+              operator: Equals
+              value: DELETE
+
+# =============================================================================
+# Epic #1480 — Multi-Tenant Quota & Fair-Share Scheduler Policies
+# =============================================================================
+
+---
+# Require tenant ID label on all Pods entering the stellar-operator namespace.
+# Without this label, the fair-share scheduler cannot assign correct DRF shares
+# and the quota admission check cannot enforce per-tenant limits (Epic #1480).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-tenant-id-label
+  annotations:
+    policies.kyverno.io/title: Require Tenant ID Label
+    policies.kyverno.io/category: Multi-Tenancy
+    policies.kyverno.io/description: >-
+      All Pods in the stellar-operator namespace must carry the
+      'tenant.stellar.org/id' label so the fair-share scheduler and quota
+      controller can enforce per-tenant resource limits (Epic #1480).
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-tenant-label
+      match:
+        resources:
+          kinds:
+            - Pod
+          namespaces:
+            - stellar-operator
+      validate:
+        message: "Pods must carry the 'tenant.stellar.org/id' label for multi-tenant quota enforcement."
+        pattern:
+          metadata:
+            labels:
+              tenant.stellar.org/id: "?*"
+
+---
+# Prevent a single tenant from exceeding its declared CPU/memory resource quota
+# via Pod-level resource fields. This is a defence-in-depth complement to the
+# operator-level TenantResourceQuota admission webhook (Epic #1480).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: enforce-tenant-resource-limits
+  annotations:
+    policies.kyverno.io/title: Enforce Tenant Resource Limits
+    policies.kyverno.io/category: Multi-Tenancy
+    policies.kyverno.io/description: >-
+      All containers in Pods in the stellar-operator namespace must declare
+      CPU and memory limits so that quota accounting is accurate (Epic #1480).
+spec:
+  validationFailureAction: audit
+  rules:
+    - name: check-container-limits
+      match:
+        resources:
+          kinds:
+            - Pod
+          namespaces:
+            - stellar-operator
+      validate:
+        message: "All containers must declare CPU and memory resource limits for accurate tenant quota accounting."
+        foreach:
+          - list: "request.object.spec.containers"
+            pattern:
+              resources:
+                limits:
+                  cpu: "?*"
+                  memory: "?*"
+

@@ -1,0 +1,192 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "StellarObservability custom resource",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "targetNode",
+        "tracing",
+        "logging",
+        "alerting",
+        "anomalyDetection"
+      ],
+      "properties": {
+        "targetNode": {
+          "type": "string"
+        },
+        "tracing": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "backend": {
+              "type": "string",
+              "enum": [
+                "Jaeger",
+                "Zipkin",
+                "OpenTelemetry"
+              ]
+            },
+            "sampleRate": {
+              "type": "number"
+            }
+          }
+        },
+        "logging": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "backend": {
+              "type": "string",
+              "enum": [
+                "Loki",
+                "Elasticsearch",
+                "Stackdriver"
+              ]
+            },
+            "logLevel": {
+              "type": "string"
+            },
+            "retentionDays": {
+              "type": "integer"
+            }
+          }
+        },
+        "alerting": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "fatigueReduction": {
+              "type": "boolean"
+            },
+            "alertRules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "condition": {
+                    "type": "string"
+                  },
+                  "threshold": {
+                    "type": "number"
+                  },
+                  "durationSecs": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "anomalyDetection": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "modelType": {
+              "type": "string",
+              "enum": [
+                "IsolationForest",
+                "LocalOutlierFactor",
+                "AutoEncoder"
+              ]
+            },
+            "sensitivity": {
+              "type": "string",
+              "enum": [
+                "Low",
+                "Medium",
+                "High"
+              ]
+            },
+            "baselineLearningDays": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string"
+        },
+        "tracingEnabled": {
+          "type": "boolean"
+        },
+        "loggingEnabled": {
+          "type": "boolean"
+        },
+        "alertsConfigured": {
+          "type": "integer"
+        },
+        "anomaliesDetected": {
+          "type": "integer"
+        },
+        "dashboardReady": {
+          "type": "boolean"
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "StellarObservability"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "StellarObservability"
+    }
+  ]
+}

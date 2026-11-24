@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! `stellar-watcher` — Byzantine Monitoring Watcher binary.
 //!
 //! Polls a single Stellar Core node from a geographically dispersed vantage
@@ -22,8 +34,9 @@ use anyhow::Result;
 use clap::Parser;
 use stellar_k8s::byzantine::types::WatcherConfig;
 use stellar_k8s::byzantine::watcher::run_watcher;
+use stellar_k8s::logging::{init_binary_subscriber, LogOutputFormat};
 use tracing::info;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing::Level;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -61,7 +74,7 @@ struct Args {
     network: String,
 
     /// HTTP endpoint of the Stellar Core node to poll.
-    /// Example: http://stellar-core.stellar-system.svc.cluster.local:11626
+    /// Example: <http://stellar-core.stellar-system.svc.cluster.local:11626>
     /// Env: WATCHER_NODE_ENDPOINT
     #[arg(
         long,
@@ -95,11 +108,8 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Initialise structured logging.
-    tracing_subscriber::registry()
-        .with(fmt::layer().json())
-        .with(EnvFilter::new(&args.log_level))
-        .init();
+    let log_level = args.log_level.parse().unwrap_or(Level::INFO);
+    init_binary_subscriber(log_level, LogOutputFormat::Json);
 
     info!(
         watcher_id = %args.watcher_id,

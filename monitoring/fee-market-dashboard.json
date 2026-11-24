@@ -1,0 +1,40 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "none"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "targets": [{"expr": "stellar_fee_market_p95_stroops", "legendFormat": "{{network}} / {{fee_type}}", "refId": "A"}],
+      "title": "P95 inclusion fee",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "none"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "targets": [{"expr": "stellar_fee_market_spike_threshold_stroops", "legendFormat": "{{network}} / {{fee_type}} threshold", "refId": "A"}],
+      "title": "Configured spike threshold",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "none"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 9},
+      "id": 3,
+      "targets": [{"expr": "stellar_fee_market_ledger", "legendFormat": "{{network}} / {{fee_type}}", "refId": "A"}],
+      "title": "Latest observed ledger",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["stellar", "soroban", "fees"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "title": "Stellar Fee Market",
+  "uid": "stellar-fee-market",
+  "version": 1
+}

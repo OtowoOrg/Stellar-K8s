@@ -1,0 +1,13 @@
+[package]
+name = "fee-bumper"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "On-chain reimbursement escrow + rate-limiting half of a fee-bump relayer sponsorship system"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = "23.5.0"

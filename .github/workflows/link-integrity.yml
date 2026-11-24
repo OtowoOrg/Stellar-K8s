@@ -1,0 +1,112 @@
+name: Link Integrity
+
+# Issue #1712: Run lychee (fast link checker) across all markdown files to
+# catch broken internal and external links before they reach the published site.
+# Internal links are checked on every PR; external links run on push-to-main
+# and weekly schedule to avoid rate-limiting in PR CI.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'lychee.toml'
+      - '.github/workflows/link-integrity.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'lychee.toml'
+      - '.github/workflows/link-integrity.yml'
+  schedule:
+    # Weekly full external-link scan (Mondays 06:00 UTC)
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      check_external:
+        description: 'Also check external links (true/false)'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+
+jobs:
+  link-integrity:
+    name: Link Integrity Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Determine link-check scope
+        id: scope
+        run: |
+          # External links on: scheduled runs, push to main, or explicit override.
+          if [[ "${{ github.event_name }}" == "schedule" || \
+                "${{ github.event_name }}" == "push" || \
+                "${{ github.event.inputs.check_external }}" == "true" ]]; then
+            echo "external=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "external=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Check internal links (scripts/check-links.py)
+        run: python scripts/check-links.py --dir docs/
+
+      - name: Install lychee
+        run: |
+          # Releases are tagged lychee-vX.Y.Z and the archive wraps the binary
+          # in a lychee-<target>/ directory.
+          LYCHEE_VERSION="0.24.2"
+          RELEASES="https://github.com/lycheeverse/lychee/releases/download"
+          tmp="$(mktemp -d)"
+          curl -sSLf \
+            "${RELEASES}/lychee-v${LYCHEE_VERSION}/lychee-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$tmp"
+          sudo install -m 0755 "$tmp/lychee-x86_64-unknown-linux-gnu/lychee" /usr/local/bin/lychee
+          lychee --version
+
+      - name: Run lychee (internal + optional external)
+        run: |
+          EXTRA_FLAGS=""
+          if [[ "${{ steps.scope.outputs.external }}" == "false" ]]; then
+            EXTRA_FLAGS="--offline"
+          fi
+          lychee --config lychee.toml $EXTRA_FLAGS \
+            --format markdown \
+            --output lychee-report.md \
+            'docs/**/*.md' 'README.md' 'CONTRIBUTING.md' \
+            || true  # report is uploaded; job fails below on non-zero
+
+          # Fail explicitly so the summary is always uploaded
+          lychee --config lychee.toml $EXTRA_FLAGS \
+            'docs/**/*.md' 'README.md' 'CONTRIBUTING.md'
+
+      - name: Upload lychee report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lychee-report-${{ github.sha }}
+          path: lychee-report.md
+          retention-days: 14
+
+      - name: Build summary
+        if: always()
+        run: |
+          echo "## Link Integrity Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [[ -f lychee-report.md ]]; then
+            cat lychee-report.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No lychee report generated." >> $GITHUB_STEP_SUMMARY
+          fi

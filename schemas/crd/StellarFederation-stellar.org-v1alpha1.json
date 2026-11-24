@@ -1,0 +1,157 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "StellarFederation custom resource",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "clusters",
+        "replication",
+        "trafficRouting"
+      ],
+      "properties": {
+        "clusters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "region": {
+                "type": "string"
+              },
+              "apiEndpoint": {
+                "type": "string"
+              },
+              "kubeconfigSecretRef": {
+                "type": "string"
+              },
+              "weight": {
+                "type": "integer",
+                "default": 100
+              }
+            }
+          }
+        },
+        "replication": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "Asynchronous",
+                "Synchronous"
+              ]
+            },
+            "replicationLagThresholdSecs": {
+              "type": "integer"
+            }
+          }
+        },
+        "trafficRouting": {
+          "type": "object",
+          "properties": {
+            "strategy": {
+              "type": "string",
+              "enum": [
+                "Geographic",
+                "RoundRobin",
+                "LeastConnections"
+              ]
+            },
+            "healthCheckTimeoutSecs": {
+              "type": "integer"
+            }
+          }
+        },
+        "healthCheckIntervalSecs": {
+          "type": "integer",
+          "default": 30
+        },
+        "failoverDetectionSecs": {
+          "type": "integer",
+          "default": 30
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string"
+        },
+        "activeRegions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "failedRegions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lastSyncTime": {
+          "type": "string"
+        },
+        "replicationLagMs": {
+          "type": "integer"
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "StellarFederation"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "StellarFederation"
+    }
+  ]
+}

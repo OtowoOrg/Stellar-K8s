@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Read-only replica pool management.
 //!
 //! Manages the full lifecycle of read replica resources:
@@ -443,7 +455,7 @@ fn build_read_pod_template(
     node: &StellarNode,
     config: &ReadReplicaConfig,
     labels: &BTreeMap<String, String>,
-    _enable_mtls: bool,
+    enable_mtls: bool,
 ) -> PodTemplateSpec {
     let image = node.spec.container_image();
     let cm_name = configmap_name(node);
@@ -468,9 +480,21 @@ fn build_read_pod_template(
         Quantity(config.resources.limits.memory.clone()),
     );
 
+    let mut annotations = BTreeMap::new();
+    let mut pod_labels = labels.clone();
+    if enable_mtls {
+        annotations.insert("sidecar.istio.io/inject".to_string(), "true".to_string());
+        pod_labels.insert("stellar.org/mtls-mode".to_string(), "strict".to_string());
+    }
+
     PodTemplateSpec {
         metadata: Some(ObjectMeta {
-            labels: Some(labels.clone()),
+            labels: Some(pod_labels),
+            annotations: if annotations.is_empty() {
+                None
+            } else {
+                Some(annotations)
+            },
             ..Default::default()
         }),
         spec: Some(PodSpec {
@@ -514,10 +538,14 @@ fn build_read_pod_template(
                 }),
                 ..Default::default()
             }]),
-            affinity: super::resources::merge_workload_affinity(node),
+            affinity: super::resources::merge_workload_affinity(
+                node,
+                node.spec.pod_anti_affinity.clone(),
+            ),
             topology_spread_constraints: Some(super::resources::build_topology_spread_constraints(
                 &node.spec,
                 &node.name_any(),
+                node.spec.pod_anti_affinity.clone(),
             )),
             ..Default::default()
         }),

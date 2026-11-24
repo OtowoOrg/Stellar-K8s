@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Auto-Snapshot Worker
 //!
 //! A long-running background task that periodically creates CSI VolumeSnapshots
@@ -8,7 +20,7 @@
 //! The worker runs as an independent Tokio task alongside the main reconciliation
 //! loop.  It wakes up every `POLL_INTERVAL_SECS` seconds, lists all `StellarNode`
 //! resources in the cluster, and for each Validator with a `snapshotSchedule`
-//! calls [`super::snapshot::reconcile_snapshot`].
+//! calls [`super::csi_snapshot::reconcile_snapshot`].
 //!
 //! This decouples snapshot creation from the per-node reconcile loop so that
 //! snapshots are taken even when no spec change triggers a reconcile.
@@ -33,7 +45,7 @@ use kube::{Client, Resource, ResourceExt};
 use tracing::{debug, info, instrument, warn};
 
 use crate::controller::health;
-use crate::controller::snapshot::reconcile_snapshot;
+use crate::controller::csi_snapshot::reconcile_snapshot;
 #[allow(unused_imports)]
 use crate::crd::{NodeType, SnapshotBootstrapStatus, StellarNode};
 use crate::error::Result;

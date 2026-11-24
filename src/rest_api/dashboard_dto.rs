@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Data Transfer Objects for the Dashboard API
 
 use serde::{Deserialize, Serialize};
@@ -206,4 +218,40 @@ pub struct CapacityPlanningResponse {
 pub struct WhatIfRequest {
     pub scenario_name: String,
     pub scale_factor: f64,
+}
+
+/// Monitoring system health status
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitoringStatusResponse {
+    pub healthy: bool,
+    pub metrics_endpoint_reachable: bool,
+    pub operator_metrics_available: bool,
+    pub last_metrics_scrape: Option<String>,
+    pub last_metrics_scrape_error: Option<String>,
+    pub total_metrics_collected: u64,
+    pub metrics_by_type: MetricsTypeBreakdown,
+    pub dashboard_status: DashboardStatus,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetricsTypeBreakdown {
+    pub ledger_metrics: usize,
+    pub transaction_metrics: usize,
+    pub peer_metrics: usize,
+    pub archive_metrics: usize,
+    pub database_metrics: usize,
+    pub scp_metrics: usize,
+    pub soroban_metrics: usize,
+    pub horizon_metrics: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardStatus {
+    pub grafana_available: bool,
+    pub prometheus_available: bool,
+    pub alert_manager_available: bool,
+    pub dashboards_loaded: usize,
 }

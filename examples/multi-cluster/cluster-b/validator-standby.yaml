@@ -1,0 +1,110 @@
+# Example: Standby Validator (Cluster B - Secondary)
+#
+# This validator is fully synced but does NOT vote in the quorum.
+# On failover, raise quorumWeight to 100 to promote it to primary.
+#
+# Apply to cluster-b:
+#   kubectl apply -f cluster-b/validator-standby.yaml --context=cluster-b
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-standby
+  namespace: stellar-nodes
+  labels:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/instance: validator-standby
+    cluster: cluster-b
+    role: standby
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: "4"
+      memory: "16Gi"
+    limits:
+      cpu: "8"
+      memory: "32Gi"
+
+  storage:
+    storageClass: "fast-ssd"
+    size: "1Ti"
+    retentionPolicy: Retain
+
+  validatorConfig:
+    seedSecretRef: "validator-seed-cluster-b"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+    # Standby: does not vote until promoted
+    quorumWeight: 0
+
+  # Cross-cluster communication using ExternalName services
+  crossCluster:
+    enabled: true
+    mode: ExternalName
+
+    externalName:
+      externalDnsName: "validator-cluster-b.stellar.io"
+      dnsProvider: "route53"
+      ttl: 60
+      createExternalNameServices: true
+
+    peerClusters:
+      - clusterId: "cluster-a"
+        endpoint: "validator-cluster-a.stellar.io"
+        latencyThresholdMs: 100
+        region: "us-east-1"
+        priority: 100
+        port: 11625
+        enabled: true
+
+    latencyThresholdMs: 150
+
+    healthCheck:
+      enabled: true
+      intervalSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+
+      latencyMeasurement:
+        enabled: true
+        method: http
+        sampleCount: 10
+        percentile: 95
+
+  # mTLS peer certificate mount
+  tls:
+    enabled: true
+    secretName: "validator-peer-tls"
+    caSecretName: "stellar-ca"
+
+---
+# LoadBalancer service for external peer access
+apiVersion: v1
+kind: Service
+metadata:
+  name: validator-standby-external
+  namespace: stellar-nodes
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: "validator-cluster-b.stellar.io"
+    external-dns.alpha.kubernetes.io/ttl: "60"
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/instance: validator-standby
+  ports:
+    - name: peer
+      port: 11625
+      targetPort: 11625
+      protocol: TCP
+    - name: http
+      port: 11626
+      targetPort: 11626
+      protocol: TCP

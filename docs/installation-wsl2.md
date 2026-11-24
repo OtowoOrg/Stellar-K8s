@@ -229,6 +229,6 @@ For Docker Desktop Kubernetes, the kubeconfig is refreshed automatically — jus
 
 ## Next Steps
 
-- [Quick Start](../README.md#-quick-start) — deploy your first `StellarNode`
+- [Quick Start](https://github.com/OtowoOrg/Stellar-K8s/blob/main/README.md#-quick-start) — deploy your first `StellarNode`
 - [kubectl-stellar plugin](kubectl-plugin.md) — manage nodes from the CLI
-- [Monitoring & Observability](../README.md#-monitoring--observability) — import the Grafana dashboard
+- [Monitoring & Observability](https://github.com/OtowoOrg/Stellar-K8s/blob/main/README.md#-monitoring--observability) — import the Grafana dashboard

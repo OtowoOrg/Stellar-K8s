@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Watcher — polls a single Stellar Core node and exports Prometheus metrics.
 //!
 //! Each deployed `stellar-watcher` binary runs one `Watcher` instance. It:
@@ -16,13 +28,13 @@ use std::sync::atomic::{AtomicI64, AtomicU64};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
 
+use crate::error::{Error, Result};
 use prometheus_client::encoding::text::encode;
 use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter::Counter;
@@ -217,7 +229,7 @@ pub async fn run_watcher(config: WatcherConfig) -> Result<()> {
         .timeout(request_timeout)
         .user_agent("stellar-byzantine-watcher/1.0")
         .build()
-        .context("Failed to build HTTP client")?;
+        .map_err(|e| Error::internal_step("build http client", e.to_string()))?;
 
     // Spawn metrics HTTP server.
     let server_state = Arc::clone(&state);
@@ -270,20 +282,24 @@ async fn poll_stellar_core(client: &Client, endpoint: &str) -> Result<(u64, Stri
     let url = format!("{}/info", endpoint.trim_end_matches('/'));
     debug!("Polling Stellar Core at {}", url);
 
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .with_context(|| format!("HTTP GET {} failed", url))?;
+    let resp =
+        client.get(&url).send().await.map_err(|e| {
+            Error::internal_step("poll stellar core", format!("HTTP GET failed: {e}"))
+        })?;
 
     if !resp.status().is_success() {
-        anyhow::bail!("HTTP {} from {}", resp.status(), url);
+        return Err(Error::internal_step(
+            "poll stellar core",
+            format!("HTTP {} from {}", resp.status(), url),
+        ));
     }
 
-    let info: StellarCoreInfoResponse = resp
-        .json()
-        .await
-        .with_context(|| format!("Failed to parse JSON from {}", url))?;
+    let info = resp.json::<StellarCoreInfoResponse>().await.map_err(|e| {
+        Error::internal_step(
+            "parse stellar core response",
+            format!("JSON parse failed: {e}"),
+        )
+    })?;
 
     let sequence = info.info.ledger.num;
     let hash = info.info.ledger.hash.clone();
@@ -399,13 +415,18 @@ async fn serve_metrics(state: SharedState, bind_addr: &str) -> Result<()> {
 
     let listener = tokio::net::TcpListener::bind(bind_addr)
         .await
-        .with_context(|| format!("Failed to bind metrics server to {}", bind_addr))?;
+        .map_err(|e| {
+            Error::internal_step(
+                "bind metrics server",
+                format!("Failed to bind to {bind_addr}: {e}"),
+            )
+        })?;
 
     info!("Metrics server listening on http://{}", bind_addr);
 
     axum::serve(listener, app)
         .await
-        .context("Metrics server error")?;
+        .map_err(|e| Error::internal_step("metrics server", e.to_string()))?;
 
     Ok(())
 }

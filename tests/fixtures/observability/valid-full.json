@@ -1,0 +1,17 @@
+{
+  "description": "valid full",
+  "expect": "valid",
+  "resource": {
+    "service.name": "stellar-golden-path",
+    "service.instance.id": "11111111-2222-3333-4444-555555555555",
+    "k8s.pod.name": "stellar-golden-path-0",
+    "k8s.namespace.name": "stellar-system",
+    "k8s.node.name": "kind-control-plane",
+    "stellar.observability.contract.version": "1.0.0",
+    "k8s.cluster.name": "prod-eu",
+    "service.version": "0.2.0",
+    "deployment.environment": "production",
+    "service.namespace": "stellar",
+    "k8s.pod.uid": "11111111-2222-3333-4444-555555555555"
+  }
+}

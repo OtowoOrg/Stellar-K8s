@@ -119,15 +119,7 @@ spec:
 
 If `archiveSignerKey` is omitted, the operator still verifies the signature against whichever key is embedded in the manifest.
 
-### Feature flag
-
-ZK archive verification is governed by the `enable_archive_health` runtime feature flag (enabled by default):
-
-```yaml
-# stellar-operator-config ConfigMap
-data:
-  enable_archive_health: "true"
-```
+Archive health checks (including ZK archive verification) run as part of normal reconciliation whenever history archive URLs are configured — no feature flag is required.
 
 ---
 

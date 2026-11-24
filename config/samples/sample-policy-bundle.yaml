@@ -1,0 +1,20 @@
+# Sample StellarPolicyBundle manifest for signed CEL admission policy verification
+apiVersion: stellar.org/v1alpha1
+kind: StellarPolicyBundle
+metadata:
+  name: sample-policy-bundle
+  namespace: default
+spec:
+  version: "1.0.0"
+  keyId: "stellar-release-key-2026"
+  nonce: "sample-nonce-001"
+  notBefore: "2026-01-01T00:00:00Z"
+  notAfter: "2027-01-01T00:00:00Z"
+  signature: "MEYCIQD1234567890abcdef1234567890abcdef1234567890abcdef"
+  policies:
+    - name: require-non-root
+      expression: "!has(object.spec.securityContext.runAsNonRoot) || object.spec.securityContext.runAsNonRoot == true"
+      message: "Pods must enforce runAsNonRoot"
+    - name: enforce-resource-limits
+      expression: "has(object.spec.resources.limits.cpu) && has(object.spec.resources.limits.memory)"
+      message: "Workloads must specify CPU and memory limits"

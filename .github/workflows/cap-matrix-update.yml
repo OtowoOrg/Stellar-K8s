@@ -1,0 +1,31 @@
+name: CAP compatibility matrix update
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+      - name: Refresh release matrix
+        run: python3 scripts/update-cap-matrix.py
+      - name: Propose matrix changes
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/cap-compatibility-matrix
+          delete-branch: true
+          commit-message: "chore: refresh stellar-core CAP matrix"
+          title: "chore: refresh Stellar Core CAP compatibility matrix"
+          body: "Refresh the compatibility matrix from the latest ten stable stellar-core releases."
+          add-paths: config/caps.toml

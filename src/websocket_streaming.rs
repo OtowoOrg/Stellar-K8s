@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 // WebSocket-based real-time operator status streaming API
 // Issue #637: Build WebSocket-based real-time operator status streaming API
 
@@ -277,7 +289,9 @@ async fn handle_websocket(
     });
 
     if let Ok(msg_str) = serde_json::to_string(&handshake) {
-        let _ = sender.send(axum::extract::ws::Message::Text(msg_str)).await;
+        let _ = sender
+            .send(axum::extract::ws::Message::Text(msg_str.into()))
+            .await;
     }
 
     // Stream messages to client
@@ -294,7 +308,10 @@ async fn handle_websocket(
 
             for message in messages {
                 if let Ok(msg_str) = serde_json::to_string(&message) {
-                    if let Err(e) = sender.send(axum::extract::ws::Message::Text(msg_str)).await {
+                    if let Err(e) = sender
+                        .send(axum::extract::ws::Message::Text(msg_str.into()))
+                        .await
+                    {
                         error!("Failed to send message: {}", e);
                         break;
                     }

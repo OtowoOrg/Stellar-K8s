@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: stellar-testnet-validator
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: stellar-k8s
+    stellar.org/gitops-version: v1
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/agnesnaomiolim-cloud/Stellar-K8s.git
+    targetRevision: main
+    path: examples/argocd/v1/node-chart
+    helm:
+      releaseName: stellar-testnet-validator
+      valueFiles:
+        - values-validator.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: stellar-testnet
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - PruneLast=true
+      - PrunePropagationPolicy=foreground

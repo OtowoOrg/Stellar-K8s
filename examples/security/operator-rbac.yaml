@@ -1,0 +1,94 @@
+# Least-privilege RBAC for an operator watching only stellar-mainnet.
+# Create the ServiceAccount in the operator namespace and grant its Role in
+# the watched namespace. Change both namespace names together if needed.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: stellar-operator
+  namespace: stellar-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: stellar-operator
+  namespace: stellar-mainnet
+rules:
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes", "stellarbenchmarks", "benchmarkreports"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["stellar.org"]
+    resources:
+      - stellarnodes/status
+      - stellarbenchmarks/status
+      - benchmarkreports/status
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["stellar.org"]
+    resources:
+      - stellarnodes/finalizers
+      - stellarbenchmarks/finalizers
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["services", "configmaps", "persistentvolumeclaims", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies", "ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: stellar-operator
+  namespace: stellar-mainnet
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: stellar-operator
+subjects:
+  - kind: ServiceAccount
+    name: stellar-operator
+    namespace: stellar-system
+---
+# Required by the operator's namespace network-safety label check. This is
+# deliberately separate from the namespace Role and is read-only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: stellar-operator-namespace-reader
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: stellar-operator-namespace-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: stellar-operator-namespace-reader
+subjects:
+  - kind: ServiceAccount
+    name: stellar-operator
+    namespace: stellar-system

@@ -7,6 +7,7 @@ Learn how to deploy a Stellar testnet validator node step-by-step.
 - Kubernetes cluster with 4+ CPU cores and 8+ GB RAM available
 - kubectl configured and connected to your cluster
 - Stellar-K8s operator installed ([Installation Guide](../getting-started/installation.md))
+- **Outbound TCP `3510` and `11625` open to the SDF testnet cores** (firewall, NAT gateway, and cloud security group egress rules). Without these the validator starts, logs `Joining SCP`, and never gains a peer — see [Testnet Peer Egress Port Requirements](../networking/testnet-egress-ports.md).
 
 ## Step 1: Create Namespace
 
@@ -129,6 +130,15 @@ Verify network connectivity:
 ```bash
 kubectl exec -n stellar-testnet testnet-validator-0 -- nc -zv history.stellar.org 443
 ```
+
+If the pod reports `Joining SCP` with zero peers (`curl localhost:11626/peers` returns an empty list), check **outbound** access to the SDF testnet peer ports first:
+```bash
+# From a debug pod in the validator namespace
+cd /tmp
+kubectl run -it --rm netdebug --image=nicolaka/netshoot --restart=Never -n stellar-testnet -- \
+  sh -c 'nc -zv -w 5 <sdf-testnet-host> 3510 && nc -zv -w 5 <sdf-testnet-host> 11625'
+```
+Blocked egress to `3510`/`11625` is the most common cause of a testnet validator stuck at `Joining SCP`. See the [egress port requirements](../networking/testnet-egress-ports.md#8-symptom-checklist-zero-peers-joining-scp) for the full checklist.
 
 ### Slow sync
 This is normal - initial catchup can take 30+ minutes.

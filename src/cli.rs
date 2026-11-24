@@ -1,19 +1,30 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Command-line argument definitions for the Stellar-K8s operator.
 //!
 //! This module uses `clap` to define the CLI structure, including all
 //! subcommands, arguments, and environment variable mappings.
 
 use crate::commands::backup::{BackupArgs, CleanupArgs, ListArgs, RestoreArgs};
+use crate::controller::archive_prune::PruneArchiveArgs;
+use crate::controller::diff::DiffArgs;
+use crate::incident;
 use clap::{Parser, Subcommand};
-use stellar_k8s::controller::archive_prune::PruneArchiveArgs;
-use stellar_k8s::controller::diff::DiffArgs;
-use stellar_k8s::incident;
 
 #[derive(Parser, Debug)]
 #[command(
     author,
     version,
-    disable_version_flag = true,
     about = "Stellar-K8s: Cloud-Native Kubernetes Operator for Stellar Infrastructure",
     long_about = "\
 \x1b[1;36m\
@@ -48,10 +59,6 @@ pub struct Args {
     /// Skip the background version check against GitHub releases.
     #[arg(long, global = true, env = "STELLAR_OFFLINE")]
     pub offline: bool,
-
-    /// Print version and exit
-    #[arg(short = 'v', long, global = true)]
-    pub version: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -70,6 +77,12 @@ pub enum Commands {
     CheckCrd,
     /// Verify local CLI tooling, Kubernetes context, and operator permissions
     Doctor(DoctorArgs),
+    /// Gate a proposed schema against every pinned consumer
+    ///
+    /// Diffs the candidate schema against every registered consumer (not just the
+    /// previous version) and blocks the merge on breaking changes unless an
+    /// override token is supplied.
+    SchemaCompat(SchemaCompatArgs),
     /// Run offline repository validation checks
     HealthCheck(crate::commands::health_check::HealthCheckArgs),
     /// Prune old history archive checkpoints
@@ -98,7 +111,7 @@ pub enum Commands {
         command: incident::IncidentCommands,
     },
     /// Compare performance metrics between two clusters
-    BenchmarkCompare(stellar_k8s::benchmark_compare::BenchmarkCompareArgs),
+    BenchmarkCompare(crate::benchmark_compare::BenchmarkCompareArgs),
     /// Export operator audit log and config as a signed compliance report
     ExportCompliance(ExportComplianceArgs),
     /// Backup commands for Stellar node data
@@ -106,6 +119,70 @@ pub enum Commands {
         #[command(subcommand)]
         command: BackupCommands,
     },
+}
+
+/// Arguments for the `schema-compat` subcommand.
+///
+/// The compatibility gate compares a candidate schema against every consumer
+/// pinned in the registry, emits a consumer impact report, and fails the build
+/// when a breaking change is detected without an explicit override.
+#[derive(Parser, Debug)]
+#[command(
+    about = "Gate a proposed schema against every pinned consumer",
+    long_about = "Checks a candidate protobuf/JSON schema for compatibility with every consumer\n\
+        registered in the schema registry. Unlike a simple previous-version diff, this compares\n\
+        the candidate against all pinned consumers and enumerates the ones that would break.\n\n\
+        A breaking change fails the check unless an override token is provided via\n\
+        --override-token (or the SCHEMA_COMPAT_OVERRIDE_TOKEN environment variable).\n\n\
+        EXAMPLES:\n  \
+        stellar-operator schema-compat --subject stellar.ledger.events --schema candidate.json\n  \
+        stellar-operator schema-compat --subject stellar.ledger.events --schema candidate.json --format markdown\n  \
+        stellar-operator schema-compat --subject stellar.ledger.events --schema candidate.json --override-token APPROVED-1234"
+)]
+pub struct SchemaCompatArgs {
+    /// Path to the schema registry file.
+    ///
+    /// Env: SCHEMA_REGISTRY_PATH
+    ///
+    /// Example: --registry schemas/registry.json
+    #[arg(long, env = "SCHEMA_REGISTRY_PATH", default_value = "schemas/registry.json")]
+    pub registry: String,
+
+    /// Subject (fully-qualified schema name) being changed.
+    ///
+    /// Example: --subject stellar.ledger.events
+    #[arg(long)]
+    pub subject: String,
+
+    /// Path to the candidate schema file to validate.
+    ///
+    /// Example: --schema candidate.json
+    #[arg(long)]
+    pub schema: String,
+
+    /// Override token that permits a breaking change to merge.
+    ///
+    /// When omitted, any breaking change fails the check.
+    /// Env: SCHEMA_COMPAT_OVERRIDE_TOKEN
+    ///
+    /// Example: --override-token APPROVED-1234
+    #[arg(long, env = "SCHEMA_COMPAT_OVERRIDE_TOKEN")]
+    pub override_token: Option<String>,
+
+    /// Output format for the consumer impact report.
+    ///
+    /// Accepted values: text, json, markdown.
+    /// Env: SCHEMA_COMPAT_FORMAT
+    ///
+    /// Example: --format markdown
+    #[arg(long, env = "SCHEMA_COMPAT_FORMAT", default_value = "text", value_parser = ["text", "json", "markdown"])]
+    pub format: String,
+
+    /// Write the consumer impact report to this path instead of stdout.
+    ///
+    /// Example: --output consumer-impact.md
+    #[arg(long)]
+    pub output: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -226,6 +303,17 @@ pub struct RunArgs {
     /// Run preflight checks and exit without starting the operator
     #[arg(long, env = "PREFLIGHT_ONLY")]
     pub preflight_only: bool,
+
+    /// Minimum log level emitted by the operator.
+    ///
+    /// Accepted values: trace, debug, info, warn, error.
+    /// Env: LOG_LEVEL
+    #[arg(long, env = "LOG_LEVEL", default_value = "info")]
+    pub log_level: String,
+
+    /// Log output format (json or pretty).
+    #[arg(long, env = "LOG_FORMAT", value_enum, default_value = "json")]
+    pub log_format: LogFormat,
 }
 
 impl RunArgs {
@@ -615,6 +703,72 @@ mod cli_tests {
         let parsed = Args::try_parse_from(["stellar-operator", "doctor"])
             .expect("doctor subcommand should parse");
         assert!(matches!(parsed.command, Commands::Doctor(_)));
+    }
+
+    #[test]
+    fn schema_compat_subcommand_parses() {
+        let parsed = Args::try_parse_from([
+            "stellar-operator",
+            "schema-compat",
+            "--subject",
+            "stellar.ledger.events",
+            "--schema",
+            "candidate.json",
+        ])
+        .expect("schema-compat subcommand should parse");
+        match parsed.command {
+            Commands::SchemaCompat(args) => {
+                assert_eq!(args.registry, "schemas/registry.json");
+                assert_eq!(args.subject, "stellar.ledger.events");
+                assert_eq!(args.schema, "candidate.json");
+                assert_eq!(args.format, "text");
+                assert!(args.override_token.is_none());
+                assert!(args.output.is_none());
+            }
+            _ => panic!("expected SchemaCompat subcommand"),
+        }
+    }
+
+    #[test]
+    fn schema_compat_override_and_format_parse() {
+        let parsed = Args::try_parse_from([
+            "stellar-operator",
+            "schema-compat",
+            "--subject",
+            "stellar.ledger.events",
+            "--schema",
+            "candidate.json",
+            "--override-token",
+            "APPROVED-1234",
+            "--format",
+            "markdown",
+            "--output",
+            "consumer-impact.md",
+        ])
+        .expect("schema-compat subcommand should parse");
+        match parsed.command {
+            Commands::SchemaCompat(args) => {
+                assert_eq!(args.override_token.as_deref(), Some("APPROVED-1234"));
+                assert_eq!(args.format, "markdown");
+                assert_eq!(args.output.as_deref(), Some("consumer-impact.md"));
+            }
+            _ => panic!("expected SchemaCompat subcommand"),
+        }
+    }
+
+    #[test]
+    fn schema_compat_rejects_unknown_format() {
+        let result = Args::try_parse_from([
+            "stellar-operator",
+            "schema-compat",
+            "--subject",
+            "stellar.ledger.events",
+            "--schema",
+            "candidate.json",
+            "--format",
+            "yaml",
+        ]);
+        assert!(result.is_err(), "unknown output formats should be rejected");
     }
 
     fn parse_simulator_up(args: &[&str]) -> Result<SimulatorUpArgs, clap::Error> {

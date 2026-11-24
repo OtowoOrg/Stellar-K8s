@@ -1,0 +1,87 @@
+# repair-pod.yaml
+#
+# Temporary debug utility pod for inspecting/repairing a Stellar-K8s node's
+# corrupted database. See docs/operations/storage-repair.md for the full
+# recovery procedure this pod is used with.
+#
+# WARNING: this pod mounts the SAME PersistentVolumeClaim used by a
+# StellarNode's data volume, in read-write mode. Applying it while the
+# owning StatefulSet's pod is still running WILL cause concurrent-write
+# corruption. Before applying:
+#
+#   1. Suspend the node so the operator doesn't scale it back up:
+#        kubectl patch stellarnode <node-name> -n <namespace> \
+#          --type=merge -p '{"spec":{"suspended":true}}'
+#   2. Scale the owning StatefulSet to zero and wait for the pod to
+#      terminate:
+#        kubectl scale statefulset <node-name> -n <namespace> --replicas=0
+#        kubectl wait --for=delete pod/<node-name>-0 -n <namespace> --timeout=120s
+#   3. Fill in every <PLACEHOLDER> below.
+#   4. kubectl apply -f examples/debug/repair-pod.yaml
+#   5. kubectl exec -it db-repair -n <namespace> -- sh
+#
+# When you're done, delete this pod (kubectl delete -f examples/debug/repair-pod.yaml)
+# before un-suspending/scaling the node back up.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: db-repair
+  # Must match the namespace of the StellarNode / PVC you're repairing.
+  namespace: <NAMESPACE>
+  labels:
+    app.kubernetes.io/name: db-repair
+    # Marks this pod as unmanaged scratch tooling, not part of the
+    # StellarNode's reconciled resource set, so it's easy to find and
+    # doesn't collide with the operator's own label selectors.
+    stellar.org/debug-pod: "true"
+  annotations:
+    # Purely informational — helps anyone who finds this pod later know
+    # it's meant to be short-lived.
+    stellar.org/debug-reason: "storage corruption repair, see docs/operations/storage-repair.md"
+spec:
+  # Never let Kubernetes silently restart a repair session mid-command —
+  # if the container dies, you want to notice and re-attach deliberately.
+  restartPolicy: Never
+
+  # This pod intentionally runs as root (unlike the operator's own
+  # workloads, which run read-only and non-root) because sqlite3/psql
+  # repair operations need to install packages and write to the volume
+  # freely. Treat it as privileged scratch tooling: delete it as soon as
+  # the repair is done, and don't reuse it for anything else.
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
+    fsGroup: 0
+
+  containers:
+    - name: repair-shell
+      # Small, fast to pull, and gives us apk to install exactly the
+      # client tools we need (sqlite3, postgresql-client) at exec time
+      # instead of maintaining a bespoke always-loaded debug image.
+      image: alpine:3.20
+      command: ["sleep", "infinity"]
+      resources:
+        requests:
+          cpu: "250m"
+          memory: "256Mi"
+        limits:
+          cpu: "1"
+          memory: "1Gi"
+      volumeMounts:
+        - name: data
+          # Deliberately NOT the same path the production stellar-node
+          # container uses (/opt/stellar/data or /data) — this avoids any
+          # confusion with the real container's mount and makes it obvious
+          # in shell history that you're in repair tooling, not the node.
+          mountPath: /repair-data
+
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        # The node's existing data PVC. Stellar-K8s names this
+        # "<node-name>-data" (see docs/volume-snapshots.md).
+        #   Validator (stellar-core, SQLite):        <NODE_NAME>-data
+        #   Standalone Postgres StatefulSet (Horizon): <POSTGRES_STATEFULSET_NAME>-data
+        claimName: <PVC_NAME>
+        readOnly: false

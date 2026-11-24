@@ -1,0 +1,6 @@
+apiVersion: v2
+name: stellar-node-gitops
+description: Versioned GitOps workload chart for a Testnet Validator or Soroban RPC node
+type: application
+version: 1.0.0
+appVersion: "v21.0.0"

@@ -1,0 +1,28 @@
+[package]
+name = "governance-vote"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Time-locked governance voting sub-contract with quorum enforcement."
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = "=27.0.6"
+
+[dev-dependencies]
+soroban-sdk = { version = "=27.0.6", features = ["testutils"] }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug-assertions = false
+strip = "symbols"
+codegen-units = 1
+lto = true
+
+# This crate is a standalone Soroban contract workspace, independent from the
+# root Stellar-K8s binary-crate workspace.
+[workspace]

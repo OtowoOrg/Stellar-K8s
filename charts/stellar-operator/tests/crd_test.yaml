@@ -93,3 +93,39 @@ tests:
     asserts:
       - isNotEmpty:
           path: spec.versions[0].additionalPrinterColumns
+
+  - it: CRD schema includes observedPassphraseSecretVersion in status
+    documentIndex: 0
+    asserts:
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.status.properties.observedPassphraseSecretVersion
+      - equal:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.status.properties.observedPassphraseSecretVersion.type
+          value: string
+      - equal:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.status.properties.observedPassphraseSecretVersion.nullable
+          value: true
+
+  - it: CRD schema includes observedSeedSecretVersion in status
+    documentIndex: 0
+    asserts:
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.status.properties.observedSeedSecretVersion
+      - equal:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.status.properties.observedSeedSecretVersion.type
+          value: string
+      - equal:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.status.properties.observedSeedSecretVersion.nullable
+          value: true
+
+  - it: CRD schema includes lastSecretRotationTime in status
+    documentIndex: 0
+    asserts:
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.status.properties.lastSecretRotationTime
+      - equal:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.status.properties.lastSecretRotationTime.type
+          value: string
+      - equal:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.status.properties.lastSecretRotationTime.nullable
+          value: true

@@ -1,0 +1,18 @@
+{{- if (and .Values.monitoring .Values.monitoring.enabled .Values.monitoring.grafanaDashboards.enabled) }}
+{{- range $path, $bytes := .Files.Glob "dashboards/*.json" }}
+{{- $name := base $path | trimSuffix ".json" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stellar-operator.fullname" $ }}-dashboard-{{ $name }}
+  labels:
+    {{- include "stellar-operator.labels" $ | nindent 4 }}
+    {{- with $.Values.monitoring.grafanaDashboards.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  {{ $name }}.json: |-
+    {{- $.Files.Get $path | nindent 4 }}
+---
+{{- end }}
+{{- end }}

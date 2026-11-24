@@ -1,0 +1,65 @@
+name: Flux Sync
+
+# Issue #1833: Validate the Flux CD manifests in examples/flux/ and the
+# `make flux-sync` / `make flux-validate` targets that drive them.
+#
+# The job renders the Flux kustomization locally (no cluster required) so a
+# broken manifest or an invalid dependency order fails the PR instead of the
+# next production sync.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'examples/flux/**'
+      - 'docs/gitops/flux.md'
+      - 'Makefile'
+      - '.github/workflows/flux-sync.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'examples/flux/**'
+      - 'docs/gitops/flux.md'
+      - 'Makefile'
+      - '.github/workflows/flux-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flux-sync:
+    name: Flux Manifest Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install pinned kubectl
+        run: |
+          set -euo pipefail
+          # shellcheck source=scripts/lib/versions.sh
+          source scripts/lib/versions.sh
+          curl -fsSL -o kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Install flux CLI
+        run: |
+          set -euo pipefail
+          curl -s https://fluxcd.io/install.sh | sudo bash
+          flux version --client
+
+      - name: Validate Flux manifests
+        run: make flux-validate
+
+      - name: Report
+        if: success()
+        run: |
+          echo "## Flux Sync" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ examples/flux renders cleanly with kubectl kustomize and flux build." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Run \`make flux-sync KUSTOMIZATION=<name>\` against a bootstrapped cluster to reconcile it." >> $GITHUB_STEP_SUMMARY

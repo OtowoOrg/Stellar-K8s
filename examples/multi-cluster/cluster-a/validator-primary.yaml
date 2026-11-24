@@ -1,0 +1,110 @@
+# Example: Single Primary Validator (Cluster A - Primary)
+#
+# This is the ONLY voting validator in the multi-cluster topology.
+# It participates in the Stellar network quorum.
+#
+# Apply to cluster-a:
+#   kubectl apply -f cluster-a/validator-primary.yaml --context=cluster-a
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-primary
+  namespace: stellar-nodes
+  labels:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/instance: validator-primary
+    cluster: cluster-a
+    role: primary
+spec:
+  nodeType: Validator
+  network: Mainnet
+  version: "v21.0.0"
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: "4"
+      memory: "16Gi"
+    limits:
+      cpu: "8"
+      memory: "32Gi"
+
+  storage:
+    storageClass: "fast-ssd"
+    size: "1Ti"
+    retentionPolicy: Retain
+
+  validatorConfig:
+    seedSecretRef: "validator-seed-cluster-a"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-live/core_live_001"
+    # This node is the single primary validator
+    quorumWeight: 100
+
+  # Cross-cluster communication using ExternalName services
+  crossCluster:
+    enabled: true
+    mode: ExternalName
+
+    externalName:
+      externalDnsName: "validator-cluster-a.stellar.io"
+      dnsProvider: "route53"
+      ttl: 60
+      createExternalNameServices: true
+
+    peerClusters:
+      - clusterId: "cluster-b"
+        endpoint: "validator-cluster-b.stellar.io"
+        latencyThresholdMs: 100
+        region: "eu-west-1"
+        priority: 100
+        port: 11625
+        enabled: true
+
+    latencyThresholdMs: 150
+
+    healthCheck:
+      enabled: true
+      intervalSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+
+      latencyMeasurement:
+        enabled: true
+        method: http
+        sampleCount: 10
+        percentile: 95
+
+  # mTLS peer certificate mount
+  tls:
+    enabled: true
+    secretName: "validator-peer-tls"
+    caSecretName: "stellar-ca"
+
+---
+# LoadBalancer service for external peer access
+apiVersion: v1
+kind: Service
+metadata:
+  name: validator-primary-external
+  namespace: stellar-nodes
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: "validator-cluster-a.stellar.io"
+    external-dns.alpha.kubernetes.io/ttl: "60"
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/instance: validator-primary
+  ports:
+    - name: peer
+      port: 11625
+      targetPort: 11625
+      protocol: TCP
+    - name: http
+      port: 11626
+      targetPort: 11626
+      protocol: TCP

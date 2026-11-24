@@ -1,0 +1,59 @@
+# Example: Standby Horizon node (Cluster B - Secondary)
+#
+# Horizon runs ACTIVE in both clusters (Active-Active RPC topology).
+# This instance serves read traffic for the eu-west-1 region.
+# Its PostgreSQL is a logical replica of Cluster A's database.
+#
+# Apply to cluster-b:
+#   kubectl apply -f cluster-b/horizon-standby.yaml --context=cluster-b
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-standby
+  namespace: stellar-nodes
+  labels:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/instance: horizon-standby
+    cluster: cluster-b
+    role: active
+spec:
+  nodeType: Horizon
+  network: Mainnet
+  version: "v21.0.0"
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+
+  storage:
+    storageClass: "fast-ssd"
+    size: "200Gi"
+
+  horizonConfig:
+    databaseSecretRef: "horizon-db-credentials-cluster-b"
+    enableIngest: true
+    stellarCoreUrl: "http://validator-standby:11626"
+    ingestWorkers: 4
+
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCpuUtilizationPercentage: 70
+
+  ingress:
+    className: "nginx"
+    hosts:
+      - host: "horizon.stellar.io"
+        paths:
+          - path: "/"
+            pathType: "Prefix"
+    certManagerClusterIssuer: "stellar-ca-issuer"
+    tlsSecretName: "horizon-tls-cert"
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"

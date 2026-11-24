@@ -1,0 +1,97 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: tenantquotas.stellar.org
+spec:
+  group: stellar.org
+  names:
+    categories: []
+    kind: TenantQuota
+    plural: tenantquotas
+    shortNames:
+    - tq
+    singular: tenantquota
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.parent
+      name: Parent
+      type: string
+    - jsonPath: .status.valid
+      name: Valid
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for TenantQuotaSpec via `CustomResource`
+        properties:
+          spec:
+            description: |-
+              One node of the quota tree. Leaves own namespaces; interior nodes group children.
+
+              Semantics: `guaranteed` is protected from preemption; usage above it is elastic (borrowed) up to `max` and reclaimable. An interior node's guarantee defaults to the sum of its children's and must not be lower. A child's `max` must not exceed its parent's. Unset `max` means "bounded only by the parent/cluster".
+            properties:
+              guaranteed:
+                default: {}
+                description: Protected minimum share.
+                properties:
+                  cpu:
+                    nullable: true
+                    type: string
+                  memory:
+                    nullable: true
+                    type: string
+                type: object
+              max:
+                default: {}
+                description: Elastic ceiling.
+                properties:
+                  cpu:
+                    nullable: true
+                    type: string
+                  memory:
+                    nullable: true
+                    type: string
+                type: object
+              namespaces:
+                default: []
+                description: Namespaces governed by this node (leaves only; each namespace in exactly one node).
+                items:
+                  type: string
+                type: array
+              parent:
+                description: Name of the parent `TenantQuota`; empty for a root.
+                nullable: true
+                type: string
+              weight:
+                default: 1.0
+                description: Relative weight when sharing elastic capacity with siblings. Must be > 0.
+                format: double
+                type: number
+            type: object
+          status:
+            description: Observed state published by the controller.
+            nullable: true
+            properties:
+              message:
+                nullable: true
+                type: string
+              observedGeneration:
+                format: int64
+                nullable: true
+                type: integer
+              valid:
+                default: false
+                type: boolean
+            type: object
+        required:
+        - spec
+        title: TenantQuota
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

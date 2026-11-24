@@ -1,0 +1,20 @@
+{{- if .Values.costOptimization.resourceTracking.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-cost-optimization
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    component: cost-optimization
+data:
+  cost-optimization.yaml: |
+    resourceTracking:
+      enabled: {{ .Values.costOptimization.resourceTracking.enabled }}
+      windowSize: {{ .Values.costOptimization.resourceTracking.windowSize }}
+      headroomFactor: {{ .Values.costOptimization.resourceTracking.headroomFactor }}
+    spot:
+      enabled: {{ .Values.costOptimization.spot.enabled }}
+      maxPricePerHourUsd: {{ .Values.costOptimization.spot.maxPricePerHourUsd | quote }}
+      fallbackToOnDemand: {{ .Values.costOptimization.spot.fallbackToOnDemand }}
+    monthlyBudgetUsd: {{ .Values.costOptimization.monthlyBudgetUsd }}
+{{- end }}

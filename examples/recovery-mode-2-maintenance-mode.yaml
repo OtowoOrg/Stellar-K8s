@@ -1,0 +1,35 @@
+# recovery-mode-2-maintenance-mode.yaml
+#
+# Recovery Mode, step 2 of 2. See docs/operations/disaster-recovery.md for
+# the full runbook this manifest supports.
+#
+# Apply this ONLY AFTER recovery-mode-1-relax-probes.yaml has been applied
+# and confirmed to have landed on the live StatefulSet (see that file's
+# header for the confirmation command):
+#
+#   kubectl apply -f examples/recovery-mode-2-maintenance-mode.yaml
+#
+# Applying maintenanceMode: true before (or together with) the probe
+# override does NOT work: the operator's reconcile loop checks
+# maintenanceMode first on every pass and returns immediately without ever
+# applying the probe change underneath it.
+#
+# What this does: freezes the operator's reconciliation for this node
+# entirely (status.phase becomes "Maintenance"), so kubectl exec, kubectl
+# delete pod, and manual kubectl patch statefulset calls all stick instead
+# of being reconciled away while you work.
+#
+# To exit Recovery Mode once the incident is resolved, reverse the order:
+# clear maintenanceMode first (set it back to false and re-apply, or
+# `kubectl patch stellarnode <node> -n <namespace> --type merge
+# -p '{"spec":{"maintenanceMode":false}}'`), confirm
+# `kubectl stellar status <node> -n <namespace>` reports Ready=True, then
+# remove the probe override from step 1 (or leave it — a generous-but-finite
+# readiness threshold is harmless in steady state).
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-primary # replace with your node's name
+  namespace: stellar-nodes # replace with your node's namespace
+spec:
+  maintenanceMode: true

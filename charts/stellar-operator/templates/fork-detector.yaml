@@ -19,7 +19,9 @@ spec:
       labels:
         {{- include "stellar-operator.selectorLabelsWithComponent" (dict "root" . "component" "fork-detector") | nindent 8 }}
       annotations:
-        {{- include "stellar-operator.prometheusAnnotations" (dict "metricsPort" .Values.forkDetector.metricsPort) | nindent 8 }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.forkDetector.metricsPort | quote }}
+        prometheus.io/path: "/metrics"
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

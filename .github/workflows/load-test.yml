@@ -1,0 +1,196 @@
+name: Load Test & Performance Budgets
+
+# Scheduled load testing with absolute SLO enforcement (issue #1336).
+#
+# The existing "Performance & Benchmark Pipeline" runs on pushes to main and
+# compares against a baseline — a *relative* check that cannot tell you whether
+# the absolute numbers were ever acceptable, and that never runs unless someone
+# pushes. This workflow closes both gaps: it runs on a schedule, and it grades
+# each run against benchmarks/performance-budgets.yaml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Suite to run (operator, webhook)"
+        required: false
+        default: operator
+        type: choice
+        options: [operator, webhook]
+      warn_only:
+        description: "Report budget violations without failing the run"
+        required: false
+        default: false
+        type: boolean
+  pull_request:
+    # Keep the gate itself honest: a change to the budgets, the evaluator, or
+    # the k6 scripts must prove it still works before it merges.
+    paths:
+      - "benchmarks/**"
+      - ".github/workflows/load-test.yml"
+
+concurrency:
+  group: load-test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  K6_VERSION: "0.54.0"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Always-on: the evaluator's own tests ────────────────────────────────────
+  # Cheap, and it means a PR touching benchmarks/ gets feedback without paying
+  # for a full load test.
+  budget-tool-tests:
+    name: Budget Evaluator Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install --quiet pyyaml
+
+      - name: Run evaluator unit tests
+        run: python3 -m unittest benchmarks.scripts.test_check_performance_budgets
+
+      - name: Validate the budgets file parses for every declared suite
+        run: |
+          python3 -c "
+          import importlib.util, pathlib, sys, yaml
+          spec = importlib.util.spec_from_file_location(
+              'cb', 'benchmarks/scripts/check_performance_budgets.py')
+          mod = importlib.util.module_from_spec(spec)
+          sys.modules['cb'] = mod
+          spec.loader.exec_module(mod)
+          path = pathlib.Path('benchmarks/performance-budgets.yaml')
+          suites = yaml.safe_load(path.read_text())['suites']
+          for suite in suites:
+              loaded, _ = mod.load_budgets(path, suite)
+              print(f'  {suite}: {len(loaded)} budget(s) OK')
+          "
+
+  # ── Scheduled / dispatched: the actual load test ───────────────────────────
+  load-test:
+    name: "Load Test (${{ github.event.inputs.suite || 'operator' }})"
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [budget-tool-tests]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "perf-load-test"
+          toolchain: "1.92"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --quiet pyyaml
+          K6_VER="${{ env.K6_VERSION }}"
+          curl -fsSL \
+            "https://github.com/grafana/k6/releases/download/v${K6_VER}/k6-v${K6_VER}-linux-amd64.tar.gz" \
+            | tar xvz
+          sudo mv "k6-v${K6_VER}-linux-amd64/k6" /usr/local/bin/
+          k6 version
+
+      - name: Build operator
+        run: cargo build --release --bin stellar-operator
+
+      - name: Start webhook server
+        run: |
+          set -euo pipefail
+          ./target/release/stellar-operator webhook --bind 0.0.0.0:8443 --log-level info &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:8443/health >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -sf http://localhost:8443/health \
+            || { echo "::error::server failed to start"; exit 1; }
+
+      - name: Run k6 load test
+        id: k6
+        env:
+          SUITE: ${{ github.event.inputs.suite || 'operator' }}
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          case "$SUITE" in
+            webhook) script=benchmarks/k6/webhook-load-test.js ;;
+            *)       script=benchmarks/k6/operator-load-test.js ;;
+          esac
+          echo "Running $script"
+          RUN_ID="${{ github.run_id }}" \
+          VERSION="$(git describe --tags --always)" \
+          GIT_SHA="${{ github.sha }}" \
+          BASE_URL="http://localhost:8443" \
+            k6 run --out json=results/k6-raw.json "$script" || true
+          # k6's own thresholds abort the run; the budget gate below is the
+          # graded, reported verdict, so the run continues either way.
+
+      - name: Locate the run summary
+        id: summary
+        env:
+          SUITE: ${{ github.event.inputs.suite || 'operator' }}
+        run: |
+          set -euo pipefail
+          # Each script's handleSummary writes a fixed path, so name it rather
+          # than guessing: a wrong guess would grade the wrong file.
+          case "$SUITE" in
+            webhook) summary=results/webhook-benchmark.json ;;
+            *)       summary=results/benchmark-summary.json ;;
+          esac
+          if [[ ! -s "$summary" ]]; then
+            echo "::error::expected k6 summary at $summary but it is missing or empty"
+            ls -la results/ || true
+            exit 1
+          fi
+          echo "path=$summary" >> "$GITHUB_OUTPUT"
+          echo "Using summary: $summary"
+
+      - name: Evaluate performance budgets
+        env:
+          SUITE: ${{ github.event.inputs.suite || 'operator' }}
+        run: |
+          set -euo pipefail
+          extra=""
+          if [[ "${{ github.event.inputs.warn_only }}" == "true" ]]; then
+            extra="--warn-only"
+          fi
+          python3 benchmarks/scripts/check_performance_budgets.py \
+            --results "${{ steps.summary.outputs.path }}" \
+            --suite "$SUITE" \
+            --markdown "$GITHUB_STEP_SUMMARY" \
+            --history results/history \
+            $extra
+
+      - name: Stop server
+        if: always()
+        run: kill "${SERVER_PID:-0}" 2>/dev/null || true
+
+      # Results are tracked over time by retaining the summary and the appended
+      # history line per run; 90 days covers a full quarter of trend analysis.
+      - name: Upload load test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: load-test-${{ github.event.inputs.suite || 'operator' }}-${{ github.run_id }}
+          path: |
+            results/
+          retention-days: 90

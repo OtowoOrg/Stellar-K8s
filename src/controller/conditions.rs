@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Condition management helpers following Kubernetes API conventions
 
 use chrono::Utc;
@@ -9,6 +21,31 @@ pub const CONDITION_TYPE_READY: &str = "Ready";
 pub const CONDITION_TYPE_PROGRESSING: &str = "Progressing";
 pub const CONDITION_TYPE_DEGRADED: &str = "Degraded";
 pub const CONDITION_TYPE_AVAILABLE: &str = "Available";
+
+/// Compliance condition type for testnet validation warnings
+pub const CONDITION_TYPE_COMPLIANCE: &str = "Compliance";
+
+/// Peer reachability condition for validator overlay connectivity.
+///
+/// `True` means at least one configured peer answered, `False` means every
+/// configured peer is unreachable, and `Unknown` means no peers are configured.
+/// See [`crate::controller::peer_connectivity`].
+pub const CONDITION_TYPE_PEER_CONNECTIVITY: &str = "PeerConnectivity";
+
+/// Orphan reconciliation outcome condition.
+///
+/// `True` means the most recent reconciliation pass completed successfully,
+/// `False` means it failed (see the reason/message for details). The message
+/// carries a per-namespace summary of reclaimed resources so operators can
+/// read reclamation results directly off the resource status.
+pub const CONDITION_TYPE_RECONCILE_SUCCEEDED: &str = "ReconcileSucceeded";
+
+/// Orphan reclamation condition.
+///
+/// `True` means at least one orphaned artifact was reclaimed during the last
+/// pass, `False` means nothing needed reclaiming. The message reports the
+/// number of reclaimed resources per namespace.
+pub const CONDITION_TYPE_ORPHANS_RECLAIMED: &str = "OrphansReclaimed";
 
 /// Standard condition statuses
 pub const CONDITION_STATUS_TRUE: &str = "True";
@@ -105,18 +142,6 @@ pub fn progressing_condition(reason: &str, message: &str) -> Condition {
     }
 }
 
-/// Create a Progressing=False condition
-pub fn not_progressing_condition(reason: &str, message: &str) -> Condition {
-    Condition {
-        type_: CONDITION_TYPE_PROGRESSING.to_string(),
-        status: CONDITION_STATUS_FALSE.to_string(),
-        last_transition_time: Utc::now().to_rfc3339(),
-        reason: reason.to_string(),
-        message: message.to_string(),
-        observed_generation: None,
-    }
-}
-
 /// Create a Degraded=True condition
 pub fn degraded_condition(reason: &str, message: &str) -> Condition {
     Condition {
@@ -129,14 +154,97 @@ pub fn degraded_condition(reason: &str, message: &str) -> Condition {
     }
 }
 
-/// Create a Degraded=False condition
-pub fn not_degraded_condition() -> Condition {
+/// Per-namespace reclamation tally used to build orphan reconciliation messages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamespaceReclaim {
+    /// Namespace the resources were reclaimed from.
+    pub namespace: String,
+    /// Number of orphaned artifacts reclaimed in that namespace.
+    pub reclaimed: u64,
+}
+
+impl NamespaceReclaim {
+    /// Create a new per-namespace reclamation tally.
+    pub fn new(namespace: impl Into<String>, reclaimed: u64) -> Self {
+        Self {
+            namespace: namespace.into(),
+            reclaimed,
+        }
+    }
+}
+
+/// Render per-namespace reclamation tallies into an operator-readable message.
+///
+/// Namespaces are sorted for stable output so condition messages do not churn
+/// between reconciliation passes. Namespaces with zero reclaimed resources are
+/// omitted; an empty result yields `"no orphans reclaimed"`.
+pub fn format_reclaim_summary(reclaims: &[NamespaceReclaim]) -> String {
+    let mut entries: Vec<&NamespaceReclaim> = reclaims.iter().filter(|r| r.reclaimed > 0).collect();
+
+    if entries.is_empty() {
+        return "no orphans reclaimed".to_string();
+    }
+
+    entries.sort_by(|a, b| a.namespace.cmp(&b.namespace));
+
+    let total: u64 = entries.iter().map(|r| r.reclaimed).sum();
+    let per_ns: Vec<String> = entries
+        .iter()
+        .map(|r| format!("{}={}", r.namespace, r.reclaimed))
+        .collect();
+
+    format!("reclaimed {} orphan(s): {}", total, per_ns.join(", "))
+}
+
+/// Create a ReconcileSucceeded condition from the outcome of a reconciliation pass.
+///
+/// On success the message includes the per-namespace reclamation summary so the
+/// reclaimed resources are operator-readable directly from the status.
+pub fn reconcile_succeeded_condition(
+    succeeded: bool,
+    reason: &str,
+    reclaims: &[NamespaceReclaim],
+) -> Condition {
+    let (status, message) = if succeeded {
+        (
+            CONDITION_STATUS_TRUE,
+            format_reclaim_summary(reclaims),
+        )
+    } else {
+        (CONDITION_STATUS_FALSE, reason.to_string())
+    };
+
     Condition {
-        type_: CONDITION_TYPE_DEGRADED.to_string(),
-        status: CONDITION_STATUS_FALSE.to_string(),
+        type_: CONDITION_TYPE_RECONCILE_SUCCEEDED.to_string(),
+        status: status.to_string(),
         last_transition_time: Utc::now().to_rfc3339(),
-        reason: "NoIssues".to_string(),
-        message: "No degradation detected".to_string(),
+        reason: reason.to_string(),
+        message,
+        observed_generation: None,
+    }
+}
+
+/// Create an OrphansReclaimed condition from per-namespace reclamation tallies.
+///
+/// `True` when any orphan was reclaimed, `False` otherwise. The message always
+/// carries the per-namespace breakdown.
+pub fn orphans_reclaimed_condition(reclaims: &[NamespaceReclaim]) -> Condition {
+    let any_reclaimed = reclaims.iter().any(|r| r.reclaimed > 0);
+
+    Condition {
+        type_: CONDITION_TYPE_ORPHANS_RECLAIMED.to_string(),
+        status: if any_reclaimed {
+            CONDITION_STATUS_TRUE.to_string()
+        } else {
+            CONDITION_STATUS_FALSE.to_string()
+        },
+        last_transition_time: Utc::now().to_rfc3339(),
+        reason: if any_reclaimed {
+            "OrphansReclaimed".to_string()
+        } else {
+            "NoOrphans".to_string()
+        },
+        message: format_reclaim_summary(reclaims),
         observed_generation: None,
     }
 }
@@ -640,16 +748,6 @@ mod tests {
     }
 
     #[test]
-    fn test_not_progressing_condition_constructor() {
-        let condition = not_progressing_condition("Idle", "No active sync");
-
-        assert_eq!(condition.type_, CONDITION_TYPE_PROGRESSING);
-        assert_eq!(condition.status, CONDITION_STATUS_FALSE);
-        assert_eq!(condition.reason, "Idle");
-        assert_eq!(condition.message, "No active sync");
-    }
-
-    #[test]
     fn test_degraded_condition_constructor() {
         let condition = degraded_condition("HighLatency", "Network latency detected");
 
@@ -657,16 +755,6 @@ mod tests {
         assert_eq!(condition.status, CONDITION_STATUS_TRUE);
         assert_eq!(condition.reason, "HighLatency");
         assert_eq!(condition.message, "Network latency detected");
-    }
-
-    #[test]
-    fn test_not_degraded_condition_constructor() {
-        let condition = not_degraded_condition();
-
-        assert_eq!(condition.type_, CONDITION_TYPE_DEGRADED);
-        assert_eq!(condition.status, CONDITION_STATUS_FALSE);
-        assert_eq!(condition.reason, "NoIssues");
-        assert_eq!(condition.message, "No degradation detected");
     }
 
     // ── complex scenarios ─────────────────────────────────────────────────────
@@ -719,6 +807,92 @@ mod tests {
         assert!(is_condition_true(&conditions, CONDITION_TYPE_DEGRADED));
 
         // This represents a node that is functional but performing poorly
+    }
+
+    // ── orphan reconciliation conditions ──────────────────────────────────────
+
+    #[test]
+    fn test_format_reclaim_summary_empty() {
+        assert_eq!(format_reclaim_summary(&[]), "no orphans reclaimed");
+    }
+
+    #[test]
+    fn test_format_reclaim_summary_omits_zero_and_sorts() {
+        let reclaims = vec![
+            NamespaceReclaim::new("zeta", 2),
+            NamespaceReclaim::new("alpha", 3),
+            NamespaceReclaim::new("empty", 0),
+        ];
+
+        let summary = format_reclaim_summary(&reclaims);
+        assert_eq!(summary, "reclaimed 5 orphan(s): alpha=3, zeta=2");
+    }
+
+    #[test]
+    fn test_reconcile_succeeded_condition_true() {
+        let reclaims = vec![NamespaceReclaim::new("default", 4)];
+        let condition = reconcile_succeeded_condition(true, "Reconciled", &reclaims);
+
+        assert_eq!(condition.type_, CONDITION_TYPE_RECONCILE_SUCCEEDED);
+        assert_eq!(condition.status, CONDITION_STATUS_TRUE);
+        assert_eq!(condition.reason, "Reconciled");
+        assert!(condition.message.contains("default=4"));
+    }
+
+    #[test]
+    fn test_reconcile_succeeded_condition_false() {
+        let condition = reconcile_succeeded_condition(false, "ListFailed", &[]);
+
+        assert_eq!(condition.type_, CONDITION_TYPE_RECONCILE_SUCCEEDED);
+        assert_eq!(condition.status, CONDITION_STATUS_FALSE);
+        assert_eq!(condition.reason, "ListFailed");
+        assert_eq!(condition.message, "ListFailed");
+    }
+
+    #[test]
+    fn test_orphans_reclaimed_condition_true() {
+        let reclaims = vec![
+            NamespaceReclaim::new("ns-a", 1),
+            NamespaceReclaim::new("ns-b", 2),
+        ];
+        let condition = orphans_reclaimed_condition(&reclaims);
+
+        assert_eq!(condition.type_, CONDITION_TYPE_ORPHANS_RECLAIMED);
+        assert_eq!(condition.status, CONDITION_STATUS_TRUE);
+        assert_eq!(condition.reason, "OrphansReclaimed");
+        assert!(condition.message.contains("ns-a=1"));
+        assert!(condition.message.contains("ns-b=2"));
+    }
+
+    #[test]
+    fn test_orphans_reclaimed_condition_false() {
+        let reclaims = vec![NamespaceReclaim::new("ns-a", 0)];
+        let condition = orphans_reclaimed_condition(&reclaims);
+
+        assert_eq!(condition.type_, CONDITION_TYPE_ORPHANS_RECLAIMED);
+        assert_eq!(condition.status, CONDITION_STATUS_FALSE);
+        assert_eq!(condition.reason, "NoOrphans");
+        assert_eq!(condition.message, "no orphans reclaimed");
+    }
+
+    #[test]
+    fn test_orphan_conditions_integrate_with_set_condition() {
+        let mut conditions = Vec::new();
+        let reclaims = vec![NamespaceReclaim::new("default", 3)];
+
+        set_condition(
+            &mut conditions,
+            CONDITION_TYPE_RECONCILE_SUCCEEDED,
+            CONDITION_STATUS_TRUE,
+            "Reconciled",
+            &format_reclaim_summary(&reclaims),
+        );
+
+        assert!(is_condition_true(&conditions, CONDITION_TYPE_RECONCILE_SUCCEEDED));
+        assert!(find_condition(&conditions, CONDITION_TYPE_RECONCILE_SUCCEEDED)
+            .unwrap()
+            .message
+            .contains("default=3"));
     }
 
     #[test]

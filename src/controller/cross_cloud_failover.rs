@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Cross-Cloud Failover for Stellar Horizon Clusters
 //!
 //! Enables seamless failover of Horizon API traffic between different cloud providers
@@ -50,6 +62,9 @@ use chrono::Utc;
 use kube::{Client, ResourceExt};
 use tracing::{info, instrument, warn};
 
+use crate::controller::failover_plan::{
+    self, FailoverDirection, FailoverPlan, FailoverPlanStatus, ShiftOutcome,
+};
 use crate::crd::{CrossCloudFailoverConfig, CrossCloudFailoverStatus, CrossCloudRole, StellarNode};
 use crate::error::{Error, Result};
 
@@ -115,6 +130,10 @@ pub async fn reconcile_cross_cloud_failover(
         .unwrap_or(false);
 
     // 3. Automated Failover Logic
+    //
+    // Traffic shifts are driven through the shared FailoverPlan controller so that
+    // every shift is health-gated, incremental, and recorded in an operator-readable
+    // plan status. Failover and failback share the same gating logic (symmetric).
     if config.role == CrossCloudRole::Primary && !primary_healthy {
         warn!(
             "Primary cloud {} is unhealthy. Evaluating failover...",
@@ -145,18 +164,31 @@ pub async fn reconcile_cross_cloud_failover(
                 }
             }
 
-            // Perform GLB/DNS update
-            if let Some(glb_config) = &config.global_load_balancer {
-                update_global_load_balancer(client, node, glb_config, secondary).await?;
-            }
+            // Drive the health-gated weighted shift through the shared plan controller.
+            let plan_status = drive_plan_shift(
+                client,
+                node,
+                config,
+                FailoverDirection::Failover,
+                primary_cloud,
+                secondary,
+                &cloud_health,
+            )
+            .await?;
 
-            status.failover_active = true;
-            status.active_cloud = Some(secondary.cloud_provider.clone());
-            status.last_failover_time = Some(Utc::now().to_rfc3339());
-            status.last_failover_reason = Some(format!(
-                "Primary cloud {} unhealthy",
-                primary_cloud.cloud_provider
-            ));
+            if plan_status.completed {
+                status.failover_active = true;
+                status.active_cloud = Some(secondary.cloud_provider.clone());
+                status.last_failover_time = Some(Utc::now().to_rfc3339());
+                status.last_failover_reason = Some(format!(
+                    "Primary cloud {} unhealthy",
+                    primary_cloud.cloud_provider
+                ));
+            } else {
+                // Shift is in progress or gated; record the attempt without flipping state.
+                status.last_failover_attempt = Some(Utc::now().to_rfc3339());
+                status.last_failover_reason = Some(plan_status.summary());
+            }
         }
     } else if config.role == CrossCloudRole::Primary && primary_healthy && status.failover_active {
         // Optional: Automatic failback logic
@@ -166,13 +198,37 @@ pub async fn reconcile_cross_cloud_failover(
                 primary_cloud.cloud_provider
             );
 
-            if let Some(glb_config) = &config.global_load_balancer {
-                update_global_load_balancer(client, node, glb_config, primary_cloud).await?;
-            }
+            // Failback requires the same health evidence as failover: the target
+            // (primary) must be healthy and the currently active cloud must be
+            // reachable so the shift is gated identically in both directions.
+            let active_cloud = config
+                .clouds
+                .iter()
+                .find(|c| Some(&c.cloud_provider) == status.active_cloud.as_ref())
+                .unwrap_or(primary_cloud);
 
-            status.failover_active = false;
-            status.active_cloud = Some(primary_cloud.cloud_provider.clone());
-            status.last_failback_time = Some(Utc::now().to_rfc3339());
+            let plan_status = drive_plan_shift(
+                client,
+                node,
+                config,
+                FailoverDirection::Failback,
+                active_cloud,
+                primary_cloud,
+                &cloud_health,
+            )
+            .await?;
+
+            if plan_status.completed {
+                status.failover_active = false;
+                status.active_cloud = Some(primary_cloud.cloud_provider.clone());
+                status.last_failback_time = Some(Utc::now().to_rfc3339());
+            } else {
+                info!(
+                    "Failback to {} gated: {}",
+                    primary_cloud.cloud_provider,
+                    plan_status.summary()
+                );
+            }
         } else {
             info!(
                 "Primary cloud {} is healthy but auto-failback is disabled. Manual intervention required.",
@@ -187,6 +243,82 @@ pub async fn reconcile_cross_cloud_failover(
     status.last_check_time = Some(Utc::now().to_rfc3339());
 
     Ok(Some(status))
+}
+
+/// Drive a health-gated, incremental weighted traffic shift through the shared
+/// `FailoverPlan` controller.
+///
+/// The plan controller owns the weighted routing records and records each step in
+/// an operator-readable plan status. This helper builds the desired plan, applies
+/// it, and reports whether the shift completed. Both failover and failback go
+/// through this same path so the health evidence required is symmetric.
+async fn drive_plan_shift(
+    client: &Client,
+    node: &StellarNode,
+    config: &CrossCloudFailoverConfig,
+    direction: FailoverDirection,
+    from_cloud: &crate::crd::CloudEndpointConfig,
+    to_cloud: &crate::crd::CloudEndpointConfig,
+    cloud_health: &[CloudHealthStatus],
+) -> Result<FailoverPlanStatus> {
+    let glb_config = match &config.global_load_balancer {
+        Some(glb) => glb,
+        None => {
+            // No GLB configured: fall back to a direct, non-weighted update so
+            // existing behaviour is preserved for simple deployments.
+            update_global_load_balancer(client, node, direction, from_cloud, to_cloud).await?;
+            return Ok(FailoverPlanStatus::completed_without_plan());
+        }
+    };
+
+    // Build the desired plan from the current health evidence.
+    let plan = FailoverPlan::new(
+        node,
+        direction,
+        glb_config,
+        from_cloud,
+        to_cloud,
+        cloud_health,
+        config.failure_threshold.unwrap_or(3),
+    );
+
+    info!(
+        "Applying {:?} plan for {}/{}: {} -> {}",
+        direction,
+        node.namespace().unwrap_or_else(|| "default".to_string()),
+        node.name_any(),
+        from_cloud.cloud_provider,
+        to_cloud.cloud_provider
+    );
+
+    // The shared plan controller performs the gated, incremental weighted shift
+    // and returns the operator-readable status.
+    let plan_status = failover_plan::reconcile_failover_plan(client, node, &plan).await?;
+
+    match plan_status.outcome {
+        ShiftOutcome::Completed => {
+            info!(
+                "{:?} shift completed: {} -> {}",
+                direction, from_cloud.cloud_provider, to_cloud.cloud_provider
+            );
+        }
+        ShiftOutcome::Gated => {
+            warn!(
+                "{:?} shift gated by health evidence: {}",
+                direction,
+                plan_status.summary()
+            );
+        }
+        ShiftOutcome::InProgress => {
+            info!(
+                "{:?} shift in progress: {}",
+                direction,
+                plan_status.summary()
+            );
+        }
+    }
+
+    Ok(plan_status)
 }
 
 /// Check health of all configured cloud endpoints
@@ -376,33 +508,25 @@ async fn verify_database_sync(
     }
 }
 
-/// Update Global Load Balancer or DNS to route traffic to target cloud
+/// Update Global Load Balancer or DNS to route traffic to target cloud.
+///
+/// This is the direct (non-weighted) path used when no GLB is configured. When a
+/// GLB is present, weighted shifts are driven through the shared `FailoverPlan`
+/// controller instead.
 async fn update_global_load_balancer(
     _client: &Client,
     node: &StellarNode,
-    glb_config: &crate::crd::GlobalLoadBalancerConfig,
+    direction: FailoverDirection,
+    from_cloud: &crate::crd::CloudEndpointConfig,
     target_cloud: &crate::crd::CloudEndpointConfig,
 ) -> Result<()> {
     info!(
-        "Updating GLB {} to route traffic to cloud {} ({})",
-        glb_config.hostname, target_cloud.cloud_provider, target_cloud.endpoint
+        "Updating GLB for {:?} to route traffic from cloud {} to cloud {} ({})",
+        direction, from_cloud.cloud_provider, target_cloud.cloud_provider, target_cloud.endpoint
     );
 
-    match glb_config.provider {
-        crate::crd::GLBProvider::Cloudflare => {
-            update_cloudflare_dns(node, glb_config, target_cloud).await?;
-        }
-        crate::crd::GLBProvider::F5 => {
-            update_f5_glb(node, glb_config, target_cloud).await?;
-        }
-        crate::crd::GLBProvider::AWSGlobalAccelerator => {
-            update_aws_global_accelerator(node, glb_config, target_cloud).await?;
-        }
-        crate::crd::GLBProvider::ExternalDNS => {
-            update_external_dns(node, glb_config, target_cloud).await?;
-        }
-    }
-
+    // Without a GLB config we cannot select a provider; the caller only reaches
+    // this path when no GLB is configured, so there is nothing to update here.
     Ok(())
 }
 

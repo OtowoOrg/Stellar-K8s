@@ -1,0 +1,47 @@
+# AppArmor configuration details: docs/production-security-hardening.md
+#
+# AppArmor annotations are OPT-IN and DISABLED by default (Issue #1555).
+# The operator only emits the container.apparmor.security.beta.kubernetes.io
+# annotation on the pods it manages when STELLAR_APPARMOR_ENABLED=true.
+#
+# When STELLAR_APPARMOR_ENABLED is unset or "false" (the default), no AppArmor
+# annotation is added, so pods start on hosts without AppArmor (e.g. kind,
+# Amazon Linux 2023) without being rejected by pod security admission.
+#
+# Enable this only on hosts that actually have AppArmor available and loaded
+# (e.g. Ubuntu). The annotation shown below on the operator Deployment itself
+# is only an illustration of what the operator will add to the pods it manages
+# when enabled; it is not required for the operator to function.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stellar-operator-apparmor
+  namespace: stellar-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stellar-operator
+      app.kubernetes.io/instance: apparmor-sample
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: stellar-operator
+        app.kubernetes.io/instance: apparmor-sample
+      # Illustration only: this is the annotation the operator will add to the
+      # pods it manages when STELLAR_APPARMOR_ENABLED=true. Remove it if you do
+      # not want AppArmor applied to the operator pod itself.
+      annotations:
+        container.apparmor.security.beta.kubernetes.io/stellar-operator: runtime/default
+    spec:
+      containers:
+        - name: stellar-operator
+          image: ghcr.io/stellar/stellar-k8s:latest
+          args:
+            - run
+            - --namespace=stellar-system
+          env:
+            # Opt-in: set to "true" to have the operator emit AppArmor
+            # annotations on managed pods. Defaults to "false" (off).
+            - name: STELLAR_APPARMOR_ENABLED
+              value: "true"

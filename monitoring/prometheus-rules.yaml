@@ -1,0 +1,282 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# monitoring/prometheus-rules.yaml
+# Prometheus recording and alerting rules for Stellar-K8s operator and Stellar Core
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-core-metrics
+  namespace: stellar-system
+spec:
+  groups:
+    # ────────────────────────────────────────────────────────────────────
+    # Stellar Core TPS and Throughput Metrics
+    # ────────────────────────────────────────────────────────────────────
+    - name: stellar_core_tps
+      interval: 30s
+      rules:
+        # Recording rules for TPS aggregation
+        - record: stellar:core:tps:5m
+          expr: rate(stellar_core_transactions_total[5m])
+          labels:
+            interval: "5m"
+        
+        - record: stellar:core:tps:1h
+          expr: rate(stellar_core_transactions_total[1h])
+          labels:
+            interval: "1h"
+        
+        - record: stellar:core:throughput:bytes:5m
+          expr: rate(stellar_core_bytes_processed_total[5m])
+          labels:
+            interval: "5m"
+        
+        # Alert for low TPS
+        - alert: StellarCoreLowTPS
+          expr: stellar:core:tps:5m < 100
+          for: 5m
+          labels:
+            severity: warning
+            component: stellar-core
+          annotations:
+            summary: "Stellar Core TPS dropped below threshold"
+            description: "{{ $labels.instance }} - TPS: {{ $value | humanize }} (threshold: 100)"
+        
+        # Alert for TPS spike
+        - alert: StellarCoreTpsPeak
+          expr: stellar:core:tps:5m > 5000
+          for: 2m
+          labels:
+            severity: info
+            component: stellar-core
+          annotations:
+            summary: "High TPS detected"
+            description: "{{ $labels.instance }} - TPS: {{ $value | humanize }}"
+
+    # ────────────────────────────────────────────────────────────────────
+    # Stellar Core Ledger Lag Metrics
+    # ────────────────────────────────────────────────────────────────────
+    - name: stellar_core_ledger
+      interval: 30s
+      rules:
+        # Recording rules for ledger lag
+        - record: stellar:core:ledger:lag_seconds
+          expr: time() - (stellar_core_ledger_close_time / 1000)
+          labels:
+            metric_type: "lag"
+        
+        - record: stellar:core:ledger:lag:p95
+          expr: histogram_quantile(0.95, rate(stellar_core_ledger_lag_seconds_bucket[5m]))
+          labels:
+            percentile: "p95"
+        
+        - record: stellar:core:ledger:lag:p99
+          expr: histogram_quantile(0.99, rate(stellar_core_ledger_lag_seconds_bucket[5m]))
+          labels:
+            percentile: "p99"
+        
+        - record: stellar:core:ledger:height:delta
+          expr: delta(stellar_core_ledger_sequence[1m])
+        
+        # Alert for ledger lag
+        - alert: StellarCoreLedgerLag
+          expr: stellar:core:ledger:lag_seconds > 60
+          for: 2m
+          labels:
+            severity: warning
+            component: stellar-core
+          annotations:
+            summary: "Stellar Core ledger lag exceeded threshold"
+            description: "{{ $labels.instance }} - Lag: {{ $value | humanizeDuration }} (threshold: 1m)"
+        
+        - alert: StellarCoreLedgerStalled
+          expr: rate(stellar_core_ledger_sequence[5m]) == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: stellar-core
+          annotations:
+            summary: "Stellar Core ledger is not advancing"
+            description: "{{ $labels.instance }} - Ledger sequence not increasing"
+
+    # ────────────────────────────────────────────────────────────────────
+    # Stellar Core Node Health Metrics
+    # ────────────────────────────────────────────────────────────────────
+    - name: stellar_core_node_health
+      interval: 30s
+      rules:
+        # Recording rules for node state
+        - record: stellar:core:node:is_synced
+          expr: stellar_core_is_synced > 0
+        
+        - record: stellar:core:node:is_validator
+          expr: stellar_core_is_validator > 0
+        
+        - record: stellar:core:node:quorum_intact
+          expr: stellar_core_quorum_intact > 0
+        
+        - record: stellar:core:node:queue_depth
+          expr: stellar_core_work_queue_depth_bytes
+        
+        - record: stellar:core:node:memory:usage
+          expr: process_resident_memory_bytes{job="stellar-core"} / 1024 / 1024
+          labels:
+            unit: "MB"
+        
+        - record: stellar:core:node:cpu:usage_percent
+          expr: rate(process_cpu_seconds_total{job="stellar-core"}[5m]) * 100
+        
+        - record: stellar:core:node:connections:incoming
+          expr: stellar_core_connection_count{direction="in"}
+        
+        - record: stellar:core:node:connections:outgoing
+          expr: stellar_core_connection_count{direction="out"}
+        
+        # Alerts for node health
+        - alert: StellarCoreNotSynced
+          expr: stellar:core:node:is_synced == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: stellar-core
+          annotations:
+            summary: "Stellar Core is not synced with network"
+            description: "{{ $labels.instance }} - Node is out of sync. Check logs for synchronization errors."
+        
+        - alert: StellarCoreQuorumNotIntact
+          expr: stellar:core:node:quorum_intact == 0
+          for: 2m
+          labels:
+            severity: warning
+            component: stellar-core
+          annotations:
+            summary: "Stellar Core quorum is not intact"
+            description: "{{ $labels.instance }} - Quorum health compromised. Check peer connectivity."
+        
+        - alert: StellarCoreHighMemoryUsage
+          expr: stellar:core:node:memory:usage > 4000
+          for: 5m
+          labels:
+            severity: warning
+            component: stellar-core
+          annotations:
+            summary: "Stellar Core memory usage is high"
+            description: "{{ $labels.instance }} - Memory: {{ $value | humanize }}MB (threshold: 4000MB)"
+        
+        - alert: StellarCoreHighCpuUsage
+          expr: stellar:core:node:cpu:usage_percent > 80
+          for: 5m
+          labels:
+            severity: warning
+            component: stellar-core
+          annotations:
+            summary: "Stellar Core CPU usage is high"
+            description: "{{ $labels.instance }} - CPU: {{ $value | humanizePercentage }} (threshold: 80%)"
+        
+        - alert: StellarCoreQueueDepthHigh
+          expr: stellar:core:node:queue_depth > 1073741824
+          for: 2m
+          labels:
+            severity: warning
+            component: stellar-core
+          annotations:
+            summary: "Stellar Core work queue is building up"
+            description: "{{ $labels.instance }} - Queue depth: {{ $value | humanize1024 }}B"
+
+    # ────────────────────────────────────────────────────────────────────
+    # Kubernetes Operator Health Metrics
+    # ────────────────────────────────────────────────────────────────────
+    - name: stellar_operator_health
+      interval: 30s
+      rules:
+        # Recording rules for operator metrics
+        - record: stellar:operator:reconciliation:duration:p95
+          expr: histogram_quantile(0.95, rate(stellar_operator_reconciliation_duration_seconds_bucket[5m]))
+        
+        - record: stellar:operator:reconciliation:duration:p99
+          expr: histogram_quantile(0.99, rate(stellar_operator_reconciliation_duration_seconds_bucket[5m]))
+        
+        - record: stellar:operator:reconciliation:errors:5m
+          expr: rate(stellar_operator_reconciliation_errors_total[5m])
+        
+        - record: stellar:operator:reconciliation:success:rate
+          expr: rate(stellar_operator_reconciliation_success_total[5m]) / (rate(stellar_operator_reconciliation_total[5m]) + 1e-6)
+        
+        - record: stellar:operator:crd:count
+          expr: stellar_operator_crd_count_total
+        
+        # Alerts for operator health
+        - alert: StellarOperatorReconciliationError
+          expr: rate(stellar_operator_reconciliation_errors_total[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            component: operator
+          annotations:
+            summary: "Stellar operator reconciliation errors detected"
+            description: "{{ $labels.instance }} - Error rate: {{ $value | humanize }}/s"
+        
+        - alert: StellarOperatorSlowReconciliation
+          expr: stellar:operator:reconciliation:duration:p99 > 30
+          for: 5m
+          labels:
+            severity: warning
+            component: operator
+          annotations:
+            summary: "Stellar operator reconciliation is slow"
+            description: "{{ $labels.instance }} - P99 duration: {{ $value | humanizeDuration }}"
+        
+        - alert: StellarOperatorPodCrashLooping
+          expr: rate(kube_pod_container_status_restarts_total{pod=~"stellar-operator.*"}[15m]) > 0.1
+          for: 5m
+          labels:
+            severity: critical
+            component: operator
+          annotations:
+            summary: "Stellar operator pod is crash looping"
+            description: "{{ $labels.pod }} - Restart rate: {{ $value | humanize }}/min"
+
+    # ────────────────────────────────────────────────────────────────────
+    # General Cluster Health Metrics
+    # ────────────────────────────────────────────────────────────────────
+    - name: stellar_cluster_health
+      interval: 30s
+      rules:
+        - record: stellar:cluster:nodes:ready
+          expr: count(kube_node_status_condition{condition="Ready",status="true"})
+        
+        - record: stellar:cluster:pods:running
+          expr: count(kube_pod_info{namespace="stellar-system",pod=~"stellar-.*"})
+        
+        - record: stellar:cluster:disk:usage:percent
+          expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100
+        
+        - alert: KubernetesNodeNotReady
+          expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: kubernetes
+          annotations:
+            summary: "Kubernetes node is not ready"
+            description: "{{ $labels.node }} - Node status: {{ $value }}"
+        
+        - alert: DiskPressure
+          expr: stellar:cluster:disk:usage:percent > 85
+          for: 5m
+          labels:
+            severity: warning
+            component: kubernetes
+          annotations:
+            summary: "Disk usage is high"
+            description: "{{ $labels.device }} - Usage: {{ $value | humanizePercentage }}"

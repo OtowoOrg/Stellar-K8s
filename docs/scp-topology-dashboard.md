@@ -6,34 +6,7 @@ The Stellar-K8s operator includes a real-time visualization of the Stellar Conse
 
 ## Enabling the Feature
 
-The SCP topology endpoints are always available when the operator is running. Set the `enable_scp_topology` feature flag to `"true"` in the `stellar-operator-config` ConfigMap to signal to the operator that topology polling should be prioritized:
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: stellar-operator-config
-  namespace: stellar-system
-data:
-  enable_scp_topology: "true"
-```
-
-### Via Helm
-
-Set the flag in your `values.yaml`:
-
-```yaml
-featureFlags:
-  enableScpTopology: "true"
-```
-
-Or pass it on the CLI:
-
-```bash
-helm upgrade stellar-operator charts/stellar-operator \
-  --namespace stellar-system \
-  --set featureFlags.enableScpTopology=true
-```
+The SCP topology endpoints are always available when the operator is running — no feature flag is required. Open the operator dashboard (or call the topology API routes) to visualize the quorum graph.
 
 ---
 
@@ -199,6 +172,7 @@ In a streaming WebSocket session, the client-side `StallTracker` also flags node
 
 ## Related Documentation
 
+- [SCP Consensus Topology and Monitoring](scp-consensus-topology-and-monitoring.md) — comprehensive SCP topology and monitoring guide
 - [API Reference](api-reference.md) — full `StellarNode` CRD fields including `validatorConfig.quorumSet`
-- [Monitoring & Observability](../README.md#monitoring--observability) — Prometheus metrics and Grafana dashboards
+- [Monitoring & Observability](https://github.com/OtowoOrg/Stellar-K8s/blob/main/README.md#monitoring--observability) — Prometheus metrics and Grafana dashboards
 - [Peer Discovery](peer-discovery.md) — automatic peer discovery for validator clusters

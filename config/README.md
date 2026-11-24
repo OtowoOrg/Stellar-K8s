@@ -18,6 +18,7 @@ config/
 │   ├── stellarbenchmark-crd.yaml
 │   ├── stellaraiops-crd.yaml
 │   ├── stellarbenchmarkreport-crd.yaml
+│   ├── maintenanceplan-crd.yaml
 ├── samples/          # Example resources for testing and reference
 ├── manifests/        # OLM ClusterServiceVersion bases and Gatekeeper policies
 │   ├── bases/        # CSV base for operator-sdk bundle generation
@@ -116,8 +117,9 @@ make bundle VERSION=0.1.0
 operator-sdk bundle validate ./bundle
 ```
 
-The generated files are `bundle/manifests/stellar-operator.clusterserviceversion.yaml` and
-`bundle/metadata/annotations.yaml`. Commit them alongside any CSV base or CRD change.
+The whole `bundle/` directory (including `metadata/annotations.yaml` and the CSV) is fully
+generated and **gitignored** — regenerate it locally with `make bundle` before running
+`operator-sdk bundle validate` or `make bundle-build`. Do not commit bundle output.
 
 ---
 
@@ -127,6 +129,13 @@ The generated files are `bundle/manifests/stellar-operator.clusterserviceversion
 
 ```bash
 kubectl apply -f config/crd/
+```
+
+Benchmark workloads require the canonical benchmark CRDs (not bundled in the Helm chart):
+
+```bash
+kubectl apply -f config/crd/stellarbenchmark-crd.yaml
+kubectl apply -f config/crd/stellarbenchmarkreport-crd.yaml
 ```
 
 ### Apply Sample Resources

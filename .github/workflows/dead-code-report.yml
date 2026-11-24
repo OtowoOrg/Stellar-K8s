@@ -1,0 +1,29 @@
+name: Dead Code Report
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dead-code-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install bats
+        run: sudo apt-get update && sudo apt-get install -y bats
+
+      - name: Run dead-code-report bats suite
+        run: bats scripts/tests/dead-code-report.bats
+
+      - name: Generate dead code report
+        run: bash scripts/dead-code-report.sh
+
+      - name: Upload dead code report
+        uses: actions/upload-artifact@v7
+        with:
+          name: dead-code-report-${{ github.sha }}
+          path: target/reports/dead-code-report.md
+          retention-days: 14

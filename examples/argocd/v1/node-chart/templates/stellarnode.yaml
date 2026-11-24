@@ -1,0 +1,56 @@
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: {{ if eq .Values.nodeType "Validator" }}validator-testnet{{ else }}soroban-rpc-testnet{{ end }}
+  labels:
+    app.kubernetes.io/name: stellar-node-gitops
+    app.kubernetes.io/part-of: stellar-k8s
+    stellar.org/gitops-version: v1
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  nodeType: {{ .Values.nodeType }}
+  network: {{ .Values.network }}
+  version: {{ .Values.version | quote }}
+  replicas: {{ if eq .Values.nodeType "Validator" }}1{{ else }}{{ .Values.soroban.replicas | default .Values.replicas }}{{ end }}
+  podAntiAffinity: Soft
+  resources:
+    requests:
+      cpu: {{ .Values.resources.requests.cpu | quote }}
+      memory: {{ .Values.resources.requests.memory | quote }}
+    limits:
+      cpu: {{ .Values.resources.limits.cpu | quote }}
+      memory: {{ .Values.resources.limits.memory | quote }}
+  storage:
+    storageClass: {{ .Values.storageClass | quote }}
+    size: {{ .Values.storageSize | quote }}
+    retentionPolicy: {{ .Values.retentionPolicy }}
+{{- if eq .Values.nodeType "Validator" }}
+  validatorConfig:
+    seedSecretRef: {{ .Values.seedSecret.name | quote }}
+    seedSecretSource:
+      localRef:
+        name: {{ .Values.seedSecret.name | quote }}
+        key: STELLAR_CORE_SEED
+{{- if .Values.sidecarImage }}
+    sidecarImage: {{ .Values.sidecarImage | quote }}
+{{- else }}
+    sidecarImage: {{ printf "ghcr.io/stellar/stellar-k8s:%s" .Values.version | quote }}
+{{- end }}
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - https://history.stellar.org/prd/core-testnet/core_testnet_001
+{{- else }}
+  sorobanConfig:
+    stellarCoreUrl: {{ .Values.soroban.stellarCoreUrl | quote }}
+    enablePreflight: true
+    maxEventsPerRequest: {{ .Values.soroban.maxEventsPerRequest }}
+    captiveCoreStructuredConfig:
+      logLevel: info
+      historyArchiveUrls:
+        - {{ .Values.soroban.historyArchiveUrl | quote }}
+  autoscaling:
+    minReplicas: {{ .Values.soroban.minReplicas }}
+    maxReplicas: {{ .Values.soroban.maxReplicas }}
+    targetCpuUtilizationPercentage: {{ .Values.soroban.targetCPU }}
+{{- end }}

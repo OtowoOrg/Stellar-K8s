@@ -1,18 +1,14 @@
 //! Example admission policy hook using registry admission checks.
-
-use stellar_k8s::controller::check_admission;
-use stellar_k8s::crd::stellar_registry::{StellarRegistry, VulnerabilitySummary};
-
-pub fn validate_image(registry: &StellarRegistry, image: &str, signed: bool) -> Result<(), String> {
-    check_admission(registry, image, signed, &VulnerabilitySummary::default())
-}
+//!
+//! Call [`check_admission`] directly — there is no thin `validate_image` wrapper.
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use kube::core::ObjectMeta;
+    use stellar_k8s::controller::check_admission;
     use stellar_k8s::crd::stellar_registry::{
-        AdmissionPolicy, RegistryMirror, ScanningConfig, SigningConfig, StellarRegistrySpec,
+        AdmissionPolicy, ScanningConfig, SigningConfig, StellarRegistry, StellarRegistrySpec,
+        VulnerabilitySummary,
     };
 
     fn sample_registry() -> StellarRegistry {
@@ -41,6 +37,12 @@ mod tests {
 
     #[test]
     fn allows_signed_image() {
-        assert!(validate_image(&sample_registry(), "app:v1", true).is_ok());
+        assert!(check_admission(
+            &sample_registry(),
+            "app:v1",
+            true,
+            &VulnerabilitySummary::default()
+        )
+        .is_ok());
     }
 }

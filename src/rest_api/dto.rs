@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Data Transfer Objects for the REST API
 //!
 //! These types are used for API requests and responses.
@@ -39,21 +51,6 @@ pub struct NodeDetailResponse {
     pub created_at: Option<String>,
 }
 
-/// Request to create a node (simplified).
-/// Reserved for the `POST /api/v1/nodes` endpoint which is not yet wired into
-/// the router. The struct is kept here alongside the other DTOs so the schema
-/// stays close to its consumers.
-#[allow(dead_code)] // endpoint not yet routed; kept for upcoming POST /nodes implementation
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateNodeRequest {
-    pub name: String,
-    pub namespace: String,
-    pub node_type: NodeType,
-    pub network: StellarNetwork,
-    pub version: String,
-}
-
 /// Health check response
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
@@ -68,21 +65,12 @@ pub struct LeaderResponse {
     pub holder_id: String,
 }
 
-/// Error response
-#[derive(Debug, Serialize)]
-pub struct ErrorResponse {
-    pub error: String,
-    pub message: String,
-}
-
-impl ErrorResponse {
-    pub fn new(error: &str, message: &str) -> Self {
-        Self {
-            error: error.to_string(),
-            message: message.to_string(),
-        }
-    }
-}
+/// Standardised API Error Codes and the structured `ErrorResponse` envelope
+/// (issue #1282) now live in [`crate::error`] so they can be shared between
+/// `rest_api` and `api_gateway` (issue #1393) without either module
+/// depending on the other. Re-exported here so existing `super::dto::*`
+/// imports throughout `rest_api` keep working unchanged.
+pub use crate::error::{ApiErrorCode, ErrorResponse};
 
 /// Generic probe response used by /healthz, /readyz, /livez
 #[derive(Debug, Serialize)]

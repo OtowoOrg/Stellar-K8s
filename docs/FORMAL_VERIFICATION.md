@@ -414,12 +414,12 @@ tlc -deadlock -fair StellarReconciler.tla
 
 | TLA+ Action | Rust Implementation | Evidence |
 |------------|-------------------|----------|
-| `SpecValidationSucceeds` | `node.spec.validate()` in `apply_stellar_node` | [src/crd/stellar_node.rs](../src/crd/stellar_node.rs#L691) |
-| `ResourcesCreated` | `resources::ensure_*` calls | [src/controller/reconciler.rs#L400-500](../src/controller/reconciler.rs#L400) |
-| `HealthCheckPasses` | `health::check_node_sync()` | [src/controller/health.rs](../src/controller/health.rs) |
-| `CleanupServiceMesh` | `service_mesh::delete_service_mesh_resources()` | [src/controller/service_mesh.rs#L350](../src/controller/service_mesh.rs#L350) |
-| `CleanupResources` | Deletion logic in `cleanup_stellar_node` | [src/controller/reconciler.rs#L1100-1120](../src/controller/reconciler.rs#L1100) |
-| `CleanupComplete` | Finalizer removal | [src/controller/finalizers.rs](../src/controller/finalizers.rs) |
+| `SpecValidationSucceeds` | `node.spec.validate()` in `apply_stellar_node` | [src/crd/stellar_node.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/crd/stellar_node.rs#L691) |
+| `ResourcesCreated` | `resources::ensure_*` calls | [src/controller/reconciler.rs#L400-500](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/reconciler.rs#L400) |
+| `HealthCheckPasses` | `health::check_node_sync()` | [src/controller/health.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/health.rs) |
+| `CleanupServiceMesh` | `service_mesh::delete_service_mesh_resources()` | [src/controller/service_mesh.rs#L350](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/service_mesh.rs#L350) |
+| `CleanupResources` | Deletion logic in `cleanup_stellar_node` | [src/controller/reconciler.rs#L1100-1120](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/reconciler.rs#L1100) |
+| `CleanupComplete` | Finalizer removal | [src/controller/finalizers.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/finalizers.rs) |
 
 ### Test Coverage Mapping
 

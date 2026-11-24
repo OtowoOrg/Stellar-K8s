@@ -12,7 +12,8 @@
   Enabled when featureFlags.enableDr == "true" AND crossRegion.enabled == true.
 */ -}}
 
-{{- if and .Values.featureFlags.enableDr .Values.crossRegion.enabled }}
+{{- $crossRegion := .Values.crossRegion | default dict }}
+{{- if and .Values.featureFlags.enableDr $crossRegion.enabled }}
 
 # ─── ClusterRole: ledger-state ConfigMap access ──────────────────────────────
 apiVersion: rbac.authorization.k8s.io/v1
@@ -50,7 +51,7 @@ subjects:
     name: {{ include "stellar-operator.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 ---
-{{- range .Values.crossRegion.peerClusters }}
+{{- range $crossRegion.peerClusters }}
 {{- if .enabled }}
 # ─── ExternalName Service: bridge to peer cluster {{ .clusterId }} ────────────
 # This service lets standby operators resolve the primary cluster's
@@ -111,7 +112,7 @@ spec:
         - port: 53
           protocol: TCP
     # Allow reaching peer cluster bridges (cross-region)
-    {{- range .Values.crossRegion.peerClusters }}
+    {{- range $crossRegion.peerClusters }}
     {{- if .enabled }}
     - ports:
         - port: {{ .port | default 11625 }}

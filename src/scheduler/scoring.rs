@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 use anyhow::Result;
 use k8s_openapi::api::core::v1::{Node, Pod};
 use kube::{Client, ResourceExt};
@@ -31,7 +43,12 @@ pub async fn score_nodes<'a>(
         return score_nodes_carbon_aware(pod, candidates, client).await;
     }
 
-    // 3. Traditional topology-based scoring
+    // 3. Capacity-class preference (best-effort → spot, critical → on-demand)
+    // among nodes that already passed the hard filter. Topology scoring is
+    // the fallback when capacity scores cannot distinguish candidates.
+    if let Some(node) = super::capacity::pick_preferred_k8s_node(pod, candidates) {
+        return Ok(Some(node));
+    }
     score_nodes_topology_based(pod, candidates, client).await
 }
 
@@ -450,6 +467,19 @@ async fn find_peers(pod: &Pod, client: &Client) -> Result<Vec<Pod>> {
         .into_iter()
         .filter(|p| p.metadata.name.as_deref() != Some(my_name))
         .collect())
+}
+
+/// Extract tenant ID from pod metadata or labels for fair-share scheduling.
+pub fn extract_tenant_id(pod: &Pod) -> Option<String> {
+    pod.metadata
+        .labels
+        .as_ref()
+        .and_then(|l| {
+            l.get("tenant.stellar.org/id")
+                .or_else(|| l.get("stellar.org/tenant"))
+                .or_else(|| l.get("tenant"))
+        })
+        .cloned()
 }
 
 #[cfg(test)]
@@ -877,6 +907,38 @@ threshold = 3"#;
         assert!(
             latency_ms <= threshold_ms,
             "latency equal to threshold must be considered healthy"
+        );
+    }
+
+    #[test]
+    fn test_best_effort_prefers_spot_capacity() {
+        let spot = make_node("spot-1", vec![("node.kubernetes.io/lifecycle", "spot")]);
+        let on_demand = make_node("od-1", vec![("node.kubernetes.io/lifecycle", "on-demand")]);
+        let pod = make_pod(
+            "indexer",
+            vec![("stellar.org/workload-tier", "best-effort")],
+            vec![],
+        );
+        let chosen = super::super::capacity::pick_preferred_k8s_node(&pod, &[&on_demand, &spot]);
+        assert_eq!(
+            chosen.and_then(|n| n.metadata.name.clone()).as_deref(),
+            Some("spot-1")
+        );
+    }
+
+    #[test]
+    fn test_critical_prefers_on_demand_capacity() {
+        let spot = make_node("spot-1", vec![("node.kubernetes.io/lifecycle", "spot")]);
+        let on_demand = make_node("od-1", vec![("node.kubernetes.io/lifecycle", "on-demand")]);
+        let pod = make_pod(
+            "validator",
+            vec![("stellar.org/workload-tier", "critical")],
+            vec![],
+        );
+        let chosen = super::super::capacity::pick_preferred_k8s_node(&pod, &[&spot, &on_demand]);
+        assert_eq!(
+            chosen.and_then(|n| n.metadata.name.clone()).as_deref(),
+            Some("od-1")
         );
     }
 }

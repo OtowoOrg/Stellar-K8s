@@ -5,7 +5,9 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        args: [--allow-multiple-documents]
         exclude: ^charts/.*/templates/.*\.yaml$
+        args: [--allow-multiple-documents]
       - id: check-added-large-files
       - id: check-merge-conflict
 
@@ -33,9 +35,70 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+      # ── Static analysis gates (issues #1044, #1045, #1049) ──────────────
+      # See docs/development/static-analysis-gates.md
+      - id: shell-safety
+        name: shell safety gate (unsafe shell patterns)
+        entry: python3 scripts/check-shell-safety.py
+        language: system
+        files: '\.(sh|bash|bats)$'
+        pass_filenames: false
+
+      - id: validate-yaml-manifests
+        name: YAML manifest schema validation
+        entry: python3 scripts/validate-yaml-manifests.py
+        language: system
+        files: '\.(ya?ml)$'
+        pass_filenames: false
+
+      - id: k8s-manifest-crd-validation
+        name: Kubernetes manifest & CRD schema validation
+        entry: bash -c 'command -v python3 >/dev/null 2>&1 && python3 scripts/validate-k8s-manifests.py || python scripts/validate-k8s-manifests.py'
+        language: system
+        files: '^(config|charts|examples|bundle)/.*\.ya?ml$'
+        pass_filenames: false
+
+      - id: helm-drift
+        name: helm template drift detection
+        entry: bash scripts/check-helm-drift.sh
+        language: system
+        files: '^charts/.*'
+        pass_filenames: false
+
+      # Security-focused hooks
+      - id: cargo-deny
+        name: cargo deny (dependency security)
+        entry: cargo deny check
+        language: system
+        files: '(Cargo\.(toml|lock)|deny\.toml)$'
+        pass_filenames: false
+
+      - id: cargo-audit
+        name: cargo audit (vulnerability scan)
+        entry: bash -c 'cargo audit --version >/dev/null 2>&1 || echo "cargo-audit not installed, skipping"; cargo audit || echo "Security advisories found (check .cargo/audit.toml for justified exceptions)"'
+        language: system
+        files: '(Cargo\.(toml|lock)|\.cargo/audit\.toml)$'
+        pass_filenames: false
+
+      - id: check-security-sensitive
+        name: Check for security-sensitive content
+        entry: bash -c 'if grep -r -n -E "(password|secret|private_key|api_key)\s*=" --include="*.rs" --include="*.toml" --exclude-dir=target .; then echo "Potential hardcoded secrets found - please review"; exit 1; fi'
+        language: system
+        pass_filenames: false
+
+      # ── License header enforcement (issue #1286) ───────────────────────────
+      - id: license-headers
+        name: license header check
+        entry: python3 scripts/check-license-headers.py
+        language: system
+        files: '\.(rs|sh|ya?ml)$'
+        pass_filenames: false
+
   - repo: https://github.com/adrienverge/yamllint.git
     rev: v1.35.1
     hooks:
       - id: yamllint
         args: [-c=.yamllint.yml]
-        exclude: ^charts/.*/templates/.*\.yaml$
+        # Helm templates are Go templates, not YAML; the drift goldens under
+        # charts/*/rendered/ are generated helm output (issue #1045).
+        exclude: ^charts/.*/(templates/.*|rendered/.*)\.yaml$

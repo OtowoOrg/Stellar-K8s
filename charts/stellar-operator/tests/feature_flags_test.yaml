@@ -1,0 +1,57 @@
+suite: feature-flags configmap
+templates:
+  - templates/feature-flags-configmap.yaml
+
+tests:
+  - it: renders ConfigMap named stellar-operator-config
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: stellar-operator-config
+
+  - it: has correct app labels
+    asserts:
+      - isSubset:
+          path: metadata.labels
+          content:
+            app.kubernetes.io/name: stellar-operator
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: contains only the live enable_dr feature-flag key
+    asserts:
+      - isNotNull:
+          path: data.enable_dr
+      - isNull:
+          path: data.enable_cve_scanning
+      - isNull:
+          path: data.enable_read_pool
+      - isNull:
+          path: data.enable_peer_discovery
+      - isNull:
+          path: data.enable_archive_health
+      - isNull:
+          path: data.enable_soroban_metrics
+      - isNull:
+          path: data.enable_scp_topology
+
+  - it: defaults enable_dr to false
+    asserts:
+      - equal:
+          path: data.enable_dr
+          value: "false"
+
+  - it: accepts overridden enable_dr value
+    set:
+      featureFlags.enableDr: "true"
+    asserts:
+      - equal:
+          path: data.enable_dr
+          value: "true"
+
+  - it: renders in the release namespace
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE

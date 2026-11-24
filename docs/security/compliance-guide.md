@@ -120,7 +120,7 @@ In case of a security breach:
 - Detect anomalies through Prometheus alerts (e.g., unexpected outbound traffic from validator pods).
 
 ### Phase 2: Containment
-- Isolate the pod network immediately using a deny-all NetworkPolicy (see `operator-troubleshooting.md#security-incident-response-procedures`).
+- Isolate the pod network immediately using a deny-all NetworkPolicy (see [operator runbooks](../troubleshooting/operator-runbooks.md) and [diagnostic decision trees](../troubleshooting/diagnostic-decision-trees.md)).
 - Scale down suspected deployments to `0` if data theft is actively suspected.
 
 ### Phase 3: Eradication

@@ -1,0 +1,15 @@
+apiVersion: stellar.org/v1alpha1
+kind: InternalApiSchema
+metadata:
+  name: horizon-ledger-events
+  namespace: stellar-system
+spec:
+  subject: stellar.ledger.events
+  schemaVersion: 1
+  registryPath: /var/lib/stellar-k8s/schemas/registry.json
+  enforceCompatibility: true
+  consumers:
+    - name: horizon
+      clientReference: github.com/otowo/stellar-go/horizon@v1.0.0
+    - name: validator-gateway
+      clientReference: github.com/otowo/stellar-go/scp@v1.0.0

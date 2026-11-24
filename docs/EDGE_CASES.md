@@ -27,7 +27,7 @@ NoResourceLeak =>
 - System requeues but stays in unhealthy state (potential deadlock)
 
 ### Fix Applied
-**Location**: [src/controller/resources.rs](../src/controller/resources.rs) - `ensure_pvc` and `ensure_config_map`
+**Location**: [src/controller/resources.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/resources.rs) - `ensure_pvc` and `ensure_config_map`
 
 ```rust
 // Both operations must complete successfully before state transitions
@@ -67,7 +67,7 @@ ensure_service_mesh(client, node).await?;  // Before pod actually exists
 ```
 
 ### Fix Applied
-**Location**: [src/controller/reconciler.rs](../src/controller/reconciler.rs#L1031-1038) - Steps 1-12
+**Location**: [src/controller/reconciler.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/reconciler.rs#L1031-1038) - Steps 1-12
 
 ```rust
 // Step 1: Create infrastructure
@@ -120,7 +120,7 @@ if error_occurred {
 ```
 
 ### Fix Applied
-**Location**: [src/controller/reconciler.rs](../src/controller/reconciler.rs#L1107-1120) - Cleanup sequence
+**Location**: [src/controller/reconciler.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/reconciler.rs#L1107-1120) - Cleanup sequence
 
 ```rust
 pub(crate) async fn cleanup_stellar_node(
@@ -179,7 +179,7 @@ NoRaceConditions ==
 ```rust
 // BAD: Both paths could execute concurrently
 if deletion_requested {
-    cleanup_stellar_node().await?;  // Deleteing resources
+    cleanup_stellar_node().await?;  // Deleting resources
 }
 if spec_changed {
     apply_stellar_node().await?;    // Creating resources with new spec
@@ -187,7 +187,7 @@ if spec_changed {
 ```
 
 ### Fix Applied
-**Location**: [src/controller/reconciler.rs](../src/controller/reconciler.rs#L245-265) - Finalizer pattern
+**Location**: [src/controller/reconciler.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/reconciler.rs#L245-265) - Finalizer pattern
 
 ```rust
 finalizer(&api, STELLAR_NODE_FINALIZER, obj, |event| async {
@@ -231,7 +231,7 @@ HealthCheckCompletes ==
 - No idempotency: Retrying health check doesn't accumulate errors
 
 ### Fix Applied
-**Location**: [src/controller/health.rs](../src/controller/health.rs) - Health check implementation
+**Location**: [src/controller/health.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/health.rs) - Health check implementation
 
 ```rust
 pub async fn check_node_health(client: &Client, node: &StellarNode) -> Result<HealthStatus> {
@@ -258,7 +258,7 @@ pub async fn check_node_health(client: &Client, node: &StellarNode) -> Result<He
 - `requeu with Duration::from_secs(10)` gives node time to recover
 
 ### Related Code
-- [src/controller/archive_health.rs](../src/controller/archive_health.rs) - Archive health check with timeout
+- [src/controller/archive_health.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/archive_health.rs) - Archive health check with timeout
 - Tests: Health check timeout tests in reconciler_test.rs
 
 ---
@@ -285,7 +285,7 @@ client.create(DestinationRule::from(circuit_breaker)).await?;
 ```
 
 ### Fix Applied
-**Location**: [src/crd/stellar_node.rs](../src/crd/stellar_node.rs#L691-745) - `validate_service_mesh()`
+**Location**: [src/crd/stellar_node.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/crd/stellar_node.rs#L691-745) - `validate_service_mesh()`
 
 ```rust
 pub fn validate_service_mesh(service_mesh: &ServiceMeshConfig) -> Result<(), Vec<SpecValidationError>> {
@@ -344,7 +344,7 @@ Two clusters (A and B) have overlapping service mesh configurations. Service mes
 ### Mitigation Through Design
 While not explicitly proven in the state machine (multi-cluster is out of scope), the design prevents conflicts:
 
-**Location**: [src/controller/service_mesh.rs](../src/controller/service_mesh.rs) - Resource ownership
+**Location**: [src/controller/service_mesh.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/service_mesh.rs) - Resource ownership
 
 ```rust
 pub async fn ensure_peer_authentication(client: &Client, node: &StellarNode) -> Result<()> {
@@ -395,7 +395,7 @@ service_mesh::delete_service_mesh_resources(client, node).await?;  // Network er
 ```
 
 ### Fix Applied
-**Location**: [src/controller/reconciler.rs](../src/controller/reconciler.rs#L1108-1120)
+**Location**: [src/controller/reconciler.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/reconciler.rs#L1108-1120)
 
 ```rust
 pub(crate) async fn cleanup_stellar_node(
@@ -487,7 +487,7 @@ spawn_async(apply_resources(spec)).await;  // Outdated spec used
 ```
 
 ### Fix Applied
-**Location**: [src/controller/reconciler.rs](../src/controller/reconciler.rs#L265-285) - Per-reconciliation snapshot
+**Location**: [src/controller/reconciler.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/reconciler.rs#L265-285) - Per-reconciliation snapshot
 
 ```rust
 #[instrument(skip(ctx), fields(name = %obj.name_any(), namespace = obj.namespace()))]
@@ -524,7 +524,7 @@ Node creation requires resources that exceed namespace quotas. CreateDeployment 
 **Property**: `ResourceCreationCompletes` - Must reach a terminal state
 
 ### Implementation
-**Location**: [src/controller/resources.rs](../src/controller/resources.rs)
+**Location**: [src/controller/resources.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/resources.rs)
 
 ```rust
 pub async fn ensure_deployment(client: &Client, node: &StellarNode) -> Result<()> {
@@ -578,7 +578,7 @@ if node.status.unwrap_or_default().state == "Running" {
 ```
 
 ### Fix Applied
-**Location**: [src/controller/reconciler.rs](../src/controller/reconciler.rs#L300-350) - Always re-validate
+**Location**: [src/controller/reconciler.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/reconciler.rs#L300-350) - Always re-validate
 
 ```rust
 pub(crate) async fn apply_stellar_node(
@@ -637,10 +637,10 @@ pub(crate) async fn apply_stellar_node(
 
 ## Code References
 
-- Main reconciler: [src/controller/reconciler.rs](../src/controller/reconciler.rs)
-- Service mesh: [src/controller/service_mesh.rs](../src/controller/service_mesh.rs)
-- Health checks: [src/controller/health.rs](../src/controller/health.rs)
-- Validation: [src/crd/stellar_node.rs](../src/crd/stellar_node.rs#L691)
-- Tests: [src/controller/reconciler_test.rs](../src/controller/reconciler_test.rs)
+- Main reconciler: [src/controller/reconciler.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/reconciler.rs)
+- Service mesh: [src/controller/service_mesh.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/service_mesh.rs)
+- Health checks: [src/controller/health.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/health.rs)
+- Validation: [src/crd/stellar_node.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/crd/stellar_node.rs#L691)
+- Tests: [src/controller/reconciler_test.rs](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/reconciler_test.rs)
 - Formal model: StellarReconciler.tla
 

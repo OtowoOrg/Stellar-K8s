@@ -149,7 +149,7 @@ If your cluster supports the CrossNamespaceVolumeDataSource feature and the snap
 
 ## YAML examples
 
-See [examples/validator-volume-snapshots.yaml](../examples/validator-volume-snapshots.yaml) for complete examples: a Validator with snapshot schedule, and a second Validator that restores from a snapshot.
+See [examples/validator-volume-snapshots.yaml](https://github.com/OtowoOrg/Stellar-K8s/blob/main/examples/validator-volume-snapshots.yaml) for complete examples: a Validator with snapshot schedule, and a second Validator that restores from a snapshot.
 
 ## References
 

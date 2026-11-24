@@ -1,0 +1,136 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+groups:
+  - name: stellar_error_budget_slos
+    interval: 1m
+    rules:
+      # Availability SLO: 99.9% successful requests over 30d
+      - record: stellar:slo:api_availability:ratio
+        expr: |
+          sum(rate(http_requests_total{status!~"5..",job="stellar-api"}[5m]))
+          /
+          clamp_min(sum(rate(http_requests_total{job="stellar-api"}[5m])), 1)
+        labels:
+          slo: api-availability
+          service: stellar-api
+
+      # Latency SLO: 99.5% under 500ms p95-equivalent threshold
+      - record: stellar:slo:api_latency:ratio
+        expr: |
+          sum(rate(http_request_duration_seconds_bucket{le="0.5",job="stellar-api"}[5m]))
+          /
+          clamp_min(sum(rate(http_request_duration_seconds_bucket{job="stellar-api"}[5m])), 1)
+        labels:
+          slo: api-latency
+          service: stellar-api
+
+      # Error-rate SLO: 99.9% requests without 5xx failures
+      - record: stellar:slo:api_error_rate:ratio
+        expr: |
+          1 - (
+            sum(rate(http_requests_total{status=~"5..",job="stellar-api"}[5m]))
+            /
+            clamp_min(sum(rate(http_requests_total{job="stellar-api"}[5m])), 1)
+          )
+        labels:
+          slo: api-error-rate
+          service: stellar-api
+
+      - alert: StellarAPISLOAvailabilityBurn
+        expr: |
+          stellar:slo:api_availability:ratio < 0.999
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          slo: api-availability
+        annotations:
+          summary: "API availability error budget is burning"
+          description: |
+            Availability has dropped below the 99.9% target for the API service.
+            Current successful ratio is {{ $value | humanizePercentage }}.
+
+      - alert: StellarAPISLOLatencyBurn
+        expr: |
+          stellar:slo:api_latency:ratio < 0.995
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          slo: api-latency
+        annotations:
+          summary: "API latency error budget is burning"
+          description: |
+            Latency SLO has dropped below the 99.5% target for the API service.
+            Current fast-response ratio is {{ $value | humanizePercentage }}.
+
+      - alert: StellarAPISLOErrorBudgetCritical
+        expr: |
+          stellar:slo:api_error_rate:ratio < 0.999
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          slo: api-error-rate
+        annotations:
+          summary: "API error budget exhausted for 5xx errors"
+          description: |
+            The API error budget has been consumed. Error-rate compliance is now below 99.9%.
+            Current ratio: {{ $value | humanizePercentage }}.
+
+      - alert: StellarAPIFastBurnRate
+        expr: |
+          (1 - stellar:slo:api_availability:ratio) > 0.05
+          or (1 - stellar:slo:api_latency:ratio) > 0.03
+          or (1 - stellar:slo:api_error_rate:ratio) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          burn_rate: fast
+        annotations:
+          summary: "Fast burn rate detected on API SLO budget"
+          description: |
+            The API service is consuming budget at a fast rate and may exhaust its
+            SLO window in under the planned burn duration.
+
+      - alert: StellarAPISlowBurnRate
+        expr: |
+          (1 - stellar:slo:api_availability:ratio) > 0.01
+          or (1 - stellar:slo:api_latency:ratio) > 0.005
+          or (1 - stellar:slo:api_error_rate:ratio) > 0.01
+        for: 1h
+        labels:
+          severity: warning
+          team: platform
+          burn_rate: slow
+        annotations:
+          summary: "Slow burn rate on API SLO budget"
+          description: |
+            The API service is trending toward budget exhaustion over the long window.
+            Investigate the error drivers before the budget is fully consumed.
+
+      - alert: StellarAPISLOBudgetExhausted
+        expr: |
+          stellar:slo:api_availability:ratio < 0.999
+          and on() (time() - max_over_time(stellar:slo:api_availability:ratio[30d]) >= 0)
+        for: 30m
+        labels:
+          severity: critical
+          team: platform
+          slo: api-availability
+        annotations:
+          summary: "API availability budget is effectively exhausted"
+          description: |
+            The service has consumed its entire availability budget and should be treated as a service-impacting incident.
+            Open a live incident and page the on-call responder immediately.

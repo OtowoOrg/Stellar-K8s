@@ -1,0 +1,43 @@
+[package]
+name = "stellar-soroban-reentrancy-guard"
+version = "0.1.0"
+edition = "2021"
+description = "Native Reentrancy Guard middleware for Soroban cross-contract calls, enforced through the Stellar-K8s custom validation (Wasm) layer"
+license = "Apache-2.0"
+repository = "https://github.com/OtowoOrg/Stellar-K8s"
+publish = false
+
+# This crate is an independent Wasm middleware (sub-contract) and is therefore
+# intentionally NOT a member of the operator's root workspace. The empty
+# [workspace] table opts it out of the parent workspace so it can be built and
+# tested in isolation (matching the pattern used by the other Wasm plugins).
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Enables binding the core guard state machine to Soroban host storage
+# (`soroban_sdk::Env`) so the middleware can be compiled to a Wasm
+# sub-contract that tracks cross-contract call stacks during transaction
+# execution. When enabled the crate is a `no_std` (alloc) Soroban guest.
+# Disabled by default so the core logic compiles and is fully testable on
+# stable Rust with no external dependencies.
+default = []
+soroban = ["dep:soroban-sdk", "serde/alloc", "serde_json/alloc"]
+
+[dependencies]
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+
+# Optional: only pulled in when building the Soroban-hosted middleware.
+soroban-sdk = { version = "22", optional = true }
+
+[dev-dependencies]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

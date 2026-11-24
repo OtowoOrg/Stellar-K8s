@@ -1,0 +1,160 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+# Performance budgets and SLO targets (issue #1336).
+#
+# Before this file, latency and throughput limits lived inside each k6 script's
+# `options.thresholds`. That works for failing a single run, but it means the
+# numbers are scattered across five scripts, cannot be reviewed in one place,
+# and produce no report when they pass.
+#
+# This file is the single declaration of what "fast enough" means. It is
+# evaluated by:
+#
+#   benchmarks/scripts/check_performance_budgets.py \
+#       --budgets benchmarks/performance-budgets.yaml \
+#       --results results/benchmark-summary.json \
+#       --suite operator
+#
+# The k6 in-script thresholds are deliberately left in place: they abort a run
+# early, while these budgets produce the tracked, reported verdict afterwards.
+#
+# Fields per budget:
+#   metric      Dotted path into the k6 handleSummary JSON.
+#   comparison  lt | lte | gt | gte  — how `value` must relate to `budget`.
+#   budget      The SLO target.
+#   unit        Free text, used in the report only.
+#   blocking    true  → a violation fails the job (regression gate)
+#               false → a violation is reported as a warning only
+#   description Why this target exists.
+
+# Applied to every suite unless a suite overrides the same metric path.
+defaults:
+  blocking: true
+
+suites:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Operator API / reconcile load — benchmarks/k6/operator-load-test.js
+  # ───────────────────────────────────────────────────────────────────────────
+  operator:
+    description: Operator HTTP surface and reconcile loop under sustained load.
+    budgets:
+      - metric: metrics.http_req_duration.p95
+        comparison: lt
+        budget: 500
+        unit: ms
+        blocking: true
+        description: >
+          95% of operator HTTP requests complete within 500ms. Matches the
+          in-script threshold so the two cannot drift apart.
+
+      - metric: metrics.http_req_duration.p99
+        comparison: lt
+        budget: 1000
+        unit: ms
+        blocking: true
+        description: Tail latency stays within one second.
+
+      - metric: metrics.reconciliation_duration.p95
+        comparison: lt
+        budget: 3000
+        unit: ms
+        blocking: true
+        description: >
+          A reconcile pass completes within 3s at p95. Slower than this and the
+          controller's work queue backs up under normal churn.
+
+      - metric: metrics.reconciliation_duration.p99
+        comparison: lt
+        budget: 5000
+        unit: ms
+        blocking: false
+        description: >
+          Reported, not blocking: p99 reconcile time is sensitive to CI runner
+          noise and would make the gate flaky.
+
+      - metric: metrics.api_latency.p95
+        comparison: lt
+        budget: 200
+        unit: ms
+        blocking: true
+        description: Kubernetes API calls stay responsive at p95.
+
+      - metric: metrics.error_rate
+        comparison: lt
+        budget: 0.01
+        unit: ratio
+        blocking: true
+        description: Under 1% of requests fail. The primary availability SLO.
+
+      - metric: metrics.tps.avg
+        comparison: gte
+        budget: 100
+        unit: req/s
+        blocking: true
+        description: >
+          Sustains at least 100 requests per second. A throughput floor, so a
+          change that trades throughput for latency still fails.
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Admission webhook — benchmarks/k6/webhook-load-test.js
+  # ───────────────────────────────────────────────────────────────────────────
+  webhook:
+    description: >
+      Admission webhook latency. Tighter than the operator budgets because the
+      webhook sits in the API server's synchronous admission path — every
+      millisecond here is added to every matching kubectl call in the cluster.
+    budgets:
+      - metric: webhook_metrics.validation_p99
+        comparison: lt
+        budget: 50
+        unit: ms
+        blocking: true
+        description: Validation admission stays under the 50ms tail budget.
+
+      - metric: webhook_metrics.validation_p95
+        comparison: lt
+        budget: 30
+        unit: ms
+        blocking: true
+        description: Validation admission p95 budget.
+
+      - metric: webhook_metrics.mutation_p99
+        comparison: lt
+        budget: 50
+        unit: ms
+        blocking: true
+        description: Mutation admission stays under the 50ms tail budget.
+
+      - metric: webhook_metrics.mutation_p95
+        comparison: lt
+        budget: 30
+        unit: ms
+        blocking: true
+        description: Mutation admission p95 budget.
+
+      - metric: webhook_metrics.throughput
+        comparison: gte
+        budget: 100
+        unit: req/s
+        blocking: true
+        description: Handles at least 100 admission reviews per second.
+
+      - metric: webhook_metrics.error_rate
+        comparison: lt
+        budget: 0.001
+        unit: ratio
+        blocking: true
+        description: >
+          Under 0.1% failures. A failing admission webhook blocks writes to the
+          whole cluster, so the bar is ten times stricter than the operator's.

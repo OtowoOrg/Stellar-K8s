@@ -1,0 +1,68 @@
+name: Dependency Auto-Merge
+
+# Issue #1418 — Automatically merge low-risk Dependabot PRs that pass all CI
+# checks, reducing maintenance toil while keeping human review for major bumps
+# and security-sensitive crates.
+#
+# Merge policy:
+#   • patch / minor bumps for most crates        → auto-approve + auto-merge
+#   • security-crypto group                      → approve but require human merge
+#   • major version bumps                        → require human review (no action)
+#   • docker / github-actions patch/minor        → auto-approve + auto-merge
+#
+# Security advisories opened by Dependabot are never auto-merged: GitHub marks
+# those PRs with the "security" label; this workflow skips them.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge-dependabot:
+    name: Auto-merge Dependabot PR
+    runs-on: ubuntu-latest
+    # Only act on Dependabot PRs.
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Auto-approve safe updates ──────────────────────────────────────────
+      - name: Approve patch / minor (non-security)
+        if: >
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr review --approve "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Enable auto-merge after approval ──────────────────────────────────
+      # The merge itself is gated on branch protection: CI must pass.
+      - name: Enable auto-merge (squash)
+        if: >
+          (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+           steps.metadata.outputs.update-type == 'version-update:semver-minor') &&
+          !contains(github.event.pull_request.labels.*.name, 'security')
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Leave a comment for security-crypto group ──────────────────────────
+      - name: Comment on security-crypto update
+        if: contains(github.event.pull_request.labels.*.name, 'security')
+        run: |
+          gh pr comment "$PR_URL" \
+            --body "⚠️ **Security-sensitive dependency update** — auto-merge is disabled. \
+          Please review the diff and changelog before merging."
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

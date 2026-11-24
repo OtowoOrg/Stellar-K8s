@@ -1,0 +1,108 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+# Configuration for scripts/validate-yaml-manifests.py (issue #1044).
+#
+# The validator walks every YAML file in the repository. This file records
+# the deliberate exceptions. Run `scripts/validate-yaml-manifests.py` to see
+# the current state, and `make validate-yaml` for the gated form.
+
+# Files the validator does not read at all.
+exclude:
+  # Go text/template sources, not YAML. Their *rendered* output is validated
+  # by the Helm drift gate (scripts/check-helm-drift.sh, issue #1045).
+  - "charts/*/templates/**"
+  # helm-unittest test definitions: a test DSL that happens to use .yaml.
+  - "charts/*/tests/**"
+  # mkdocs config uses !!python/name: tags that no safe loader can resolve.
+  - "mkdocs.yml"
+  # A kubeconfig is a client-side file, not a Kubernetes API object; it has
+  # apiVersion/kind but deliberately no metadata.
+  - "config/dev/kubeconfig-dev.yaml"
+  # Design-phase specification scratch space, not shipped manifests.
+  - ".kiro/**"
+  - "target/**"
+
+# Bind a path glob to a JSON Schema file (repo-relative).
+schemas:
+  - glob: "charts/stellar-operator/values.yaml"
+    schema: "charts/stellar-operator/values.schema.json"
+  - glob: "charts/stellar-operator/values-ha.yaml"
+    schema: "charts/stellar-operator/values.schema.json"
+  - glob: "charts/stellar-operator/examples/values-*.yaml"
+    schema: "charts/stellar-operator/values.schema.json"
+
+# Manifests that MUST fail validation. These exist to prove the schema
+# rejects bad input; if one starts passing, the schema has regressed.
+expect_invalid:
+  - "config/samples/invalid-*.yaml"
+  - "examples/broken.yaml"
+
+# Pre-existing failures that are tolerated (reported as warnings) rather
+# than blocking. Every entry needs a reason. An entry that stops matching is
+# reported as an error, so this list cannot silently rot.
+known_deviations:
+  # ── Root cause: schemars `schema_with` loses Option-ness (repo-wide) ──────
+  # src/crd/schema_utils.rs supplies hand-written schemas via
+  # `#[schemars(schema_with = ...)]` for IntOrString and object-array fields.
+  # schemars applies that override *before* it unwraps `Option<T>`, so these
+  # three genuinely-optional fields land in the CRD's `required` list. The
+  # Rust types (src/crd/stellar_node.rs) are `Option<...>`, so the operator
+  # itself treats them as optional; only the generated CRD disagrees.
+  # Fixing it means changing CRD generation and regenerating config/crd/,
+  # which is deliberately kept out of this change.
+  - path: "*"
+    layer: "L3-schema"
+    contains: "'maxUnavailable' is a required property"
+    reason: "schemars schema_with marks Option<IntOrString> as required; see src/crd/schema_utils.rs"
+  - path: "*"
+    layer: "L3-schema"
+    contains: "'minAvailable' is a required property"
+    reason: "schemars schema_with marks Option<IntOrString> as required; see src/crd/schema_utils.rs"
+  - path: "*"
+    layer: "L3-schema"
+    contains: "'topologySpreadConstraints' is a required property"
+    reason: "schemars schema_with marks Option<Vec<..>> as required; see src/crd/schema_utils.rs"
+
+  # ── Illustrative examples that omit required sub-fields ──────────────────
+  # These snippets exist to demonstrate one feature and intentionally leave
+  # unrelated required fields out. Completing them means inventing cluster
+  # specific values (secret names, hostnames, ASNs), so they are recorded
+  # here rather than guessed at.
+  - path: "config/samples/disk-scaling-example.yaml"
+    layer: "L3-schema"
+    reason: "disk-scaling demo: alerting/autoscaling blocks are abbreviated"
+  - path: "examples/backup-verification-example.yaml"
+    layer: "L3-schema"
+    reason: "backup demo: managedDatabase/database blocks are abbreviated"
+  - path: "examples/secret-rotation-example.yaml"
+    layer: "L3-schema"
+    reason: "secret-rotation demo: managedDatabase/database blocks are abbreviated"
+  - path: "examples/custom-probes.yaml"
+    layer: "L3-schema"
+    reason: "probe demo: sorobanConfig block is abbreviated"
+  - path: "examples/priority-class.yaml"
+    layer: "L3-schema"
+    reason: "priorityClass demo: sorobanConfig block is abbreviated"
+  - path: "examples/cve-handling-examples.yaml"
+    layer: "L3-schema"
+    reason: "CVE demo: ingress block omits cluster-specific hosts"
+  - path: "examples/horizon-canary-example.yaml"
+    layer: "L3-schema"
+    reason: "canary demo: horizonConfig omits a cluster-specific database secret"
+  - path: "examples/hpa-examples.yaml"
+    layer: "L3-schema"
+    reason: "HPA demo: scaling behavior policies omit policyType"
+  - path: "examples/metallb-bgp-anycast.yaml"
+    layer: "L3-schema"
+    reason: "MetalLB demo: BGP block omits a site-specific localAsn"

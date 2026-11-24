@@ -1,0 +1,139 @@
+# Blue-Green Deployment Examples
+#
+# Issue #1417 — Blue-green deployment strategy for Stellar Core.
+#
+# These manifests demonstrate how to configure and manage blue-green
+# deployments for Horizon and Soroban RPC nodes using the Stellar-K8s operator.
+#
+# See docs/blue-green-deployment.md for a full explanation.
+
+---
+# ── Example 1: Horizon blue-green deployment ──────────────────────────────────
+#
+# Trigger a blue-green upgrade by bumping spec.version.
+# The operator will:
+#   1. Create a "green" Deployment running the new version.
+#   2. Wait for all green replicas to be Ready.
+#   3. Run smoke tests against the green /health endpoint.
+#   4. Switch the Service selector to "deployment-color: green".
+#   5. Delete the old "blue" Deployment.
+#   6. Monitor the green deployment for 120s; roll back automatically
+#      if 3+ consecutive health checks fail.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-mainnet
+  namespace: stellar
+  labels:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/component: horizon
+spec:
+  nodeType: Horizon
+  network: mainnet
+  version: "v21.1.0"           # Bump this to trigger a blue-green upgrade
+  deploymentStrategy: BlueGreen
+  blueGreen:
+    readyTimeoutSeconds: 300    # 5 min to wait for green to be ready
+    switchTimeoutSeconds: 60    # 1 min for the Service selector switch
+    enableSmokeTests: true
+    healthCheckEndpoint: /health
+    autoRollback:
+      enabled: true
+      failureThreshold: 3       # 3 consecutive failures → rollback
+      observationWindowSeconds: 120
+  replicas: 2
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  storage:
+    storageClass: "standard"
+    size: "200Gi"
+    retentionPolicy: Retain
+  horizonConfig:
+    databaseSecretRef: "horizon-db-secret"
+    stellarCoreUrl: "http://stellar-core:11626"
+    ingestRemoteMedianLedgerLoadPercent: 200
+
+---
+# ── Example 2: Soroban RPC blue-green deployment ──────────────────────────────
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: soroban-rpc-mainnet
+  namespace: stellar
+  labels:
+    app.kubernetes.io/name: stellar-node
+    app.kubernetes.io/component: soroban-rpc
+spec:
+  nodeType: SorobanRpc
+  network: mainnet
+  version: "v21.1.0"
+  deploymentStrategy: BlueGreen
+  blueGreen:
+    readyTimeoutSeconds: 600    # Soroban may take longer to sync
+    switchTimeoutSeconds: 60
+    enableSmokeTests: true
+    healthCheckEndpoint: /health
+    autoRollback:
+      enabled: true
+      failureThreshold: 3
+      observationWindowSeconds: 180
+  replicas: 2
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+  storage:
+    storageClass: "standard"
+    size: "100Gi"
+
+---
+# ── Example 3: Manual traffic management during blue-green ───────────────────
+#
+# If you want to observe the green deployment before switching traffic,
+# set autoTrafficSwitch: false.  You can then manually switch using:
+#
+#   kubectl stellar blue-green switch --name horizon-mainnet --namespace stellar
+#
+# Or roll back with:
+#
+#   kubectl stellar blue-green rollback --name horizon-mainnet --namespace stellar
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: horizon-mainnet-manual
+  namespace: stellar
+spec:
+  nodeType: Horizon
+  network: testnet
+  version: "v21.1.0"
+  deploymentStrategy: BlueGreen
+  blueGreen:
+    readyTimeoutSeconds: 300
+    switchTimeoutSeconds: 60
+    enableSmokeTests: true
+    healthCheckEndpoint: /health
+    # Disable automatic traffic switching — operator waits for manual action
+    autoTrafficSwitch: false
+    autoRollback:
+      enabled: true
+      failureThreshold: 5
+      observationWindowSeconds: 300
+  replicas: 1
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  storage:
+    storageClass: "standard"
+    size: "100Gi"

@@ -15,10 +15,35 @@ const DEFAULT_HTTP_PORT: u16 = 11626;
 /// Default log level
 const DEFAULT_LOG_LEVEL: &str = "info";
 
+/// Default database connection string for captive core in container
+pub const DEFAULT_DATABASE: &str = "sqlite3:///var/lib/stellar/captive-core/stellar.db";
+
+/// Default bucket directory path on persistent volume
+pub const DEFAULT_BUCKET_DIR_PATH: &str = "/var/lib/stellar/buckets";
+
+/// Default temporary directory path on persistent volume
+pub const DEFAULT_TMP_DIR_PATH: &str = "/var/lib/stellar/tmp";
+
+/// Default worker threads count
+pub const DEFAULT_WORKER_THREADS: u32 = 2;
+
+/// Derives captive core worker threads from container CPU resource allocation
+pub fn derive_worker_threads_from_cpu(cpu_str: Option<&str>) -> u32 {
+    match cpu_str {
+        Some(s) if s.ends_with('m') => {
+            let millis: u32 = s.trim_end_matches('m').parse().unwrap_or(2000);
+            (millis / 1000).max(1)
+        }
+        Some(s) => s.parse::<u32>().unwrap_or(2).max(1),
+        None => DEFAULT_WORKER_THREADS,
+    }
+}
+
 /// Builder for generating Captive Core TOML configuration
 ///
 /// This builder extracts configuration from a StellarNode and generates
-/// a properly formatted TOML file for Captive Core.
+/// a properly formatted TOML file for Captive Core with containerized paths
+/// and resource-derived thread counts.
 #[derive(Debug, Clone)]
 pub struct CaptiveCoreConfigBuilder {
     network_passphrase: String,
@@ -27,6 +52,10 @@ pub struct CaptiveCoreConfigBuilder {
     http_port: u16,
     log_level: String,
     additional_config: Option<String>,
+    database: String,
+    bucket_dir_path: String,
+    tmp_dir_path: String,
+    worker_threads: u32,
 }
 
 impl CaptiveCoreConfigBuilder {
@@ -70,6 +99,48 @@ impl CaptiveCoreConfigBuilder {
         }
     }
 
+    /// Create builder for Horizon captive core ingestion
+    pub fn from_horizon_node_config(node: &StellarNode) -> Result<Self> {
+        let horizon_config = node.spec.horizon_config.as_ref().ok_or_else(|| {
+            Error::ConfigError(
+                "HorizonConfig is required for captive core configuration".to_string(),
+            )
+        })?;
+
+        if let Some(ref soroban_config) = node.spec.soroban_config {
+            if let Some(ref structured) = soroban_config.captive_core_structured_config {
+                return Self::from_structured_config(node, structured);
+            }
+        }
+
+        let network_passphrase = node.spec.network_passphrase().to_string();
+        let cpu_limit = if !node.spec.resources.limits.cpu.is_empty() {
+            Some(node.spec.resources.limits.cpu.as_str())
+        } else {
+            None
+        };
+        let worker_threads = if horizon_config.ingest_workers > 0 {
+            horizon_config.ingest_workers
+        } else {
+            derive_worker_threads_from_cpu(cpu_limit)
+        };
+
+        Ok(Self {
+            network_passphrase,
+            history_archive_urls: vec![
+                "https://history.stellar.org/prd/core-live/core_live_001".to_string()
+            ],
+            peer_port: DEFAULT_PEER_PORT,
+            http_port: DEFAULT_HTTP_PORT,
+            log_level: DEFAULT_LOG_LEVEL.to_string(),
+            additional_config: None,
+            database: DEFAULT_DATABASE.to_string(),
+            bucket_dir_path: DEFAULT_BUCKET_DIR_PATH.to_string(),
+            tmp_dir_path: DEFAULT_TMP_DIR_PATH.to_string(),
+            worker_threads,
+        })
+    }
+
     /// Create builder from structured configuration
     fn from_structured_config(node: &StellarNode, config: &CaptiveCoreConfig) -> Result<Self> {
         // Get network passphrase (use override or default from network)
@@ -85,6 +156,30 @@ impl CaptiveCoreConfigBuilder {
             ));
         }
 
+        let cpu_limit = if !node.spec.resources.limits.cpu.is_empty() {
+            Some(node.spec.resources.limits.cpu.as_str())
+        } else if !node.spec.resources.requests.cpu.is_empty() {
+            Some(node.spec.resources.requests.cpu.as_str())
+        } else {
+            None
+        };
+        let worker_threads = config
+            .worker_threads
+            .unwrap_or_else(|| derive_worker_threads_from_cpu(cpu_limit));
+
+        let database = config
+            .database
+            .clone()
+            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let bucket_dir_path = config
+            .bucket_dir_path
+            .clone()
+            .unwrap_or_else(|| DEFAULT_BUCKET_DIR_PATH.to_string());
+        let tmp_dir_path = config
+            .tmp_dir_path
+            .clone()
+            .unwrap_or_else(|| DEFAULT_TMP_DIR_PATH.to_string());
+
         Ok(Self {
             network_passphrase,
             history_archive_urls: config.history_archive_urls.clone(),
@@ -95,7 +190,27 @@ impl CaptiveCoreConfigBuilder {
                 .clone()
                 .unwrap_or_else(|| DEFAULT_LOG_LEVEL.to_string()),
             additional_config: config.additional_config.clone(),
+            database,
+            bucket_dir_path,
+            tmp_dir_path,
+            worker_threads,
         })
+    }
+
+    pub fn database(&self) -> &str {
+        &self.database
+    }
+
+    pub fn bucket_dir_path(&self) -> &str {
+        &self.bucket_dir_path
+    }
+
+    pub fn tmp_dir_path(&self) -> &str {
+        &self.tmp_dir_path
+    }
+
+    pub fn worker_threads(&self) -> u32 {
+        self.worker_threads
     }
 
     /// Generate TOML configuration string
@@ -128,6 +243,12 @@ impl CaptiveCoreConfigBuilder {
             "NETWORK_PASSPHRASE=\"{}\"\n\n",
             self.network_passphrase
         ));
+
+        // Container-appropriate filesystem and database paths
+        toml.push_str(&format!("DATABASE=\"{}\"\n", self.database));
+        toml.push_str(&format!("BUCKET_DIR_PATH=\"{}\"\n", self.bucket_dir_path));
+        toml.push_str(&format!("TMP_DIR_PATH=\"{}\"\n", self.tmp_dir_path));
+        toml.push_str(&format!("WORKER_THREADS={}\n\n", self.worker_threads));
 
         // History archives
         // Stellar Core expects each archive to have a unique name
@@ -225,7 +346,7 @@ mod tests {
                     captive_core_structured_config: Some(captive_config),
                     enable_preflight: true,
                     max_events_per_request: 10000,
-                    cache_config: None,
+                    cache: None,
                 }),
                 replicas: 2,
                 min_available: None,
@@ -281,6 +402,7 @@ mod tests {
             http_port: None,
             log_level: None,
             additional_config: None,
+            ..Default::default()
         };
 
         let node = create_test_node(config);
@@ -310,6 +432,7 @@ mod tests {
             http_port: None,
             log_level: Some("debug".to_string()),
             additional_config: None,
+            ..Default::default()
         };
 
         let node = create_test_node(config);
@@ -335,6 +458,7 @@ mod tests {
             http_port: None,
             log_level: None,
             additional_config: None,
+            ..Default::default()
         };
 
         let node = create_test_node(config);
@@ -356,6 +480,7 @@ mod tests {
             http_port: Some(11701),
             log_level: None,
             additional_config: None,
+            ..Default::default()
         };
 
         let node = create_test_node(config);
@@ -375,6 +500,7 @@ mod tests {
             http_port: None,
             log_level: None,
             additional_config: None,
+            ..Default::default()
         };
 
         let node = create_test_node(config);
@@ -394,6 +520,7 @@ mod tests {
             http_port: None,
             log_level: Some("invalid".to_string()),
             additional_config: None,
+            ..Default::default()
         };
 
         let node = create_test_node(config);
@@ -435,6 +562,7 @@ mod tests {
             http_port: None,
             log_level: Some("info".to_string()),
             additional_config: None,
+            ..Default::default()
         };
 
         let node1 = create_test_node(config1);
@@ -452,6 +580,7 @@ mod tests {
             http_port: Some(11701),
             log_level: Some("debug".to_string()),
             additional_config: Some("NODE_SEED=\"SXYZ\"".to_string()),
+            ..Default::default()
         };
 
         let node2 = create_test_node(config2);
@@ -488,6 +617,7 @@ mod tests {
             http_port: None,
             log_level: None,
             additional_config: None,
+            ..Default::default()
         };
         let mut testnet_node = create_test_node(testnet_config);
         testnet_node.spec.network = StellarNetwork::Testnet;
@@ -505,6 +635,7 @@ mod tests {
             http_port: None,
             log_level: None,
             additional_config: None,
+            ..Default::default()
         };
         let mut mainnet_node = create_test_node(mainnet_config);
         mainnet_node.spec.network = StellarNetwork::Mainnet;
@@ -537,6 +668,7 @@ mod tests {
             http_port: None,
             log_level: None,
             additional_config: None,
+            ..Default::default()
         };
 
         let mut node = create_test_node(config);
@@ -561,6 +693,7 @@ mod tests {
             http_port: None,
             log_level: None,
             additional_config: None,
+            ..Default::default()
         };
 
         let mut node = create_test_node(config);
@@ -583,6 +716,7 @@ mod tests {
             http_port: None,         // Should default to 11626
             log_level: None,         // Should default to "info"
             additional_config: None, // Should be omitted
+            ..Default::default()
         };
 
         let node = create_test_node(config);
@@ -612,6 +746,7 @@ mod tests {
             http_port: None,
             log_level: None,
             additional_config: None,
+            ..Default::default()
         });
 
         // Remove soroban config entirely
@@ -634,6 +769,7 @@ mod tests {
             http_port: None,
             log_level: None,
             additional_config: None,
+            ..Default::default()
         });
 
         // Remove structured config
@@ -660,6 +796,7 @@ mod tests {
             http_port: None,
             log_level: None,
             additional_config: None,
+            ..Default::default()
         };
 
         let mut node = create_test_node(config);
@@ -687,6 +824,7 @@ mod tests {
             http_port: None,
             log_level: None,
             additional_config: None,
+            ..Default::default()
         };
 
         let node = create_test_node(config);
@@ -715,6 +853,7 @@ mod tests {
                 http_port: None,
                 log_level: Some(log_level.to_string()),
                 additional_config: None,
+                ..Default::default()
             };
 
             let node = create_test_node(config);
@@ -737,6 +876,10 @@ mod tests {
             http_port: DEFAULT_HTTP_PORT,
             log_level: DEFAULT_LOG_LEVEL.to_string(),
             additional_config: None,
+            database: DEFAULT_DATABASE.to_string(),
+            bucket_dir_path: DEFAULT_BUCKET_DIR_PATH.to_string(),
+            tmp_dir_path: DEFAULT_TMP_DIR_PATH.to_string(),
+            worker_threads: DEFAULT_WORKER_THREADS,
         };
 
         let result = builder.build_toml();
@@ -755,6 +898,7 @@ mod tests {
             http_port: None,
             log_level: None,
             additional_config: None,
+            ..Default::default()
         };
 
         let node = create_test_node(config);
@@ -763,6 +907,10 @@ mod tests {
 
         // Verify basic TOML structure
         assert!(toml.contains("NETWORK_PASSPHRASE="));
+        assert!(toml.contains("DATABASE="));
+        assert!(toml.contains("BUCKET_DIR_PATH="));
+        assert!(toml.contains("TMP_DIR_PATH="));
+        assert!(toml.contains("WORKER_THREADS="));
         assert!(toml.contains("[HISTORY.archive1]"));
         assert!(toml.contains("get="));
         assert!(toml.contains("PEER_PORT="));
@@ -772,5 +920,31 @@ mod tests {
         // Verify no trailing issues
         assert!(!toml.is_empty());
         assert!(toml.len() > 100); // Should be reasonably sized
+    }
+
+    /// Test container path defaults and worker thread configuration
+    #[test]
+    fn test_captive_core_container_paths_and_worker_threads() {
+        let config = CaptiveCoreConfig {
+            network_passphrase: None,
+            history_archive_urls: vec!["https://archive.example.com".to_string()],
+            peer_port: None,
+            http_port: None,
+            log_level: None,
+            additional_config: None,
+            database: Some("sqlite3:///custom/db.sqlite".to_string()),
+            bucket_dir_path: Some("/custom/buckets".to_string()),
+            tmp_dir_path: Some("/custom/tmp".to_string()),
+            worker_threads: Some(8),
+        };
+
+        let node = create_test_node(config);
+        let builder = CaptiveCoreConfigBuilder::from_node_config(&node).unwrap();
+        let toml = builder.build_toml().unwrap();
+
+        assert!(toml.contains("DATABASE=\"sqlite3:///custom/db.sqlite\""));
+        assert!(toml.contains("BUCKET_DIR_PATH=\"/custom/buckets\""));
+        assert!(toml.contains("TMP_DIR_PATH=\"/custom/tmp\""));
+        assert!(toml.contains("WORKER_THREADS=8"));
     }
 }

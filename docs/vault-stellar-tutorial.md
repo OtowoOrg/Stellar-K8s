@@ -2,7 +2,7 @@
 
 > **See also:** [Credentials & Secrets (Central Reference)](security/credentials-and-secrets.md) for a complete index of all secret-related documentation.
 
-This tutorial matches the native **`vaultRef`** seed source on `StellarNode` (see [`src/crd/seed_secret.rs`](../src/crd/seed_secret.rs)) and the Vault Agent Injector sidecar pattern.
+This tutorial matches the native **`vaultRef`** seed source on `StellarNode` (see [`src/crd/seed_secret.rs`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/crd/seed_secret.rs)) and the Vault Agent Injector sidecar pattern.
 
 ## 1. Install Vault with injector
 
@@ -54,4 +54,4 @@ With `restartOnSecretRotation: true`, the operator compares the injector’s `va
 
 ## 5. manifests/
 
-Example supporting resources (policy snippets, ServiceAccount binding) live under [`examples/vault/`](../examples/vault/) in this repository.
+Example supporting resources (policy snippets, ServiceAccount binding) live under [`examples/vault/`](https://github.com/OtowoOrg/Stellar-K8s/tree/main/examples/vault) in this repository.

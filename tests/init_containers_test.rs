@@ -1,47 +1,36 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Integration tests for StellarNode custom init containers.
 //!
 //! These tests verify that init containers are correctly injected into pod specs
 //! and that volume sharing with the main container works as expected.
+//!
+//! Refactored in issue #1140: duplicate helper functions removed; shared
+//! fixtures from `tests/common/fixtures.rs` are used instead.
 
+mod common;
+
+use common::fixtures::{init_container, init_container_with_volume, volume_mount};
 use k8s_openapi::api::core::v1::{Container, VolumeMount};
-
-// ── Helper ────────────────────────────────────────────────────────────────────
-
-fn make_init_container(name: &str, image: &str, command: Vec<&str>) -> Container {
-    Container {
-        name: name.to_string(),
-        image: Some(image.to_string()),
-        command: Some(command.into_iter().map(String::from).collect()),
-        ..Default::default()
-    }
-}
-
-fn make_init_container_with_volume(
-    name: &str,
-    image: &str,
-    volume_name: &str,
-    mount_path: &str,
-) -> Container {
-    Container {
-        name: name.to_string(),
-        image: Some(image.to_string()),
-        volume_mounts: Some(vec![VolumeMount {
-            name: volume_name.to_string(),
-            mount_path: mount_path.to_string(),
-            ..Default::default()
-        }]),
-        ..Default::default()
-    }
-}
 
 // ── Ordering tests ────────────────────────────────────────────────────────────
 
 #[test]
 fn init_containers_are_ordered_by_array_index() {
     let containers = [
-        make_init_container("step-1", "alpine", vec!["echo", "first"]),
-        make_init_container("step-2", "alpine", vec!["echo", "second"]),
-        make_init_container("step-3", "alpine", vec!["echo", "third"]),
+        init_container("step-1", "alpine", vec!["echo", "first"]),
+        init_container("step-2", "alpine", vec!["echo", "second"]),
+        init_container("step-3", "alpine", vec!["echo", "third"]),
     ];
 
     // Kubernetes guarantees sequential execution in array order.
@@ -60,7 +49,7 @@ fn empty_init_containers_list_is_valid() {
 
 #[test]
 fn init_container_can_share_data_volume_with_main_container() {
-    let init = make_init_container_with_volume("data-seeder", "busybox", "data", "/data");
+    let init = init_container_with_volume("data-seeder", "busybox", "data", "/data");
 
     let mounts = init.volume_mounts.as_ref().unwrap();
     assert_eq!(mounts.len(), 1);
@@ -70,7 +59,7 @@ fn init_container_can_share_data_volume_with_main_container() {
 
 #[test]
 fn init_container_can_share_config_volume() {
-    let init = make_init_container_with_volume(
+    let init = init_container_with_volume(
         "config-generator",
         "stellar-config-gen:latest",
         "config",
@@ -84,22 +73,14 @@ fn init_container_can_share_config_volume() {
 
 #[test]
 fn init_container_can_mount_multiple_volumes() {
+    let data_mount = volume_mount("data", "/data");
+    let mut config_mount = volume_mount("config", "/config");
+    config_mount.read_only = Some(true);
+
     let init = Container {
         name: "multi-mount".to_string(),
         image: Some("alpine".to_string()),
-        volume_mounts: Some(vec![
-            VolumeMount {
-                name: "data".to_string(),
-                mount_path: "/data".to_string(),
-                ..Default::default()
-            },
-            VolumeMount {
-                name: "config".to_string(),
-                mount_path: "/config".to_string(),
-                read_only: Some(true),
-                ..Default::default()
-            },
-        ]),
+        volume_mounts: Some(vec![data_mount, config_mount]),
         ..Default::default()
     };
 
@@ -139,6 +120,10 @@ fn db_migration_init_container_pattern() {
 #[test]
 fn config_generation_init_container_pattern() {
     // Simulates: generate stellar-core.cfg from a template before core starts
+    let config_mount = volume_mount("config", "/config");
+    let mut template_mount = volume_mount("config-templates", "/templates");
+    template_mount.read_only = Some(true);
+
     let init = Container {
         name: "config-gen".to_string(),
         image: Some("stellar-config-gen:v1".to_string()),
@@ -147,19 +132,7 @@ fn config_generation_init_container_pattern() {
             "-c".to_string(),
             "envsubst < /templates/stellar-core.cfg.tmpl > /config/stellar-core.cfg".to_string(),
         ]),
-        volume_mounts: Some(vec![
-            VolumeMount {
-                name: "config".to_string(),
-                mount_path: "/config".to_string(),
-                ..Default::default()
-            },
-            VolumeMount {
-                name: "config-templates".to_string(),
-                mount_path: "/templates".to_string(),
-                read_only: Some(true),
-                ..Default::default()
-            },
-        ]),
+        volume_mounts: Some(vec![config_mount, template_mount]),
         ..Default::default()
     };
 
@@ -175,6 +148,8 @@ fn config_generation_init_container_pattern() {
 #[test]
 fn data_seeding_init_container_pattern() {
     // Simulates: seed initial ledger data from a checkpoint before core starts
+    let data_mount = volume_mount("data", "/data");
+
     let init = Container {
         name: "data-seed".to_string(),
         image: Some("stellar-data-seeder:latest".to_string()),
@@ -185,11 +160,7 @@ fn data_seeding_init_container_pattern() {
             "s3://my-bucket/ledger-checkpoint/".to_string(),
             "/data/".to_string(),
         ]),
-        volume_mounts: Some(vec![VolumeMount {
-            name: "data".to_string(),
-            mount_path: "/data".to_string(),
-            ..Default::default()
-        }]),
+        volume_mounts: Some(vec![data_mount]),
         ..Default::default()
     };
 
@@ -202,10 +173,10 @@ fn data_seeding_init_container_pattern() {
 
 #[test]
 fn init_container_name_is_required() {
-    let init = make_init_container("", "alpine", vec!["echo", "hi"]);
+    let init = init_container("", "alpine", vec!["echo", "hi"]);
     // An empty name is technically valid at struct level but Kubernetes will reject it.
-    // The operator should validate non-empty names before submitting.
-    assert!(init.name.is_empty()); // document that we rely on k8s admission for this
+    // The operator validates non-empty names before submitting.
+    assert!(init.name.is_empty());
 }
 
 #[test]
@@ -225,8 +196,8 @@ fn init_container_without_command_is_valid() {
 fn multiple_init_containers_all_must_succeed_before_main_starts() {
     // This is a Kubernetes guarantee; document it with an assertion on ordering.
     let init_containers = [
-        make_init_container("check-db", "wait-for-it", vec!["db:5432"]),
-        make_init_container(
+        init_container("check-db", "wait-for-it", vec!["db:5432"]),
+        init_container(
             "run-migrations",
             "stellar-horizon",
             vec!["db", "migrate", "up"],

@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-fee-market
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: stellar-k8s
+spec:
+  groups:
+    - name: stellar.fee-market
+      rules:
+        - alert: StellarFeeMarketSpike
+          expr: stellar_fee_market_p95_stroops > stellar_fee_market_spike_threshold_stroops
+          labels:
+            severity: warning
+          annotations:
+            summary: Stellar {{ $labels.fee_type }} fees exceed the configured threshold
+            description: >-
+              The 95th percentile {{ $labels.fee_type }} inclusion fee on
+              {{ $labels.network }} is {{ $value }} stroops. Review fee strategy
+              and Soroban resource limits.

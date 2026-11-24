@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! History Archive Health Check Module
 //!
 //! Provides async health checking for Stellar history archive URLs.
@@ -6,7 +18,7 @@
 
 use crate::error::{Error, Result};
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, warn};
 
@@ -172,12 +184,135 @@ pub async fn check_history_archive_health(
 /// Ledger lag threshold above which an archive is considered significantly behind
 pub const ARCHIVE_LAG_THRESHOLD: u64 = 20;
 
-/// Relevant subset of stellar-history.json needed for integrity checks
-#[derive(Debug, Deserialize)]
+/// Relevant subset of stellar-history.json needed for integrity and version compatibility checks
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct StellarHistoryJson {
+pub struct StellarHistoryJson {
     /// Latest ledger sequence covered by this archive
-    current_ledger: u64,
+    #[serde(default)]
+    pub current_ledger: u64,
+    /// History archive state version (e.g., 1, 2)
+    #[serde(default)]
+    pub version: Option<u32>,
+    /// Server identifier string (e.g., "stellar-core v21.3.1")
+    #[serde(default)]
+    pub server: Option<String>,
+}
+
+/// Result of an archive version compatibility validation check
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveVersionCompatibility {
+    /// History archive URL
+    pub url: String,
+    /// Detected archive state version from .well-known/stellar-history.json
+    pub archive_version: Option<u32>,
+    /// Target stellar-core binary version (e.g. "v21.3.1")
+    pub core_version: String,
+    /// Archive state versions supported by this stellar-core binary
+    pub supported_versions: Vec<u32>,
+    /// True if the archive state version is compatible with stellar-core
+    pub is_compatible: bool,
+    /// Detailed error message if incompatible
+    pub error: Option<String>,
+    /// Recommended remediation (e.g. core version upgrade or archive change)
+    pub recommendation: Option<String>,
+}
+
+impl ArchiveVersionCompatibility {
+    /// Formatted status summary for logging and Kubernetes condition messages
+    pub fn summary(&self) -> String {
+        if self.is_compatible {
+            format!(
+                "archive {} state version {:?} is compatible with stellar-core {}",
+                self.url, self.archive_version, self.core_version
+            )
+        } else {
+            self.error.clone().unwrap_or_else(|| {
+                format!(
+                    "archive {} state version {:?} is incompatible with stellar-core {}",
+                    self.url, self.archive_version, self.core_version
+                )
+            })
+        }
+    }
+}
+
+/// Determine supported history archive state versions for a given stellar-core binary version.
+/// - stellar-core < 22 (e.g. 20.x, 21.3.1): supports version 1.
+/// - stellar-core >= 22 (e.g. 22.0.0+): supports versions 1 and 2.
+pub fn supported_archive_versions(core_version: &str) -> Vec<u32> {
+    let clean = core_version.trim().trim_start_matches('v');
+    let major: u32 = clean
+        .split('.')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(21);
+
+    if major >= 22 {
+        vec![1, 2]
+    } else {
+        vec![1]
+    }
+}
+
+/// Validates history archive state version against stellar-core binary compatibility table.
+/// Recommends a compatible core version or config change if incompatible.
+pub fn validate_archive_compatibility(
+    url: &str,
+    archive_version: Option<u32>,
+    core_version: &str,
+) -> ArchiveVersionCompatibility {
+    let supported = supported_archive_versions(core_version);
+    match archive_version {
+        Some(v) => {
+            if supported.contains(&v) {
+                ArchiveVersionCompatibility {
+                    url: url.to_string(),
+                    archive_version: Some(v),
+                    core_version: core_version.to_string(),
+                    supported_versions: supported,
+                    is_compatible: true,
+                    error: None,
+                    recommendation: None,
+                }
+            } else {
+                let err_msg = format!(
+                    "Incompatible archive version detected before catch-up: archive '{}' has state version {}, but stellar-core {} only supports versions {:?}.",
+                    url, v, core_version, supported
+                );
+                let rec = format!(
+                    "Upgrade stellar-core to v22.0.0 or higher, or configure a history archive that publishes supported state version {}.",
+                    supported
+                        .iter()
+                        .map(|ver| ver.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" or ")
+                );
+                ArchiveVersionCompatibility {
+                    url: url.to_string(),
+                    archive_version: Some(v),
+                    core_version: core_version.to_string(),
+                    supported_versions: supported,
+                    is_compatible: false,
+                    error: Some(format!("{} Recommendation: {}", err_msg, rec)),
+                    recommendation: Some(rec),
+                }
+            }
+        }
+        None => {
+            // Legacy archives without version field are state version 1
+            ArchiveVersionCompatibility {
+                url: url.to_string(),
+                archive_version: None,
+                core_version: core_version.to_string(),
+                supported_versions: supported,
+                is_compatible: true,
+                error: None,
+                recommendation: None,
+            }
+        }
+    }
 }
 
 /// Result of an archive integrity check
@@ -227,12 +362,16 @@ impl ArchiveIntegrityResult {
     }
 }
 
-/// Fetch and parse the `stellar-history.json` from a single archive URL
-async fn fetch_archive_ledger(client: &Client, url: &str, timeout: Duration) -> Result<u64> {
+/// Fetch and parse the full `stellar-history.json` from a single archive URL
+pub async fn fetch_archive_metadata(
+    client: &Client,
+    url: &str,
+    timeout: Duration,
+) -> Result<StellarHistoryJson> {
     let base_url = url.trim_end_matches('/');
     let json_url = format!("{base_url}/.well-known/stellar-history.json");
 
-    debug!("Fetching archive history JSON: {}", json_url);
+    debug!("Fetching archive history JSON metadata: {}", json_url);
 
     let resp = client
         .get(&json_url)
@@ -255,7 +394,86 @@ async fn fetch_archive_ledger(client: &Client, url: &str, timeout: Duration) -> 
         ))
     })?;
 
+    Ok(history)
+}
+
+/// Fetch and parse the `stellar-history.json` from a single archive URL for ledger sequence
+async fn fetch_archive_ledger(client: &Client, url: &str, timeout: Duration) -> Result<u64> {
+    let history = fetch_archive_metadata(client, url, timeout).await?;
     Ok(history.current_ledger)
+}
+
+/// Check version compatibility of a single history archive URL against stellar-core
+pub async fn check_single_archive_version_compatibility(
+    client: &Client,
+    url: &str,
+    core_version: &str,
+    timeout: Duration,
+) -> Result<ArchiveVersionCompatibility> {
+    let metadata = fetch_archive_metadata(client, url, timeout).await?;
+    Ok(validate_archive_compatibility(
+        url,
+        metadata.version,
+        core_version,
+    ))
+}
+
+/// Check version compatibility of multiple history archive URLs in parallel
+pub async fn check_archives_version_compatibility(
+    urls: &[String],
+    core_version: &str,
+    timeout: Option<Duration>,
+) -> Vec<ArchiveVersionCompatibility> {
+    if urls.is_empty() {
+        return vec![];
+    }
+
+    let timeout = timeout.unwrap_or(Duration::from_secs(10));
+    let client = match Client::builder()
+        .timeout(timeout)
+        .user_agent("stellar-k8s-operator/archive-compat")
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return urls
+                .iter()
+                .map(|url| ArchiveVersionCompatibility {
+                    url: url.clone(),
+                    archive_version: None,
+                    core_version: core_version.to_string(),
+                    supported_versions: supported_archive_versions(core_version),
+                    is_compatible: false,
+                    error: Some(format!("Failed to build HTTP client: {e}")),
+                    recommendation: None,
+                })
+                .collect();
+        }
+    };
+
+    let checks = urls.iter().map(|url| {
+        let client = client.clone();
+        let url = url.clone();
+        let core_ver = core_version.to_string();
+        async move {
+            match check_single_archive_version_compatibility(&client, &url, &core_ver, timeout)
+                .await
+            {
+                Ok(res) => res,
+                Err(e) => ArchiveVersionCompatibility {
+                    url: url.clone(),
+                    archive_version: None,
+                    core_version: core_ver.clone(),
+                    supported_versions: supported_archive_versions(&core_ver),
+                    is_compatible: false,
+                    error: Some(e.to_string()),
+                    recommendation: None,
+                },
+            }
+        }
+    });
+
+    futures::future::join_all(checks).await
 }
 
 /// Check archive integrity by comparing the archive's ledger sequence to the node's current ledger.
@@ -345,6 +563,7 @@ pub async fn check_archive_integrity(
 /// * `expected_signer_key` - Optional hex-encoded Ed25519 public key that must match the manifest
 /// * `timeout` - Per-URL HTTP timeout
 /// * `node_namespace` / `node_name` / `node_type` / `network` - Labels for Prometheus metrics
+#[allow(dead_code)] // Public entry point for ZK archive verification; not yet wired into the reconcile loop.
 pub async fn check_archive_zk_integrity(
     urls: &[String],
     expected_signer_key: Option<&str>,

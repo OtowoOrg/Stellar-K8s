@@ -1,9 +1,35 @@
 site_name: Stellar-K8s Documentation
-site_url: https://m1s0g1.github.io/Stellar-K8s/
+site_url: https://otowoorg.github.io/Stellar-K8s/
 site_description: Comprehensive documentation for deploying and managing Stellar blockchain nodes on Kubernetes
+# Fail the build on any warning (missing nav targets, broken links, plugin
+# issues) so docs regressions are caught in CI (#1691).
+strict: true
 repo_url: https://github.com/OtowoOrg/Stellar-K8s
 repo_name: OtowoOrg/Stellar-K8s
 edit_uri: edit/main/docs/
+
+# The docs/ directory has a README.md that clashes with index.md. Excluding it
+# here (instead of letting MkDocs warn) keeps `--strict` builds green. Setting
+# exclude_docs replaces the MkDocs defaults, so those are repeated below.
+exclude_docs: |
+  .*
+  /templates/
+  /README.md
+
+# Intentionally unpublished: these pages are empty placeholders.
+not_in_nav: |
+  /architecture/multi-cluster.md
+  /operations/incident-response.md
+
+# Several docs pages intentionally link to repo files outside docs/ (README.md,
+# CONTRIBUTING.md, scripts/README.md, examples/**) so they resolve correctly
+# when browsed on GitHub. MkDocs can't resolve those against the built site
+# and otherwise fails `--strict` with "is not found among documentation
+# files"; internal docs-to-docs links are still checked by scripts/check-links.py
+# and the lychee link-integrity workflow.
+validation:
+  links:
+    not_found: ignore
 
 theme:
   name: material
@@ -46,7 +72,7 @@ theme:
 plugins:
   - search:
       lang: en
-      separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
+      separator: '[\\s\\-,:!=\\[\\]()"/]+|(?!\\b)(?=[A-Z][a-z])|\\.(?!\\d)|&[lg]t;'
   - minify:
       minify_html: true
       minify_js: true
@@ -55,7 +81,11 @@ plugins:
         remove_comments: true
       cache_safe: true
   - git-revision-date-localized:
-      enable_creation_date: true
+      # Creation dates are derived from `git log` order, which merge commits can
+      # scramble (e.g. docs/operations/disaster-recovery.md). The plugin warns
+      # about that, and warnings fail `mkdocs build --strict`, so only the
+      # last-updated date is shown.
+      enable_creation_date: false
       type: timeago
 
 markdown_extensions:
@@ -92,43 +122,312 @@ nav:
     - Prerequisites: getting-started/prerequisites.md
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quick-start.md
+    - Local Development with kind: getting-started/local-dev.md
+    - Local Development with k3d: development.md
+    - Windows (WSL2) Setup: installation-wsl2.md
+  - Architecture:
+    - architecture/index.md
+    - Architecture Overview: architecture.md
+    - Component Overview: architecture/overview.md
+    - Diagrams: architecture/diagrams.md
+    - Sequence Diagrams: architecture/sequence-diagrams.md
+    - Leader Election: leader-election.md
+    - Peer Discovery: peer-discovery.md
+    - Lifecycle Hooks: lifecycle-hooks.md
+    - Architecture Decision Records:
+      - Overview: adr/README.md
+      - 0001 Wasm Admission Webhook: adr/0001-wasm-admission-webhook.md
+      - 0002 Rust Language Choice: adr/0002-rust-language-choice.md
+      - 0003 kube-rs Finalizers: adr/0003-kube-rs-finalizers.md
+      - 0004 CRD Versioning Strategy: adr/0004-crd-versioning-strategy.md
+      - 0005 Dynamic Kafka Partitioning: adr/0005-dynamic-kafka-partitioning.md
+      - 0005 Reentrancy Guard Middleware: adr/0005-reentrancy-guard-middleware.md
+    - Testnet Onboarding: getting-started/testnet-onboarding.md
   - Deployment Guides:
     - deployment-guides/index.md
     - Validator Node: deployment-guides/validator.md
     - Horizon API: deployment-guides/horizon.md
+    - Horizon Query API Reference: horizon-query-api-reference.md
     - Soroban RPC: deployment-guides/soroban-rpc.md
+    - OLM / OpenShift: deploy-olm.md
+    - Docker Compose Migration: docker-compose-to-kubernetes-migration.md
+    - Ingress: ingress-guide.md
+    - Custom Sidecars: sidecars.md
+    - Blue-Green Deployment: blue-green-deployment.md
+    - Canary Deployments: canary-deployments.md
+    - Deployment Patterns:
+      - deployment-patterns/index.md
+      - GitOps, Capacity Planning, Upgrades: deployment-patterns/gitops-scaling-upgrades.md
+      - Horizon RPC Farm: deployment-patterns/horizon-rpc-farm.md
+      - Multi-Region and DR Patterns: deployment-patterns/multi-region-dr.md
+  - Multi-Region & Disaster Recovery:
+    - Deployment Patterns: deployment-patterns/index.md
+    - Horizon / RPC Farm: deployment-patterns/horizon-rpc-farm.md
+    - Multi-Region and DR: deployment-patterns/multi-region-dr.md
+    - GitOps, Scaling and Upgrades: deployment-patterns/gitops-scaling-upgrades.md
+  - Multi-Region:
+    - multi-region-deployment-and-failover.md
+    - Multi-Region Failover Orchestration: multi-region-failover.md
+    - Multi-Cluster Deployment: multi-cluster.md
+    - Multi-Cluster Federation: multi-cluster-federation.md
+    - Federation: federation.md
+    - Cross-Cloud Failover: cross-cloud-failover.md
+    - Disaster Recovery:
+      - DR Failover Guide: dr-failover.md
+      - Quorum Loss Runbook: operations/disaster-recovery.md
+      - Backup and DR Runbook: backup-disaster-recovery-runbook.md
+      - Backup Consistency Groups: backup-consistency-groups.md
+      - Backup Verification Automation: operations/backup-verification.md
+      - Hierarchical Fair-Share Quotas: fair-share-scheduling.md
+      - Immutable Audit Ledger: audit-ledger.md
+      - Chaos Drills: chaos-drills.md
+      - DR Drill Results: dr-results-template.md
   - Configuration:
     - configuration/index.md
+    - CRD Reference: api-reference.md
+    - Testnet Peer Configuration: configuration/testnet-peer-configuration.md
+    - Operators: operator-sdk-guide.md
+    - Storage: volume-snapshots.md
     - CRD Reference: configuration/crd-reference.md
-    - Operators: configuration/operators.md
+    - Operator Environment: configuration/operators.md
     - Storage: configuration/storage.md
+    - Volume Snapshots: volume-snapshots.md
+    - Validator Container Command: configuration/validator-command.md
+    - Container Command Configuration: operations/container-commands.md
+    - Database Optimization: database/optimization-guide.md
+    - Resource Limits: resource-limits.md
+    - Resource Optimization: resource-optimization.md
+    - PVC Auto-Expansion: pvc-auto-expansion.md
+    - Proactive Disk Scaling: proactive-disk-scaling.md
+    - Sync-State Scaling: sync-state-scaling.md
+    - Pod Disruption Budget: pod-disruption-budget.md
+    - Image Pinning: image-pinning.md
+    - Health Checks: health-checks.md
+    - CRD Architecture Manual: reference/crd-manual.md
+    - CRD Examples: reference/examples/README.md
   - Tutorials:
     - tutorials/index.md
     - Deploy Testnet Validator: tutorials/deploy-testnet-validator.md
     - Configure HA Setup: tutorials/configure-ha-setup.md
+    - HA Validator Topology: deployment-patterns/validator-ha-topology.md
     - Backup and Restore: tutorials/backup-restore.md
+    - Automated Backup Verification: backup-verification.md
+    - HashiCorp Vault and Validators: vault-stellar-tutorial.md
+  - Operations & Observability:
+    - Capacity Planning: capacity-planning.md
+    - Cost Estimate: cost-estimate.md
+    - SCP Consensus Topology and Monitoring: scp-consensus-topology-and-monitoring.md
+    - Monitoring and Dashboards Setup Guide: MONITORING_SETUP_GUIDE.md
+    - Monitoring and Dashboards Operational Runbook: MONITORING_OPERATIONAL_RUNBOOK.md
+    - Production Profiling Runbook: operations/profiling-runbook.md
+    - Core Blue/Green Runbook: operations/core-blue-green-runbook.md
+    - Observability Overview: observability/index.md
+    - Metric Reference: observability/metric-reference.md
+    - Metric Naming Conventions: observability/metric-naming-conventions.md
+    - Metrics and Dashboards: observability/metrics-and-dashboards.md
+    - Telemetry Architecture: observability/telemetry-architecture.md
+    - Unified Observability Contract: observability/unified-contract.md
+    - OpenTelemetry Tracing: observability/tracing.md
+    - Distributed Rate Limiting: distributed-rate-limiting.md
+    - Feature Flag Rollouts: feature-flag-rollouts.md
+    - Operations Runbook: operations/index.md
+    - Capacity Planning: operations/capacity-planning.md
+    - Helm Drift Remediation: operations/helm-drift-remediation.md
+    - Readiness Probe States: operations/readiness-probe-states.md
+    - Performance Profiling Runbook: profiling-runbook.md
+    - Forensic Snapshots: forensic-snapshot.md
+    - History Archive Pruning: archive-pruning.md
+    - ZK Archive Verification: zk-archive-verification.md
+    - Orphaned Resource Auditor: orphan-audit.md
+    - Job Orphan Reconciliation: job-orphan-reconciliation.md
+    - Ledger State Migration and Asset Monitoring: ledger-state-migration-and-asset-monitoring.md
+    - Maintenance Dashboard: maintenance-dashboard.md
+    - Upgrades:
+      - Major Version Upgrade Guide: operations/upgrade-guide.md
+      - Automated Upgrade Workflow: upgrade-workflow.md
+      - Hitless Upgrade: hitless-upgrade.md
+      - Blue-Green Upgrade: operations/blue-green-upgrade.md
+      - CVE-Triggered Rollouts: cve-auto-patch.md
+    - Metrics and Dashboards:
+      - Metric Reference: observability/metric-reference.md
+      - Metric Naming Conventions: observability/metric-naming-conventions.md
+      - Metrics and Dashboards: observability/metrics-and-dashboards.md
+      - Telemetry Architecture: observability/telemetry-architecture.md
+      - Unified Observability Contract: observability/unified-contract.md
+      - Stellar Metrics Guide: metrics/STELLAR_METRICS_GUIDE.md
+      - Grafana Dashboard Guide: monitoring/GRAFANA_DASHBOARD_GUIDE.md
+      - Soroban Dashboard Guide: monitoring/SOROBAN_DASHBOARD_GUIDE.md
+      - Horizon Dashboard: horizon-dashboard.md
+      - Byzantine Monitoring: byzantine-monitoring.md
+      - Composite SLOs: composite-slo.md
+      - Uptime SLA and Delegation Rewards: sla-and-delegation.md
+      - SCP Analytics Pipeline: scp-analytics-pipeline.md
+      - SCP Topology Dashboard: scp-topology-dashboard.md
+      - SCP Schema Comparison: scp-schema-comparison.md
+    - Logging:
+      - Log Aggregation: log-aggregation-guide.md
+      - Log Redaction Policy: log-redaction-policy.md
+      - Structured Logging: structured-logging.md
   - Troubleshooting:
     - troubleshooting/index.md
-    - Operator Troubleshooting: troubleshooting/operator-troubleshooting.md
     - Common Issues: troubleshooting/common-issues.md
     - Networking: troubleshooting/networking.md
-    - Disk Scaling: troubleshooting/disk-scaling.md
-    - Sync Problems: troubleshooting/sync-problems.md
+    - Diagnostic Decision Trees: troubleshooting/diagnostic-decision-trees.md
+    - Operator Runbooks: troubleshooting/operator-runbooks.md
+    - Metrics and Alerting: troubleshooting/metrics-alerting.md
+    - PVC and Storage Recovery: operations/pvc-troubleshooting.md
+    - Storage Repair Playbook: storage-repair.md
+    - Incident Post-Mortem Template: incident-response/post-mortem.md
+  - Frequently Asked Questions: faq.md
   - API Reference:
-    - api-reference/index.md
+    - api-reference.md
+    - Operator REST API:
+      - api/index.md
+      - OpenAPI Specification: api/openapi.yaml
+      - API Versioning: api/versioning.md
+      - Webhook API: api/webhook.md
+      - Metrics API: api/metrics.md
+      - Error Codes: api/error-codes.md
+      - Client Libraries: api/client-libraries.md
+    - API Versioning Strategy: api-versioning.md
+    - API Deprecation Timeline: api-deprecation-timeline.md
+    - API Rate Limiting: api-rate-limiting-guide.md
+    - Internal Schema Registry: internal-schema-registry.md
+    - Operator Error Codes: errors.md
+    - CLI:
+      - CLI Commands Reference: cli-commands-reference.md
+      - kubectl-stellar Plugin: kubectl-plugin.md
+      - kubectl-stellar Interactive Mode: kubectl-plugin/INTERACTIVE_MODE_GUIDE.md
+      - Live Diff Utility: diff-utility.md
+    - Webhooks and Plugins:
+      - Wasm Validation Policies: wasm-webhook.md
+      - Admission Webhook Conformance Tests: admission-webhook-conformance-tests.md
+      - Webhook Payload Contract Tests: webhook-payload-contract-tests.md
+      - Wasm Plugin API: plugins/wasm-api.md
+      - Wasm Plugin Troubleshooting: plugins/wasm-troubleshooting.md
   - Security:
+    - Security Index: security/index.md
     - Security Compliance Guide: security/compliance-guide.md
+    - Security Review: security/security-review.md
+    - Container Image Security: container-image-security.md
+    - Vulnerability Scanning: security/vulnerability-scan.md
     - Credentials & Secrets: security/credentials-and-secrets.md
     - Pod Security Standards: security/pss.md
+    - Automated Dependency Updates: security/dependency-updates.md
+    - Dependency Audit: security/dependency-audit.md
+    - Production Security Hardening: production-security-hardening.md
+    - CIS Kubernetes Hardening: security/cis-kubernetes-hardening.md
+    - RBAC Hardening: security/rbac-hardening.md
+    - Incident Response Playbook: security/incident-response-playbook.md
+    - P2P Threat Detection Firewall: p2p-firewall.md
+    - Registry Management: registry-management.md
+    - Registry Pull-Path Gate: registry-pull-gate.md
+    - Progressive Config Rollout: progressive-config-rollout.md
+    - Post-Quantum Readiness: PQC_READINESS.md
+    - Multi-Tenancy:
+      - Tenant Isolation: multi-tenancy.md
+      - Enterprise RBAC and Multi-Tenancy: security/multi-tenancy.md
+    - Compliance and Policy:
+      - Compliance Mapping: security/compliance-mapping.md
+      - Compliance Reporting: compliance-reporting.md
+      - Governance and Policy: governance.md
+      - OPA Gatekeeper Policies: gatekeeper-policies.md
+    - Secrets and Certificates:
+      - Secret Management: secret-management-guide.md
+      - Secret Management with External KMS: secret-management-kms.md
+      - Database Secret Rotation: secret-rotation.md
+      - Rotation Workflows: rotation-workflows.md
+      - Secrets Access Control: security/secrets-access-control.md
+      - mTLS Setup: mtls-guide.md
+      - mTLS Certificate Rotation: security/mtls-cert-rotation.md
+      - cert-manager Setup: cert-manager-setup.md
+      - End-to-End Encryption: security/e2e-encryption-architecture.md
   - Networking:
     - Comprehensive Network Guide: networking/index.md
+    - Network Isolation: network-isolation.md
+    - Pod-to-Pod Segmentation: network-pod-to-pod.md
+    - Network Policy Templates: network-policy-templates.md
+    - Zero-Trust Network Policies: network-policy-zero-trust.md
+    - Network Topology Management: network-topology-management.md
+    - Service Mesh mTLS: service-mesh.md
+    - Service Mesh Isolation: networking/service-mesh-isolation.md
+    - Multi-Cluster and Edge Routing: networking/bgp-edge-routing.md
+    - MetalLB BGP Anycast: metallb-bgp-anycast.md
+    - Topology and CNI: networking/topology-cni.md
+    - Testnet Egress Ports: networking/testnet-egress-ports.md
+    - Troubleshooting and Performance: networking/troubleshooting-performance.md
+  - Performance:
+    - Performance Tuning: performance-tuning.md
+    - Optimization Framework: performance-optimization-framework.md
+    - Benchmarking: benchmarking.md
+    - Benchmark Methodology: development/benchmark-methodology.md
+    - Scalability Report: scalability.md
+    - Regression Bisection: perf-regression-bisection.md
+    - Multi-Cluster Comparison: benchmark-compare.md
+    - Webhook Benchmarking: webhook-benchmarking.md
+    - Soroban RPC Optimization: performance/rpc-optimization.md
+    - Wasm Memory and Gas Tuning: performance/wasm-tuning.md
+    - Horizon Query Cache: horizon-query-cache.md
+    - Quorum Set Optimization: quorum-optimization.md
+    - Quorum Validation Engine: quorum-validation-engine.md
+    - Cost Optimization: cost-optimization-guide.md
   - Development:
     - Regeneration Guide: development/regeneration-guide.md
+    - Repo Health Checklist: development/repo-health-checklist.md
+    - Scripts Reference: development/scripts-reference.md
+    - Build Targets: development/build-targets.md
+    - Static Analysis Gates: development/static-analysis-gates.md
+    - License Header Compliance: development/license-headers.md
+    - Documentation Build: development/docs-build.md
+    - Navigation Coverage: development/docs-nav-coverage.md
+    - Link Integrity: development/docs-link-integrity.md
+    - Automated Load Testing: load-testing.md
+    - YAML Schema Validation: yaml-schema-validation.md
+    - Helm Chart Testing: helm-chart-testing.md
+    - Database Migrations: database/migrations.md
+    - Reconciler Phases: reconciler-phases.md
+    - Operator SDK Guide: operator-sdk-guide.md
+    - Setup Prerequisites: development/setup-prerequisites.md
+    - Command Matrix Tests: development/command-matrix.md
+    - Makefile Refactoring: development/makefile-refactoring.md
+    - Issue Label Review: development/issue-label-review.md
+    - Unreachable Modules Check: unreachable-modules-check.md
+    - Semantic Versioning Gate: semver-gate.md
+    - Validation Pipelines: validation-pipelines.md
+    - CI Failure Diagnostics: ci-failure-diagnostics.md
+    - Reproducible Docker Build: docker_build.md
+    - Reproducible Builds and Verification: reproducible-builds.md
+    - Docker Build Optimization: docker-build-optimization.md
+    - Reconciler Fuzzing: fuzzing.md
+    - Dependency Update Process: dependency-update-process.md
+    - Dependency Upgrade Validation: dependency-upgrade-validation.md
+    - Release Process: release-process.md
+    - Developer Experience Platform: developer-experience-platform.md
+    - Service Ownership Registry: service-ownership-registry.md
+    - Platform Engineering Epics: platform-epics-1477-1478-1479-1480.md
+  - GitOps:
+    - ArgoCD GitOps: gitops/argocd.md
+    - Flux CD: gitops/flux.md
   - Contributing:
     - contributing/index.md
     - Development Setup: contributing/development-setup.md
     - Documentation Testing: contributing/testing.md
     - Documentation Standards: contributing/code-standards.md
+    - Scripts Conventions: contributing/scripts-conventions.md
+    - Developer Onboarding: developer-onboarding/index.md
+    - Report an Issue: issue-reporting.md
+    - First-Class Issue Types: first-class-issues.md
+    - Change Notes: change-notes.md
+  - Reference:
+    - FAQ: faq.md
+    - Glossary: glossary.md
+    - Kubernetes Compatibility Matrix: compat-matrix.md
+    - Automation Features: AUTOMATION_FEATURES.md
+    - Edge Case Analysis: EDGE_CASES.md
+    - Failure Mode Analysis (FMEA): fmea-stellarnode.md
+    - Formal Verification: FORMAL_VERIFICATION.md
+    - Pitch Storyboards: pitch-storyboards.md
+  - Documentation Site: doc-site.md
 
 extra:
   social:

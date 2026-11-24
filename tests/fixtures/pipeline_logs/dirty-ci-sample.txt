@@ -1,0 +1,6 @@
+# Sample dirty pipeline log used by check-pipeline-log-redaction (#1153).
+# Contains intentional secret-like values that MUST be scrubbed by log_scrub::redact.
+→ Running make test
+[ci] Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9abcdefghij
+[ci] seed=SCZANGBA5RLMQ4DQTARF4VIRYOIMTUPN4MXQHZIX3BGOANFZFZQAVSC
+[ci] done

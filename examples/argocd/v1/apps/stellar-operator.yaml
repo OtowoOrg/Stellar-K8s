@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: stellar-operator
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: stellar-k8s
+    stellar.org/gitops-version: v1
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/agnesnaomiolim-cloud/Stellar-K8s.git
+    targetRevision: main
+    path: charts/stellar-operator
+    helm:
+      releaseName: stellar-operator
+      values: |
+        replicaCount: 1
+        operator:
+          logLevel: info
+          watchNamespace: ""
+        sidecar:
+          enabled: false
+        security:
+          podSecurityStandard: restricted
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: stellar-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - PruneLast=true
+      - PrunePropagationPolicy=foreground

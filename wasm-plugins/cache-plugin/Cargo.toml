@@ -1,0 +1,25 @@
+[package]
+name = "cache-plugin"
+version = "0.1.0"
+edition = "2021"
+description = "Fail-open LRU+TTL cache engine, packaged as a Wasm plugin for the Stellar-K8s Custom Validation Plugin runtime (issue #4, partial)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+panic = "unwind" # required so catch_unwind can fail-open on a panicking cache op
+
+# Stand alone: don't let Cargo pull this into the root Stellar-K8s
+# workspace (which is unrelated: a Kubernetes operator, not a Wasm
+# plugin). Without this, `cargo test`/`cargo build` run from inside this
+# directory fail with "current package believes it's in a workspace when
+# it's not".
+[workspace]

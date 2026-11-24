@@ -1,231 +1,197 @@
 # Security Policy
 
+## Scope
+
+This security policy applies to the Stellar-K8s operator, its custom resource definitions (CRDs), Helm charts, and associated tooling. It covers vulnerabilities in:
+
+- The Rust operator binary and controller logic
+- Kubernetes manifests and Helm charts
+- Build and release pipelines
+- Dependency supply chain
+- Documentation and examples that could lead to insecure configurations
+
+Out of scope: Third-party Kubernetes clusters, underlying infrastructure, and user-deployed workloads not managed by the operator.
+
 ## Supported Versions
 
-The following versions of Stellar-K8s currently receive security updates:-
-
-| Version | Supported          | End of Support |
-| ------- | ------------------ | -------------- |
-| 0.1.x   | :white_check_mark: | TBD            |
-
-> Only the latest patch release within a supported minor version receives security fixes.
-> Users are strongly encouraged to stay on the latest release.
-
----
+| Version | Supported          |
+| ------- | ------------------ |
+| 0.1.x   | :white_check_mark: |
 
 ## Reporting a Vulnerability
 
-**Do not report security vulnerabilities through public GitHub issues, pull requests, or discussions.**
+### Security Contact
 
-### Option 1 — GitHub Private Security Advisory (Preferred)
+For security vulnerabilities, please **do not** use the public issue tracker. Instead, report security issues privately to:
 
-Use GitHub's built-in private disclosure mechanism:
+**Email**: security@stellar.org  
+**Subject**: [stellar-k8s] Security Vulnerability Report
 
-1. Go to the [Security Advisories](https://github.com/OtowoOrg/Stellar-K8s/security/advisories/new) tab of this repository
-2. Click **"Report a vulnerability"**
-3. Fill in the details and submit
+### What to Include
 
-This keeps the report confidential and allows coordinated disclosure.
+When reporting a vulnerability, please include:
 
-### Option 2 — Encrypted Email
+1. **Description**: Clear description of the vulnerability
+2. **Steps to Reproduce**: Detailed reproduction steps
+3. **Impact Assessment**: Potential impact and affected components
+4. **Suggested Fix**: If you have a proposed solution
+5. **Disclosure Timeline**: Your preferred disclosure timeline
 
-Send an encrypted report to:
+### Response Process
 
-**security@stellar-k8s.io**
+1. **Acknowledgment**: We'll acknowledge receipt within 48 hours
+2. **Investigation**: Initial assessment within 5 business days
+3. **Resolution**: Security fixes prioritized based on severity
+4. **Disclosure**: Coordinated disclosure after fix is available
 
-For encrypted communication, use our PGP public key:
+## Security Measures
 
-```
------BEGIN PGP PUBLIC KEY BLOCK-----
+### Dependency Security
 
-mQINBGYXXXXBEAC... (placeholder — replace with actual project PGP key)
------END PGP PUBLIC KEY BLOCK-----
-```
+This project implements comprehensive dependency security monitoring:
 
-Key fingerprint: `XXXX XXXX XXXX XXXX XXXX  XXXX XXXX XXXX XXXX XXXX`
+- **Automated Scanning**: `cargo audit` and `cargo deny` in CI
+- **Automated Updates**: Dependabot (`.github/dependabot.yml`); review and merge process in [`docs/security/dependency-updates.md`](docs/security/dependency-updates.md)
+- **License Compliance**: Strict allowlist of permitted licenses
+- **Vulnerability Tracking**: All security advisories reviewed and documented
+- **Supply Chain Security**: Dependency provenance verification
+- **Secret Scanning**: Gitleaks + custom pattern-based secret detection
 
-> Until a project PGP key is published, reporters may use GitHub's private advisory
-> system (Option 1) or email **samuelotowo@gmail.com** directly.
+### Secret Scanning
 
----
+Multi-layered secret detection:
 
-## What to Include in Your Report
+1. **Gitleaks** — Pattern-based scanning for AWS keys, GitHub tokens, PEM keys, Stellar seeds, connection strings
+2. **Custom scanner** (`scripts/check-secrets.sh`) — Stellar-specific patterns, shell echo hygiene, GitHub Actions secret safety, Dockerfile hygiene, Rust source literals
+3. **Pre-commit hooks** — Local scanning before commit
 
-Please provide as much of the following as possible:
+Configuration: `.gitleaks.toml`
+Custom scanner: `scripts/check-secrets.sh`
 
-- Type of vulnerability (e.g., privilege escalation, SSRF, RCE, information disclosure)
-- Affected component(s) and version(s)
-- Full path(s) of relevant source files
-- Step-by-step reproduction instructions
-- Proof-of-concept or exploit code (if available)
-- Potential impact and attack scenario
-- Any suggested mitigations
+### License Compliance
 
----
+- **cargo-deny**: Enforces approved license allowlist (MIT, Apache-2.0, BSD-2/3, ISC, MPL-2.0, etc.)
+- **License headers**: Automated enforcement of Apache-2.0 headers on Rust, Shell, and YAML files
+- **Third-party tracking**: `THIRD_PARTY_LICENSES.md` verified in CI
 
-## Response Timeline
+Denied licenses: Any license not in the explicit allowlist in `deny.toml`.
 
-| Stage                        | Target SLA         |
-| ---------------------------- | ------------------ |
-| Acknowledgment               | 48 hours           |
-| Initial triage & severity    | 5 business days    |
-| Fix development begins       | Based on severity  |
-| Patch release (Critical/High)| 14 days            |
-| Patch release (Medium/Low)   | 30–90 days         |
-| Public disclosure            | After patch ships  |
+### Security Scanning
 
-Severity is assessed using [CVSS v3.1](https://www.first.org/cvss/calculator/3.1).
+```bash
+# Run all security checks
+make security-all
 
----
-
-## Disclosure Policy
-
-We follow [coordinated vulnerability disclosure](https://cheatsheetseries.owasp.org/cheatsheets/Vulnerability_Disclosure_Cheat_Sheet.html):
-
-1. Reporter submits vulnerability privately
-2. We validate, triage, and assign a CVE if warranted
-3. We develop and test a fix in a private fork
-4. A patched release is published
-5. A GitHub Security Advisory is made public
-6. Reporter is credited (unless they prefer anonymity)
-
-We ask reporters to:
-- Allow at least **90 days** before public disclosure
-- Avoid accessing or modifying data beyond what is needed to demonstrate the issue
-- Not disrupt production systems or other users
-
----
-
-## Security Update Process
-
-```
-Report received
-     │
-     ▼
-Acknowledgment (48h)
-     │
-     ▼
-Triage & CVSS scoring
-     │
-     ├─ Invalid / Not a vulnerability ──► Close with explanation
-     │
-     ▼
-Private fix branch + draft advisory
-     │
-     ▼
-Patch release + CVE assignment
-     │
-     ▼
-Public advisory + reporter credit
+# Individual checks
+cargo audit                    # Vulnerability scan
+cargo deny check               # License + bans + advisories
+gitleaks detect --config .gitleaks.toml  # Secret scanning
+bash scripts/check-secrets.sh  # Custom secret patterns
+make check-license-headers     # License header enforcement
 ```
 
----
+### Build Security
 
-## Security Best Practices for Deployers
+- **Hardened Profiles**: Security-optimized release builds
+- **Symbol Stripping**: Debug symbols removed from production builds
+- **Panic Handling**: Abort on panic for production deployments
+- **Link-Time Optimization**: Enhanced security through LTO
+
+### Runtime Security
+
+- **TLS by Default**: All network communication encrypted
+- **Certificate Validation**: Strict certificate validation
+- **Access Controls**: Kubernetes RBAC integration
+- **Audit Logging**: Comprehensive security event logging
 
 ### Container Security
-- Use the latest stable release; pin image digests in production
-- Scan images with Trivy or Grype before deployment
-- Operator containers run as non-root by default — do not override this
 
-### RBAC & Permissions
-- Follow least-privilege; review the generated RBAC manifests before applying
-- Use dedicated service accounts per component
-- Audit RBAC bindings regularly
+- **Minimal Base Images**: Distroless base images
+- **Non-Root Execution**: Containers run as non-root user
+- **Read-Only Root**: Immutable container filesystem
+- **Security Contexts**: Restricted security contexts
+- **CVE Scanning**: Operator images are scanned on every PR, every push to `main`, and nightly by the dual-scanner [`container-image-security.yml`](.github/workflows/container-image-security.yml) workflow (Trivy + Grype). CRITICAL/HIGH findings with an available fix fail the build; results are uploaded as SARIF to the repository's Security tab.
+
+## Security Testing
+
+### Automated Tests
+
+```bash
+# Run security audit
+make audit
+
+# Check for outdated dependencies
+make security-scan
+
+# Run secret scanning
+./scripts/check-secrets.sh
+
+# Generate security report
+make security-report
+```
+
+### Manual Security Reviews
+
+- Quarterly dependency review
+- Annual penetration testing (recommended)
+- Code review for security-sensitive changes
+- Security architecture review for major features
+
+## Security Configuration
+
+### Environment Hardening
+
+```yaml
+# Kubernetes Security Context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+```
 
 ### Network Security
-- Enable mTLS for inter-component communication
-- Apply Kubernetes NetworkPolicies to restrict operator traffic
-- Protect the admission webhook endpoint with proper TLS certificates
 
-### Secrets Management
-- Use an external secrets manager (Vault, AWS Secrets Manager, etc.)
-- Enable etcd encryption at rest
-- Rotate secrets and TLS certificates regularly
+- **Network Policies**: Restrict ingress/egress traffic
+- **TLS Everywhere**: All inter-service communication encrypted
+- **Certificate Rotation**: Automated certificate lifecycle management
 
-### Monitoring
-- Enable audit logging on the API server
-- Alert on unexpected RBAC changes or CRD modifications
-- Monitor operator metrics via the Prometheus endpoint
+## Compliance
 
----
+### Standards
 
-## Security Scanning in CI/CD
+- **CIS Kubernetes Benchmark**: Aligned with CIS recommendations
+- **NIST Cybersecurity Framework**: Risk management approach
+- **OWASP Top 10**: Web application security considerations
 
-Our pipeline runs the following on every commit:
+### Auditing
 
-| Tool          | Purpose                                      |
-| ------------- | -------------------------------------------- |
-| `cargo audit` | Rust dependency advisory checks (RUSTSEC DB) |
-| Trivy         | Container image vulnerability scanning       |
-| Dependabot    | Automated dependency update PRs              |
-| SBOM          | Software Bill of Materials generation        |
+- Security events logged and monitored
+- Compliance reporting available
+- Regular security assessments
 
-Results are uploaded to GitHub Security tab as SARIF reports.
+## Security Resources
 
----
+### Documentation
 
-## Known Security Considerations
+- [Secret Scanning Script](./scripts/check-secrets.sh)
+- [Deny Configuration](./deny.toml)
 
-### Admission Webhook
-The WASM-based admission webhook validates all `StellarNode` resources. Ensure:
-- The webhook TLS certificate is valid and rotated before expiry
-- WASM plugins are loaded only from trusted, integrity-verified sources (SHA-256 checked)
+### Tools
 
-### CRD Validation
-Webhook validation prevents invalid configurations, resource exhaustion, and privilege escalation attempts via the `StellarNode` spec.
+- `cargo audit` - Vulnerability scanning
+- `cargo deny` - Policy enforcement  
+- `cargo outdated` - Dependency updates
+- Custom security checks in CI/CD
 
-### REST API
-The optional REST API should be protected by network policies and ingress authentication. Do not expose it publicly without authentication.
+### External Resources
 
-## Security Scanning & Testing
-
-Our CI/CD pipeline includes comprehensive automated security testing:
-
-### Vulnerability Scanning
-- **Trivy** - Container/FS/dependency scanning (CRITICAL/HIGH alerts)
-- **Cargo Audit** - Rust crates.io advisories
-- **SBOM Generation** - CycloneDX supply chain transparency
-- **CodeQL** - Semantic code analysis (GitHub Advanced Security)
-
-### Penetration Testing
-- **k6** - API load/penetration scenarios (DDoS, slowloris sim)
-- **OWASP ZAP** - Baseline DAST for operator REST API
-- **Nuclei** - Template-based vulnerability scanning
-
-### Compliance Testing
-- **kube-bench** - CIS Kubernetes Benchmark automation
-- **Checkov** - IaC scanning for Helm charts/manifests
-- **kube-score** - K8s resource scoring
-
-Run locally: `make security-all`
-
-## Runtime Security Monitoring
-
-- **Prometheus + Grafana** - Security metrics dashboard
-- **Falco** - Behavioral runtime security (planned integration)
-- **Audit Logs** - API/server audit trails
-- **CVE Auto-remediation** - Controller-based patching (src/controller/cve.rs)
-
-- [CIS Kubernetes Benchmark](https://www.cisecurity.org/benchmark/kubernetes)
-- [NIST SP 800-190 — Container Security](https://csrc.nist.gov/publications/detail/sp/800-190/final)
-- [OWASP Kubernetes Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Kubernetes_Security_Cheat_Sheet.html)
+- [RustSec Advisory Database](https://rustsec.org/)
+- [Kubernetes Security Best Practices](https://kubernetes.io/docs/concepts/security/)
+- [Stellar Security Guidelines](https://developers.stellar.org/docs/encyclopedia/security)
 
 ---
 
-## Contact
-
-| Channel              | Address / Link                                          |
-| -------------------- | ------------------------------------------------------- |
-| Security advisories  | [GitHub Security Tab](https://github.com/OtowoOrg/Stellar-K8s/security/advisories)        |
-| Security email       | security@stellar-k8s.io                                 |
-| Maintainer contact   | samuelotowo@gmail.com                                   |
-| General issues       | [GitHub Issues](https://github.com/OtowoOrg/Stellar-K8s/issues)                           |
-
----
-
-## Attribution
-
-We are grateful to security researchers who responsibly disclose vulnerabilities.
-Reporters will be credited in the GitHub Security Advisory and CHANGELOG unless they
-request anonymity.
+**Note**: This security policy is reviewed quarterly and updated as needed. Last updated: 2026-10-21

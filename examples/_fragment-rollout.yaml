@@ -1,0 +1,10 @@
+# Shared rollout availability fields for StellarNode examples.
+# Include via YAML merge in your editor or copy into new example manifests.
+#
+#   maxUnavailable: 0
+#   minAvailable: 1
+#   topologySpreadConstraints: []
+
+maxUnavailable: 0
+minAvailable: 1
+topologySpreadConstraints: []

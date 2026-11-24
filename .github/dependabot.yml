@@ -1,19 +1,32 @@
 # Dependabot configuration for automated dependency updates
+# Approval and merge process: docs/security/dependency-updates.md
 # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Issue #1418 — Automated dependency update and security patching.
+# Dependabot is configured to:
+#  - Open weekly PRs for Rust (Cargo) crates, GitHub Actions, Docker base
+#    images, and Helm chart dependencies.
+#  - Group related crates to reduce PR noise.
+#  - Apply labels so the CI merge-automation job can auto-approve low-risk
+#    patch/minor updates that pass CI (see .github/workflows/dep-auto-merge.yml).
+#  - Security-only updates are handled immediately by
+#    `open-pull-requests-limit: 10` on the security group.
 
 version: 2
 updates:
-  # GitHub Actions - Keep workflow actions up to date
+  # ── GitHub Actions ────────────────────────────────────────────────────────
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
       day: "monday"
       time: "09:00"
-    open-pull-requests-limit: 3
+      timezone: "UTC"
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "github-actions"
+      - "automerge-candidate"
     commit-message:
       prefix: "ci"
       include: "scope"
@@ -21,62 +34,111 @@ updates:
       github-actions:
         patterns:
           - "*"
+    # Reviewers are set in CODEOWNERS; bot only needs write for branches.
 
-  # Cargo - Rust dependencies
+  # ── Cargo (Rust) ──────────────────────────────────────────────────────────
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
       day: "monday"
       time: "09:00"
-    open-pull-requests-limit: 3
+      timezone: "UTC"
+    open-pull-requests-limit: 10
     labels:
       - "dependencies"
       - "rust"
     commit-message:
       prefix: "deps"
       include: "scope"
-    # Group ALL non-security updates to reduce PR noise
+    # Ignore major bumps that require manual review.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
-      production-dependencies:
-        dependency-type: "production"
-        update-types:
-          - "minor"
-          - "patch"
+      # Kubernetes / operator ecosystem — changes together.
       kubernetes-client:
         patterns:
           - "kube*"
           - "k8s-openapi"
+        update-types:
+          - "minor"
+          - "patch"
+      # Async runtime — kept in sync to avoid incompatibility.
       tokio-ecosystem:
         patterns:
           - "tokio*"
           - "hyper*"
           - "tower*"
           - "axum*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Serialization stack.
       serialization:
         patterns:
           - "serde*"
           - "schemars"
+        update-types:
+          - "minor"
+          - "patch"
+      # Observability / tracing.
       tracing:
         patterns:
           - "tracing*"
           - "opentelemetry*"
-      security:
+        update-types:
+          - "minor"
+          - "patch"
+      # TLS and cryptography — security-sensitive, dedicated group.
+      security-crypto:
         patterns:
           - "rcgen"
           - "rustls*"
+          - "ring"
+          - "openssl*"
+        labels:
+          - "dependencies"
+          - "rust"
+          - "security"
+      # All remaining patch/minor updates bundled.
+      production-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "patch"
 
-  # Docker - Base image updates
+  # ── Docker base images ────────────────────────────────────────────────────
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
       day: "monday"
       time: "09:00"
-    open-pull-requests-limit: 1
+      timezone: "UTC"
+    open-pull-requests-limit: 3
     labels:
       - "dependencies"
       - "docker"
     commit-message:
       prefix: "build"
+      include: "scope"
+    # Security-fix-only updates should be merged quickly.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # ── Helm chart dependencies ───────────────────────────────────────────────
+  - package-ecosystem: "helm"
+    directory: "/charts/stellar-operator"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "helm"
+    commit-message:
+      prefix: "chart"
       include: "scope"

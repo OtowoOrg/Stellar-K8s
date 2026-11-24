@@ -1,0 +1,99 @@
+{{- /*
+  Network Pod-to-Pod Policies (issue #1320)
+  =========================================
+
+  Zero-trust pod-to-pod segmentation. These policies are the "default deny for
+  all namespaces" baseline and complement the per-node NetworkPolicies generated
+  by the operator reconciler.
+
+  Model
+  -----
+  For every namespace listed in .Values.security.networkPolicy.defaultDenyNamespaces
+  (and, separately, the release namespace and webhook namespace via
+  networkpolicy.yaml), a default-deny NetworkPolicy is applied with both
+  policyTypes Ingress and Egress. This guarantees that:
+
+    * No ingress is accepted unless an explicit rule allows it.
+    * No egress is permitted unless an explicit rule allows it.
+
+  Explicit allow rules (for required service communication) are intentionally
+  kept minimal and scoped:
+    * kube-system / kube-apiserver  — API access for reconciliation & status.
+    * kube-system / kube-dns        — service discovery (UDP + TCP 53).
+    * monitoring                     — Prometheus scraping of metrics endpoints.
+    * same-namespace peers          — required pod-to-pod links (Redis, Vault,
+                                      OTel collector, Kafka) are enumerated in
+                                      networkpolicy.yaml egress rules.
+
+  Because NetworkPolicies are additive and OR-ed, an allow rule that matches
+  supersedes the default-deny only for that matched path; everything else
+  remains blocked.
+
+  Rationale
+  ---------
+  A pod should only be reachable on the specific ports and by the specific peers
+  it legitimately serves. Listing every required edge explicitly (rather than
+  blanket-allowing namespaces) gives an audit trail of what the system depends
+  on and makes horizontal movement after a compromise substantially harder.
+*/}}
+
+{{- if .Values.security.networkPolicy.enabled }}
+{{- $denyNamespaces := .Values.security.networkPolicy.defaultDenyNamespaces | default list }}
+{{- range $denyNamespaces }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ . | quote }}
+  labels:
+    {{- include "stellar-operator.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: default-deny
+    stellar.org/policy-type: pod-to-pod
+  annotations:
+    stellar.org/policy-rationale: >-
+      Blanket default-deny (ingress+egress) applied to namespace {{ . }}.
+      Pods may only reach explicitly allowed endpoints enumerated by other,
+      more specific NetworkPolicies. See docs/network-pod-to-pod.md.
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Explicitly allow pods in this namespace to reach each other (loopback /
+    # same-service pods). Ports are further constrained by per-node policies.
+    - from:
+        - podSelector: {}
+  egress:
+    # Resolve service names via cluster DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Reach the Kubernetes API server for reconciliation and status updates.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              component: kube-apiserver
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow Prometheus to scrape metrics endpoints in this namespace.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+{{- end }}
+{{- end }}

@@ -411,12 +411,12 @@ Key test scenarios:
 
 ## References
 
-- [Cross-Region Architecture](../src/controller/state_sync.rs) — Rust implementation
-- [Cross-Cluster Bridges](../src/controller/cross_cluster.rs) — ExternalName + Submariner
-- [DR Controller](../src/controller/dr.rs) — Automated failover logic
+- [Cross-Region Architecture](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/state_sync.rs) — Rust implementation
+- [Cross-Cluster Bridges](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/cross_cluster.rs) — ExternalName + Submariner
+- [DR Controller](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/dr.rs) — Automated failover logic
 - [Peer Discovery](peer-discovery.md)
 - [Volume Snapshots](volume-snapshots.md)
-- [OCI Snapshot Sync](../src/controller/oci_snapshot.rs) — Cross-region bootstrapping
+- [OCI Snapshot Sync](https://github.com/OtowoOrg/Stellar-K8s/blob/main/src/controller/oci_snapshot.rs) — Cross-region bootstrapping
 - Stellar Core docs: https://developers.stellar.org/docs/validators/admin-guide/quorum
 
 **Last Updated**: 2026-05-31

@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Operator startup self-test and diagnostics
 //!
 //! Runs a suite of preflight checks before the operator begins reconciling.
@@ -25,7 +37,8 @@ use tracing::{error, info, warn};
 use crate::error::{Error, Result};
 
 /// Labels required by issue automation before opening new issues.
-pub const REQUIRED_GH_LABELS: &[&str] = &["ci", "security", "stellar-wave"];
+pub const REQUIRED_GH_LABELS: &[&str] =
+    &["ci", "security", "stellar-wave", "maintenance", "hygiene"];
 
 /// Tools that must be present for local development and CI to function.
 /// Each entry is `(binary, install_hint)`.
@@ -47,12 +60,13 @@ pub const REQUIRED_LOCAL_TOOLS: &[(&str, &str)] = &[
         "Install Helm 3: https://helm.sh/docs/intro/install/",
     ),
     ("cargo", "Install Rust via rustup: https://rustup.rs/"),
+    ("gh", "Install GitHub CLI: https://cli.github.com/"),
 ];
 
 const GH_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Severity of a preflight check result
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
 pub enum CheckSeverity {
     /// Failure means the operator cannot function correctly
     Critical,
@@ -555,5 +569,26 @@ mod tests {
         assert!(result.is_ok(), "cargo must be found in PATH");
         let version = result.unwrap();
         assert!(!version.is_empty(), "version string must not be empty");
+    }
+
+    #[test]
+    fn required_gh_labels_includes_maintenance_and_hygiene() {
+        assert!(
+            REQUIRED_GH_LABELS.contains(&"maintenance"),
+            "REQUIRED_GH_LABELS must include 'maintenance'"
+        );
+        assert!(
+            REQUIRED_GH_LABELS.contains(&"hygiene"),
+            "REQUIRED_GH_LABELS must include 'hygiene'"
+        );
+    }
+
+    #[test]
+    fn required_local_tools_includes_gh() {
+        let binaries: Vec<&str> = REQUIRED_LOCAL_TOOLS.iter().map(|(b, _)| *b).collect();
+        assert!(
+            binaries.contains(&"gh"),
+            "REQUIRED_LOCAL_TOOLS must include the 'gh' CLI"
+        );
     }
 }

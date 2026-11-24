@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Automated Backup Verification via Temporary Clusters
 //!
 //! This module implements automated verification of database backups by
@@ -64,6 +76,18 @@ pub struct BackupVerificationConfig {
     #[serde(default = "default_verification_timeout")]
     pub timeout_minutes: u64,
 
+    /// Maximum acceptable age of the newest restored backup, in minutes.
+    #[serde(default = "default_rpo_target_minutes")]
+    pub rpo_target_minutes: u64,
+
+    /// Number of days backups must be retained by the backup policy.
+    #[serde(default = "default_retention_days")]
+    pub retention_days: u32,
+
+    /// Run a point-in-time restore check in addition to the latest-backup check.
+    #[serde(default)]
+    pub point_in_time_restore: bool,
+
     /// Enable performance benchmarking
     #[serde(default)]
     pub benchmark_enabled: bool,
@@ -89,6 +113,14 @@ fn default_verification_timeout() -> u64 {
     60 // 60 minutes
 }
 
+fn default_rpo_target_minutes() -> u64 {
+    60
+}
+
+fn default_retention_days() -> u32 {
+    30
+}
+
 impl Default for BackupVerificationConfig {
     fn default() -> Self {
         Self {
@@ -97,11 +129,31 @@ impl Default for BackupVerificationConfig {
             backup_source: BackupSource::default(),
             strategy: VerificationStrategy::default(),
             timeout_minutes: default_verification_timeout(),
+            rpo_target_minutes: default_rpo_target_minutes(),
+            retention_days: default_retention_days(),
+            point_in_time_restore: false,
             benchmark_enabled: false,
             notification_webhook: None,
             report_storage: None,
             resources: VerificationResources::default(),
         }
+    }
+}
+
+impl BackupVerificationConfig {
+    /// Validate schedule and recovery objectives before starting a verifier.
+    pub fn validate(&self) -> Result<()> {
+        Schedule::from_str(&self.schedule).context("Invalid cron schedule")?;
+        if self.timeout_minutes == 0 {
+            anyhow::bail!("timeout_minutes must be greater than zero");
+        }
+        if self.rpo_target_minutes == 0 {
+            anyhow::bail!("rpo_target_minutes must be greater than zero");
+        }
+        if self.retention_days == 0 {
+            anyhow::bail!("retention_days must be greater than zero");
+        }
+        Ok(())
     }
 }
 
@@ -252,6 +304,7 @@ impl BackupVerificationScheduler {
             return Ok(());
         }
 
+        self.config.validate()?;
         let schedule =
             Schedule::from_str(&self.config.schedule).context("Invalid cron schedule")?;
 

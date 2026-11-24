@@ -54,10 +54,11 @@ filter_unconventional = true
 split_commits = false
 # regex for preprocessing the commit messages
 commit_preprocessors = [
-    # { pattern = '\((\w+\s)?#([0-9]+)\)', replace = "([#${2}](https://github.com/orhun/git-cliff/issues/${2}))"}, # replace issue numbers
+    { pattern = '\(#([0-9]+)\)', replace = "([#${1}](https://github.com/OtowoOrg/Stellar-K8s/issues/${1}))" },
 ]
 # regex for parsing and grouping commits
 commit_parsers = [
+    { body = "BREAKING CHANGE:", group = "Breaking" },
     { message = "^feat", group = "Added" },
     { message = "^fix", group = "Fixed" },
     { message = "^doc", group = "Documentation" },

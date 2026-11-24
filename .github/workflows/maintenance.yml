@@ -1,0 +1,26 @@
+name: Maintenance
+
+# Weekly hygiene that is NOT covered by other workflows:
+#   - security-audit.yml  → scheduled cargo-audit / cargo-deny / scorecard / SBOM
+#   - ci.yml              → PR/push gates + link checks (repo-wide-link-check job)
+#
+# Unique value here: stale-artifact cleanup regression coverage.
+
+on:
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  stale-artifact-audit:
+    name: Stale Artifact Regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-maintenance"
+
+      - name: Run stale artifact cleanup regression tests
+        run: cargo test stale_artifact_cleanup -- --nocapture

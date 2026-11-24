@@ -1,0 +1,14 @@
+{
+  "name": "stellar-k8s",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "npm --prefix frontend/monitors/ingress test && npm --prefix frontend/analytics test",
+    "test:ingress": "npm --prefix frontend/monitors/ingress test",
+    "test:analytics": "npm --prefix frontend/analytics test",
+    "lint": "npm --prefix frontend/monitors/ingress run lint",
+    "typecheck": "npm --prefix frontend/monitors/ingress run typecheck",
+    "build": "npm --prefix frontend/monitors/ingress run build && npm --prefix frontend/analytics run build"
+  }
+}

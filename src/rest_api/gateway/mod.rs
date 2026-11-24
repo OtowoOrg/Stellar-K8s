@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! API Gateway Module
 //!
 //! Provides unified access to operator APIs with:
@@ -13,11 +25,13 @@
 pub mod analytics;
 pub mod auth;
 pub mod developer_portal;
+pub mod distributed_ratelimit;
 pub mod handlers;
 pub mod openapi;
 pub mod plugin;
 pub mod ratelimit;
 pub mod router;
+pub mod throttle;
 pub mod transform;
 
 pub use analytics::{
@@ -28,11 +42,20 @@ pub use auth::{
     OAuth2Auth,
 };
 pub use developer_portal::DEVELOPER_PORTAL_HTML;
+pub use distributed_ratelimit::{
+    DistributedCounterStore, DistributedRateLimitConfig, DistributedRateLimiter,
+    InMemoryCounterStore, RateLimitDecision, RateLimitMetrics, RedisCounterStore, RedisStoreConfig,
+    StoreError,
+};
 pub use handlers::{gateway_routes, GatewayStateWrapper};
 pub use openapi::{get_default_routes, ApiRoute, OpenApiDocument, OpenApiGenerator};
 pub use plugin::{GatewayPlugin, PluginContext, PluginHook, PluginManager};
 pub use ratelimit::{QuotaConfig, QuotaManager, QuotaTier, RateLimitConfig, RateLimiter};
 pub use router::{ApiVersion, RouteRule, RouterConfig, VersionedRouter};
+pub use throttle::{
+    EndpointTierTable, KeyRateOverride, PerEndpointRateLimiter, RateLimitOutcome, ThrottleResponse,
+    TierLimits,
+};
 pub use transform::{BodyTransform, TransformPipeline, TransformRule};
 
 use axum::{

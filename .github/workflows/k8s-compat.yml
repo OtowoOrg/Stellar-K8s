@@ -1,0 +1,34 @@
+name: Kubernetes Compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: k8s-compat-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-tests:
+    name: Compatibility Smoke Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        k8s_version: ["1.28.0", "1.29.0", "1.30.0"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v5
+
+      - name: Setup Kubeconform
+        run: |
+          KUBECONFORM_VERSION="v0.6.4"
+          wget -qO- https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz | tar -xz
+          sudo mv kubeconform /usr/local/bin/
+          kubeconform -v
+
+      - name: Run Compatibility Tests
+        run: bash scripts/ci/k8s-compat-smoke-tests.sh ${{ matrix.k8s_version }}

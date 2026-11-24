@@ -1,0 +1,89 @@
+# Recovery Mode: relaxed probes for a validator mid-resync
+#
+# See docs/operations/disaster-recovery.md for the full runbook this
+# supports. Read that doc's "Recovery Mode manifest" section first —
+# by default Stellar-K8s pods have NO Kubernetes-native readiness probe
+# at all (apply_probe_override in src/controller/resources.rs only emits
+# one when spec.probes is set), so there is nothing to "bypass" unless
+# you previously opted into custom probes yourself.
+#
+# This example is for that opt-in case: you already set strict
+# spec.probes.readiness/liveness thresholds (e.g. to gate a Service or a
+# PodDisruptionBudget on them), and need to relax them temporarily so
+# kubelet doesn't kill/exclude a pod that is legitimately mid multi-hour
+# catchup (see historyMode: Full in the disaster-recovery runbook,
+# Scenario 2/3).
+#
+# This is a full StellarNode example (apply with `kubectl apply -f`, like
+# the other manifests in this directory) — copy the `probes`/`historyMode`
+# fields onto your existing node's spec rather than applying this file
+# as-is against a name that isn't `validator-recovery-example`. Reapply
+# your normal strict probe config once `kubectl stellar status` reports
+# Synced again.
+
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-recovery-example
+  namespace: stellar
+spec:
+  nodeType: Validator
+  network: testnet
+  version: "v21.0.0"
+
+  # Forces a full replay from history archives on the next fresh volume —
+  # see disaster-recovery.md Scenario 2/3 for when this applies. Leave as
+  # "Recent" if you're only relaxing probes without also forcing a full
+  # resync.
+  historyMode: Full
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+
+  storage:
+    storageClass: "standard"
+    size: "1500Gi" # matches the operator's historyMode: Full default — see capacity-planning.md
+    retentionPolicy: Retain # never Delete on a node you're actively recovering
+
+  # Relaxed probe overrides: long initial delay and a high failure
+  # threshold so kubelet tolerates hours of "not yet ready" during a full
+  # resync instead of restart-looping the pod or pulling it out of a
+  # Service's endpoints. These fields only ever override — the operator
+  # generates no probe at all if you omit `probes` entirely.
+  probes:
+    readiness:
+      initialDelaySeconds: 21600 # 6h grace period before the first check
+      periodSeconds: 300
+      timeoutSeconds: 10
+      failureThreshold: 20 # ~100 minutes of consecutive failures tolerated per check cycle
+    liveness:
+      initialDelaySeconds: 21600
+      periodSeconds: 300
+      timeoutSeconds: 10
+      failureThreshold: 20
+
+  validatorConfig:
+    seedSecretRef: "validator-recovery-seed"
+    enableHistoryArchive: true
+    historyArchiveUrls:
+      - "https://history.stellar.org/prd/core-testnet/core_testnet_001"
+
+# Expected behavior:
+#
+# 1. Workload keeps running normally (this does NOT suspend the node —
+#    combine with `spec.suspended`/`spec.maintenanceMode` per the runbook
+#    if you also need to pause reconciliation during a PVC wipe).
+# 2. Any readinessProbe/livenessProbe on the main container gets the
+#    thresholds above instead of the default of no probe at all.
+# 3. historyMode: Full means a fresh PVC replays from genesis
+#    (CATCHUP_COMPLETE=true) — expect CatchingUp for hours to days
+#    depending on network age, not a normal restart's few minutes.
+#
+# To exit recovery mode: patch `probes` back to your normal strict
+# values (or remove the field to return to "no native probe"), and set
+# historyMode back to "Recent" if you only needed it for this one resync.

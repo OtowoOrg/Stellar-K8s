@@ -1,0 +1,10 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: stellar-k8s
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://github.com/OtowoOrg/Stellar-K8s
+  ref:
+    branch: main

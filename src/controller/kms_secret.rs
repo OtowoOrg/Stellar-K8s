@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! `src/controller/kms_secret.rs`
 //!
 //! Reconciles the KMS / Vault / CSI secret integration for Validator nodes.
@@ -38,6 +50,7 @@ use std::collections::BTreeMap;
 use crate::crd::{
     seed_secret::{
         CsiSecretRef, ExternalSecretRef, SeedSecretSource, VaultSecretRef, DEFAULT_SEED_KEY,
+        LEGACY_SEED_KEY,
     },
     StellarNode,
 };
@@ -110,10 +123,16 @@ pub async fn reconcile_seed_secret(
         SeedSecretSource {
             local_ref: Some(lr),
             ..
-        } => Ok(SeedInjectionSpec::env_from_secret(
-            lr.name.clone(),
-            lr.effective_key().to_string(),
-        )),
+        } => {
+            // Prefer STELLAR_CORE_SEED; fall back to the legacy SEED key when
+            // the referenced Secret only contains SEED. Never log the value.
+            let secret_key =
+                resolve_secret_key(client, node, &lr.name, lr.effective_key()).await?;
+            Ok(SeedInjectionSpec::env_from_secret(
+                lr.name.clone(),
+                secret_key,
+            ))
+        }
 
         SeedSecretSource {
             external_ref: Some(er),
@@ -179,6 +198,77 @@ pub fn vault_agent_annotations(vr: &VaultSecretRef) -> BTreeMap<String, String> 
         m.insert(pair.name.clone(), pair.value.clone());
     }
     m
+}
+
+// ============================================================================
+// Seed key resolution (Issue #1554)
+// ============================================================================
+
+/// Resolve which key within a Kubernetes Secret holds the seed value.
+///
+/// Precedence:
+/// 1. The explicitly configured key (`configured_key`), if set.
+/// 2. `STELLAR_CORE_SEED` if present in the Secret.
+/// 3. Legacy `SEED` if present (logs a deprecation warning).
+/// 4. `STELLAR_CORE_SEED` as the default when the Secret cannot be read or
+///    contains neither key (the pod will surface a clear `CreateContainerConfigError`).
+///
+/// The secret **value** is never read or logged — only key names are inspected.
+pub async fn resolve_secret_key(
+    client: &Client,
+    node: &StellarNode,
+    secret_name: &str,
+    configured_key: &str,
+) -> Result<String> {
+    // An explicit, non-default key always wins.
+    if configured_key != DEFAULT_SEED_KEY && configured_key != LEGACY_SEED_KEY {
+        return Ok(configured_key.to_string());
+    }
+
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let secrets: Api<k8s_openapi::api::core::v1::Secret> =
+        Api::namespaced(client.clone(), &namespace);
+
+    let keys: Option<Vec<String>> = match secrets.get(secret_name).await {
+        Ok(secret) => secret
+            .data
+            .map(|d| d.keys().cloned().collect::<Vec<_>>()),
+        Err(kube::Error::Api(ae)) if ae.code == 404 => {
+            // Secret not created yet (e.g. ESO still syncing). Default to the
+            // preferred key; the pod will retry once the Secret exists.
+            return Ok(DEFAULT_SEED_KEY.to_string());
+        }
+        Err(e) => return Err(Error::KubeError(e)),
+    };
+
+    let keys = match keys {
+        Some(k) => k,
+        None => return Ok(DEFAULT_SEED_KEY.to_string()),
+    };
+
+    let has_preferred = keys.iter().any(|k| k == DEFAULT_SEED_KEY);
+    let has_legacy = keys.iter().any(|k| k == LEGACY_SEED_KEY);
+
+    if has_preferred {
+        // Preferred key present — use it. If the legacy key is also present we
+        // still use the preferred key and do not emit duplicates.
+        Ok(DEFAULT_SEED_KEY.to_string())
+    } else if has_legacy {
+        warn!(
+            node = %node.name_any(),
+            namespace = %namespace,
+            secret = %secret_name,
+            legacy_key = %LEGACY_SEED_KEY,
+            preferred_key = %DEFAULT_SEED_KEY,
+            "Secret uses the deprecated 'SEED' key. Falling back to it for now, \
+             but please migrate to 'STELLAR_CORE_SEED' (see scripts/migrate-seed-key.sh)."
+        );
+        Ok(LEGACY_SEED_KEY.to_string())
+    } else {
+        // Neither key present — default to the preferred key so the error
+        // message from the kubelet references the standardized name.
+        Ok(DEFAULT_SEED_KEY.to_string())
+    }
 }
 
 // ============================================================================
@@ -256,7 +346,7 @@ async fn reconcile_external_secret(
         Api::namespaced(client.clone(), &namespace);
 
     // Use the dynamic API to apply the ExternalSecret.
-    // We re-use the kube DynamicObject path via raw JSON patch.
+    // We reuse the kube DynamicObject path via raw JSON patch.
     let _dynamic_api = kube::api::DynamicObject::new(
         &er.name,
         &kube::discovery::ApiResource {
@@ -473,7 +563,11 @@ impl SeedInjectionSpec {
 
     /// Returns the `EnvVar` entries to add to the container spec.
     ///
-    /// - `EnvFromSecret` → one env var: `STELLAR_CORE_SEED` from secretKeyRef
+    /// - `EnvFromSecret` → one env var: `STELLAR_CORE_SEED` from secretKeyRef.
+    ///   The env var name is always the standardized `STELLAR_CORE_SEED`; the
+    ///   `secret_key` selects which key inside the Secret is read (which may be
+    ///   the legacy `SEED` during migration). Exactly one env var is emitted,
+    ///   so no duplicates are produced when both keys exist.
     /// - `CsiMount`      → one env var: `STELLAR_SEED_FILE` pointing at mount
     pub fn env_vars(&self) -> Vec<EnvVar> {
         match self {
@@ -702,6 +796,44 @@ mod tests {
         assert!(vars[0].value_from.is_some());
         assert!(spec.volume_mounts().is_empty());
         assert!(spec.volumes().is_empty());
+    }
+
+    #[test]
+    fn test_env_from_secret_legacy_key_uses_standard_env_name() {
+        // During migration the Secret may still only contain the legacy SEED
+        // key; the env var name must remain STELLAR_CORE_SEED and exactly one
+        // env var must be produced.
+        let spec = SeedInjectionSpec::env_from_secret(
+            "my-secret".to_string(),
+            LEGACY_SEED_KEY.to_string(),
+        );
+        let vars = spec.env_vars();
+        assert_eq!(vars.len(), 1, "must not emit duplicate env vars");
+        assert_eq!(vars[0].name, DEFAULT_SEED_KEY);
+        let key_ref = vars[0]
+            .value_from
+            .as_ref()
+            .and_then(|v| v.secret_key_ref.as_ref())
+            .expect("secretKeyRef must be set");
+        assert_eq!(key_ref.key, LEGACY_SEED_KEY);
+        assert!(vars[0].value.is_none(), "value must not be set directly");
+    }
+
+    #[test]
+    fn test_env_from_secret_preferred_key() {
+        let spec = SeedInjectionSpec::env_from_secret(
+            "my-secret".to_string(),
+            DEFAULT_SEED_KEY.to_string(),
+        );
+        let vars = spec.env_vars();
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].name, DEFAULT_SEED_KEY);
+        let key_ref = vars[0]
+            .value_from
+            .as_ref()
+            .and_then(|v| v.secret_key_ref.as_ref())
+            .expect("secretKeyRef must be set");
+        assert_eq!(key_ref.key, DEFAULT_SEED_KEY);
     }
 
     #[test]

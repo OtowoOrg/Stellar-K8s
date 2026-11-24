@@ -217,9 +217,9 @@ fn base_soroban_spec() -> StellarNodeSpec {
             #[allow(deprecated)]
             captive_core_config: None,
             captive_core_structured_config: None,
-            cache_config: None,
             enable_preflight: true,
             max_events_per_request: 10000,
+            cache: None,
         }),
         replicas: 2,
         min_available: None,
@@ -361,21 +361,6 @@ async fn reconcile_with_failing_client_never_panics_and_converges() {
         job_registry: std::sync::Arc::new(Default::default()),
         audit_log: std::sync::Arc::new(Default::default()),
         oidc_config: None,
-        audit_recorder: std::sync::Arc::new(stellar_k8s::controller::AuditRecorder::new(
-            std::sync::Arc::new(Default::default()),
-            vec![],
-            None,
-        )),
-        anomaly_detector: std::sync::Arc::new(
-            stellar_k8s::controller::anomaly_detection::AnomalyDetector::new(Default::default()),
-        ),
-        plugin_registry: std::sync::Arc::new(stellar_k8s::plugin_sdk::PluginRegistry::new()),
-        metrics_store: std::sync::Arc::new(Default::default()),
-        analytics_engine: std::sync::Arc::new(
-            stellar_k8s::logging::analytics::AnalyticsEngine::new(std::time::Duration::from_secs(
-                3600,
-            )),
-        ),
     });
     let node = make_node(
         base_validator_spec(),

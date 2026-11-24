@@ -1,3 +1,4 @@
+{{- if .Values.webhook.enabled }}
 ---
 # Namespace for the webhook
 apiVersion: v1
@@ -60,7 +61,7 @@ metadata:
     app.kubernetes.io/name: stellar-webhook
     app.kubernetes.io/component: admission-webhook
 spec:
-  replicas: 2
+  replicas: {{ .Values.webhook.replicaCount | default 2 }}
   selector:
     matchLabels:
       app.kubernetes.io/name: stellar-webhook
@@ -71,15 +72,12 @@ spec:
         app.kubernetes.io/component: admission-webhook
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "9090"
+        prometheus.io/port: {{ .Values.webhook.metricsPort | default 9090 | quote }}
     spec:
       serviceAccountName: stellar-webhook
       automountServiceAccountToken: false
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        fsGroup: 65532
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -87,29 +85,21 @@ spec:
           image: '{{ if .Values.image.digest }}{{ .Values.image.repository }}@{{ .Values.image.digest }}{{ else }}{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}{{ end }}'
           imagePullPolicy: '{{ .Values.image.pullPolicy }}'
           args:
-            - "--webhook-port=8443"
-            - "--metrics-port=9090"
-            - "--cert-dir=/certs"
+            - "--bind=0.0.0.0:{{ .Values.webhook.port | default 8443 }}"
+            - "--cert-path=/certs/tls.crt"
+            - "--key-path=/certs/tls.key"
+            - "--log-format=json"
           ports:
             - name: https
-              containerPort: 8443
+              containerPort: {{ .Values.webhook.port | default 8443 }}
               protocol: TCP
             - name: metrics
-              containerPort: 9090
+              containerPort: {{ .Values.webhook.metricsPort | default 9090 }}
               protocol: TCP
           securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
+            {{- toYaml .Values.securityContext | nindent 12 }}
           resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
+            {{- toYaml .Values.webhook.resources | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -118,12 +108,19 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 20
           readinessProbe:
+            {{- if .Values.webhook.certManager.enabled }}
+            httpGet:
+              path: /ready
+              port: cert-health
+            {{- else }}
             httpGet:
               path: /ready
               port: https
               scheme: HTTPS
+            {{- end }}
             initialDelaySeconds: 5
-            periodSeconds: 10
+            periodSeconds: 5
+            failureThreshold: 2
           volumeMounts:
             - name: certs
               mountPath: /certs
@@ -131,6 +128,34 @@ spec:
             - name: plugins
               mountPath: /plugins
               readOnly: true
+        {{- if .Values.webhook.certManager.enabled }}
+        # Readiness is gated by an offline verifier before the kubelet or
+        # apiserver can observe an invalid certificate/key pair.
+        - name: cert-health
+          image: '{{ if .Values.image.digest }}{{ .Values.image.repository }}@{{ .Values.image.digest }}{{ else }}{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}{{ end }}'
+          imagePullPolicy: '{{ .Values.image.pullPolicy }}'
+          command:
+            - /stellar-cert-health
+          args:
+            - --cert-path=/certs/tls.crt
+            - --key-path=/certs/tls.key
+            - --ca-path=/certs/ca.crt
+            - --dns-name=stellar-webhook.stellar-webhook.svc
+            - --bind=0.0.0.0:9443
+            - --reload-interval-secs=5
+          ports:
+            - name: cert-health
+              containerPort: 9443
+              protocol: TCP
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.webhook.certHealth.resources | nindent 12 }}
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+        {{- end }}
       volumes:
         - name: certs
           secret:
@@ -172,9 +197,15 @@ spec:
       targetPort: https
       protocol: TCP
     - name: metrics
-      port: 9090
+      port: {{ .Values.webhook.metricsPort | default 9090 }}
       targetPort: metrics
       protocol: TCP
+    {{- if .Values.webhook.certManager.enabled }}
+    - name: cert-health
+      port: 9443
+      targetPort: cert-health
+      protocol: TCP
+    {{- end }}
   selector:
     app.kubernetes.io/name: stellar-webhook
 ---
@@ -185,9 +216,11 @@ metadata:
   name: stellar-webhook
   labels:
     app.kubernetes.io/name: stellar-webhook
+  {{- if .Values.webhook.certManager.enabled }}
   annotations:
-    # cert-manager will inject the CA bundle
-    cert-manager.io/inject-ca-from: stellar-webhook/stellar-webhook-cert
+    # cainjector distributes the CA to every apiserver in the cluster.
+    cert-manager.io/inject-ca-from: stellar-webhook/stellar-webhook-ca
+  {{- end }}
 webhooks:
   - name: stellarnode.stellar.io
     clientConfig:
@@ -196,8 +229,8 @@ webhooks:
         namespace: stellar-webhook
         path: /validate
         port: 443
-      # CA bundle will be injected by cert-manager or manually set
-      # caBundle: <base64-encoded-ca-cert>
+      # caBundle is populated by cert-manager cainjector. Admission remains
+      # fail-closed when the bundle or serving identity cannot be verified.
     rules:
       - apiGroups: ["stellar.io"]
         apiVersions: ["v1alpha1"]
@@ -206,8 +239,11 @@ webhooks:
         scope: Namespaced
     admissionReviewVersions: ["v1", "v1beta1"]
     sideEffects: None
-    timeoutSeconds: 10
-    failurePolicy: Fail
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds | default 10 }}
+    {{- /* Permissive mode (#1494): a webhook outage never blocks admission. */}}
+    failurePolicy: {{ if eq (.Values.webhook.mode | default "strict") "permissive" }}Ignore{{ else }}{{ .Values.webhook.failurePolicy | default "Fail" }}{{ end }}
+    # Certificate verification, endpoint, and timeout errors block admission
+    # unless the operator explicitly opted into permissive mode above.
     matchPolicy: Equivalent
     namespaceSelector:
       matchExpressions:
@@ -217,8 +253,60 @@ webhooks:
           values:
             - kube-system
             - stellar-webhook
+{{- if .Values.webhook.certManager.enabled }}
 ---
-# Certificate for the webhook (cert-manager)
+# A namespaced bootstrap issuer avoids collisions with other applications.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: stellar-webhook-selfsigned
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+    app.kubernetes.io/component: admission-webhook-tls
+spec:
+  selfSigned: {}
+---
+# The CA is independently renewed by cert-manager. cainjector distributes its
+# ca.crt to every apiserver through the inject-ca-from annotation above.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: stellar-webhook-ca
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+    app.kubernetes.io/component: admission-webhook-ca
+spec:
+  secretName: stellar-webhook-ca
+  commonName: stellar-webhook-ca
+  isCA: true
+  duration: {{ .Values.webhook.certManager.caDuration | default "8760h" }}
+  renewBefore: {{ .Values.webhook.certManager.caRenewBefore | default "2160h" }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    name: stellar-webhook-selfsigned
+    kind: Issuer
+    group: cert-manager.io
+---
+# CA-backed issuer used for continuously renewed serving identities.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: stellar-webhook-ca
+  namespace: stellar-webhook
+  labels:
+    app.kubernetes.io/name: stellar-webhook
+    app.kubernetes.io/component: admission-webhook-tls
+spec:
+  ca:
+    secretName: stellar-webhook-ca
+---
+# Every cert-manager renewal atomically updates the mounted Secret. The server
+# reloads it and the cert-health sidecar gates readiness during the transition.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -226,24 +314,30 @@ metadata:
   namespace: stellar-webhook
   labels:
     app.kubernetes.io/name: stellar-webhook
+    app.kubernetes.io/component: admission-webhook-tls
 spec:
   secretName: stellar-webhook-certs
+  commonName: stellar-webhook.stellar-webhook.svc
+  duration: {{ .Values.webhook.certManager.duration | default "2160h" }}
+  renewBefore: {{ .Values.webhook.certManager.renewBefore | default "720h" }}
   dnsNames:
     - stellar-webhook
     - stellar-webhook.stellar-webhook
     - stellar-webhook.stellar-webhook.svc
     - stellar-webhook.stellar-webhook.svc.cluster.local
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
   issuerRef:
-    name: selfsigned-issuer
-    kind: ClusterIssuer
----
-# Self-signed ClusterIssuer (for development)
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: selfsigned-issuer
-spec:
-  selfSigned: {}
+    name: stellar-webhook-ca
+    kind: Issuer
+    group: cert-manager.io
+{{- end }}
 ---
 # ConfigMap for plugin configuration (optional)
 apiVersion: v1
@@ -274,3 +368,4 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: stellar-webhook
+{{- end }}

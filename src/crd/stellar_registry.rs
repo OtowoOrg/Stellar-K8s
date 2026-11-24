@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! StellarRegistry Custom Resource Definition
 //!
 //! Declarative container registry management with automated security scanning,
@@ -103,6 +115,24 @@ pub struct AdmissionPolicy {
     pub block_unsigned: bool,
     #[serde(default = "default_true")]
     pub enforce_on_deploy: bool,
+    /// Gate enforced on the registry pull path, independent of admission
+    /// webhooks (see `controller::registry_gate`).
+    #[serde(default)]
+    pub pull_gate: PullGateMode,
+}
+
+/// How the registry pull path treats unscanned or critically vulnerable
+/// artifacts.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PullGateMode {
+    /// No pull-path gating.
+    #[default]
+    Off,
+    /// Allow the pull but report what would have been denied.
+    Audit,
+    /// Deny unscanned and over-threshold artifacts.
+    Enforce,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]

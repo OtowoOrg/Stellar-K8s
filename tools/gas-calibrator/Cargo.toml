@@ -1,0 +1,42 @@
+[package]
+name = "gas-calibrator"
+version = "0.1.0"
+edition = "2021"
+description = "Automated Soroban gas metering calibrator — benchmarks host hardware and emits tuning profiles"
+license = "Apache-2.0"
+repository = "https://github.com/OtowoOrg/Stellar-K8s"
+
+[[bin]]
+name = "gas-calibrator"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Error handling
+anyhow = "1"
+
+# Crypto for hash-loop benchmarks (SHA-256, Blake3)
+sha2 = "0.10"
+blake3 = "1"
+
+# WASM runtime used to execute embedded micro-benchmark modules
+wasmtime = "24.0.7"
+
+# High-resolution timing
+instant = { version = "0.1", features = [] }
+
+# CPU / system info for hardware profiling
+num_cpus = "1"
+sysinfo = "0.30"
+
+# Statistical summary (mean, std-dev, percentiles)
+statrs = "0.17"
+
+[workspace]

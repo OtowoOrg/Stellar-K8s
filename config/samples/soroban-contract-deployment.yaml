@@ -1,0 +1,30 @@
+apiVersion: stellar.org/v1alpha1
+kind: ContractWASM
+metadata:
+  name: hello-contract-wasm
+  namespace: stellar
+spec:
+  rpcUrl: https://soroban-testnet.stellar.org
+  wasmUri: https://artifacts.example.org/hello_contract.wasm
+  wasmLedgerKeyXdr: REPLACE_WITH_WASM_CODE_LEDGER_KEY_XDR
+  sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  uploadTransactionXdr: REPLACE_WITH_SIGNED_WASM_UPLOAD_ENVELOPE
+---
+apiVersion: stellar.org/v1alpha1
+kind: ContractInstance
+metadata:
+  name: hello-contract
+  namespace: stellar
+spec:
+  rpcUrl: https://soroban-testnet.stellar.org
+  wasm: hello-contract-wasm
+  wasmHash: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  contractId: REPLACE_WITH_DETERMINISTIC_CONTRACT_ID
+  contractLedgerKeyXdr: REPLACE_WITH_CONTRACT_INSTANCE_LEDGER_KEY_XDR
+  deploymentTransactionXdr: REPLACE_WITH_SIGNED_CONTRACT_CREATE_ENVELOPE
+  storage:
+    - keyXdr: REPLACE_WITH_STORAGE_KEY_XDR
+      valueXdr: REPLACE_WITH_STORAGE_VALUE_XDR
+      durability: Persistent
+      ttlLedgers: 535680
+      transactionXdr: REPLACE_WITH_SIGNED_STORAGE_WRITE_ENVELOPE

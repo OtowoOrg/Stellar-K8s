@@ -48,48 +48,25 @@ The performance regression testing system ensures that no PR degrades the perfor
 
 ## Workflows
 
-### 1. Performance Regression Testing (`.github/workflows/performance-regression.yml`)
+### Unified performance pipeline (`.github/workflows/performance.yml`)
+
+`performance.yml` is the single supported benchmark workflow. It replaces the
+former `benchmark.yml`, `performance-regression.yml`, and `webhook-benchmark.yml`
+files with one matrix-driven pipeline (see `.github/CI_COMMANDS.md`).
 
 **Triggers:**
-- Pull requests to main branch (when src/, Cargo.toml, or benchmarks/ change)
-- Manual workflow dispatch
+- Pushes to `main` (path-filtered)
+- Manual `workflow_dispatch`
 
-**Jobs:**
-
-1. **build**: Builds operator in release mode and creates Docker image
-2. **setup-cluster**: Creates kind cluster and deploys operator
-3. **performance-test**: Runs k6 load tests against operator
-4. **regression-analysis**: Compares results with baseline and posts PR comment
-5. **cleanup**: Deletes kind cluster
+**Suites (matrix):**
+1. **operator** — general operator performance
+2. **regression** — reconciler / load regression vs baseline
+3. **webhook** — admission webhook latency benchmarks
 
 **Key Features:**
-- Automatic kind cluster provisioning
-- Operator deployment with proper RBAC
-- Port forwarding for local access
-- Comprehensive logging and artifact collection
-- PR comment with performance comparison table
-- CI failure on regression detection
-
-### 2. Webhook Benchmark (`.github/workflows/webhook-benchmark.yml`)
-
-**Triggers:**
-- Pull requests that modify webhook code
-- Pushes to main branch
-
-**Focus:**
-- Webhook-specific performance (validation/mutation latency)
-- Comparison with Go-based webhook baselines
-- Rust performance advantage quantification
-
-### 3. General Benchmark (`.github/workflows/benchmark.yml`)
-
-**Triggers:**
-- Pushes to main branch
-- Manual workflow dispatch
-
-**Focus:**
-- Full operator performance testing
-- Baseline updates on release tags
+- Shared build artifact across suites
+- Baseline comparison via `.github/actions/compare-benchmarks`
+- Summary report published as a workflow artifact
 
 ## Baseline Management
 

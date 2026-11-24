@@ -1,0 +1,116 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+# Distributed Rate Limiting — PrometheusRule (issue #1335)
+#
+# Alerts on the counters exported by
+# src/rest_api/gateway/distributed_ratelimit.rs.
+#
+# Deploy to the same namespace as your Prometheus instance:
+#   kubectl apply -f monitoring/rate-limit-alerts.yaml -n monitoring
+#
+# Prerequisites:
+#   - Prometheus Operator (kube-prometheus-stack or standalone)
+#   - API gateway instances scraped by Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-gateway-rate-limits
+  namespace: monitoring
+  labels:
+    app: stellar-operator
+    component: api-gateway
+    # Required by kube-prometheus-stack to pick up this rule:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    # -------------------------------------------------------------------------
+    # Recording rules — pre-compute the ratios the alerts below reuse.
+    # -------------------------------------------------------------------------
+    - name: stellar.ratelimit.recording
+      interval: 30s
+      rules:
+        - record: stellar:gateway_rate_limit_rejection_ratio
+          expr: |
+            sum(rate(stellar_gateway_rate_limit_exceeded_total[5m]))
+              /
+            clamp_min(sum(rate(stellar_gateway_rate_limit_checks_total[5m])), 1e-9)
+
+        - record: stellar:gateway_rate_limit_check_p99_seconds
+          expr: |
+            histogram_quantile(
+              0.99,
+              sum by (le) (rate(stellar_gateway_rate_limit_check_duration_seconds_bucket[5m]))
+            )
+
+    - name: stellar.ratelimit.alerts
+      rules:
+        # ── Clients are being throttled ──────────────────────────────────────
+        - alert: StellarGatewayRateLimitRejectionsHigh
+          expr: stellar:gateway_rate_limit_rejection_ratio > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Over 5% of gateway requests are being rate limited"
+            description: >
+              {{ $value | humanizePercentage }} of requests hit the rate limit
+              over the last 5 minutes. Either a client is misbehaving or the
+              configured limit is too low for current traffic.
+
+        - alert: StellarGatewayRateLimitRejectionsCritical
+          expr: stellar:gateway_rate_limit_rejection_ratio > 0.25
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Over 25% of gateway requests are being rate limited"
+            description: >
+              {{ $value | humanizePercentage }} of requests are being rejected.
+              This is user-visible. Identify the offending client or raise the
+              limit.
+
+        # ── The shared store is failing, so enforcement is no longer global ──
+        # This is the important one: the limiter fails open, so a Redis outage
+        # is silent from the client's perspective while the fleet-wide limit
+        # silently becomes a per-replica limit.
+        - alert: StellarGatewayRateLimitBackendDegraded
+          expr: |
+            rate(stellar_gateway_rate_limit_backend_errors_total[5m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Gateway rate limit store is unreachable — limits are per-replica"
+            description: >
+              The gateway is failing open to process-local counters, so the
+              effective limit is roughly N times the configured value across N
+              replicas. Check Redis availability and network policy.
+            runbook_url: "https://docs.stellar.org/runbooks/rate-limit-backend"
+
+        # ── The sub-millisecond budget from the issue's verification steps ───
+        - alert: StellarGatewayRateLimitOverheadBudgetExceeded
+          expr: stellar:gateway_rate_limit_check_p99_seconds > 0.001
+          for: 15m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Rate limit check p99 exceeds the 1ms budget"
+            description: >
+              p99 check latency is {{ $value | humanizeDuration }}, above the
+              1ms budget. Usually means the gateway and its Redis are no longer
+              co-located, or Redis is saturated.

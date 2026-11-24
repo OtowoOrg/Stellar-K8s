@@ -1,0 +1,246 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "Incident custom resource",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "title",
+        "incidentType",
+        "severity"
+      ],
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "incidentType": {
+          "type": "string",
+          "enum": [
+            "NetworkPartition",
+            "LedgerStall",
+            "QuorumDegradation",
+            "ByzantineFault"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "Critical",
+            "High",
+            "Medium",
+            "Low"
+          ]
+        },
+        "affectedNodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "alertChannels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "channelType": {
+                "type": "string",
+                "enum": [
+                  "Webhook",
+                  "Slack",
+                  "PagerDuty",
+                  "OpsGenie"
+                ]
+              },
+              "endpointUrl": {
+                "type": "string"
+              },
+              "routingKey": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "autoRemediationEnabled": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": [
+            "Detected",
+            "Escalated",
+            "Mitigating",
+            "Resolved",
+            "PostMortem"
+          ]
+        },
+        "detectedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolvedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "partitionDetails": {
+          "type": "object",
+          "properties": {
+            "missedLedgerCloses": {
+              "type": "integer"
+            },
+            "expectedCloseTimeSecs": {
+              "type": "integer"
+            },
+            "lastClosedLedger": {
+              "type": "integer"
+            },
+            "stallDurationSecs": {
+              "type": "integer"
+            },
+            "unreachablePeers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "reachablePeers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "quorumHealthPct": {
+              "type": "number"
+            }
+          }
+        },
+        "quorumAdjustmentRecommendation": {
+          "type": "object",
+          "properties": {
+            "suggestedQuorumSet": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "newThreshold": {
+              "type": "integer"
+            },
+            "rationale": {
+              "type": "string"
+            },
+            "actionPlan": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "timeline": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "metadata": {
+                "type": "object",
+                "x-kubernetes-preserve-unknown-fields": true
+              }
+            }
+          }
+        },
+        "alertDispatches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "channelName": {
+                "type": "string"
+              },
+              "dispatchedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "success": {
+                "type": "boolean"
+              },
+              "latencyMs": {
+                "type": "integer"
+              },
+              "responseMessage": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "incident.stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "Incident"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "incident.stellar.org",
+      "version": "v1alpha1",
+      "kind": "Incident"
+    }
+  ]
+}

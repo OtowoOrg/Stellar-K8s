@@ -1,0 +1,48 @@
+# Namespace labels are the trust boundary. Protect them with RBAC/admission
+# policy; do not allow application teams to add stellar.org/network-access.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: horizon-soroban-deny-ingress
+  namespace: stellar-mainnet
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: ["horizon", "sorobanrpc"]
+  policyTypes: ["Ingress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: horizon-soroban-trusted-ingress
+  namespace: stellar-mainnet
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: ["horizon", "sorobanrpc"]
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              stellar.org/network-access: trusted
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: stellar-api-gateway
+      ports:
+        - protocol: TCP
+          port: 8000
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              stellar.org/network-access: trusted
+          podSelector:
+            matchLabels:
+              stellar.org/client: horizon
+      ports:
+        - protocol: TCP
+          port: 8000

@@ -1,0 +1,121 @@
+suite: horizon HPA
+templates:
+  - templates/hpa-horizon.yaml
+
+tests:
+  - it: renders nothing when horizonHpa.enabled is false
+    set:
+      horizonHpa.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders HPA when horizonHpa.enabled is true
+    set:
+      horizonHpa.enabled: true
+      horizonHpa.stellarNodeName: horizon
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: HorizontalPodAutoscaler
+      - equal:
+          path: apiVersion
+          value: autoscaling/v2
+
+  - it: uses correct scaleTargetRef defaults
+    set:
+      horizonHpa.enabled: true
+      horizonHpa.stellarNodeName: horizon
+    asserts:
+      - equal:
+          path: spec.scaleTargetRef.kind
+          value: Deployment
+      - equal:
+          path: spec.scaleTargetRef.apiVersion
+          value: apps/v1
+
+  - it: uses default min/max replicas
+    set:
+      horizonHpa.enabled: true
+      horizonHpa.stellarNodeName: horizon
+    asserts:
+      - equal:
+          path: spec.minReplicas
+          value: 2
+      - equal:
+          path: spec.maxReplicas
+          value: 10
+
+  - it: respects custom min/max replicas
+    set:
+      horizonHpa.enabled: true
+      horizonHpa.stellarNodeName: horizon
+      horizonHpa.minReplicas: 3
+      horizonHpa.maxReplicas: 20
+    asserts:
+      - equal:
+          path: spec.minReplicas
+          value: 3
+      - equal:
+          path: spec.maxReplicas
+          value: 20
+
+  - it: includes two metrics entries (tps and queue)
+    set:
+      horizonHpa.enabled: true
+      horizonHpa.stellarNodeName: horizon
+    asserts:
+      - equal:
+          path: spec.metrics[0].object.metric.name
+          value: stellar_horizon_tps
+      - equal:
+          path: spec.metrics[1].object.metric.name
+          value: stellar_horizon_queue_length
+
+  - it: uses custom tpsTargetPerReplica
+    set:
+      horizonHpa.enabled: true
+      horizonHpa.stellarNodeName: horizon
+      horizonHpa.tpsTargetPerReplica: 200
+    asserts:
+      - equal:
+          path: spec.metrics[0].object.target.value
+          value: "200"
+
+  - it: uses custom queueLengthTarget
+    set:
+      horizonHpa.enabled: true
+      horizonHpa.stellarNodeName: horizon
+      horizonHpa.queueLengthTarget: 1000
+    asserts:
+      - equal:
+          path: spec.metrics[1].object.target.value
+          value: "1000"
+
+  - it: has scaleDown stabilization window of 300s by default
+    set:
+      horizonHpa.enabled: true
+      horizonHpa.stellarNodeName: horizon
+    asserts:
+      - equal:
+          path: spec.behavior.scaleDown.stabilizationWindowSeconds
+          value: 300
+
+  - it: has scaleUp stabilization window of 60s by default
+    set:
+      horizonHpa.enabled: true
+      horizonHpa.stellarNodeName: horizon
+    asserts:
+      - equal:
+          path: spec.behavior.scaleUp.stabilizationWindowSeconds
+          value: 60
+
+  - it: places HPA in the release namespace by default
+    set:
+      horizonHpa.enabled: true
+      horizonHpa.stellarNodeName: horizon
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE

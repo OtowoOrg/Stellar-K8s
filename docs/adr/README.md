@@ -29,6 +29,7 @@ We follow the [MADR (Markdown Architecture Decision Record)](https://adr.github.
 | [0002](0002-rust-language-choice.md) | Choice of Rust Programming Language | Accepted | 2024-03-25 |
 | [0003](0003-kube-rs-finalizers.md) | Use of kube-rs Finalizers | Accepted | 2024-03-25 |
 | [0004](0004-crd-versioning-strategy.md) | CRD Versioning Strategy | Accepted | 2024-03-25 |
+| [0005](0005-reentrancy-guard-middleware.md) | Native Reentrancy Guard Middleware for Soroban | Accepted | 2026-08-31 |
 
 ## Creating a New ADR
 

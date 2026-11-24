@@ -2,7 +2,7 @@
 
 > Production-grade networking guidance for running Stellar Core Validator and RPC workloads with deterministic peer connectivity, low-latency consensus traffic, and explicit east-west isolation.
 >
-> Tracking: Closes #998
+> Tracking: Closes #998, #1614
 
 ---
 
@@ -24,12 +24,13 @@ This module covers:
 | ToR BGP, multi-cluster edge, load balancers | [bgp-edge-routing.md](bgp-edge-routing.md) | Network/SRE teams |
 | Isolation policies and service mesh mTLS | [service-mesh-isolation.md](service-mesh-isolation.md) | Security engineers |
 | Command-level troubleshooting and tuning | [troubleshooting-performance.md](troubleshooting-performance.md) | On-call responders |
+| Testnet peer egress ports (3510/11625) | [testnet-egress-ports.md](testnet-egress-ports.md) | Network/SRE teams, validators onboarding to testnet |
 
 ## Traffic Classes for Stellar-K8s
 
 | Traffic Class | Typical Ports | Latency Sensitivity | Recommended Handling |
 |---|---|---|---|
-| SCP peer traffic (validator quorum) | `11625/tcp` | Very high | Minimize hops, BGP/direct routing, strict allow-listing |
+| SCP peer traffic (validator quorum) | `11625/tcp` (mainnet), `3510/tcp` + `11625/tcp` (testnet egress) | Very high | Minimize hops, BGP/direct routing, strict allow-listing. **Outbound to `3510`/`11625` is mandatory to reach the SDF testnet** — see [testnet-egress-ports.md](testnet-egress-ports.md) |
 | Public HTTP API (Horizon/RPC) | `80/443` | Medium | Front with L4/L7 LB, autoscale, WAF where applicable |
 | Overlay/operator control plane | `443`, `6443`, `10250` | Medium | Dedicated policy boundaries and audit visibility |
 | Metrics/log shipping | `9100`, `9090`, `4317` | Low-Medium | Isolated observability namespace and egress controls |
@@ -43,6 +44,7 @@ This module covers:
 
 ## Cross-References
 
+- Testnet peer egress requirements: [testnet-egress-ports.md](testnet-egress-ports.md)
 - Existing baseline docs: [../network-topology-management.md](../network-topology-management.md), [../metallb-bgp-anycast.md](../metallb-bgp-anycast.md), [../service-mesh.md](../service-mesh.md), [../mtls-guide.md](../mtls-guide.md)
 - Security hardening tie-in: [../security/incident-response-playbook.md](../security/incident-response-playbook.md)
 - DR tie-in: [../deployment-patterns/multi-region-dr.md](../deployment-patterns/multi-region-dr.md)

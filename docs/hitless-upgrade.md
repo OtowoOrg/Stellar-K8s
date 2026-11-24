@@ -131,8 +131,8 @@ The handoff sidecar is built from `src/sidecar.rs` and published as
 # Run unit tests for the hitless upgrade module
 cargo test -p stellar-k8s hitless_upgrade
 
-# Integration test (requires Kind cluster)
-make test-hitless-upgrade
+# Chart-level upgrade/preservation integration runs in CI via the
+# "Helm upgrade preservation" step (make helm-upgrade-test).
 ```
 
 ## References

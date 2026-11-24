@@ -1,6 +1,6 @@
 # Failure Mode and Effects Analysis (FMEA) — StellarNode
 
-Structured view of how a managed Stellar node can fail under Kubernetes and network stress, aligned with Chaos Mesh scenarios in [`tests/chaos/`](../tests/chaos/).
+Structured view of how a managed Stellar node can fail under Kubernetes and network stress, aligned with Chaos Mesh scenarios in [`tests/chaos/`](https://github.com/OtowoOrg/Stellar-K8s/tree/main/tests/chaos).
 
 | ID | Failure mode | Cause / driver | Local effect | System effect | Detection | Mitigation (operator / ops) |
 |----|----------------|----------------|-------------|-------------|-----------|------------------------------|
@@ -34,6 +34,6 @@ These rules strongly discourage (using `preferredDuringScheduling` with weight 1
 
 Runbooks:
 
-1. **Partition** — [`tests/chaos/run-partition-verify.sh`](../tests/chaos/run-partition-verify.sh)
+1. **Partition** — [`tests/chaos/run-partition-verify.sh`](https://github.com/OtowoOrg/Stellar-K8s/blob/main/tests/chaos/run-partition-verify.sh)
 2. **Forensic** — [`docs/forensic-snapshot.md`](forensic-snapshot.md)
 3. **Vault** — [`docs/vault-stellar-tutorial.md`](vault-stellar-tutorial.md)

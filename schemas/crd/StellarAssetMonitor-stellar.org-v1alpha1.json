@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "StellarAssetMonitor custom resource",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "StellarAssetMonitor"
+      ]
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "spec": {
+      "type": "object",
+      "required": [
+        "network"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "network": {
+          "type": "string",
+          "minLength": 1
+        },
+        "largeSupplyChangePercent": {
+          "type": "number",
+          "minimum": 0,
+          "default": 10
+        },
+        "watchList": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "assetCode"
+            ],
+            "properties": {
+              "assetCode": {
+                "type": "string",
+                "minLength": 1
+              },
+              "issuer": {
+                "type": "string"
+              },
+              "contractId": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "StellarAssetMonitor"
+    }
+  ]
+}

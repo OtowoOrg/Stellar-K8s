@@ -85,7 +85,6 @@ byzantineWatcher:
 otel:
   enabled: true
   endpoint: "http://tempo.monitoring.svc.cluster.local:4317"
-  samplingRatio: "0.1"
   collector:
     enabled: true
     config:
@@ -98,12 +97,7 @@ otel:
 
 # Feature flags
 featureFlags:
-  enableCveScanning: true
-  enableReadPool: true
   enableDr: true
-  enablePeerDiscovery: true
-  enableArchiveHealth: true
-  enableSorobanMetrics: true
 
 # Horizon HPA for auto-scaling
 horizonHpa:

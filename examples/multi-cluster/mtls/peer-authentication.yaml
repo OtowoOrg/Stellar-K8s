@@ -1,0 +1,20 @@
+# Example: Istio PeerAuthentication enforcing STRICT mTLS
+#
+# Enforces mutual TLS for all Stellar node traffic within the mesh.
+# Requires Istio installed in multi-cluster mode.
+#
+# Apply to both clusters:
+#   kubectl apply -f mtls/peer-authentication.yaml --context=cluster-a
+#   kubectl apply -f mtls/peer-authentication.yaml --context=cluster-b
+
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: stellar-mtls
+  namespace: stellar-nodes
+spec:
+  mtls:
+    mode: STRICT
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stellar-node

@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Operator runtime configuration loaded from a mounted ConfigMap.
 //!
 //! Loaded from the file specified by the `STELLAR_OPERATOR_CONFIG` env var
@@ -41,6 +53,7 @@ impl Default for NodeResourceDefaults {
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OperatorConfig {
+    #[serde(default)]
     pub default_resources: DefaultResources,
     #[serde(default)]
     pub reconciler: ReconcilerConfig,
@@ -59,6 +72,9 @@ pub struct OperatorConfig {
     /// Disk scaling configuration
     #[serde(default)]
     pub disk_scaling: DiskScalingConfig,
+    /// Default-off validator seed/key rotation daemon configuration.
+    #[serde(default)]
+    pub key_rotation: crate::controller::security::rotation::ValidatorKeyRotationConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -375,6 +391,8 @@ defaultResources:
     fn test_defaults_for_returns_none_on_empty() {
         let cfg = OperatorConfig::default();
         assert!(cfg.defaults_for(&NodeType::Horizon).is_none());
+        assert!(!cfg.key_rotation.enabled);
+        assert!(cfg.key_rotation.rollback_on_failure);
     }
 
     #[test]
@@ -487,12 +505,29 @@ reconciler:
   errorBackoffBase: 30
   maxBackoff: 600
   enableJitter: false
+keyRotation:
+  enabled: true
+  intervalSecs: 7200
+  validationWindowSecs: 45
+  validationSampleIntervalSecs: 3
+  minAuthenticatedPeers: 2
+  maxUnhealthySamples: 1
+  rollbackOnFailure: false
+  awsRegion: us-east-1
 "#;
         let cfg: OperatorConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(cfg.reconciler.requeue_interval, 120);
         assert_eq!(cfg.reconciler.error_backoff_base, 30);
         assert_eq!(cfg.reconciler.max_backoff, 600);
         assert!(!cfg.reconciler.enable_jitter);
+        assert!(cfg.key_rotation.enabled);
+        assert_eq!(cfg.key_rotation.interval_secs, 7200);
+        assert_eq!(cfg.key_rotation.validation_window_secs, 45);
+        assert_eq!(cfg.key_rotation.validation_sample_interval_secs, 3);
+        assert_eq!(cfg.key_rotation.min_authenticated_peers, 2);
+        assert_eq!(cfg.key_rotation.max_unhealthy_samples, 1);
+        assert!(!cfg.key_rotation.rollback_on_failure);
+        assert_eq!(cfg.key_rotation.aws_region.as_deref(), Some("us-east-1"));
     }
 
     #[test]

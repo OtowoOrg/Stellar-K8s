@@ -1,0 +1,27 @@
+# Example: mTLS peer certificate for cross-cluster validator traffic
+#
+# Issued by the shared CA. Both clusters trust the same CA, so the
+# validator in Cluster A and the standby in Cluster B can authenticate
+# each other over mTLS on port 11625.
+#
+# Apply to both clusters:
+#   kubectl apply -f mtls/peer-certificate.yaml --context=cluster-a
+#   kubectl apply -f mtls/peer-certificate.yaml --context=cluster-b
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: validator-peer-cert
+  namespace: stellar-nodes
+spec:
+  secretName: validator-peer-tls
+  duration: 2160h
+  renewBefore: 360h
+  commonName: validator.stellar-nodes.svc.cluster.local
+  dnsNames:
+    - validator.stellar-nodes.svc.cluster.local
+    - validator-cluster-a.stellar.io
+    - validator-cluster-b.stellar.io
+  issuerRef:
+    name: stellar-ca-issuer
+    kind: ClusterIssuer

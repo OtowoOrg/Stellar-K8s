@@ -1,0 +1,157 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "StellarGitOpsConfig defines GitOps configuration for Stellar K8s",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "provider"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "ArgoCD",
+            "FluxCD"
+          ],
+          "description": "GitOps provider to use"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable GitOps"
+        },
+        "gitRepository": {
+          "type": "object",
+          "description": "Git repository configuration",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "Git repository URL"
+            },
+            "branch": {
+              "type": "string",
+              "default": "main",
+              "description": "Git branch to track"
+            },
+            "interval": {
+              "type": "string",
+              "default": "1m",
+              "description": "Sync interval"
+            }
+          }
+        },
+        "argocdConfig": {
+          "type": "object",
+          "description": "ArgoCD-specific configuration",
+          "properties": {
+            "project": {
+              "type": "string",
+              "default": "default"
+            },
+            "syncPolicy": {
+              "type": "string",
+              "enum": [
+                "Manual",
+                "Auto"
+              ],
+              "default": "Manual"
+            }
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "True",
+                  "False",
+                  "Unknown"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "lastTransitionTime": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "lastSyncTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "syncStatus": {
+          "type": "string",
+          "enum": [
+            "Synced",
+            "OutOfSync",
+            "Unknown"
+          ]
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "StellarGitOpsConfig"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "StellarGitOpsConfig"
+    }
+  ]
+}

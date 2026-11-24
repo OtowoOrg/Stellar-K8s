@@ -38,8 +38,6 @@ stellar-sidecar --stream
 
 ## Resource Templates
 
-`dev/templates/` contains 12 quick-start templates for common workflows.
-
 ## VS Code Extension
 
 Install from `tools/vscode-stellar/` for remote debugging and log streaming.

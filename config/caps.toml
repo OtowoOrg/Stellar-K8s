@@ -1,0 +1,62 @@
+# Generated from stellar-core stable release notes by scripts/update-cap-matrix.py.
+# `introduced_caps` lists CAPs named in the release's protocol section.
+
+[[releases]]
+version = "v28.0.1"
+protocol = 28
+xdr_version = 28
+introduced_caps = []
+
+[[releases]]
+version = "v28.0.0"
+protocol = 28
+xdr_version = 28
+introduced_caps = ["CAP-0083", "CAP-0085", "CAP-0086"]
+
+[[releases]]
+version = "v27.1.0"
+protocol = 27
+xdr_version = 27
+introduced_caps = []
+
+[[releases]]
+version = "v27.0.0"
+protocol = 27
+xdr_version = 27
+introduced_caps = ["CAP-0071"]
+
+[[releases]]
+version = "v26.1.0"
+protocol = 26
+xdr_version = 26
+introduced_caps = []
+
+[[releases]]
+version = "v26.0.1"
+protocol = 26
+xdr_version = 26
+introduced_caps = []
+
+[[releases]]
+version = "v26.0.0"
+protocol = 26
+xdr_version = 26
+introduced_caps = ["CAP-0073", "CAP-0077"]
+
+[[releases]]
+version = "v25.2.2-external"
+protocol = 25
+xdr_version = 25
+introduced_caps = []
+
+[[releases]]
+version = "v25.2.1-external"
+protocol = 25
+xdr_version = 25
+introduced_caps = []
+
+[[releases]]
+version = "v25.2.0"
+protocol = 25
+xdr_version = 25
+introduced_caps = []

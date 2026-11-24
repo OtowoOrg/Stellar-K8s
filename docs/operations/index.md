@@ -30,6 +30,7 @@ Key signals to monitor:
 - Backup persistent Stellar Core storage and any attached volumes.
 - Use Kubernetes snapshots or storage-provider backups for data recovery.
 - Test restore workflows in a staging environment.
+- Follow the [Backup and Disaster Recovery Runbook](../backup-disaster-recovery-runbook.md) for checklists and step-by-step restore procedures.
 
 ## Troubleshooting Common Issues
 
@@ -51,5 +52,8 @@ Key signals to monitor:
 ## Related Documentation
 
 - [Incident Response](incident-response.md)
+- [Production Profiling Runbook](profiling-runbook.md)
+- [Readiness Probe State Machine Coverage](readiness-probe-states.md)
+- [Container Command Configuration](container-commands.md)
 - [API Reference](../api/index.md)
 - [Production Security Hardening](../production-security-hardening.md)

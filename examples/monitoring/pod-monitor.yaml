@@ -1,0 +1,77 @@
+---
+# Prometheus Operator scrape configs for stellar-operator metrics.
+# Requires: prometheus-operator CRDs (monitoring.coreos.com/v1)
+# Apply: kubectl apply -f examples/monitoring/pod-monitor.yaml
+# Validate: kubectl apply --dry-run=client -f examples/monitoring/pod-monitor.yaml
+
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: stellar-operator
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-operator
+    app.kubernetes.io/component: metrics
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stellar-operator
+  namespaceSelector:
+    matchNames:
+      - stellar-system
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: true
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: stellar-operator
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-operator
+    app.kubernetes.io/component: metrics
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stellar-operator
+  namespaceSelector:
+    matchNames:
+      - stellar-system
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      scheme: http
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: stellar-node-pods
+  namespace: stellar-system
+  labels:
+    app.kubernetes.io/name: stellar-k8s
+    app.kubernetes.io/component: node-metrics
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: stellar-k8s
+  namespaceSelector:
+    any: true
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

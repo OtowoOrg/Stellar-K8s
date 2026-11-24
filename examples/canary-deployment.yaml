@@ -1,0 +1,568 @@
+# Canary Deployment Strategy for Stellar-K8s Major Version Upgrade
+# This manifest demonstrates progressive rollout with traffic shifting and rollback capabilities
+
+---
+# Step 1: Create canary rollout for Stellar Core
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: stellar-core-canary
+  namespace: stellar-k8s
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: stellar-core
+      version: v21
+  
+  # Template for the pods
+  template:
+    metadata:
+      labels:
+        app: stellar-core
+        version: v21
+    spec:
+      containers:
+      - name: stellar-core
+        image: stellarcore:21.x.x  # New version
+        imagePullPolicy: IfNotPresent
+        
+        # Resource requests/limits
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+        
+        # Health probes
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 11626
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 11626
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        # Environment
+        env:
+        - name: STELLAR_CORE_VERSION
+          value: "21.x.x"
+        - name: LOG_LEVEL
+          value: "DEBUG"
+        
+        # Ports
+        ports:
+        - name: peer
+          containerPort: 11625
+          protocol: TCP
+        - name: http
+          containerPort: 11626
+          protocol: TCP
+        
+        # Volume mounts
+        volumeMounts:
+        - name: stellar-core-data
+          mountPath: /var/lib/stellar
+        - name: stellar-core-config
+          mountPath: /etc/stellar
+      
+      # Init container to verify previous version compatibility
+      initContainers:
+      - name: version-check
+        image: stellarcore:21.x.x
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Verifying version compatibility..."
+          stellar-core --version
+          echo "✓ Version check passed"
+      
+      volumes:
+      - name: stellar-core-data
+        persistentVolumeClaim:
+          claimName: stellar-core-data
+      - name: stellar-core-config
+        configMap:
+          name: stellar-core-config
+  
+  # Canary strategy configuration
+  strategy:
+    canary:
+      # Initial deployment (10% traffic)
+      steps:
+      
+      # Step 1: Deploy canary with 1 replica (33% of 3 replicas)
+      - setWeight: 10
+        pause:
+          duration: 10m  # Monitor for 10 minutes
+      
+      # Automated analysis between steps
+      - analysis:
+          templates:
+          - name: canary-metrics-analysis
+            interval: 1m
+            count: 10  # Run analysis 10 times (10 minutes total)
+            successCriteria:
+            - name: error-rate
+              successCriteria: result[0] < 0.01  # Error rate < 1%
+            - name: latency
+              successCriteria: result[0] < 2000  # Latency < 2 seconds
+      
+      # Step 2: Scale to 50% traffic if metrics pass
+      - setWeight: 50
+        pause:
+          duration: 10m
+      
+      # Step 3: Final analysis
+      - analysis:
+          templates:
+          - name: full-validation
+            interval: 1m
+            count: 10
+            successCriteria:
+            - name: consensus-health
+              successCriteria: result[0] == 1  # Consensus achieved
+            - name: transaction-throughput
+              successCriteria: result[0] > baseline*0.9  # > 90% of baseline
+      
+      # Step 4: Complete rollout (100%)
+      - setWeight: 100
+
+---
+# Step 2: Define analysis templates for canary metrics
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: canary-metrics-analysis
+  namespace: stellar-k8s
+spec:
+  metrics:
+  
+  # Metric 1: Error rate monitoring
+  - name: error-rate
+    provider:
+      prometheus:
+        address: http://prometheus:9090
+        query: |
+          rate(http_requests_total{status=~"5.."}[5m])
+    successCriteria: "{{ result | float }} < 0.01"
+    interval: 1m
+    count: 10
+  
+  # Metric 2: API latency (p99)
+  - name: latency
+    provider:
+      prometheus:
+        address: http://prometheus:9090
+        query: |
+          histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))
+    successCriteria: "{{ result | float }} < 2"
+    interval: 1m
+    count: 10
+  
+  # Metric 3: Pod restart count
+  - name: pod-restarts
+    provider:
+      prometheus:
+        address: http://prometheus:9090
+        query: |
+          rate(kube_pod_container_status_restarts_total{pod=~"stellar-core-.*"}[5m])
+    successCriteria: "{{ result | float }} == 0"
+    interval: 1m
+    count: 10
+
+---
+# Step 3: Additional analysis template for full validation
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: full-validation
+  namespace: stellar-k8s
+spec:
+  metrics:
+  
+  # Consensus health check
+  - name: consensus-health
+    provider:
+      prometheus:
+        address: http://prometheus:9090
+        query: |
+          stellar_core_consensus_state{pod=~"stellar-core-.*"}
+    successCriteria: "{{ result | float }} == 1"
+    interval: 1m
+    count: 10
+  
+  # Transaction throughput
+  - name: transaction-throughput
+    provider:
+      prometheus:
+        address: http://prometheus:9090
+        query: |
+          rate(stellar_txn_counter_total[5m])
+    successCriteria: "{{ result | float }} > {{ baseline | float }} * 0.9"
+    interval: 1m
+    count: 10
+  
+  # Database replication lag
+  - name: replication-lag
+    provider:
+      prometheus:
+        address: http://prometheus:9090
+        query: |
+          pg_replication_lag_seconds{job="horizon-db"}
+    successCriteria: "{{ result | float }} < 10"
+    interval: 1m
+    count: 10
+
+---
+# Step 4: Service for stable traffic routing
+apiVersion: v1
+kind: Service
+metadata:
+  name: stellar-core-canary
+  namespace: stellar-k8s
+spec:
+  selector:
+    app: stellar-core
+  ports:
+  - name: peer
+    port: 11625
+    targetPort: 11625
+  - name: http
+    port: 11626
+    targetPort: 11626
+  type: ClusterIP
+
+---
+# Step 5: Ingress traffic split configuration (for Istio/Linkerd)
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: stellar-core-canary
+  namespace: stellar-k8s
+spec:
+  hosts:
+  - stellar-core
+  http:
+  # Canary route (initially 10% of traffic)
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: stellar-core-canary
+      weight: 10
+    - destination:
+        host: stellar-core-stable
+      weight: 90
+    timeout: 30s
+    retries:
+      attempts: 3
+      perTryTimeout: 10s
+
+---
+# Step 6: Notification hook for upgrade milestones
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: canary-notifications
+  namespace: stellar-k8s
+data:
+  on-canary-start.sh: |
+    #!/bin/bash
+    # Notification when canary deployment starts
+    echo "🚀 Canary deployment started at $(date -u)"
+    echo "Version: stellar-core:21.x.x"
+    echo "Traffic allocation: 10%"
+    echo "Monitoring for 10 minutes..."
+  
+  on-canary-success.sh: |
+    #!/bin/bash
+    # Notification on successful canary completion
+    echo "✅ Canary deployment completed successfully!"
+    echo "Metrics validated:"
+    echo "  - Error rate < 1%"
+    echo "  - Latency p99 < 2s"
+    echo "  - Consensus healthy"
+    echo "Rolling out to 100%..."
+  
+  on-canary-failure.sh: |
+    #!/bin/bash
+    # Notification on canary failure - triggers rollback
+    echo "❌ Canary deployment FAILED!"
+    echo "Initiating automatic rollback..."
+    echo "Rolling back to stellar-core:20.x.x"
+
+---
+# Step 7: Rollback configuration for automatic failure recovery
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: stellar-core-stable
+  namespace: stellar-k8s
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: stellar-core
+      version: v20
+  
+  template:
+    metadata:
+      labels:
+        app: stellar-core
+        version: v20
+    spec:
+      containers:
+      - name: stellar-core
+        image: stellarcore:20.x.x  # Stable version for rollback
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 11626
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 11626
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        ports:
+        - name: peer
+          containerPort: 11625
+        - name: http
+          containerPort: 11626
+        volumeMounts:
+        - name: stellar-core-data
+          mountPath: /var/lib/stellar
+        - name: stellar-core-config
+          mountPath: /etc/stellar
+      
+      volumes:
+      - name: stellar-core-data
+        persistentVolumeClaim:
+          claimName: stellar-core-data
+      - name: stellar-core-config
+        configMap:
+          name: stellar-core-config
+
+---
+# Step 8: Policy for automatic rollback on failure
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: stellar-core-canary
+  namespace: stellar-k8s
+spec:
+  # ... (other spec fields from Step 1)
+  strategy:
+    canary:
+      # ... (canary steps from Step 1)
+      maxSurge: "25%"
+      maxUnavailable: 0
+      
+      # Abort strategy - automatic rollback conditions
+      abortOnFailure: true
+      abort:
+      - errorRate: 0.05  # Rollback if error rate > 5%
+      - latency: 5000    # Rollback if latency > 5 seconds
+      - consecutiveErrors: 10  # Rollback after 10 consecutive errors
+
+---
+# Step 9: Example traffic policy for gradual shift
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: stellar-core-canary
+  namespace: stellar-k8s
+spec:
+  host: stellar-core
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 10000
+      http:
+        http1MaxPendingRequests: 10000
+        http2MaxRequests: 100000
+        http1MaxRequests: 100000
+    loadBalancer:
+      simple: ROUND_ROBIN
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+  subsets:
+  - name: canary
+    labels:
+      version: v21
+  - name: stable
+    labels:
+      version: v20
+
+---
+# Step 10: Monitoring dashboard for canary progress
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: canary-dashboard
+  namespace: stellar-k8s
+data:
+  dashboard.json: |
+    {
+      "dashboard": {
+        "title": "Stellar Core Canary Deployment",
+        "panels": [
+          {
+            "title": "Traffic Distribution",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{destination_pod=~'stellar-core-canary.*'}[1m]) / rate(http_requests_total{app='stellar-core'}[1m]) * 100"
+              }
+            ]
+          },
+          {
+            "title": "Error Rate Comparison",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{status=~'5..', destination_pod=~'stellar-core-canary.*'}[5m])"
+              },
+              {
+                "expr": "rate(http_requests_total{status=~'5..', destination_pod=~'stellar-core-stable.*'}[5m])"
+              }
+            ]
+          },
+          {
+            "title": "Latency (p99) Comparison",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{destination_pod=~'stellar-core-canary.*'}[5m]))"
+              },
+              {
+                "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{destination_pod=~'stellar-core-stable.*'}[5m]))"
+              }
+            ]
+          },
+          {
+            "title": "Pod Restarts",
+            "targets": [
+              {
+                "expr": "rate(kube_pod_container_status_restarts_total{pod=~'stellar-core-canary.*'}[5m])"
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+---
+# Step 11: Alert rules for canary deployment
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stellar-core-canary-alerts
+  namespace: stellar-k8s
+spec:
+  groups:
+  - name: canary-deployment
+    interval: 30s
+    rules:
+    - alert: CanaryHighErrorRate
+      expr: |
+        rate(http_requests_total{status=~"5..", destination_pod=~"stellar-core-canary.*"}[5m]) > 0.01
+      for: 2m
+      annotations:
+        summary: "Canary deployment high error rate"
+        description: "Error rate in canary deployment is > 1%"
+    
+    - alert: CanaryLatencyIncreased
+      expr: |
+        histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{destination_pod=~"stellar-core-canary.*"}[5m])) > 2
+      for: 2m
+      annotations:
+        summary: "Canary deployment latency too high"
+        description: "P99 latency in canary deployment exceeded 2 seconds"
+    
+    - alert: CanaryConsensusFailed
+      expr: |
+        stellar_core_consensus_state{pod=~"stellar-core-canary.*"} != 1
+      for: 3m
+      annotations:
+        summary: "Canary deployment consensus failed"
+        description: "Canary pods lost consensus state"
+    
+    - alert: CanaryRestartLoop
+      expr: |
+        rate(kube_pod_container_status_restarts_total{pod=~"stellar-core-canary.*"}[15m]) > 0
+      for: 5m
+      annotations:
+        summary: "Canary pods restarting"
+        description: "Canary pods are entering restart loop"
+
+---
+# Step 12: Rollback script execution hook
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: canary-rollback-on-failure
+  namespace: stellar-k8s
+spec:
+  backoffLimit: 3
+  completionMode: NonIndexed
+  template:
+    spec:
+      serviceAccountName: stellar-operator
+      containers:
+      - name: rollback-script
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          #!/bin/bash
+          echo "Canary deployment rollback initiated"
+          
+          # Check if canary metrics indicate failure
+          CANARY_STATUS=$(kubectl get rollout stellar-core-canary -o jsonpath='{.status.phase}')
+          
+          if [ "$CANARY_STATUS" = "Failed" ]; then
+            echo "🔄 Rolling back to stable version..."
+            
+            # Scale down canary
+            kubectl patch deployment stellar-core-canary -p '{"spec":{"replicas":0}}'
+            
+            # Scale up stable
+            kubectl patch deployment stellar-core-stable -p '{"spec":{"replicas":3}}'
+            
+            # Wait for stable pods to be ready
+            kubectl wait --for=condition=Ready pod -l version=v20 --timeout=300s
+            
+            echo "✅ Rollback complete"
+            exit 0
+          fi
+          
+          echo "Canary deployment status: $CANARY_STATUS"
+          exit 1
+      restartPolicy: OnFailure

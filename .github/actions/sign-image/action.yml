@@ -1,0 +1,73 @@
+name: Sign Container Image with Cosign
+description: >
+  Keylessly sign a published container image with Cosign and verify the
+  signature back out of the registry (issue #1334).
+
+# Keyless (Fulcio/Rekor) signing is used rather than a long-lived key pair:
+# the signing identity is the GitHub Actions OIDC token, so there is no private
+# key to store, rotate, or leak. The calling job must therefore grant
+# `id-token: write` and `packages: write`.
+
+inputs:
+  image:
+    description: Image reference WITHOUT a tag, e.g. ghcr.io/org/stellar-operator
+    required: true
+  digest:
+    description: >
+      Image digest (sha256:...). Signing by digest rather than tag is what makes
+      the signature meaningful — a tag can be moved to different content later.
+    required: true
+  cosign-version:
+    description: Cosign release to install
+    required: false
+    default: "v2.4.1"
+  verify:
+    description: Verify the signature after signing
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Cosign
+      uses: sigstore/cosign-installer@v3
+      with:
+        cosign-release: ${{ inputs.cosign-version }}
+
+    - name: Validate inputs
+      shell: bash
+      run: |
+        set -euo pipefail
+        digest="${{ inputs.digest }}"
+        if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+          echo "::error title=Cosign::digest must be a full sha256 digest, got '$digest'"
+          exit 1
+        fi
+
+    - name: Sign image
+      shell: bash
+      env:
+        COSIGN_EXPERIMENTAL: "1"
+      run: |
+        set -euo pipefail
+        target="${{ inputs.image }}@${{ inputs.digest }}"
+        echo "→ Signing $target"
+        cosign sign --yes "$target"
+        echo "::notice title=Cosign::Signed $target"
+
+    - name: Verify signature
+      if: inputs.verify == 'true'
+      shell: bash
+      env:
+        COSIGN_EXPERIMENTAL: "1"
+      run: |
+        set -euo pipefail
+        target="${{ inputs.image }}@${{ inputs.digest }}"
+        echo "→ Verifying $target"
+        # Constrain verification to this repository's workflows so an unrelated
+        # Fulcio identity that happens to have signed the digest is rejected.
+        cosign verify \
+          --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/" \
+          --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+          "$target"
+        echo "::notice title=Cosign::Verified $target"

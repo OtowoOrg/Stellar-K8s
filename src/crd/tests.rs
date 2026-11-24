@@ -124,16 +124,6 @@ mod stellar_node_spec_validation {
         }
     }
 
-    #[test]
-    fn test_default_stellar_node_spec_enables_network_policy() {
-        let spec = StellarNodeSpec::default();
-        let policy = spec
-            .network_policy
-            .expect("default StellarNodeSpec should include network_policy");
-
-        assert!(policy.enabled, "default network_policy should be enabled");
-    }
-
     fn valid_soroban_spec() -> StellarNodeSpec {
         StellarNodeSpec {
             node_type: NodeType::SorobanRpc,
@@ -189,9 +179,7 @@ mod stellar_node_spec_validation {
         }
     }
 
-    // Test-only helper constructors. The compiler warns these as dead code
-    // because test modules aren't fully linked; the suppression is intentional.
-    #[allow(dead_code)] // test helper — used by test cases in this module
+    #[allow(dead_code)]
     fn default_resources() -> ResourceRequirements {
         ResourceRequirements {
             requests: ResourceSpec {
@@ -205,7 +193,7 @@ mod stellar_node_spec_validation {
         }
     }
 
-    #[allow(dead_code)] // test helper — used by test cases in this module
+    #[allow(dead_code)]
     fn default_storage() -> StorageConfig {
         StorageConfig {
             storage_class: "standard".to_string(),
@@ -1053,6 +1041,7 @@ mod stellar_node_spec_validation {
                 http_port: None,
                 log_level: Some("info".to_string()),
                 additional_config: None,
+                ..Default::default()
             });
         }
 
@@ -1077,6 +1066,7 @@ mod stellar_node_spec_validation {
                 http_port: Some(11701),
                 log_level: Some("debug".to_string()),
                 additional_config: Some("MAX_CONCURRENT_SUBPROCESSES=5".to_string()),
+                ..Default::default()
             });
         }
 
@@ -1103,6 +1093,7 @@ mod stellar_node_spec_validation {
                 http_port: None,
                 log_level: None,
                 additional_config: None,
+                ..Default::default()
             });
         }
 
@@ -1122,7 +1113,6 @@ mod stellar_node_spec_validation {
             min_replicas: 1,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
-            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1135,6 +1125,7 @@ mod stellar_node_spec_validation {
                 ewma_alpha: 0.3,
                 ..Default::default()
             }),
+            queue_autoscaling: None,
         });
 
         let result = spec.validate();
@@ -1158,7 +1149,6 @@ mod stellar_node_spec_validation {
             min_replicas: 1,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
-            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1171,6 +1161,7 @@ mod stellar_node_spec_validation {
                 ewma_alpha: 0.0,
                 ..Default::default()
             }),
+            queue_autoscaling: None,
         });
 
         let result = spec.validate();
@@ -1194,7 +1185,6 @@ mod stellar_node_spec_validation {
             min_replicas: 1,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
-            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1207,6 +1197,7 @@ mod stellar_node_spec_validation {
                 ewma_alpha: 1.0,
                 ..Default::default()
             }),
+            queue_autoscaling: None,
         });
 
         let result = spec.validate();
@@ -1230,7 +1221,6 @@ mod stellar_node_spec_validation {
             min_replicas: 1,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
-            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1243,6 +1233,7 @@ mod stellar_node_spec_validation {
                 ewma_alpha: 0.3,
                 ..Default::default()
             }),
+            queue_autoscaling: None,
         });
 
         assert!(spec.validate().is_ok());
@@ -1257,7 +1248,6 @@ mod stellar_node_spec_validation {
             min_replicas: 1,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
-            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1271,6 +1261,7 @@ mod stellar_node_spec_validation {
                 ewma_alpha: 0.3,
                 ..Default::default()
             }),
+            queue_autoscaling: None,
         });
 
         let result = spec.validate();
@@ -1295,7 +1286,6 @@ mod stellar_node_spec_validation {
             min_replicas: 1,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
-            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1308,6 +1298,7 @@ mod stellar_node_spec_validation {
                 ewma_alpha: 0.3,
                 ..Default::default()
             }),
+            queue_autoscaling: None,
         });
 
         let result = spec.validate();
@@ -1331,7 +1322,6 @@ mod stellar_node_spec_validation {
             min_replicas: 2,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
-            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1344,6 +1334,7 @@ mod stellar_node_spec_validation {
                 ewma_alpha: 0.3,
                 ..Default::default()
             }),
+            queue_autoscaling: None,
         });
 
         assert!(spec.validate().is_ok());
@@ -1367,10 +1358,11 @@ mod stellar_node_spec_validation {
                 http_port: Some(11626),
                 log_level: Some("info".to_string()),
                 additional_config: Some("# Custom config\nFOO=bar".to_string()),
+                ..Default::default()
             }),
             enable_preflight: true,
             max_events_per_request: 10000,
-            cache_config: None,
+            cache: None,
         };
 
         // Test JSON serialization

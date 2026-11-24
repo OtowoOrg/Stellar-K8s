@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Axum HTTP server for the REST API
 //!
 //! Supports mTLS with optional graceful certificate reload: when the TLS config
@@ -7,6 +19,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::extract::Extension;
 use axum::{middleware, routing::get, Router};
 use axum_server::tls_rustls::RustlsConfig;
 use rustls::server::WebPkiClientVerifier;
@@ -21,17 +34,22 @@ use crate::controller::ControllerState;
 use crate::{Error, Result};
 
 use super::audit_handlers;
+use super::alert_test;
 use super::auth;
 use super::compliance_handlers;
+use super::config_rollout_handlers;
 use super::custom_metrics;
 use super::dashboard_handlers;
 use super::handlers;
 use super::health_summary;
 use super::horizon_cache_handlers;
 use super::job_handlers;
+use super::profiling;
+use super::registry_gate_handlers;
 use super::resource_optimization_handlers;
 use super::scp_topology;
 use super::stellar_metrics_server;
+use super::versioning::{self, VersionPolicy};
 
 /// Build a rustls ServerConfig from PEM data (cert, key, CA for client verification).
 /// Used for initial server setup and after certificate rotation to reload without restart.
@@ -96,135 +114,7 @@ pub async fn run_server(
     state: Arc<ControllerState>,
     rustls_config: Option<RustlsConfig>,
 ) -> Result<()> {
-    let public = Router::new()
-        .route("/health", get(handlers::health))
-        .route("/healthz", get(handlers::healthz))
-        .route("/readyz", get(handlers::readyz))
-        .route("/livez", get(handlers::livez))
-        .with_state(state.clone());
-
-    let protected = Router::new()
-        .route("/leader", get(handlers::leader_status))
-        .route("/api/v1/nodes", get(handlers::list_nodes))
-        .route("/api/v1/nodes/:namespace/:name", get(handlers::get_node))
-        // Health summary API (Issue #552)
-        .route("/v1/health/summary", get(health_summary::get_health_summary))
-        .route("/v1/health/nodes", get(health_summary::get_node_health_status))
-        .route("/v1/health/incidents", get(health_summary::get_health_incidents))
-        // Log level dynamic control (GET is reader, POST is admin)
-        .route(
-            "/config/log-level",
-            get(handlers::get_log_level),
-        )
-        .route(
-            "/config/log-level",
-            axum::routing::post(handlers::set_log_level)
-                .route_layer(middleware::from_fn(auth::api_admin)),
-        )
-        // Compliance report
-        .route("/api/v1/compliance/report", get(handlers::compliance_report))
-        // Horizon cache observability (Issue #732)
-        .route(
-            "/api/v1/horizon/cache/status",
-            get(horizon_cache_handlers::horizon_cache_status),
-        )
-        .route(
-            "/api/v1/compliance/regulatory-report",
-            get(compliance_handlers::regulatory_compliance_report),
-        )
-        .route(
-            "/api/v1/compliance/status",
-            get(compliance_handlers::compliance_status),
-        )
-        // Dashboard routes
-        .route("/", get(dashboard_ui))
-        .route("/api/v1/dashboard/overview", get(dashboard_handlers::dashboard_overview))
-        .route("/api/v1/dashboard/metrics", get(dashboard_handlers::dashboard_metrics))
-        .route("/api/v1/analytics/logs", get(dashboard_handlers::log_analytics))
-        .route("/api/v1/config/analyze", axum::routing::post(dashboard_handlers::analyze_config_impact))
-        .route("/api/v1/security/posture", get(dashboard_handlers::security_posture))
-        .route("/api/v1/capacity/plan", get(dashboard_handlers::capacity_planning))
-        .route("/api/v1/capacity/what-if", axum::routing::post(dashboard_handlers::run_what_if))
-        // Resource optimization (Issue #734)
-        .route(
-            "/api/v1/optimization/recommendations",
-            get(resource_optimization_handlers::optimization_recommendations),
-        )
-        .route(
-            "/api/v1/optimization/simulate",
-            axum::routing::post(resource_optimization_handlers::optimization_simulate),
-        )
-        .route(
-            "/api/v1/optimization/forecast",
-            get(resource_optimization_handlers::optimization_forecast),
-        )
-        .route("/api/v1/traffic/dashboard", get(dashboard_handlers::traffic_dashboard))
-        .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/logs",
-            get(dashboard_handlers::get_node_logs),
-        )
-        .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/conditions",
-            get(dashboard_handlers::get_node_conditions),
-        )
-        .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/dr",
-            get(dashboard_handlers::get_dr_status),
-        )
-        .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/metrics",
-            get(dashboard_handlers::get_node_metrics),
-        )
-        .route(
-            "/api/v1/dashboard/nodes/:namespace/:name/actions",
-            axum::routing::post(dashboard_handlers::execute_node_action)
-                .route_layer(middleware::from_fn(auth::api_admin)),
-        )
-        // Operator logs
-        .route("/api/v1/dashboard/operator/logs", get(dashboard_handlers::get_operator_logs))
-        // SCP topology endpoints (REST snapshot + WebSocket stream)
-        .route("/api/v1/quorum/topology", get(scp_topology::get_topology))
-        .route("/api/v1/quorum/topology/stream", get(scp_topology::topology_ws))
-        // Documentation search API
-        .route("/api/v1/docs/search-index", get(handlers::get_search_index))
-        // Background job monitoring dashboard
-        .route("/api/v1/jobs", get(job_handlers::list_jobs))
-        .route("/api/v1/jobs/stats", get(job_handlers::job_stats))
-        // Audit log
-        .route("/api/v1/audit-log", get(audit_handlers::list_audit_log))
-        .route("/api/v1/audit-log/search", get(audit_handlers::search_audit_log))
-        .route("/api/v1/audit-log/stream", get(audit_handlers::audit_log_stream))
-        .route("/api/v1/audit-log/anomalies", get(audit_handlers::list_audit_anomalies))
-        // Custom metrics API
-        // Custom metrics API (Kubernetes custom.metrics.k8s.io/v1beta2)
-        // Discovery endpoint — required by the HPA aggregation layer
-        .route(
-            "/apis/custom.metrics.k8s.io/v1beta2",
-            get(stellar_metrics_server::api_discovery),
-        )
-        .route(
-            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric",
-            get(stellar_metrics_server::get_pod_stellar_metric),
-        )
-        .route(
-            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/stellarnodes.stellar.org/:name/:metric",
-            get(stellar_metrics_server::get_stellarnode_metric),
-        )
-        .layer(middleware::from_fn_with_state(state.clone(), auth::api_reader))
-        // Horizon-specific convenience endpoint (legacy path kept for compatibility)
-        .route(
-            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/horizons.stellar.org/:name/:metric",
-            get(custom_metrics::get_horizon_metric),
-        )
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
-
-    let mut app = public.merge(protected);
-
-    #[cfg(feature = "metrics")]
-    {
-        app = app.route("/metrics", get(metrics_handler));
-    }
+    let app = build_router(state);
 
     // Default to 9090 to match Prometheus scrape conventions and project docs.
     let port: u16 = std::env::var("REST_API_PORT")
@@ -253,4 +143,226 @@ pub async fn run_server(
     }
 
     Ok(())
+}
+
+/// Build the operator REST router (URL-path versioned `/api/vN` + probes).
+///
+/// Version policy is loaded from the environment once at construction time.
+/// See [`VersionPolicy::from_env`] and `docs/api/versioning.md`.
+pub fn build_router(state: Arc<ControllerState>) -> Router {
+    let policy = Arc::new(VersionPolicy::from_env());
+
+    let public = Router::new()
+        .route("/health", get(handlers::health))
+        .route("/healthz", get(handlers::healthz))
+        .route("/readyz", get(handlers::readyz))
+        .route("/livez", get(handlers::livez))
+        // Unversioned catalog for coexistence / client discovery (#1333)
+        .route("/api/versions", get(versioning::list_versions))
+        .with_state(state.clone());
+
+    let protected = Router::new()
+        .route("/leader", get(handlers::leader_status))
+        .route("/api/v1/nodes", get(handlers::list_nodes))
+        .route("/api/v1/nodes/:namespace/:name", get(handlers::get_node))
+
+        .route(
+            "/config/log-level",
+            axum::routing::post(handlers::set_log_level)
+                .route_layer(middleware::from_fn(auth::api_admin)),
+        )
+        // Compliance report
+        .route(
+            "/api/v1/compliance/report",
+            get(handlers::compliance_report),
+        )
+        // Horizon cache observability (Issue #732)
+        .route(
+            "/api/v1/horizon/cache/status",
+            get(horizon_cache_handlers::horizon_cache_status),
+        )
+        .route(
+            "/api/v1/compliance/regulatory-report",
+            get(compliance_handlers::regulatory_compliance_report),
+        )
+        .route(
+            "/api/v1/compliance/status",
+            get(compliance_handlers::compliance_status),
+        )
+        // Dashboard routes
+        .route("/", get(dashboard_ui))
+        .route(
+            "/api/v1/validators/leaderboard",
+            get(dashboard_handlers::get_validator_leaderboard),
+        )
+        .route(
+            "/api/v1/dashboard/overview",
+            get(dashboard_handlers::dashboard_overview),
+        )
+        .route(
+            "/api/v1/dashboard/metrics",
+            get(dashboard_handlers::dashboard_metrics),
+        )
+        .route(
+            "/api/v1/dashboard/monitoring-status",
+            get(dashboard_handlers::monitoring_status),
+        )
+        .route(
+            "/api/v1/analytics/logs",
+            get(dashboard_handlers::log_analytics),
+        )
+        .route(
+            "/api/v1/config/analyze",
+            axum::routing::post(dashboard_handlers::analyze_config_impact),
+        )
+        .route(
+            "/api/v1/security/posture",
+            get(dashboard_handlers::security_posture),
+        )
+        .route(
+            "/api/v1/capacity/plan",
+            get(dashboard_handlers::capacity_planning),
+        )
+        .route(
+            "/api/v1/capacity/what-if",
+            axum::routing::post(dashboard_handlers::run_what_if),
+        )
+        // Resource optimization (Issue #734)
+        .route(
+            "/api/v1/optimization/recommendations",
+            get(resource_optimization_handlers::optimization_recommendations),
+        )
+        .route(
+            "/api/v1/optimization/simulate",
+            axum::routing::post(resource_optimization_handlers::optimization_simulate),
+        )
+        .route(
+            "/api/v1/optimization/forecast",
+            get(resource_optimization_handlers::optimization_forecast),
+        )
+        .route(
+            "/api/v1/traffic/dashboard",
+            get(dashboard_handlers::traffic_dashboard),
+        )
+        .route(
+            "/api/v1/dashboard/nodes/:namespace/:name/logs",
+            get(dashboard_handlers::get_node_logs),
+        )
+        .route(
+            "/api/v1/dashboard/nodes/:namespace/:name/conditions",
+            get(dashboard_handlers::get_node_conditions),
+        )
+        .route(
+            "/api/v1/dashboard/nodes/:namespace/:name/dr",
+            get(dashboard_handlers::get_dr_status),
+        )
+        .route(
+            "/api/v1/dashboard/nodes/:namespace/:name/metrics",
+            get(dashboard_handlers::get_node_metrics),
+        )
+        .route(
+            "/api/v1/dashboard/nodes/:namespace/:name/actions",
+            axum::routing::post(dashboard_handlers::execute_node_action)
+                .route_layer(middleware::from_fn(auth::api_admin)),
+        )
+        // Operator logs
+        .route(
+            "/api/v1/dashboard/operator/logs",
+            get(dashboard_handlers::get_operator_logs),
+        )
+        // SCP topology endpoints (REST snapshot + WebSocket stream)
+        .route("/api/v1/quorum/topology", get(scp_topology::get_topology))
+        .route(
+            "/api/v1/quorum/topology/stream",
+            get(scp_topology::topology_ws),
+        )
+        // Documentation search API
+        .route("/api/v1/docs/search-index", get(handlers::get_search_index))
+        // Background job monitoring dashboard
+        .route("/api/v1/jobs", get(job_handlers::list_jobs))
+        .route("/api/v1/jobs/stats", get(job_handlers::job_stats))
+        // Progressive config rollouts and component config versions (#1998)
+        .route(
+            "/api/v1/config/rollouts",
+            get(config_rollout_handlers::list_rollouts),
+        )
+        .route(
+            "/api/v1/config/rollouts/:id",
+            get(config_rollout_handlers::get_rollout),
+        )
+        .route(
+            "/api/v1/config/versions",
+            get(config_rollout_handlers::list_versions),
+        )
+        .route(
+            "/api/v1/config/versions/:namespace/:node",
+            get(config_rollout_handlers::get_version),
+        )
+        // Registry pull-path vulnerability gate (#2000)
+        .route(
+            "/api/v1/registry/:namespace/:name/pull-gate/:digest",
+            get(registry_gate_handlers::authorize_pull),
+        )
+        .route(
+            "/api/v1/registry/scan-reports/:digest",
+            get(registry_gate_handlers::get_scan_report),
+        )
+        // Scans a pushed digest before the push is acknowledged; Admin only.
+        .route(
+            "/api/v1/registry/:namespace/:name/push",
+            axum::routing::post(registry_gate_handlers::handle_push)
+                .route_layer(middleware::from_fn(auth::api_admin)),
+        )
+        // Audit log
+        .route("/api/v1/audit-log", get(audit_handlers::list_audit_log))
+        .route(
+            "/api/v1/audit-log/search",
+            get(audit_handlers::search_audit_log),
+        )
+        .route(
+            "/api/v1/audit-log/stream",
+            get(audit_handlers::audit_log_stream),
+        )
+        .route(
+            "/api/v1/audit-log/anomalies",
+            get(audit_handlers::list_audit_anomalies),
+        );
+
+    // Optional CPU/heap profiling (#1330). Registered only with `--features profiling`
+    // and REST_API_PROFILING_ENABLED=true. Still behind api_reader + api_admin.
+    let protected = profiling::attach_profiling_routes(protected)
+        // Custom metrics API (Kubernetes custom.metrics.k8s.io/v1beta2)
+        // Discovery endpoint — required by the HPA aggregation layer
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2",
+            get(stellar_metrics_server::api_discovery),
+        )
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/pods/:name/:metric",
+            get(stellar_metrics_server::get_pod_stellar_metric),
+        )
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/stellarnodes.stellar.org/:name/:metric",
+            get(stellar_metrics_server::get_stellarnode_metric),
+        )
+        .layer(middleware::from_fn_with_state(state.clone(), auth::api_reader))
+        // Horizon-specific convenience endpoint (legacy path kept for compatibility)
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/horizons.stellar.org/:name/:metric",
+            get(custom_metrics::get_horizon_metric),
+        )
+        .layer(middleware::from_fn(crate::telemetry::http_trace_middleware))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state);
+
+    let mut app = public.merge(protected);
+
+    #[cfg(feature = "metrics")]
+    {
+        app = app.route("/metrics", get(metrics_handler));
+    }
+
+    // Extension is outermost so version middleware can extract VersionPolicy.
+    app.layer(middleware::from_fn(versioning::inject_api_version_headers))
+        .layer(Extension(policy))
 }

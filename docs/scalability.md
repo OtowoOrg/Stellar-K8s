@@ -1,5 +1,8 @@
 # Scalability Benchmarking Report
 
+
+> **Note:** Runtime feature flags are limited to capabilities that still gate code paths (currently DR / cross-region). Dead flags were removed from the operator ConfigMap surface; see `src/controller/feature_flags.rs`.
+
 This document presents benchmarking results for the Stellar-K8s operator, evaluating how many `StellarNode` resources a single operator instance can reliably manage.
 
 ## Executive Summary
@@ -383,7 +386,7 @@ curl -s localhost:9090/metrics | grep stellar_operator
 
 - **k6**: Load testing for health check endpoints
 - **prometheus**: Metrics collection and analysis
-- **pprof**: Memory and CPU profiling (Rust)
+- **pprof**: Optional CPU and heap profiling via auth-gated `/api/v1/debug/pprof/*` (see [profiling runbook](operations/profiling-runbook.md))
 - **kubectl top**: Resource utilization monitoring
 
 ## Future Work
@@ -404,3 +407,7 @@ curl -s localhost:9090/metrics | grep stellar_operator
 **Last Updated**: 2026-02-25  
 **Tested Version**: v0.1.0  
 **Author**: Stellar K8s Contributors
+
+---
+
+*Last verified: 2026-07-27 (cleanup wave #1187/#1189/#1190/#1191).*

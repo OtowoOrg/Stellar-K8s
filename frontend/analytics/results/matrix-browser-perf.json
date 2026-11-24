@@ -1,0 +1,79 @@
+{
+  "generatedAt": "2026-09-02T05:40:33.517Z",
+  "environment": {
+    "browser": "Chromium 151 (playwright-core headless shell)",
+    "viewport": "1280x800",
+    "deviceScaleFactor": 1,
+    "webgl": {
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)"
+    },
+    "note": "GPU-less CI container: WebGL rasterization runs on SwiftShader (CPU)."
+  },
+  "full": {
+    "dataset": {
+      "validators": 120,
+      "interconnectCells": 10000
+    },
+    "idle": {
+      "avgFps": 4,
+      "p50FrameMs": 233.4,
+      "p95FrameMs": 300,
+      "p99FrameMs": 366.6,
+      "maxFrameMs": 366.7,
+      "samples": 120
+    },
+    "hoverSweep": {
+      "avgFps": 4,
+      "p50FrameMs": 233.4,
+      "p95FrameMs": 300,
+      "p99FrameMs": 383.3,
+      "maxFrameMs": 433.3,
+      "samples": 164
+    },
+    "renderTiming": {
+      "fps": 4,
+      "avgRenderJsMs": 0.1600000001490116,
+      "frames": 5
+    },
+    "longTasks": {
+      "count": 302,
+      "ms": 80266
+    }
+  },
+  "small": {
+    "dataset": {
+      "validators": 24,
+      "interconnectCells": 528
+    },
+    "idle": {
+      "avgFps": 46,
+      "p50FrameMs": 16.7,
+      "p95FrameMs": 33.4,
+      "p99FrameMs": 33.4,
+      "maxFrameMs": 50,
+      "samples": 120
+    },
+    "hoverSweep": {
+      "avgFps": 40,
+      "p50FrameMs": 16.7,
+      "p95FrameMs": 49.9,
+      "p99FrameMs": 66.6,
+      "maxFrameMs": 83.4,
+      "samples": 185
+    },
+    "renderTiming": {
+      "fps": 45,
+      "avgRenderJsMs": 0.5822222221435772,
+      "frames": 45
+    },
+    "longTasks": {
+      "count": 5,
+      "ms": 764
+    }
+  },
+  "memory": {
+    "usedJsHeapMB": 21,
+    "jsHeapLimitMB": 3586
+  }
+}

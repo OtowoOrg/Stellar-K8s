@@ -1,0 +1,88 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# GENERATED from config/slo/composite-slos.yaml by src/composite_slo.rs.
+# Do not edit by hand. Regenerate with:
+#   STELLAR_REGENERATE_SLO_RULES=1 cargo test --lib composite_slo
+groups:
+  - name: stellar_composite_slo_stellar_api
+    interval: 1m
+    rules:
+      - record: stellar:slo:composite:ratio
+        expr: |
+          sum by (service) (0.5 * stellar:slo:api_availability:ratio{service="stellar-api"})
+          + sum by (service) (0.3 * stellar:slo:api_latency:ratio{service="stellar-api"})
+          + sum by (service) (0.2 * stellar:slo:api_error_rate:ratio{service="stellar-api"})
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite
+      - record: stellar:slo:composite:ratio_rate1h
+        expr: avg_over_time(stellar:slo:composite:ratio{service="stellar-api"}[1h])
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite
+      - record: stellar:slo:composite:burn_rate1h
+        expr: (1 - stellar:slo:composite:ratio_rate1h{service="stellar-api"}) / 0.002
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite
+      - record: stellar:slo:composite:ratio_rate6h
+        expr: avg_over_time(stellar:slo:composite:ratio{service="stellar-api"}[6h])
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite
+      - record: stellar:slo:composite:burn_rate6h
+        expr: (1 - stellar:slo:composite:ratio_rate6h{service="stellar-api"}) / 0.002
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite
+      - record: stellar:slo:composite:ratio_rate1d
+        expr: avg_over_time(stellar:slo:composite:ratio{service="stellar-api"}[1d])
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite
+      - record: stellar:slo:composite:burn_rate1d
+        expr: (1 - stellar:slo:composite:ratio_rate1d{service="stellar-api"}) / 0.002
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite
+      - record: stellar:slo:composite:ratio_rate3d
+        expr: avg_over_time(stellar:slo:composite:ratio{service="stellar-api"}[3d])
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite
+      - record: stellar:slo:composite:burn_rate3d
+        expr: (1 - stellar:slo:composite:ratio_rate3d{service="stellar-api"}) / 0.002
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite
+      - record: stellar:slo:composite:ratio_rate30d
+        expr: avg_over_time(stellar:slo:composite:ratio{service="stellar-api"}[30d])
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite
+      - record: stellar:slo:composite:burn_rate30d
+        expr: (1 - stellar:slo:composite:ratio_rate30d{service="stellar-api"}) / 0.002
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite
+      - record: stellar:slo:composite:error_budget_remaining
+        expr: 1 - stellar:slo:composite:burn_rate30d{service="stellar-api"}
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite
+      - record: stellar:slo:composite:weights_version
+        expr: vector(1)
+        labels:
+          service: stellar-api
+          slo: stellar-api-composite

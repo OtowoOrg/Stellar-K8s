@@ -1,10 +1,12 @@
 name: Release
 
 # Streamlined release workflow.
-# The container job now reuses the multi-arch image already built and pushed
-# by multiarch-build.yml (via the `edge` / `sha-*` tags on main) rather than
-# rebuilding from scratch.  Binary artifacts are still built here because they
-# target multiple OS/arch combinations that the Docker image does not cover.
+# This workflow also publishes the multi-arch container image. The container
+# job first attempts to re-tag the existing `sha-<sha>` image (via buildx
+# imagetools) rather than rebuilding from scratch, and falls back to a fresh
+# multi-arch build when the sha image is not available.  Binary artifacts are
+# still built here because they target multiple OS/arch combinations that the
+# Docker image does not cover.
 #
 # Fail-safes:
 #   - validate job checks semver format and Cargo.toml version match before
@@ -37,6 +39,7 @@ jobs:
   validate:
     name: Validate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       version: ${{ steps.version.outputs.version }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
@@ -73,6 +76,7 @@ jobs:
   build-artifacts:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     needs: validate
     strategy:
       fail-fast: false
@@ -153,13 +157,13 @@ jobs:
             target/${{ matrix.target }}/release/${{ matrix.name }}.tar.gz.sha256
 
   # ── Publish multi-arch container image ────────────────────────────────────
-  # Re-tags the sha-* image already pushed by multiarch-build.yml so we never
-  # rebuild from scratch for a release.  Falls back to a fresh build only when
-  # the sha image is not available (e.g. manual tag on a commit that predates
-  # the multiarch workflow).
+  # Re-tags the existing sha-* image when one is already published, so we avoid
+  # rebuilding from scratch for a release.  Falls back to a fresh multi-arch
+  # build only when the sha image is not available.
   container:
     name: Container
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: validate
     steps:
       - uses: actions/checkout@v7
@@ -200,6 +204,10 @@ jobs:
               echo "Tagged: $tag"
             done <<< "${{ steps.meta.outputs.tags }}"
             echo "retagged=true" >> "$GITHUB_OUTPUT"
+            FIRST_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
+            DIGEST=$(docker buildx imagetools inspect "$FIRST_TAG" \
+              --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || echo "")
+            echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
           else
             echo "⚠️ sha image not found — will build fresh"
             echo "retagged=false" >> "$GITHUB_OUTPUT"
@@ -232,10 +240,21 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest || steps.retag.outputs.digest }}
           push-to-registry: true
 
+      # ── Issue #1334: supply-chain signature ────────────────────────────────
+      # Provenance attestation above says *how* the image was built; the Cosign
+      # signature says *that this exact digest* came from this repository, and
+      # is what a cluster-side admission policy can verify before pulling.
+      - name: Sign image with Cosign
+        uses: ./.github/actions/sign-image
+        with:
+          image: ${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}
+          digest: ${{ steps.build.outputs.digest || steps.retag.outputs.digest }}
+
   # ── Security scan ──────────────────────────────────────────────────────────
   security:
     name: Security
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [validate, container]
     permissions:
       contents: read
@@ -258,6 +277,7 @@ jobs:
   helm:
     name: Helm
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: validate
     steps:
       - uses: actions/checkout@v7
@@ -289,6 +309,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [validate, build-artifacts, container, security, helm]
     steps:
       - uses: actions/checkout@v7
@@ -349,3 +370,75 @@ jobs:
           prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
           files: release-assets/*
           fail_on_unmatched_files: false
+
+  # ── Provenance verification ────────────────────────────────────────────────
+  provenance-check:
+    name: Provenance Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [validate, build-artifacts, container, release]
+    permissions:
+      contents: read
+      id-token: write
+      attestations: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Docker & Login
+        id: setup-docker
+        uses: ./.github/actions/setup-docker
+        with:
+          registry: ${{ env.REGISTRY }}
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts/
+
+      - name: Verify binary artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          verified=0
+          failed=0
+          for tarball in artifacts/**/*.tar.gz; do
+            [[ -f "$tarball" ]] || continue
+            echo "Verifying provenance for $tarball ..."
+            if gh attestation verify "$tarball" --repo "${{ github.repository }}"; then
+              echo "  ✅ $tarball"
+              verified=$((verified + 1))
+            else
+              echo "  ❌ $tarball — attestation not found or invalid"
+              failed=$((failed + 1))
+            fi
+          done
+          echo "Verified $verified artifact(s); failed $failed"
+          [[ "$verified" -gt 0 ]] || { echo "::error::No release artifacts verified"; exit 1; }
+          [[ "$failed" -eq 0 ]] || { echo "::error::$failed artifact(s) failed provenance check"; exit 1; }
+
+      - name: Verify container image provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}:${{ needs.validate.outputs.version }}"
+          echo "Verifying provenance for $IMAGE ..."
+          gh attestation verify "oci://$IMAGE" --repo "${{ github.repository }}"
+          echo "✅ Container provenance verified"
+
+      # ── Issue #1334: prove the published image carries a Cosign signature ──
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: "v2.4.1"
+
+      - name: Verify container image signature
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY }}/${{ steps.setup-docker.outputs.image-name }}:${{ needs.validate.outputs.version }}"
+          echo "Verifying Cosign signature for $IMAGE ..."
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$IMAGE"
+          echo "✅ Container signature verified"

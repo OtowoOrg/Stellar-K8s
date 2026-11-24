@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Main reconciler for StellarNode resources
 //!
 //! Implements the controller pattern using kube-rs runtime.
@@ -21,6 +33,7 @@
 
 use futures::future::BoxFuture;
 use futures::FutureExt;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -67,14 +80,18 @@ use super::finalizers::STELLAR_NODE_FINALIZER;
 use super::health;
 use super::kms_secret;
 use super::label_propagation::LabelPropagator;
+use super::ledger_migration;
 use super::maintenance;
 #[cfg(feature = "metrics")]
 use super::metrics;
 use super::mtls;
 use super::oci_snapshot;
 use super::operator_config::{hardcoded_defaults, OperatorConfig};
+use super::peer_connectivity;
 use super::peer_discovery;
+use super::phases::{PhaseMachine, ReconcilePhase};
 use super::pss;
+use super::snapshot;
 use super::remediation;
 use super::resources;
 use super::secret_watcher;
@@ -86,9 +103,14 @@ use super::vpa as vpa_controller;
 use super::vsl;
 use chrono::Utc;
 
-// Constants
-#[allow(dead_code)]
-const ARCHIVE_RETRIES_ANNOTATION: &str = "stellar.org/archive-health-retries";
+// Annotation keys for pre-upgrade PVC snapshot gating.
+const PRE_UPGRADE_SNAPSHOT_NAME_ANNOTATION: &str = "stellar.org/pre-upgrade-snapshot-name";
+const PRE_UPGRADE_SNAPSHOT_STARTED_AT_ANNOTATION: &str =
+    "stellar.org/pre-upgrade-snapshot-started-at";
+const PRE_UPGRADE_SNAPSHOT_TARGET_VERSION_ANNOTATION: &str =
+    "stellar.org/pre-upgrade-snapshot-target-version";
+const PRE_UPGRADE_SNAPSHOT_STATUS_ANNOTATION: &str = "stellar.org/pre-upgrade-snapshot-status";
+
 
 trait ToStellarNodeArc {
     fn to_arc(&self) -> Arc<StellarNode>;
@@ -393,6 +415,8 @@ impl ControllerState {
 ///         log_reload_handle: reload_handle,
 ///         log_level_expires_at: Arc::new(tokio::sync::Mutex::new(None)),
 ///         last_event_received: Arc::new(AtomicU64::new(0)),
+///         job_registry: Arc::new(Default::default()),
+///         audit_log: Arc::new(Default::default()),
 ///         job_registry: Arc::new(stellar_k8s::controller::background_jobs::JobRegistry::new()),
 ///         audit_log: Arc::new(stellar_k8s::controller::audit_log::AuditLog::new()),
 ///         audit_recorder: Arc::new(stellar_k8s::controller::AuditRecorder::new(
@@ -456,6 +480,31 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
         }
     });
 
+    // Planned-maintenance orchestrator (MaintenancePlan CR). Complements, does
+    // not replace, the reactive NodeDrainOrchestrator above.
+    let plan_client = client.clone();
+    let plan_reporter = state.event_reporter.clone();
+    tokio::spawn(async move {
+        if let Err(e) =
+            maintenance::run_maintenance_plan_controller(plan_client, plan_reporter).await
+        {
+            error!("MaintenancePlan controller stopped with error: {}", e);
+        }
+    });
+
+    // Preemptive migration for scheduled-node-group / spot interruption signals (#1484).
+    let preemptive = Arc::new(
+        super::preemptive_spot_migration::PreemptiveSpotMigrator::new(
+            client.clone(),
+            state.event_reporter.clone(),
+        ),
+    );
+    tokio::spawn(async move {
+        if let Err(e) = preemptive.run().await {
+            error!("Preemptive spot migrator stopped with error: {}", e);
+        }
+    });
+
     // Start Spot/Preemptible Drain Handler in the background.
     // NODE_NAME must be injected via the Downward API (spec.nodeName).
     if let Ok(node_name) = std::env::var("NODE_NAME") {
@@ -503,12 +552,69 @@ pub async fn run_controller(state: Arc<ControllerState>) -> Result<()> {
         }
     });
 
+    // Start the DB Compaction Daemon in the background.
+    // The daemon is cron-triggered and coordinates scheduled database
+    // vacuums and ledger pruning across nodes without downtime. It runs in
+    // dry mode (scheduling only) when no DATABASE_URL is configured.
+    let compaction_pool = match std::env::var("DATABASE_URL") {
+        Ok(url) => match sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .acquire_timeout(Duration::from_secs(10))
+            .connect(&url)
+            .await
+        {
+            Ok(pool) => Some(pool),
+            Err(e) => {
+                warn!(
+                    "Failed to connect to DATABASE_URL for compaction daemon: {e}; \
+                     running in dry mode"
+                );
+                None
+            }
+        },
+        Err(_) => None,
+    };
+    let compaction_daemon = Arc::new(maintenance::CompactionDaemon::new(
+        client.clone(),
+        state.event_reporter.clone(),
+        compaction_pool,
+        state.watch_namespace.clone(),
+        Some(state.job_registry.clone()),
+    ));
+    tokio::spawn(async move {
+        if let Err(e) = compaction_daemon.run().await {
+            error!("DB Compaction Daemon stopped with error: {}", e);
+        }
+    });
+    // Start Control-Plane Health Monitor (graceful degradation, #1494)
+    let cph_monitor = crate::degradation::monitor::ControlPlaneHealthMonitor::new(
+        client.clone(),
+        crate::degradation::DegradationGate::global().clone(),
+        state.is_leader.clone(),
+    );
+    tokio::spawn(cph_monitor.run());
+
     // Start Audit Worker if enabled
     if state.operator_config.audit.enabled {
         let audit_worker = AuditWorker::new(client.clone(), state.audit_recorder.clone());
         tokio::spawn(async move {
             if let Err(e) = audit_worker.run().await {
                 error!("Audit Worker stopped with error: {}", e);
+            }
+        });
+    }
+
+    // Start Validator Key Rotation daemon if explicitly enabled.
+    if state.operator_config.key_rotation.enabled {
+        let daemon = Arc::new(super::security::rotation::KeyRotationDaemon::new(
+            client.clone(),
+            state.watch_namespace.clone(),
+            state.operator_config.key_rotation.clone(),
+            state.job_registry.clone(),
+        ));
+        tokio::spawn(async move {
+            if let Err(e) = daemon.run().await {
+                error!("Validator Key Rotation daemon stopped with error: {}", e);
             }
         });
     }
@@ -681,6 +787,394 @@ async fn workload_resource_exists(client: &Client, node: &StellarNode) -> Result
     }
 }
 
+pub(crate) fn build_pre_upgrade_snapshot_name(node: &StellarNode, version: &str) -> String {
+    let mut sanitized_version = version
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect::<String>();
+    sanitized_version = sanitized_version.trim_matches('-').to_string();
+    let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
+    let base = format!("{}-upgrade-{}-{}", node.name_any(), sanitized_version, timestamp);
+    if base.len() <= 253 {
+        base
+    } else {
+        base.chars().take(253).collect()
+    }
+}
+
+async fn patch_upgrade_snapshot_annotations(
+    client: &Client,
+    node: &StellarNode,
+    snapshot_name: Option<&str>,
+    target_version: Option<&str>,
+    started_at: Option<&str>,
+    status: Option<&str>,
+) -> Result<()> {
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+    let name = node.name_any();
+
+    let mut annotations = node.metadata.annotations.clone().unwrap_or_default();
+
+    match snapshot_name {
+        Some(value) => {
+            annotations.insert(PRE_UPGRADE_SNAPSHOT_NAME_ANNOTATION.to_string(), value.to_string());
+        }
+        None => {
+            annotations.remove(PRE_UPGRADE_SNAPSHOT_NAME_ANNOTATION);
+        }
+    }
+
+    match target_version {
+        Some(value) => {
+            annotations.insert(
+                PRE_UPGRADE_SNAPSHOT_TARGET_VERSION_ANNOTATION.to_string(),
+                value.to_string(),
+            );
+        }
+        None => {
+            annotations.remove(PRE_UPGRADE_SNAPSHOT_TARGET_VERSION_ANNOTATION);
+        }
+    }
+
+    match started_at {
+        Some(value) => {
+            annotations.insert(
+                PRE_UPGRADE_SNAPSHOT_STARTED_AT_ANNOTATION.to_string(),
+                value.to_string(),
+            );
+        }
+        None => {
+            annotations.remove(PRE_UPGRADE_SNAPSHOT_STARTED_AT_ANNOTATION);
+        }
+    }
+
+    match status {
+        Some(value) => {
+            annotations.insert(PRE_UPGRADE_SNAPSHOT_STATUS_ANNOTATION.to_string(), value.to_string());
+        }
+        None => {
+            annotations.remove(PRE_UPGRADE_SNAPSHOT_STATUS_ANNOTATION);
+        }
+    }
+
+    let patch = serde_json::json!({"metadata": {"annotations": annotations}});
+    api.patch(
+        &name,
+        &PatchParams::apply("stellar-operator"),
+        &Patch::Merge(&patch),
+    )
+    .await
+    .map_err(Error::KubeError)?;
+
+    Ok(())
+}
+
+async fn reconcile_pre_upgrade_snapshot(
+    client: &Client,
+    reporter: &Reporter,
+    node: &StellarNode,
+    backup_config: &crate::crd::BackupConfig,
+    current_version: Option<&str>,
+) -> Result<bool> {
+    let desired_version = node.spec.version.as_str();
+    if current_version == Some(desired_version) {
+        return Ok(true);
+    }
+
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let name = node.name_any();
+    let annotations = node.metadata.annotations.clone().unwrap_or_default();
+
+    let snapshot_name = annotations
+        .get(PRE_UPGRADE_SNAPSHOT_NAME_ANNOTATION)
+        .cloned();
+    let snapshot_target_version = annotations
+        .get(PRE_UPGRADE_SNAPSHOT_TARGET_VERSION_ANNOTATION)
+        .map(|value| value.as_str());
+    let started_at = annotations
+        .get(PRE_UPGRADE_SNAPSHOT_STARTED_AT_ANNOTATION)
+        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok());
+
+    let snapshot_name = if let Some(snapshot_name) = snapshot_name {
+        if snapshot_target_version != Some(desired_version) {
+            let rebuilt_name = build_pre_upgrade_snapshot_name(node, desired_version);
+            patch_upgrade_snapshot_annotations(
+                client,
+                node,
+                Some(&rebuilt_name),
+                Some(desired_version),
+                Some(&chrono::Utc::now().to_rfc3339()),
+                Some("Requested"),
+            )
+            .await?;
+
+            publish_stellar_event!(
+                client,
+                reporter,
+                node,
+                EventType::Normal,
+                "PreUpgradeSnapshotRequested",
+                "Snapshot",
+                &format!(
+                    "Requested pre-upgrade snapshot {rebuilt_name} before updating to version {desired_version}"
+                ),
+            )
+            .await?;
+
+            if backup_config.flush_before_snapshot {
+                if let Err(e) = snapshot::request_db_flush(client, node) {
+                    warn!(
+                        "Pre-upgrade snapshot flush requested but failed for {}/{}: {}. Proceeding with snapshot.",
+                        namespace, name, e
+                    );
+                }
+            }
+
+            if let Err(e) = snapshot::create_pre_upgrade_snapshot(client, node, &rebuilt_name, backup_config).await {
+                let message = format!(
+                    "Failed to create pre-upgrade snapshot {rebuilt_name} for {}/{}: {}",
+                    namespace, name, e
+                );
+                publish_stellar_event!(
+                    client,
+                    reporter,
+                    node,
+                    EventType::Warning,
+                    "PreUpgradeSnapshotFailed",
+                    "Snapshot",
+                    &message,
+                )
+                .await?;
+                update_status(
+                    client,
+                    node,
+                    "Failed",
+                    Some(message.clone()),
+                    node.status.as_ref().map(|status| status.ready_replicas).unwrap_or(0),
+                    false,
+                )
+                .await?;
+                return Err(e);
+            }
+            update_status(
+                client,
+                node,
+                "Progressing",
+                Some(format!(
+                    "Waiting for pre-upgrade snapshot {rebuilt_name} before updating to version {desired_version}"
+                )),
+                node.status.as_ref().map(|status| status.ready_replicas).unwrap_or(0),
+                false,
+            )
+            .await?;
+            return Ok(false);
+        }
+        snapshot_name
+    } else {
+        let rebuilt_name = build_pre_upgrade_snapshot_name(node, desired_version);
+        let started = chrono::Utc::now().to_rfc3339();
+        patch_upgrade_snapshot_annotations(
+            client,
+            node,
+            Some(&rebuilt_name),
+            Some(desired_version),
+            Some(&started),
+            Some("Requested"),
+        )
+        .await?;
+
+        publish_stellar_event!(
+            client,
+            reporter,
+            node,
+            EventType::Normal,
+            "PreUpgradeSnapshotRequested",
+            "Snapshot",
+            &format!(
+                "Requested pre-upgrade snapshot {rebuilt_name} before updating to version {desired_version}"
+            ),
+        )
+        .await?;
+
+        if backup_config.flush_before_snapshot {
+            if let Err(e) = snapshot::request_db_flush(client, node) {
+                warn!(
+                    "Pre-upgrade snapshot flush requested but failed for {}/{}: {}. Proceeding with snapshot.",
+                    namespace, name, e
+                );
+            }
+        }
+
+        if let Err(e) = snapshot::create_pre_upgrade_snapshot(client, node, &rebuilt_name, backup_config).await {
+            let message = format!(
+                "Failed to create pre-upgrade snapshot {rebuilt_name} for {}/{}: {}",
+                namespace, name, e
+            );
+            publish_stellar_event!(
+                client,
+                reporter,
+                node,
+                EventType::Warning,
+                "PreUpgradeSnapshotFailed",
+                "Snapshot",
+                &message,
+            )
+            .await?;
+            update_status(
+                client,
+                node,
+                "Failed",
+                Some(message.clone()),
+                node.status.as_ref().map(|status| status.ready_replicas).unwrap_or(0),
+                false,
+            )
+            .await?;
+            return Err(e);
+        }
+        update_status(
+            client,
+            node,
+            "Progressing",
+            Some(format!(
+                "Waiting for pre-upgrade snapshot {rebuilt_name} before updating to version {desired_version}"
+            )),
+            node.status.as_ref().map(|status| status.ready_replicas).unwrap_or(0),
+            false,
+        )
+        .await?;
+        return Ok(false);
+    };
+
+    let snapshot_name = snapshot_name.as_str();
+    match snapshot::get_volume_snapshot_readiness(client, node, snapshot_name).await {
+        Ok(snapshot::VolumeSnapshotReadiness::Ready) => {
+            patch_upgrade_snapshot_annotations(client, node, None, None, None, None).await?;
+            publish_stellar_event!(
+                client,
+                reporter,
+                node,
+                EventType::Normal,
+                "PreUpgradeSnapshotReady",
+                "Snapshot",
+                &format!(
+                    "Pre-upgrade snapshot {snapshot_name} is ReadyToUse; resuming rollout to {desired_version}"
+                ),
+            )
+            .await?;
+            update_status(
+                client,
+                node,
+                "Progressing",
+                Some(format!(
+                    "Pre-upgrade snapshot {snapshot_name} is ReadyToUse; resuming rollout to {desired_version}"
+                )),
+                node.status.as_ref().map(|status| status.ready_replicas).unwrap_or(0),
+                false,
+            )
+            .await?;
+            Ok(true)
+        }
+        Ok(snapshot::VolumeSnapshotReadiness::Pending) => {
+            if let Some(started_at) = started_at {
+                let elapsed = chrono::Utc::now()
+                    .signed_duration_since(started_at.with_timezone(&chrono::Utc))
+                    .num_seconds();
+                if elapsed >= backup_config.ready_timeout_seconds as i64 {
+                    let message = format!(
+                        "Pre-upgrade snapshot {snapshot_name} did not become ReadyToUse within {} seconds",
+                        backup_config.ready_timeout_seconds
+                    );
+                    publish_stellar_event!(
+                        client,
+                        reporter,
+                        node,
+                        EventType::Warning,
+                        "PreUpgradeSnapshotTimedOut",
+                        "Snapshot",
+                        &message,
+                    )
+                    .await?;
+                    update_status(
+                        client,
+                        node,
+                        "Failed",
+                        Some(message.clone()),
+                        node.status.as_ref().map(|status| status.ready_replicas).unwrap_or(0),
+                        false,
+                    )
+                    .await?;
+                    return Err(Error::ConfigError(message));
+                }
+            }
+
+            update_status(
+                client,
+                node,
+                "Progressing",
+                Some(format!(
+                    "Waiting for pre-upgrade snapshot {snapshot_name} to become ReadyToUse before updating to {desired_version}"
+                )),
+                node.status.as_ref().map(|status| status.ready_replicas).unwrap_or(0),
+                false,
+            )
+            .await?;
+            Ok(false)
+        }
+        Ok(snapshot::VolumeSnapshotReadiness::Failed(reason)) => {
+            let message = format!(
+                "Pre-upgrade snapshot {snapshot_name} failed: {reason}. Upgrade halted."
+            );
+            publish_stellar_event!(
+                client,
+                reporter,
+                node,
+                EventType::Warning,
+                "PreUpgradeSnapshotFailed",
+                "Snapshot",
+                &message,
+            )
+            .await?;
+            update_status(
+                client,
+                node,
+                "Failed",
+                Some(message.clone()),
+                node.status.as_ref().map(|status| status.ready_replicas).unwrap_or(0),
+                false,
+            )
+            .await?;
+            Err(Error::ConfigError(message))
+        }
+        Err(e) => {
+            let message = format!(
+                "Failed to query pre-upgrade snapshot {snapshot_name} for {}/{}: {}",
+                namespace, name, e
+            );
+            publish_stellar_event!(
+                client,
+                reporter,
+                node,
+                EventType::Warning,
+                "PreUpgradeSnapshotFailed",
+                "Snapshot",
+                &message,
+            )
+            .await?;
+            update_status(
+                client,
+                node,
+                "Failed",
+                Some(message.clone()),
+                node.status.as_ref().map(|status| status.ready_replicas).unwrap_or(0),
+                false,
+            )
+            .await?;
+            Err(e)
+        }
+    }
+}
+
 /// Format structured spec validation errors into a user-friendly message
 fn format_spec_validation_errors(errors: &[SpecValidationError]) -> String {
     let mut msg = String::from("Spec validation failed with the following issues:\n");
@@ -802,9 +1296,31 @@ fn reconcile(
         #[cfg(feature = "metrics")]
         let reconcile_start = std::time::Instant::now();
 
+        // One phase machine per reconciliation pass. It records the pipeline
+        // stages this pass walked through, so the reconcile trail is explicit
+        // in logs instead of implied by statement order (issue #1047).
+        let phases = Arc::new(std::sync::Mutex::new(PhaseMachine::new()));
+
         if !ctx.is_leader.load(std::sync::atomic::Ordering::Relaxed) {
             debug!("Not the leader, skipping reconciliation");
+            if let Ok(mut machine) = phases.lock() {
+                machine.succeed("not the leader; pass skipped");
+            }
             return Ok(Action::requeue(Duration::from_secs(5)));
+        }
+
+        // While etcd is unavailable the operator makes no writes; running pods
+        // keep serving on their last applied configuration (#1494).
+        let gate = crate::degradation::DegradationGate::global();
+        if let Err(level) = gate.check(crate::degradation::OperatorAction::Write) {
+            info!(
+                "Control plane is {:?}; deferring reconciliation of {}/{}",
+                level, namespace, node_name
+            );
+            if let Ok(mut machine) = phases.lock() {
+                machine.succeed("control plane frozen; pass deferred");
+            }
+            return Ok(Action::requeue(Duration::from_secs(30)));
         }
 
         let res = {
@@ -840,8 +1356,18 @@ fn reconcile(
 
             // Manual finalizer logic to avoid HRTB Send issues with the helper closure
             if obj.metadata.deletion_timestamp.is_some() {
+                advance_phase(
+                    &phases,
+                    ReconcilePhase::Finalizing,
+                    "deletion timestamp is set",
+                );
                 if obj.finalizers().iter().any(|f| f == STELLAR_NODE_FINALIZER) {
-                    cleanup_stellar_node(client.clone(), obj.clone(), ctx.clone()).await?;
+                    if let Err(err) =
+                        cleanup_stellar_node(client.clone(), obj.clone(), ctx.clone()).await
+                    {
+                        fail_phase(&phases, &format!("cleanup failed: {err}"));
+                        return Err(err);
+                    }
 
                     let patch = serde_json::json!({
                         "metadata": {
@@ -850,8 +1376,16 @@ fn reconcile(
                     });
                     api.patch(&node_name, &PatchParams::default(), &Patch::Merge(patch)).await?;
                 }
+                if let Ok(mut machine) = phases.lock() {
+                    machine.succeed("finalizer removed");
+                }
                 Ok(Action::await_change())
             } else {
+                advance_phase(
+                    &phases,
+                    ReconcilePhase::Validating,
+                    "reconciling a live StellarNode",
+                );
                 if !obj.finalizers().iter().any(|f| f == STELLAR_NODE_FINALIZER) {
                     let mut finalizers = obj.finalizers().to_vec();
                     finalizers.push(STELLAR_NODE_FINALIZER.to_string());
@@ -862,9 +1396,26 @@ fn reconcile(
                     });
                     api.patch(&node_name, &PatchParams::default(), &Patch::Merge(patch)).await?;
                 }
-                apply_stellar_node(client.clone(), obj.clone(), ctx.clone()).await
+                apply_stellar_node(client.clone(), obj.clone(), ctx.clone(), phases.clone())
+                    .await
             }
         };
+
+        // Close out the phase trail and emit it as a single line, so a
+        // reconcile pass can be read end-to-end from one log entry.
+        if let Ok(mut machine) = phases.lock() {
+            match &res {
+                Ok(_) => machine.succeed("reconciliation completed"),
+                Err(err) => machine.fail(format!("reconciliation failed: {err}")),
+            }
+            info!(
+                node = %node_name,
+                namespace = %namespace,
+                phase = %machine.current(),
+                "reconcile phases: {}",
+                machine.summary()
+            );
+        }
 
         #[cfg(feature = "metrics")]
         {
@@ -896,11 +1447,40 @@ fn reconcile(
     .boxed()
 }
 
+/// Advance the reconcile phase machine, without ever failing the pass.
+///
+/// The machine is authoritative for *observability* — it names the stage in
+/// logs and validates that the pipeline still runs in the declared order. A
+/// bookkeeping mistake must not take the operator down, so an illegal
+/// transition is logged loudly and reconciliation continues exactly as before.
+fn advance_phase(phases: &Arc<std::sync::Mutex<PhaseMachine>>, to: ReconcilePhase, reason: &str) {
+    match phases.lock() {
+        Ok(mut machine) => {
+            if let Err(err) = machine.transition_to(to, reason) {
+                warn!("reconcile phase bookkeeping rejected a transition: {err}");
+            }
+        }
+        Err(poisoned) => {
+            // A poisoned lock means another task panicked mid-transition; the
+            // phase trail is unreliable from here but reconciliation is not.
+            warn!("reconcile phase machine lock poisoned: {poisoned}");
+        }
+    }
+}
+
+/// Mark the phase machine failed, for error paths that return early.
+fn fail_phase(phases: &Arc<std::sync::Mutex<PhaseMachine>>, reason: &str) {
+    if let Ok(mut machine) = phases.lock() {
+        machine.fail(reason);
+    }
+}
+
 /// Apply/create/update the StellarNode resources
 pub(crate) fn apply_stellar_node(
     client: Client,
     node: Arc<StellarNode>,
     ctx: Arc<ControllerState>,
+    phases: Arc<std::sync::Mutex<PhaseMachine>>,
 ) -> BoxFuture<'static, Result<Action>> {
     async move {
         let name = node.name_any();
@@ -994,6 +1574,7 @@ pub(crate) fn apply_stellar_node(
             );
         }
 
+        advance_phase(&phases, ReconcilePhase::Provisioning, "spec validated; ensuring durable prerequisites");
         // 1. Core infrastructure (PVC and ConfigMap) always managed by operator
         apply_or_emit!(
             &ctx,
@@ -1067,6 +1648,53 @@ pub(crate) fn apply_stellar_node(
                 }
             )
             .await?;
+
+            if node
+                .metadata
+                .annotations
+                .as_ref()
+                .and_then(|annotations| annotations.get("stellar.org/request-ledger-export"))
+                .is_some_and(|value| value == "true" || value == "1")
+            {
+                if let Some(export) = node
+                    .spec
+                    .storage
+                    .snapshot_ref
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.export.as_ref())
+                {
+                    let ledger_seq = node
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.ledger_sequence)
+                        .unwrap_or(0);
+                    if ledger_seq > 0
+                        && ledger_migration::ensure_export_job(
+                            &client,
+                            &node,
+                            export,
+                            ledger_seq,
+                        )
+                        .await?
+                        .is_some()
+                    {
+                        let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
+                        api.patch(
+                            &name,
+                            &PatchParams::default(),
+                            &Patch::Merge(serde_json::json!({
+                                "metadata": { "annotations": { "stellar.org/request-ledger-export": null } }
+                            })),
+                        )
+                        .await?;
+                    }
+                } else {
+                    warn!(
+                        "Ledger export requested for {}/{} without storage.snapshotRef.export",
+                        namespace, name
+                    );
+                }
+            }
 
             return Ok(Action::requeue(Duration::from_secs(60)));
         }
@@ -1416,13 +2044,41 @@ pub(crate) fn apply_stellar_node(
             ActionType::Update,
             "mTLS certificates",
             clones: [namespace],
-            move |client: Client, _ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
+            move |client: Client, ctx: Arc<ControllerState>, node: Arc<StellarNode>| async move {
                 mtls::ensure_ca(&client, &namespace).await?;
                 mtls::ensure_node_cert(&client, &node).await?;
                 // If cert-manager is configured, also create the Certificate CR so
                 // cert-manager takes over issuance and rotation going forward.
                 if let Some(cm_cfg) = &node.spec.cert_manager {
                     mtls::ensure_cert_manager_certificate(&client, &node, cm_cfg).await?;
+                }
+                // Detect whether the node's TLS Secret (cert-manager-issued or
+                // operator-issued self-signed) rotated since the previous
+                // reconcile and, if so, roll the workload's pods so they pick
+                // up the new certificate. This is what makes certificate
+                // rotation actually take effect without manual intervention;
+                // without it, pods keep serving with the stale in-memory cert
+                // even after the Secret contents change underneath them.
+                // The rollout is withheld while the control plane is degraded;
+                // the rotation is picked up again once it recovers (#1973).
+                if let Err(level) = crate::degradation::DegradationGate::global()
+                    .check(crate::degradation::OperatorAction::Disruptive)
+                {
+                    info!(
+                        "Control plane is {:?}; withholding cert-rotation restart of {}/{}",
+                        level,
+                        namespace,
+                        node.name_any()
+                    );
+                } else if let Err(e) =
+                    mtls::check_and_restart_on_cert_rotation(&client, &node, ctx.dry_run).await
+                {
+                    warn!(
+                        "Failed to check/trigger cert-rotation restart for {}/{}: {}",
+                        namespace,
+                        node.name_any(),
+                        e
+                    );
                 }
                 Ok(())
             }
@@ -1432,6 +2088,7 @@ pub(crate) fn apply_stellar_node(
         let workload_existed_before = workload_resource_exists(&client, &node)
             .await
             .unwrap_or(false);
+
 
         // 5. Create/update the Deployment/StatefulSet based on node type
         let workload_result = apply_or_emit!(
@@ -1466,12 +2123,26 @@ pub(crate) fn apply_stellar_node(
                             None
                         };
 
-                        resources::ensure_statefulset(&client, &node, ctx.enable_mtls,
-                            seed_injection.as_ref(),
-                            &propagated_labels,
-                            ctx.dry_run,
-                        )
-                        .await?;
+                        if super::blue_green_core::should_take_over_validator_workload(&node) {
+                            super::blue_green_core::reconcile_validator_blue_green(
+                                &client,
+                                &node,
+                                ctx.enable_mtls,
+                                seed_injection.as_ref(),
+                                ctx.dry_run,
+                            )
+                            .await?;
+                        } else {
+                            resources::ensure_statefulset(
+                                &client,
+                                &node,
+                                ctx.enable_mtls,
+                                seed_injection.as_ref(),
+                                &propagated_labels,
+                                ctx.dry_run,
+                            )
+                            .await?;
+                        }
                         kms_secret::reconcile_vault_secret_rotation(&client, &node, seed_injection.as_ref(),
                         )
                         .await?;
@@ -1903,9 +2574,6 @@ pub(crate) fn apply_stellar_node(
             ActionType::Update,
             "MetalLB configuration",
             move |_client: Client, _ctx: Arc<ControllerState>, _node: Arc<StellarNode>| async move {
-                // TODO: Load balancer and global discovery fields not yet implemented in StellarNodeSpec
-                // resources::ensure_metallb_config(&client, &node).await?;
-                // resources::ensure_load_balancer_service(&client, &node).await?;
                 Ok(())
             }
         )
@@ -1916,10 +2584,18 @@ pub(crate) fn apply_stellar_node(
         // Checks whether any referenced secrets have been rotated since the last
         // reconciliation. If so, triggers a graceful rolling restart via pod template
         // annotations so pods pick up the new secret values without downtime.
+        // Withheld while the control plane is degraded (#1973).
+        if let Err(level) = crate::degradation::DegradationGate::global()
+            .check(crate::degradation::OperatorAction::Disruptive)
         {
+            info!(
+                "Control plane is {:?}; withholding secret-rotation restart of {}/{}",
+                level, namespace, name
+            );
+        } else {
             let dry_run = ctx.dry_run;
             if let Err(e) =
-                secret_watcher::handle_passphrase_secret_rotation(&client, &node, dry_run).await
+                secret_watcher::handle_passphrase_secret_rotation(&client, &node, dry_run, &ctx.audit_log).await
             {
                 warn!(
                     "Passphrase secret rotation check failed for {}/{}: {}",
@@ -1927,7 +2603,7 @@ pub(crate) fn apply_stellar_node(
                 );
             }
             if let Err(e) =
-                secret_watcher::handle_seed_secret_rotation(&client, &node, dry_run).await
+                secret_watcher::handle_seed_secret_rotation(&client, &node, dry_run, &ctx.audit_log).await
             {
                 warn!(
                     "Seed secret rotation check failed for {}/{}: {}",
@@ -1950,6 +2626,7 @@ pub(crate) fn apply_stellar_node(
         )
         .await?;
 
+        advance_phase(&phases, ReconcilePhase::Scaling, "workload applied; reconciling elasticity");
         // 6. Autoscaling and Monitoring
         apply_or_emit!(
             &ctx,
@@ -1995,11 +2672,23 @@ pub(crate) fn apply_stellar_node(
             }
         }
 
+        // 6.5b. Pending-queue custom autoscaling (Soroban RPC only).
+        // Drives the Deployment replica count directly from the node's pending
+        // request queue so burst traffic scales within one poll cycle. This is
+        // a sibling of the gas autoscaler; the two may coexist (each patches a
+        // different knob: Deployment replicas vs HPA minReplicas).
+        if !ctx.dry_run && node.spec.node_type == NodeType::SorobanRpc {
+            crate::controller::autoscaler::ensure_queue_autoscaler_running(
+                client.clone(),
+                &node,
+            );
+        }
+
         // 6a. CSI VolumeSnapshot schedule (Validator only)
         if node.spec.node_type == NodeType::Validator {
             if let Some(ref snapshot_config) = node.spec.snapshot_schedule {
                 if let Err(e) =
-                    super::snapshot::reconcile_snapshot(&client, &node, snapshot_config).await
+                    super::csi_snapshot::reconcile_snapshot(&client, &node, snapshot_config).await
                 {
                     warn!(
                         "Snapshot reconciliation failed for {}/{}: {}",
@@ -2009,6 +2698,7 @@ pub(crate) fn apply_stellar_node(
             }
         }
 
+        advance_phase(&phases, ReconcilePhase::Observing, "checking node health and sync state");
         // 7. Perform health check to determine if node is ready
         //
         // Measure reduction in API polling overhead: Reactive Status check
@@ -2305,10 +2995,25 @@ pub(crate) fn apply_stellar_node(
             }
         }
 
+        advance_phase(&phases, ReconcilePhase::Remediating, "evaluating automatic remediation");
         // 9. Auto-remediation check
         if health_result.healthy && !node.spec.suspended {
             let stale_check = remediation::check_stale_node(&node, health_result.ledger_sequence);
-            if stale_check.is_stale && remediation::can_remediate(&node) {
+            let degradation = if stale_check.is_stale {
+                crate::degradation::DegradationGate::global()
+                    .check(crate::degradation::OperatorAction::Disruptive)
+                    .err()
+            } else {
+                None
+            };
+            if let Some(level) = degradation {
+                // Stale signals may stem from the degraded control plane; never
+                // restart serving pods on them (#1494).
+                info!(
+                    "Control plane is {:?}; withholding stale-ledger restart of {}/{}",
+                    level, namespace, name
+                );
+            } else if stale_check.is_stale && remediation::can_remediate(&node) {
                 if stale_check.recommended_action == remediation::RemediationLevel::Restart {
                     apply_or_emit!(
                         &ctx,
@@ -2680,7 +3385,7 @@ pub(crate) fn apply_stellar_node(
             .await?;
         }
 
-        // Cost estimation: annotate and export metric (non-fatal).
+        // Cost estimation: annotate estimated monthly cost (non-fatal).
         {
             let cost = super::cost::estimate_monthly_cost(&node);
             if let Err(e) = super::cost::annotate_node_cost(&client, &node, cost).await {
@@ -2689,8 +3394,6 @@ pub(crate) fn apply_stellar_node(
                     namespace, name, e
                 );
             }
-            #[cfg(feature = "metrics")]
-            super::cost::report_cost_metric(&namespace, &name, &node.spec.node_type.to_string(), cost);
         }
 
         // 13. Stamp audit annotations for the permanent reconcile trail.
@@ -2746,25 +3449,149 @@ pub(crate) fn apply_stellar_node(
                             .and_then(|a| a.get("stellar.org/current-protocol"))
                             .and_then(|v| v.parse().ok())
                             .unwrap_or(0);
-                        let now_unix = chrono::Utc::now().timestamp();
-                        match controller
-                            .plan_and_sync(&client, &node, &timeline, current_protocol, now_unix)
-                            .await
+                        let required_caps: Vec<String> = node
+                            .metadata
+                            .annotations
+                            .as_ref()
+                            .and_then(|annotations| annotations.get("stellar.org/required-caps"))
+                            .map(|caps| {
+                                caps.split(',')
+                                    .map(str::trim)
+                                    .filter(|cap| !cap.is_empty())
+                                    .map(str::to_string)
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let required_xdr_version: u32 = node
+                            .metadata
+                            .annotations
+                            .as_ref()
+                            .and_then(|annotations| {
+                                annotations.get("stellar.org/required-xdr-version")
+                            })
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(0);
+                        let mut compatibility_blocked = false;
+                        if !required_caps.is_empty()
+                            || required_xdr_version > 0
+                            || current_protocol > 0
                         {
-                            Ok(Some(plan)) => {
-                                info!(
-                                    "GitOps upgrade planned for {}/{}: protocol v{} via {}",
-                                    namespace, name, plan.target_protocol, engine_str
-                                );
+                            let current_version = node
+                                .spec
+                                .version
+                                .rsplit(':')
+                                .next()
+                                .unwrap_or(&node.spec.version);
+                            match crate::protocol_compatibility::check_compatibility(
+                                current_version,
+                                current_protocol,
+                                required_xdr_version,
+                                &required_caps,
+                            ) {
+                                Ok(report) if !report.compatible => {
+                                    compatibility_blocked = true;
+                                    let mut incompatibilities = Vec::new();
+                                    if !report.protocol_compatible {
+                                        incompatibilities.push(format!(
+                                            "core protocol support is below network protocol {current_protocol}"
+                                        ));
+                                    }
+                                    if !report.xdr_compatible {
+                                        incompatibilities.push(format!(
+                                            "core XDR version does not support required XDR version {required_xdr_version}"
+                                        ));
+                                    }
+                                    if !report.unsupported_caps.is_empty() {
+                                        incompatibilities.push(format!(
+                                            "unsupported CAPs: {}",
+                                            report.unsupported_caps.join(", ")
+                                        ));
+                                    }
+                                    let detail = incompatibilities.join("; ");
+                                    let recommendation = report
+                                        .recommended_version
+                                        .as_deref()
+                                        .unwrap_or("a release supporting the required protocol/CAPs/XDR");
+                                    warn!(
+                                        "Protocol upgrade blocked for {}/{}: core {} {}; upgrade to {}",
+                                        namespace, name, current_version, detail, recommendation
+                                    );
+                                    let annotations = serde_json::json!({
+                                        "stellar.org/protocol-compatibility-warning": format!(
+                                            "{detail}; recommended stellar-core version: {recommendation}"
+                                        )
+                                    });
+                                    let nodes: Api<StellarNode> = if let Some(ns) = &ctx.watch_namespace {
+                                        Api::namespaced(client.clone(), ns)
+                                    } else {
+                                        Api::all(client.clone())
+                                    };
+                                    if let Err(error) = nodes
+                                        .patch(
+                                            &name,
+                                            &PatchParams::default(),
+                                            &Patch::Merge(&serde_json::json!({
+                                                "metadata": { "annotations": annotations }
+                                            })),
+                                        )
+                                        .await
+                                    {
+                                        warn!("Failed to publish CAP compatibility warning: {error}");
+                                    }
+                                }
+                                Ok(report) if report.compatible => {
+                                    let nodes: Api<StellarNode> = if let Some(ns) = &ctx.watch_namespace {
+                                        Api::namespaced(client.clone(), ns)
+                                    } else {
+                                        Api::all(client.clone())
+                                    };
+                                    if let Err(error) = nodes
+                                        .patch(
+                                            &name,
+                                            &PatchParams::default(),
+                                            &Patch::Merge(&serde_json::json!({
+                                                "metadata": {
+                                                    "annotations": {
+                                                        "stellar.org/protocol-compatibility-warning": null
+                                                    }
+                                                }
+                                            })),
+                                        )
+                                        .await
+                                    {
+                                        warn!("Failed to clear protocol compatibility warning: {error}");
+                                    }
+                                }
+                                Err(error) => {
+                                    compatibility_blocked = true;
+                                    warn!("Could not evaluate protocol compatibility: {error}");
+                                }
+                                _ => {}
                             }
-                            Ok(None) => {
-                                debug!("No GitOps upgrade step due for {}/{}", namespace, name);
-                            }
-                            Err(e) => {
-                                warn!(
-                                    "GitOps upgrade planning failed for {}/{}: {}",
-                                    namespace, name, e
-                                );
+                        }
+                        if compatibility_blocked {
+                            debug!("Skipping GitOps upgrade for {}/{} until CAP compatibility is restored", namespace, name);
+                        } else {
+                            let now_unix = chrono::Utc::now().timestamp();
+                            match controller
+                                .plan_and_sync(&client, &node, &timeline, current_protocol, now_unix)
+                                .await
+                            {
+                                Ok(Some(plan)) => {
+                                    info!(
+                                        "GitOps upgrade planned for {}/{}: protocol v{} via {}",
+                                        namespace, name, plan.target_protocol, engine_str
+                                    );
+                                }
+                                Ok(None) => {
+                                    debug!("No GitOps upgrade step due for {}/{}", namespace, name);
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "GitOps upgrade planning failed for {}/{}: {}",
+                                        namespace, name, e
+                                    );
+                                }
                             }
                         }
                     }
@@ -2778,6 +3605,7 @@ pub(crate) fn apply_stellar_node(
             }
         }
 
+        advance_phase(&phases, ReconcilePhase::Publishing, "publishing status and events");
         // 15. Update status to Running with ready replica count
         // Use configured requeue interval for healthy reconciliation
         let requeue_interval = ctx.operator_config.reconciler.requeue_interval;
@@ -3022,27 +3850,6 @@ async fn get_ready_replicas(client: &Client, node: &StellarNode) -> Result<i32> 
     }
 }
 
-/// Fetch the ready replicas for the canary deployment
-#[allow(dead_code)]
-#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
-async fn get_canary_ready_replicas(client: &Client, node: &StellarNode) -> Result<i32> {
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let name = format!("{}-canary", node.name_any());
-
-    let api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
-    match api.get(&name).await {
-        Ok(deployment) => {
-            let ready_replicas = deployment
-                .status
-                .as_ref()
-                .and_then(|s| s.ready_replicas)
-                .unwrap_or(0);
-            Ok(ready_replicas)
-        }
-        Err(_) => Ok(0),
-    }
-}
-
 /// Get the current version of the stable deployment
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn get_current_deployment_version(
@@ -3072,8 +3879,33 @@ async fn get_current_deployment_version(
     Ok(None)
 }
 
+/// Get the current version of the validator StatefulSet.
+#[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
+async fn get_current_statefulset_version(
+    client: &Client,
+    node: &StellarNode,
+) -> Result<Option<String>> {
+    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
+    let name = node.name_any();
+
+    let api: Api<StatefulSet> = Api::namespaced(client.clone(), &namespace);
+    match api.get(&name).await {
+        Ok(statefulset) => {
+            let version = statefulset
+                .spec
+                .as_ref()
+                .and_then(|s| s.template.spec.as_ref())
+                .and_then(|ts| ts.containers.first())
+                .and_then(|c| c.image.as_ref())
+                .and_then(|img| img.split(':').next_back())
+                .map(|v| v.to_string());
+            Ok(version)
+        }
+        Err(_) => Ok(None),
+    }
+}
+
 /// Check health of canary pods
-#[allow(dead_code)]
 #[instrument(skip(client, node), fields(name = %node.name_any(), namespace = node.namespace()))]
 async fn check_canary_health(
     client: &Client,
@@ -3489,6 +4321,55 @@ pub(crate) fn apply_phase_conditions(
     }
 }
 
+/// Probe a validator's configured peers and fold the result into `conditions`.
+///
+/// Without this a validator that cannot reach any peer still reports `Ready`:
+/// `stellar-core` logs a failed overlay connection, nothing restarts, and the
+/// node is simply absent from quorum. The `PeerConnectivity` condition makes
+/// that state visible, and the reconciler requeues well inside the 60 s budget
+/// this issue asks for.
+///
+/// The condition is removed rather than left stale for nodes the check does not
+/// apply to (non-validators, suspended nodes, validators with no peers).
+async fn apply_peer_connectivity_condition(conditions: &mut Vec<Condition>, node: &StellarNode) {
+    let peers = if node.spec.suspended {
+        // Replicas are scaled to 0, so there is no overlay to diagnose.
+        Vec::new()
+    } else {
+        peer_connectivity::known_peers_for_node(node)
+    };
+
+    if peers.is_empty() {
+        conditions::remove_condition(conditions, conditions::CONDITION_TYPE_PEER_CONNECTIVITY);
+        return;
+    }
+
+    let report = peer_connectivity::probe_peers(
+        &peers,
+        Duration::from_secs(peer_connectivity::DEFAULT_PROBE_TIMEOUT_SECS),
+        peer_connectivity::DEFAULT_INTERVAL_SECS,
+    )
+    .await;
+    let verdict = peer_connectivity::connectivity_verdict(&report);
+
+    if report.is_fully_degraded() {
+        warn!(
+            "node {}: all {} configured peers unreachable: {}",
+            node.name_any(),
+            report.peers.len(),
+            verdict.message
+        );
+    }
+
+    conditions::set_condition(
+        conditions,
+        conditions::CONDITION_TYPE_PEER_CONNECTIVITY,
+        verdict.status,
+        verdict.reason,
+        &verdict.message,
+    );
+}
+
 #[allow(deprecated)]
 #[instrument(skip(client, node, message), fields(name = %node.name_any(), namespace = node.namespace(), phase))]
 async fn update_status(
@@ -3518,6 +4399,9 @@ async fn update_status(
         .unwrap_or_default();
 
     apply_phase_conditions(&mut conditions, phase, message.as_deref());
+
+    // Peer reachability for validators (#1561).
+    apply_peer_connectivity_condition(&mut conditions, node).await;
 
     // Set observed generation on all conditions
     if let Some(gen) = observed_generation {
@@ -3663,6 +4547,56 @@ async fn run_archive_integrity_check(
                 "All {} archive(s) are within {} ledgers of the node",
                 results.len(),
                 ARCHIVE_LAG_THRESHOLD
+            ),
+        );
+    }
+
+    // Check history archive version compatibility against core binary version before catchup
+    let compat_results = crate::controller::archive_health::check_archives_version_compatibility(
+        archive_urls,
+        &node.spec.version,
+        Some(std::time::Duration::from_secs(5)),
+    )
+    .await;
+
+    let incompatible: Vec<_> = compat_results.iter().filter(|r| !r.is_compatible).collect();
+    if !incompatible.is_empty() {
+        let msg = incompatible
+            .iter()
+            .map(|r| r.summary())
+            .collect::<Vec<_>>()
+            .join("; ");
+        warn!(
+            "Incompatible history archive version detected for {}/{}: {}",
+            namespace, name, msg
+        );
+        publish_stellar_event!(
+            client,
+            reporter,
+            node,
+            EventType::Warning,
+            "ArchiveVersionIncompatible",
+            "ArchiveCompatibility",
+            &msg,
+        )
+        .await?;
+        conditions::set_condition(
+            &mut conds,
+            "ArchiveVersionCompatible",
+            conditions::CONDITION_STATUS_FALSE,
+            "IncompatibleArchiveVersion",
+            &msg,
+        );
+    } else {
+        conditions::set_condition(
+            &mut conds,
+            "ArchiveVersionCompatible",
+            conditions::CONDITION_STATUS_TRUE,
+            "ArchiveCompatible",
+            &format!(
+                "All {} configured archive(s) are state-version compatible with stellar-core {}",
+                archive_urls.len(),
+                node.spec.version
             ),
         );
     }
@@ -3867,48 +4801,6 @@ async fn update_status_with_health(
                 .and_then(|s| s.last_migrated_version.clone())
         },
         conditions,
-        ..Default::default()
-    };
-
-    let patch = serde_json::json!({ "status": status });
-    api.patch_status(
-        &node.name_any(),
-        &PatchParams::apply("stellar-operator"),
-        &Patch::Merge(&patch),
-    )
-    .await
-    .map_err(Error::KubeError)?;
-
-    Ok(())
-}
-
-/// Update the status subresource with canary information
-#[allow(dead_code)]
-async fn update_status_with_canary(
-    client: &Client,
-    node: &StellarNode,
-    phase: &str,
-    message: Option<&str>,
-    ready_replicas: i32,
-    canary_ready_replicas: i32,
-    canary_version: Option<String>,
-) -> Result<()> {
-    let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-    let api: Api<StellarNode> = Api::namespaced(client.clone(), &namespace);
-
-    #[allow(deprecated)]
-    let status = StellarNodeStatus {
-        phase: phase.to_string(),
-        message: message.map(String::from),
-        observed_generation: node.metadata.generation,
-        replicas: if node.spec.suspended {
-            0
-        } else {
-            node.spec.replicas
-        },
-        ready_replicas,
-        canary_ready_replicas,
-        canary_version,
         ..Default::default()
     };
 
@@ -4342,6 +5234,6 @@ async fn hardware_generation_for_metrics(client: &Client, node: &StellarNode) ->
                 err
             );
             "unknown".to_string()
-        }
+        },
     }
 }

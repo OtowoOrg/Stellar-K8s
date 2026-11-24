@@ -1,7 +1,7 @@
 name: Bug Report
 description: Report a reproducible bug in Stellar-K8s
 title: "[Bug]: "
-labels: ["bug", "triage"]
+labels: ["bug", "needs-triage"]
 body:
   - type: markdown
     attributes:

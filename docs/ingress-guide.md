@@ -1,5 +1,7 @@
 # Ingress Configuration Guide
 
+<!-- chart-sync: 2026-07-27T22:40Z operator Deployment uses `run` subcommand + REST_API_PORT -->
+
 ## Overview
 
 The Stellar-K8s operator automates the creation of Kubernetes Ingress resources to expose Horizon and Soroban RPC nodes over HTTPS. Combined with **cert-manager**, it provides automatic TLS certificate provisioning and renewal using Let's Encrypt or custom Certificate Authorities.
@@ -245,6 +247,19 @@ kubectl logs -n cert-manager -l app.kubernetes.io/name=cert-manager
 kubectl get secret horizon-tls -n stellar-nodes -o yaml
 ```
 
+### Prometheus Alerting Rules
+
+When `monitoring.prometheusRules.enabled: true` is set in the Helm chart (`charts/stellar-operator/templates/prometheusrule.yaml`), the operator deploys a `PrometheusRule` resource defining automated alert conditions:
+
+| Alert Name | Severity | Component | Description & Operator Intent |
+| --- | --- | --- | --- |
+| **StellarNodeSyncLag** | `warning` | `stellar-node` | Triggers when a node's ledger sequence falls behind consensus by more than `syncLag.lagThreshold` ledgers (default 100). Indicates sync lag or peer issues. |
+| **StellarNodeMemoryPressure** | `critical` | `stellar-node` | Triggers when container RSS memory usage exceeds `memoryPressure.percentageThreshold` (default > 90%). Signals risk of pod eviction or OOM crash. |
+| **StellarOperatorReconcileErrors** | `warning` | `operator` | Triggers when operator reconciliation error rate exceeds `reconcileErrors.errorRateThreshold` over a 5-minute window. Points to RBAC, API, or reconciliation failures. |
+| **StellarHistoryArchiveUnresponsive** | `warning` | `history-archive` | Triggers when history archive queries encounter HTTP 404/500 errors or timeouts within 5 minutes. Indicates misconfigured archive URLs or storage downtime. |
+| **StellarOperatorReconciliationStalled** | `critical` | `operator` | Triggers when no reconciliations occur (`stellar_reconcile_duration_seconds_count` rate is 0) over `reconciliationStalled.stalledDuration`. Signals operator deadlock or process crash. |
+| **StellarOperatorHighReconciliationLatency** | `warning` | `operator` | Triggers when 99th percentile reconciliation duration exceeds `reconciliationLatency.latencyThreshold` seconds over 5 minutes. Indicates API server latency or high resource load. |
+
 ### Common Issues
 
 #### Certificate Not Provisioning
@@ -340,7 +355,7 @@ annotations:
 
 ## Examples
 
-See [ingress-example.yaml](../examples/ingress-example.yaml) for complete working examples including:
+See [ingress-example.yaml](https://github.com/OtowoOrg/Stellar-K8s/blob/main/examples/ingress-example.yaml) for complete working examples including:
 
 - Horizon with Let's Encrypt TLS
 - Soroban RPC with mTLS setup
@@ -403,3 +418,7 @@ pub struct IngressPath {
 - [cert-manager Documentation](https://cert-manager.io/docs/)
 - [NGINX Ingress Controller](https://kubernetes.github.io/ingress-nginx/)
 - [Traefik Ingress Controller](https://doc.traefik.io/traefik/providers/kubernetes-ingress/)
+
+---
+
+*Last verified: 2026-07-27 (cleanup wave #1187/#1189/#1190/#1191).*

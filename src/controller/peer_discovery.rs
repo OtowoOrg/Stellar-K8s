@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! Dynamic peer discovery for Stellar nodes
 //!
 //! Watches all StellarNode resources in the cluster and maintains a shared ConfigMap
@@ -241,12 +253,21 @@ impl PeerDiscoveryManager {
         let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
         let name = node.name_any();
 
-        // Get the service to find the IP
+        // Get the service to find the IP. Prefer the ClusterIP Service created by
+        // `ensure_service` (`{name}`). Fall back to legacy `{name}-service` if present.
         let services: Api<Service> = Api::namespaced(self.client.clone(), &namespace);
-        let service_name = format!("{name}-service");
+        let primary = name.clone();
+        let legacy = format!("{name}-service");
 
-        match services.get(&service_name).await {
+        let service = match services.get(&primary).await {
+            Ok(svc) => Ok(svc),
+            Err(kube::Error::Api(e)) if e.code == 404 => services.get(&legacy).await,
+            Err(e) => Err(e),
+        };
+
+        match service {
             Ok(service) => {
+                let service_name = service.name_any();
                 // Try to get cluster IP
                 if let Some(spec) = &service.spec {
                     if let Some(cluster_ip) = &spec.cluster_ip {
@@ -285,11 +306,14 @@ impl PeerDiscoveryManager {
                 Ok(None)
             }
             Err(kube::Error::Api(e)) if e.code == 404 => {
-                debug!("Service {} not found yet", service_name);
+                debug!(
+                    "Service {} (or legacy {}-service) not found yet",
+                    name, name
+                );
                 Ok(None)
             }
             Err(e) => {
-                warn!("Error fetching service {}: {}", service_name, e);
+                warn!("Error fetching service for {}: {}", name, e);
                 Ok(None)
             }
         }

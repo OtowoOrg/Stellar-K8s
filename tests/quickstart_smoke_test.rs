@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 /// tests/quickstart_smoke_test.rs
 ///
 /// E2E smoke tests that validate the quickstart deployment path
@@ -22,10 +34,12 @@
 /// | `KIND_CLUSTER_NAME` | `qs-smoke-test` | Name of the kind cluster |
 /// | `E2E_OPERATOR_IMAGE` | `stellar-operator:smoke-test` | Operator image tag |
 /// | `SKIP_CLUSTER_SETUP` | `false` | Skip cluster creation (use existing) |
-/// | `SKIP_TEARDOWN` | `false` | Keep cluster running after test |
+/// | `SKIP_TEARDOWN` | `false` | Keep cluster running after test (honoured by `ClusterGuard`) |
 mod common;
 
-use crate::common::{apply_manifest, run_kubectl_output, skip_if_tools_missing, NamespaceGuard};
+use crate::common::{
+    apply_manifest, run_kubectl_output, skip_if_tools_missing, ClusterGuard, NamespaceGuard,
+};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -42,10 +56,6 @@ fn operator_image() -> String {
 
 fn skip_cluster_setup() -> bool {
     std::env::var("SKIP_CLUSTER_SETUP").as_deref() == Ok("true")
-}
-
-fn skip_teardown() -> bool {
-    std::env::var("SKIP_TEARDOWN").as_deref() == Ok("true")
 }
 
 const OPERATOR_NAMESPACE: &str = "stellar-system";
@@ -65,12 +75,6 @@ fn create_kind_cluster(name: &str) {
     cmd.args(["create", "cluster", "--name", name, "--wait", "120s"]);
     let status = cmd.status().expect("failed to run kind create cluster");
     assert!(status.success(), "kind create cluster failed");
-}
-
-fn delete_kind_cluster(name: &str) {
-    let _ = Command::new(kind_binary())
-        .args(["delete", "cluster", "--name", name])
-        .status();
 }
 
 fn build_and_load_image(image: &str) {
@@ -237,9 +241,15 @@ fn quickstart_operator_boots() {
     let image = operator_image();
 
     // Setup
-    if !skip_cluster_setup() {
+    // The guard is bound to the function scope (not the `if` block) so the
+    // cluster is deleted on unwind, not immediately after creation. Without
+    // this, a failing assert! or panic leaks a Docker-backed kind cluster.
+    let _cluster = if !skip_cluster_setup() {
         create_kind_cluster(&cluster);
-    }
+        Some(ClusterGuard::new(cluster.as_str()))
+    } else {
+        None
+    };
 
     let _ns_guard = if !skip_cluster_setup() {
         NamespaceGuard::create(OPERATOR_NAMESPACE)
@@ -278,11 +288,6 @@ fn quickstart_operator_boots() {
         connected,
         "Operator logs did not indicate cluster connection"
     );
-
-    // Teardown
-    if !skip_teardown() {
-        delete_kind_cluster(&cluster);
-    }
 }
 
 /// Validates the full quickstart flow: operator + StellarNode reconciliation.
@@ -297,9 +302,13 @@ fn quickstart_full_flow() {
     let image = operator_image();
 
     // Setup cluster
-    if !skip_cluster_setup() {
+    // Bound to function scope so the cluster is torn down on panic/unwind.
+    let _cluster = if !skip_cluster_setup() {
         create_kind_cluster(&cluster);
-    }
+        Some(ClusterGuard::new(cluster.as_str()))
+    } else {
+        None
+    };
 
     let _ns_guard = if !skip_cluster_setup() {
         NamespaceGuard::create(OPERATOR_NAMESPACE)
@@ -343,11 +352,6 @@ fn quickstart_full_flow() {
         reconciled,
         "Operator logs did not show reconciliation of StellarNode"
     );
-
-    // Teardown
-    if !skip_teardown() {
-        delete_kind_cluster(&cluster);
-    }
 }
 
 /// Validates that the quickstart path works with the Helm chart defaults
@@ -362,9 +366,12 @@ fn quickstart_minimal_config() {
     let cluster = format!("{}-minimal", cluster_name());
     let image = operator_image();
 
-    if !skip_cluster_setup() {
+    let _cluster = if !skip_cluster_setup() {
         create_kind_cluster(&cluster);
-    }
+        Some(ClusterGuard::new(cluster.as_str()))
+    } else {
+        None
+    };
 
     install_crds();
 
@@ -411,8 +418,4 @@ fn quickstart_minimal_config() {
     // Confirm operator boots with minimal config
     let running = operator_logs_contain("stellar-operator") || operator_logs_contain("Operator");
     assert!(running, "Operator did not start with minimal config");
-
-    if !skip_teardown() {
-        delete_kind_cluster(&cluster);
-    }
 }

@@ -1,0 +1,331 @@
+name: Container Image Security
+
+# Issue #1420 — Container image scanning in CI pipeline.
+#
+# This workflow provides comprehensive container image vulnerability scanning
+# using both Trivy and Grype (dual-scanner strategy), image signing with
+# Cosign for supply-chain verification, and critical-vulnerability gating
+# that blocks deployment.
+#
+# Triggers:
+#   • Every PR that touches Docker-relevant files (build-time gate).
+#   • Every push to main (post-merge gate + signing prep).
+#   • Nightly schedule (proactive detection of newly published CVEs).
+#   • Manual dispatch for on-demand scans.
+#
+# Jobs:
+#   1. build-image      — Build the operator image (without pushing).
+#   2. trivy-scan       — Trivy scan with CRITICAL gate + SARIF upload.
+#   3. grype-scan       — Grype scan for cross-validation (advisory only).
+#   4. sbom             — Generate SPDX SBOM and attach to workflow.
+#   5. sign-image       — Keyless Cosign signing (main branch only).
+#   6. verify-signature — Verify the signed image is retrievable.
+#
+# Gate policy:
+#   • CRITICAL or HIGH vulnerabilities with an available fix → fail
+#     (exit-code 1) — issue #1367's stated verification criterion.
+#   • CRITICAL/HIGH with no fix → reported in SARIF, not gated
+#     (ignore-unfixed): there's nothing actionable to block on yet.
+#   • Signing only happens after both scanners pass on the main branch.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "Dockerfile*"
+      - ".dockerignore"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/**"
+      - ".github/workflows/container-image-security.yml"
+      - ".github/actions/security-scan/**"
+      - ".github/actions/sign-image/**"
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile*"
+      - ".dockerignore"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/**"
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: "Override image reference to scan (leave blank to build fresh)"
+        required: false
+        default: ""
+
+concurrency:
+  group: container-security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: read
+  packages: write          # push to GHCR (sign-image job)
+  security-events: write   # upload SARIF to the Security tab
+  id-token: write          # keyless Cosign OIDC token
+
+jobs:
+  # ── 1. Build the image ──────────────────────────────────────────────────────
+  build-image:
+    name: Build Container Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      image-ref: ${{ steps.meta.outputs.image-ref }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR (push on main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=ref,event=pr
+
+      - name: Build (and push on main)
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Load image into local daemon for scanning (PR builds only)
+          load: ${{ github.event_name == 'pull_request' }}
+          # Reuse BuildKit cache between runs
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Export the local image tar so downstream jobs can scan it without
+      # repulling from a registry.
+      - name: Export image tar
+        if: github.event_name == 'pull_request'
+        run: |
+          docker save "${{ steps.meta.outputs.tags }}" \
+            | gzip > image.tar.gz
+
+      - name: Upload image tar
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-tar
+          path: image.tar.gz
+          retention-days: 1
+
+  # ── 2. Trivy vulnerability scan ─────────────────────────────────────────────
+  trivy-scan:
+    name: Trivy Image Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: build-image
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download image tar (PR builds)
+        if: github.event_name == 'pull_request'
+        uses: actions/download-artifact@v8
+        with:
+          name: image-tar
+
+      - name: Load image into Docker (PR builds)
+        if: github.event_name == 'pull_request'
+        run: docker load < image.tar.gz
+
+      - name: Resolve image reference
+        id: resolve
+        run: |
+          if [[ -n "${{ inputs.image_ref }}" ]]; then
+            echo "ref=${{ inputs.image_ref }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # Use the first tag from the metadata output
+            TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -1)
+            echo "ref=${TAG}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}" \
+              >> "$GITHUB_OUTPUT"
+          fi
+
+      # Report pass: full CRITICAL+HIGH range uploaded to the Security tab.
+      - name: Trivy scan — report (SARIF)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.resolve.outputs.ref }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: "CRITICAL,HIGH"
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-container
+
+      # Gate pass: CRITICAL or HIGH with available fix → fail CI (issue
+      # #1367's verification criterion: "fail on critical/high
+      # vulnerabilities" — HIGH was previously report-only, see the SARIF
+      # step above, and never actually gated the build).
+      - name: Trivy scan — gate (block on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.resolve.outputs.ref }}
+          format: table
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: "true"
+          exit-code: "1"
+
+  # ── 3. Grype vulnerability scan (cross-validation) ──────────────────────────
+  grype-scan:
+    name: Grype Image Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: build-image
+    if: github.event_name == 'pull_request'
+    # Grype scan is advisory: findings surface in SARIF but do not gate CI.
+    # Any Grype-only critical finding should trigger a Trivy DB sync and be
+    # escalated to a security issue if Trivy does not catch it within 48h.
+    continue-on-error: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download image tar (PR builds)
+        if: github.event_name == 'pull_request'
+        uses: actions/download-artifact@v8
+        with:
+          name: image-tar
+
+      - name: Load image into Docker (PR builds)
+        if: github.event_name == 'pull_request'
+        run: docker load < image.tar.gz
+
+      - name: Resolve image reference
+        id: resolve
+        run: |
+          if [[ -n "${{ inputs.image_ref }}" ]]; then
+            echo "ref=${{ inputs.image_ref }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -1)
+            echo "ref=${TAG}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}" \
+              >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Grype
+        uses: anchore/setup-grype@v1
+
+      - name: Grype scan — report (SARIF)
+        run: |
+          grype "${{ steps.resolve.outputs.ref }}" \
+            --output sarif \
+            --file grype-results.sarif \
+            --fail-on critical \
+            --only-fixed
+        continue-on-error: true  # SARIF upload happens even if gate fails
+
+      - name: Upload Grype SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: grype-results.sarif
+          category: grype-container
+
+  # ── 4. SBOM generation ──────────────────────────────────────────────────────
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build-image
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download image tar (PR builds)
+        if: github.event_name == 'pull_request'
+        uses: actions/download-artifact@v8
+        with:
+          name: image-tar
+
+      - name: Load image (PR builds)
+        if: github.event_name == 'pull_request'
+        run: docker load < image.tar.gz
+
+      - name: Resolve image reference
+        id: resolve
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -1)
+            echo "ref=${TAG}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}" \
+              >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate SPDX SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.resolve.outputs.ref }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: stellar-operator-sbom.spdx.json
+
+  # ── 5. Sign image (main branch only, after both scanners pass) ──────────────
+  sign-image:
+    name: Sign Container Image (Cosign)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [trivy-scan, grype-scan, sbom]
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.trivy-scan.result == 'success'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Sign image
+        uses: ./.github/actions/sign-image
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          digest: ${{ needs.build-image.outputs.digest }}
+
+  # ── 6. Verify signature ──────────────────────────────────────────────────────
+  verify-signature:
+    name: Verify Cosign Signature
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: sign-image
+    if: needs.sign-image.result == 'success'
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Verify image signature
+        run: |
+          cosign verify \
+            --certificate-identity-regexp \
+              "^https://github.com/OtowoOrg/Stellar-K8s/" \
+            --certificate-oidc-issuer \
+              "https://token.actions.githubusercontent.com" \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-image.outputs.digest }}"
+          echo "✅ Signature verified"

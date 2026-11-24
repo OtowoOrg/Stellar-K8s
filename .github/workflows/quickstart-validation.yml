@@ -1,0 +1,54 @@
+name: Quickstart Golden Path Validation
+
+# Golden-path quickstart validation pipeline (issue #1067) with a
+# CRD backward-compatibility gate (issue #1065) and a smoke test of the
+# secret-rotation integration check (issue #1066).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  golden-path:
+    name: Validate quickstart golden path
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install PyYAML
+        run: python3 -m pip install --user pyyaml
+
+      - name: Run golden-path validation
+        run: |
+          chmod +x scripts/quickstart-golden-path.sh
+          ./scripts/quickstart-golden-path.sh
+
+      - name: Smoke-test secret rotation check (dry run)
+        run: |
+          chmod +x scripts/secret-rotation-check.sh
+          ./scripts/secret-rotation-check.sh --dry-run
+
+  crd-migration-lint:
+    name: CRD backward-compatibility lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install PyYAML
+        run: python3 -m pip install --user pyyaml
+
+      - name: Run linter unit tests
+        run: python3 scripts/tests/test_crd_migration_lint.py
+
+      - name: Lint CRDs against origin/main
+        run: python3 scripts/crd_migration_lint.py --against origin/main

@@ -1,7 +1,19 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 use crate::cli::DoctorArgs;
+use crate::{preflight, Error};
 use kube::Client;
 use std::process::Command;
-use stellar_k8s::{preflight, Error};
 
 /// Output-friendly status used by the doctor command.
 struct CheckStatus {
@@ -142,7 +154,7 @@ async fn run_kubernetes_checks(namespace: &str) -> Vec<CheckStatus> {
         }
     };
 
-    let preflight_results: Vec<stellar_k8s::preflight::CheckResult> =
+    let preflight_results: Vec<crate::preflight::CheckResult> =
         preflight::run_preflight_checks(&client, namespace).await;
     preflight_results
         .into_iter()

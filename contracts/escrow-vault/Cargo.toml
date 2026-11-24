@@ -1,0 +1,22 @@
+# Standalone workspace root so this crate is not conflated with the parent
+# operator workspace (which pins its own toolchain/profile settings).
+[workspace]
+
+[package]
+name = "stellar-escrow-vault"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Non-custodial escrow & collateral vault with proof-verified slashing (Soroban/Stellar-aligned)"
+repository = "https://github.com/stellar/stellar-k8s"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+# Ed25519 signature verification for downtime / double-sign slashing proofs.
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+
+[dev-dependencies]
+# Property-based testing for the total-solvency and no-stuck-funds invariants.
+proptest = "1.5"

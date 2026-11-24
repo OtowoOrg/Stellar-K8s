@@ -1,0 +1,155 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "StellarBackup defines automated backup management",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "schedule",
+        "destination"
+      ],
+      "properties": {
+        "schedule": {
+          "type": "string",
+          "description": "Cron schedule for backups"
+        },
+        "destination": {
+          "type": "object",
+          "description": "Backup destination configuration",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "S3",
+                "GCS",
+                "AzureBlob"
+              ]
+            },
+            "bucket": {
+              "type": "string"
+            },
+            "region": {
+              "type": "string"
+            }
+          }
+        },
+        "retentionPolicy": {
+          "type": "object",
+          "description": "Backup retention configuration",
+          "properties": {
+            "dailyRetentionDays": {
+              "type": "integer",
+              "default": 7
+            },
+            "weeklyRetentionWeeks": {
+              "type": "integer",
+              "default": 4
+            },
+            "monthlyRetentionMonths": {
+              "type": "integer",
+              "default": 12
+            }
+          }
+        },
+        "encryption": {
+          "type": "object",
+          "description": "Backup encryption settings",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "algorithm": {
+              "type": "string",
+              "default": "AES256"
+            }
+          }
+        },
+        "crossRegionReplication": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable cross-region backup replication"
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "lastBackupTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "backupCount": {
+          "type": "integer",
+          "default": 0
+        },
+        "totalSize": {
+          "type": "string"
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "StellarBackup"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "StellarBackup"
+    }
+  ]
+}

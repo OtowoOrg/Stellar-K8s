@@ -1,0 +1,161 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "LedgerCloseWebhook subscribes an external HTTP endpoint to Stellar ledger-close events. The operator delivers a HMAC-SHA256-signed JSON payload to the endpoint within 5 seconds of each ledger close, with automatic exponential-backoff retries and delivery tracking.\n",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "LedgerCloseWebhook"
+      ]
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "spec": {
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "description": "Target URL that will receive POST requests with the ledger-close JSON payload.\n",
+          "type": "string",
+          "pattern": "^https?://.+"
+        },
+        "secretRef": {
+          "description": "Name of a Kubernetes Secret whose `value` key holds the HMAC signing secret used to compute the X-Stellar-Signature header. Omit to disable payload signing.\n",
+          "type": "string"
+        },
+        "events": {
+          "description": "Ledger-close event types to subscribe to. Defaults to [LedgerClose].\n",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "LedgerClose",
+              "LedgerLag",
+              "LedgerSync"
+            ]
+          },
+          "default": [
+            "LedgerClose"
+          ]
+        },
+        "maxRetries": {
+          "description": "Maximum number of retry attempts after the first delivery failure. Retries use exponential back-off (1 s, 2 s, 4 s, 8 s, 16 s). Defaults to 5.\n",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 5
+        },
+        "timeoutSeconds": {
+          "description": "HTTP request timeout in seconds for each individual attempt. Defaults to 5.\n",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30,
+          "default": 5
+        },
+        "enabled": {
+          "description": "Set to false to pause delivery without deleting the resource.\n",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "lastDeliveredSequence": {
+          "description": "Ledger sequence number last successfully delivered.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "lastDeliveredAt": {
+          "description": "Timestamp of the last successful delivery.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "totalDelivered": {
+          "description": "Cumulative count of successfully delivered ledger-close events.\n",
+          "type": "integer",
+          "format": "int64"
+        },
+        "totalFailed": {
+          "description": "Cumulative count of delivery failures (all retries exhausted).\n",
+          "type": "integer",
+          "format": "int64"
+        },
+        "phase": {
+          "description": "Phase of the most-recent delivery attempt.",
+          "type": "string",
+          "enum": [
+            "Pending",
+            "Delivering",
+            "Delivered",
+            "Failed"
+          ]
+        },
+        "deliveryLog": {
+          "description": "Ring-buffer of the 20 most-recent delivery log entries.\n",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ledgerSequence": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "attemptedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "completedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "phase": {
+                "type": "string",
+                "enum": [
+                  "Pending",
+                  "Delivering",
+                  "Delivered",
+                  "Failed"
+                ]
+              },
+              "attempts": {
+                "type": "integer"
+              },
+              "lastStatusCode": {
+                "type": "integer"
+              },
+              "lastError": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "spec",
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "LedgerCloseWebhook"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "stellar-k8s-topology-visualizer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test src/graphModel.test.js",
+    "mock:stream": "node scripts/mock-kafka-stream.mjs --serve",
+    "stream:kafka": "node scripts/kafka-websocket-bridge.mjs",
+    "lint": "eslint .",
+    "coverage": "node --test --experimental-test-coverage --test-coverage-lines=90 src/graphModel.test.js"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "kafkajs": "^2.2.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.171.0",
+    "vite": "^6.0.5",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.2",
+    "eslint-plugin-react": "^7.37.5"
+  }
+}

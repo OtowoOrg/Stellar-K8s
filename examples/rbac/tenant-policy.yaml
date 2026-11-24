@@ -1,0 +1,293 @@
+---
+# Enterprise multi-tenant RBAC and isolation for Stellar-K8s
+# Apply: kubectl apply -f examples/rbac/tenant-policy.yaml
+# Validate: kubectl apply --dry-run=client -f examples/rbac/tenant-policy.yaml
+#
+# Creates two tenant namespaces (tenant-alpha, tenant-beta) with:
+# - ResourceQuota and LimitRange
+# - NetworkPolicy (default deny ingress, allow same-tenant + operator)
+# - Role hierarchy: SuperAdmin (cluster), Operator (tenant), Auditor (read-only)
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-alpha
+  labels:
+    stellar.org/tenant: alpha
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-beta
+  labels:
+    stellar.org/tenant: beta
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+# ── Tenant Alpha: Operator (manage StellarNodes in namespace) ─────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: stellar-tenant-operator
+  namespace: tenant-alpha
+rules:
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes", "stellarbenchmarks"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes/status", "stellarbenchmarks/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: stellar-tenant-auditor
+  namespace: tenant-alpha
+rules:
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes", "stellarbenchmarks"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes/status", "stellarbenchmarks/status"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-alpha-operators
+  namespace: tenant-alpha
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: stellar-tenant-operator
+subjects:
+  - kind: Group
+    name: stellar-tenant-alpha-operators
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-alpha-auditors
+  namespace: tenant-alpha
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: stellar-tenant-auditor
+subjects:
+  - kind: Group
+    name: stellar-tenant-alpha-auditors
+    apiGroup: rbac.authorization.k8s.io
+---
+# ── Tenant Beta: mirror roles ─────────────────────────────────────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: stellar-tenant-operator
+  namespace: tenant-beta
+rules:
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes", "stellarbenchmarks"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes/status", "stellarbenchmarks/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: stellar-tenant-auditor
+  namespace: tenant-beta
+rules:
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes", "stellarbenchmarks"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes/status", "stellarbenchmarks/status"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-beta-operators
+  namespace: tenant-beta
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: stellar-tenant-operator
+subjects:
+  - kind: Group
+    name: stellar-tenant-beta-operators
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-beta-auditors
+  namespace: tenant-beta
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: stellar-tenant-auditor
+subjects:
+  - kind: Group
+    name: stellar-tenant-beta-auditors
+    apiGroup: rbac.authorization.k8s.io
+---
+# ── SuperAdmin: cluster-scoped platform team (all tenants + operator CRDs) ────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: stellar-super-admin
+rules:
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes", "stellarbenchmarks", "benchmarkreports"]
+    verbs: ["*"]
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes/status", "stellarbenchmarks/status"]
+    verbs: ["*"]
+  - apiGroups: [""]
+    resources: ["namespaces", "nodes", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: stellar-super-admins
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: stellar-super-admin
+subjects:
+  - kind: Group
+    name: stellar-platform-superadmins
+    apiGroup: rbac.authorization.k8s.io
+---
+# ── Resource quotas per tenant ────────────────────────────────────────────────
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: stellar-tenant-quota
+  namespace: tenant-alpha
+spec:
+  hard:
+    pods: "20"
+    persistentvolumeclaims: "10"
+    requests.cpu: "32"
+    requests.memory: 64Gi
+    limits.cpu: "64"
+    limits.memory: 128Gi
+    count/stellarnodes.stellar.org: "10"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: stellar-tenant-quota
+  namespace: tenant-beta
+spec:
+  hard:
+    pods: "20"
+    persistentvolumeclaims: "10"
+    requests.cpu: "32"
+    requests.memory: 64Gi
+    limits.cpu: "64"
+    limits.memory: 128Gi
+    count/stellarnodes.stellar.org: "10"
+---
+# ── NetworkPolicy: deny cross-tenant; allow operator scrape + intra-tenant ───
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tenant-isolation
+  namespace: tenant-alpha
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              stellar.org/tenant: alpha
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: stellar-system
+      ports:
+        - protocol: TCP
+          port: 9100
+        - protocol: TCP
+          port: 11625
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              stellar.org/tenant: alpha
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tenant-isolation
+  namespace: tenant-beta
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              stellar.org/tenant: beta
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: stellar-system
+      ports:
+        - protocol: TCP
+          port: 9100
+        - protocol: TCP
+          port: 11625
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              stellar.org/tenant: beta
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 443

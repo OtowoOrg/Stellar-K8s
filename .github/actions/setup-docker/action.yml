@@ -29,4 +29,6 @@ runs:
       with:
         registry: ${{ inputs.registry }}
         username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        # Composite actions have no `secrets` context; `github.token` is the
+        # supported way to reference GITHUB_TOKEN from inside one.
+        password: ${{ github.token }}

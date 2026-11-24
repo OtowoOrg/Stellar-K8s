@@ -1,0 +1,13 @@
+[package]
+name = "proxy-controller"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Reusable Soroban upgrade-governance library: timelocked propose/execute/cancel state machine over env.deployer()"
+
+[lib]
+crate-type = ["rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = "23.5.0"

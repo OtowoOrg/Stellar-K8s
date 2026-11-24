@@ -1,0 +1,89 @@
+# Copyright 2024 Stellar-K8s Contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+# Cost estimation model for Stellar-K8s deployments (issue #1834).
+#
+# `make cost-estimate` reads this file and prints a monthly estimate for every
+# profile. `make cost-estimate-check` validates it without printing totals.
+#
+# Prices are on-demand rates for the region below. Keep this file in sync with
+# the reference tables in docs/cost-estimate.md when the provider changes
+# pricing.
+
+region: us-east-1
+currency: USD
+hoursPerMonth: 730
+
+pricing:
+  storageGbMonth: 0.08
+  egressGb: 0.02
+
+# Fractional savings applied on top of the on-demand price.
+discounts:
+  reserved1y: 0.35
+  savingsPlan: 0.25
+  spot: 0.70
+
+profiles:
+  testnet:
+    description: Single node per role on a single cluster
+    components:
+      - name: Validator
+        count: 1
+        instance: m5.xlarge
+        hourly: 0.192
+        storageGb: 500
+      - name: Horizon API
+        count: 1
+        instance: m5.large
+        hourly: 0.096
+        storageGb: 200
+      - name: Soroban RPC
+        count: 1
+        instance: c5.2xlarge
+        hourly: 0.340
+        storageGb: 300
+      - name: Operator
+        count: 1
+        instance: m5.large
+        hourly: 0.096
+        storageGb: 20
+
+  mainnet-ha:
+    description: Highly available mainnet deployment
+    components:
+      - name: Validators
+        count: 3
+        instance: m5.xlarge
+        hourly: 0.192
+        storageGb: 500
+      - name: Horizon API
+        count: 2
+        instance: m5.large
+        hourly: 0.096
+        storageGb: 200
+      - name: Soroban RPC
+        count: 2
+        instance: c5.2xlarge
+        hourly: 0.340
+        storageGb: 300
+      - name: Operator
+        count: 2
+        instance: m5.large
+        hourly: 0.096
+        storageGb: 20
+      - name: PostgreSQL (Horizon)
+        count: 1
+        instance: db.m5.large
+        hourly: 0.171
+        storageGb: 200

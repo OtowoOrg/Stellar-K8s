@@ -1,0 +1,37 @@
+# Sample MaintenancePlan manifest for node maintenance orchestration
+apiVersion: stellar.org/v1alpha1
+kind: MaintenancePlan
+metadata:
+  name: sample-maintenance-plan
+  namespace: default
+spec:
+  intent: Patch
+  target:
+    nodeNames:
+      - worker-node-01
+      - worker-node-02
+    matchLabels:
+      stellar.org/role: validator
+  drain:
+    maxParallel: 2
+    gracePeriodSeconds: 45
+    ignoreDaemonSets: true
+    deleteEmptyDirData: true
+  pdb:
+    respect: true
+    stallTimeoutSeconds: 120
+    stallRecovery: SurgeThenEvict
+  prewarm:
+    enabled: true
+    readinessTimeoutSeconds: 180
+    replicaBuffer: 1
+  slo:
+    enabled: true
+    maxErrorRate: 0.001
+    minAvailability: 0.999
+    sampleWindowSeconds: 30
+  abort:
+    onSloBreach: true
+    autoRecover: true
+    uncordonOnAbort: true
+    requested: false

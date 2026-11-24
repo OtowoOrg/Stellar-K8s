@@ -1,0 +1,172 @@
+{
+  "schemas": [
+    {
+      "file": "CapacityRecommendationReport-stellar.org-v1alpha1.json",
+      "source": "config/crd/capacityrecommendationreport-crd.yaml",
+      "kind": "CapacityRecommendationReport",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "ComplianceReport-compliance.stellar.org-v1alpha1.json",
+      "source": "config/crd/compliancereport-crd.yaml",
+      "kind": "ComplianceReport",
+      "apiVersion": "compliance.stellar.org/v1alpha1"
+    },
+    {
+      "file": "ContractWASM-stellar.org-v1alpha1.json",
+      "source": "config/crd/contractdeployment-crd.yaml",
+      "kind": "ContractWASM",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "ContractInstance-stellar.org-v1alpha1.json",
+      "source": "config/crd/contractdeployment-crd.yaml",
+      "kind": "ContractInstance",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "ControlPlaneHealth-stellar.org-v1alpha1.json",
+      "source": "config/crd/controlplanehealth-crd.yaml",
+      "kind": "ControlPlaneHealth",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "Incident-incident.stellar.org-v1alpha1.json",
+      "source": "config/crd/incident-crd.yaml",
+      "kind": "Incident",
+      "apiVersion": "incident.stellar.org/v1alpha1"
+    },
+    {
+      "file": "InternalApiSchema-stellar.org-v1alpha1.json",
+      "source": "config/crd/internalapischema-crd.yaml",
+      "kind": "InternalApiSchema",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "LedgerCloseWebhook-stellar.org-v1alpha1.json",
+      "source": "config/crd/ledgerclosehook-crd.yaml",
+      "kind": "LedgerCloseWebhook",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "MaintenancePlan-stellar.org-v1alpha1.json",
+      "source": "config/crd/maintenanceplan-crd.yaml",
+      "kind": "MaintenancePlan",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "MultiSigOperation-stellar.org-v1alpha1.json",
+      "source": "config/crd/multisigoperation-crd.yaml",
+      "kind": "MultiSigOperation",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarConfigSnapshot-stellar.io-v1alpha1.json",
+      "source": "config/crd/stellar_config_snapshot_crd.yaml",
+      "kind": "StellarConfigSnapshot",
+      "apiVersion": "stellar.io/v1alpha1"
+    },
+    {
+      "file": "StellarAIOps-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellaraiops-crd.yaml",
+      "kind": "StellarAIOps",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarAssetMonitor-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellarassetmonitor-crd.yaml",
+      "kind": "StellarAssetMonitor",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarAutoscaler-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellarautoscaler-crd.yaml",
+      "kind": "StellarAutoscaler",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarBenchmark-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellarbenchmark-crd.yaml",
+      "kind": "StellarBenchmark",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "BenchmarkReport-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellarbenchmarkreport-crd.yaml",
+      "kind": "BenchmarkReport",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarBackup-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellardr-crd.yaml",
+      "kind": "StellarBackup",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarRestore-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellardr-crd.yaml",
+      "kind": "StellarRestore",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarDRDrill-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellardr-crd.yaml",
+      "kind": "StellarDRDrill",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarFederation-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellarfederation-crd.yaml",
+      "kind": "StellarFederation",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarGitOpsConfig-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellargitopsconfig-crd.yaml",
+      "kind": "StellarGitOpsConfig",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarNode-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellarnode-crd.yaml",
+      "kind": "StellarNode",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarObservability-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellarobservability-crd.yaml",
+      "kind": "StellarObservability",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarPolicyBundle-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellarpolicybundle-crd.yaml",
+      "kind": "StellarPolicyBundle",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarSecurityPolicy-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellarsecuritypolicy-crd.yaml",
+      "kind": "StellarSecurityPolicy",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "StellarUpgrade-stellar.org-v1alpha1.json",
+      "source": "config/crd/stellarupgrade-crd.yaml",
+      "kind": "StellarUpgrade",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "ValidatorLeaderboard-stellar.org-v1alpha1.json",
+      "source": "config/crd/validatorleaderboard-crd.yaml",
+      "kind": "ValidatorLeaderboard",
+      "apiVersion": "stellar.org/v1alpha1"
+    },
+    {
+      "file": "ValidatorScore-stellar.org-v1alpha1.json",
+      "source": "config/crd/validatorscore-crd.yaml",
+      "kind": "ValidatorScore",
+      "apiVersion": "stellar.org/v1alpha1"
+    }
+  ]
+}

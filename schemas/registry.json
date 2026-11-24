@@ -1,0 +1,66 @@
+{
+  "subjects": {
+    "stellar.scp.message": {
+      "name": "stellar.scp.message",
+      "namespace": "stellar.internal",
+      "compatibility": "full",
+      "versions": [{
+        "version": 1,
+        "schema_id": "stellar.scp.message-v1",
+        "definition": "syntax = \"proto3\"; message SCPEnvelope { string messageType = 1; uint64 sequence = 2; }",
+        "format": "protobuf",
+        "source_file": "schemas/proto/scp_message.proto",
+        "description": "Internal SCP envelope contract",
+        "author": "stellar-platform",
+        "created_at": 0,
+        "approval_status": "approved",
+        "approved_by": "schema-governance",
+        "tags": ["scp"],
+        "deprecated": false
+      }],
+      "usage_count": 2,
+      "consumers": ["horizon", "validator-gateway"],
+      "owners": ["stellar-platform"]
+    },
+    "stellar.ledger.events": {
+      "name": "stellar.ledger.events",
+      "namespace": "stellar.internal",
+      "compatibility": "backward",
+      "versions": [{
+        "version": 1,
+        "schema_id": "stellar.ledger.events-v1",
+        "definition": {"type":"object","required":["id","type"],"properties":{"id":{"type":"string"},"type":{"type":"string"},"payload":{"type":"object"}}},
+        "format": "json_schema",
+        "source_file": "schemas/json/ledger_events.json",
+        "description": "Internal ledger event envelope",
+        "author": "stellar-platform",
+        "created_at": 0,
+        "approval_status": "approved",
+        "approved_by": "schema-governance",
+        "tags": ["ledger"],
+        "deprecated": false
+      }],
+      "usage_count": 1,
+      "consumers": ["horizon"],
+      "owners": ["stellar-platform"]
+    }
+  },
+  "consumers": {
+    "horizon": {
+      "name": "horizon",
+      "owner": "horizon-team",
+      "pinned_versions": {"stellar.ledger.events": 1, "stellar.scp.message": 1},
+      "subscribed_subjects": ["stellar.ledger.events", "stellar.scp.message"],
+      "generated_client": "github.com/otowo/stellar-go/horizon@v1.0.0"
+    },
+    "validator-gateway": {
+      "name": "validator-gateway",
+      "owner": "networking-team",
+      "pinned_versions": {"stellar.scp.message": 1},
+      "subscribed_subjects": ["stellar.scp.message"],
+      "generated_client": "github.com/otowo/stellar-go/scp@v1.0.0"
+    }
+  },
+  "overrides": [],
+  "audit": []
+}

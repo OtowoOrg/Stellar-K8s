@@ -7,8 +7,7 @@ The guide is intentionally migration-focused:
 - It starts with planning and inventory work before any cutover.
 - It uses repo-native `StellarNode` resources instead of hand-written Deployments.
 - It includes data migration, rollback, and validation procedures.
-- It ships with a conversion helper at `scripts/compose_to_stellark8s.py`.
-- It includes example input/output manifests under `examples/migrations/docker-compose/`.
+- It includes example Compose stacks and starter manifests under `examples/migrations/docker-compose/`.
 
 ## Scope
 
@@ -88,34 +87,35 @@ Write down clear migration success criteria:
 - Data volumes are durable and retained on deletion.
 - Rollback can restore service to the original Compose deployment within the agreed RTO.
 
-## 2. Read The Existing Compose File
+## 2. Map Compose Services To StellarNode Manifests
 
-The repository includes a starter converter:
+There is no automated Compose-to-YAML converter in this repository. Map each Compose service
+manually to a `StellarNode` (or external database Secret) using the canonical examples:
 
-```bash
-python3 scripts/compose_to_stellark8s.py \
-  --input docker-compose.yml \
-  --output migrated/manifests.yaml \
-  --namespace stellar-testnet \
-  --network testnet \
-  --storage-class standard \
-  --emit-namespace
-```
+| Compose service pattern | Canonical example manifest |
+|---|---|
+| `stellar-core` / `validator` | `examples/validator-testnet.yaml` or `examples/validator-mainnet.yaml` |
+| `horizon` | `examples/horizon.yaml` |
+| `soroban-rpc` | `examples/soroban-rpc.yaml` |
+| Validator + Horizon stack | `examples/migrations/docker-compose/docker-compose.validator-horizon.yml` (reference Compose layout) |
 
-The converter:
+For each service, copy the closest example, then adjust:
 
-- Detects `Validator`, `Horizon`, and `SorobanRpc` services heuristically.
-- Emits starter `Secret` objects for seeds and database URLs.
-- Emits starter `StellarNode` objects with storage, resources, and network policy enabled.
-- Preserves the source Compose service name as an annotation for review.
-- Prints manual review notes for unsupported Compose semantics.
+- `metadata.namespace`, `metadata.name`, and `spec.network`
+- `spec.storage` size, class, and retention policy
+- `spec.resources` requests and limits
+- Secret references (`validatorConfig.seedSecretRef`, `horizonConfig.databaseSecretRef`)
+- Exposure (`ingress`, `loadBalancer`, or internal-only Services)
 
-### 2.1 What the converter handles well
+Annotate each manifest with the source Compose service name (for example
+`metadata.annotations.migrated-from-compose-service: stellar-core`) so reviewers can trace the mapping.
 
-- `environment` blocks as mappings or `KEY=value` lists.
-- Compose `deploy.replicas`.
-- Compose CPU and memory hints from `deploy.resources`.
-- Common data-volume mount paths such as `/var/lib/stellar` and `/var/lib/postgresql/data`.
+### 2.1 Compose fields that map cleanly
+
+- `environment` blocks as mappings or `KEY=value` lists → Kubernetes `Secret` + CRD field refs.
+- Compose `deploy.replicas` → `spec.replicas` (Horizon / Soroban RPC only).
+- Compose CPU and memory hints from `deploy.resources` → `spec.resources`.
+- Common data-volume mount paths such as `/var/lib/stellar` → `spec.storage` PVCs.
 - Common service naming patterns such as `validator`, `stellar-core`, `horizon`, and `soroban-rpc`.
 
 ### 2.2 What still needs manual review
@@ -129,7 +129,7 @@ The converter:
 
 ## 3. Configuration Conversion Checklist
 
-After running the converter, review each emitted manifest against the API reference in `docs/api-reference.md`.
+After drafting manifests from the canonical examples, review each manifest against the API reference in `docs/api-reference.md`.
 
 ### 3.1 Validator mapping
 
@@ -446,7 +446,7 @@ This repository includes a video-ready tutorial script at `docs/docker-compose-m
 Use it to record:
 
 - a short planning walkthrough
-- a live converter demo
+- a manifest drafting walkthrough from canonical examples
 - a manifest review
 - a dry-run deployment demo
 - cutover and rollback discussion
@@ -457,8 +457,8 @@ If you want the shortest safe path, use this order:
 
 1. inventory the Compose stack
 2. choose namespace, storage, and secret strategy
-3. run the converter
-4. review and harden the generated manifests
+3. draft `StellarNode` manifests from the canonical examples
+4. review and harden the manifests
 5. migrate secrets
 6. migrate validator and database data
 7. validate in a dry-run namespace
@@ -468,7 +468,7 @@ If you want the shortest safe path, use this order:
 
 ## References
 
-- `scripts/compose_to_stellark8s.py`
+- `examples/migrations/docker-compose/`
 - `docs/api-reference.md`
 - `docs/network-isolation.md`
 - `docs/volume-snapshots.md`

@@ -1,0 +1,14 @@
+# kind config for Cluster B (Secondary)
+#
+# Usage:
+#   kind create cluster --name cluster-b --config kind/cluster-b.yaml
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: cluster-b
+nodes:
+  - role: control-plane
+  - role: worker
+networking:
+  podSubnet: "10.245.0.0/16"
+  serviceSubnet: "10.97.0.0/16"

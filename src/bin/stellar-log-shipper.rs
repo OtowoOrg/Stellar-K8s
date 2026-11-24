@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //! stellar-log-shipper — durable log-to-S3 sidecar
 //!
 //! Tails `/var/log/stellar/` (or `$LOG_DIR`), batches lines into gzip-compressed
@@ -30,9 +42,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use stellar_k8s::error::{Error, Result};
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::time::sleep;
@@ -55,11 +67,14 @@ struct Config {
 
 impl Config {
     fn from_env() -> Result<Self> {
+        let s3_bucket = env::var("S3_BUCKET")
+            .map_err(|_| Error::config_step("load S3_BUCKET", "env var required"))?;
+
         Ok(Self {
             log_dir: PathBuf::from(
                 env::var("LOG_DIR").unwrap_or_else(|_| "/var/log/stellar".to_string()),
             ),
-            s3_bucket: env::var("S3_BUCKET").context("S3_BUCKET env var required")?,
+            s3_bucket,
             s3_prefix: env::var("S3_PREFIX").unwrap_or_else(|_| "stellar-logs".to_string()),
             s3_region: env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
             node_name: env::var("NODE_NAME").unwrap_or_else(|_| "unknown".to_string()),
@@ -190,11 +205,17 @@ async fn upload_to_s3(
         req = req.header("x-amz-security-token", tok);
     }
 
-    let resp = req.send().await.context("S3 PUT request failed")?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| Error::internal_step("s3 upload", format!("PUT request failed: {e}")))?;
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        anyhow::bail!("S3 PUT failed: HTTP {status}: {body}");
+        return Err(Error::internal_step(
+            "s3 upload",
+            format!("HTTP {status}: {body}"),
+        ));
     }
 
     Ok(())
@@ -206,6 +227,8 @@ async fn upload_to_s3(
 
 struct Batch {
     lines: Vec<String>,
+    // Recorded for age-based flush decisions; retained for that upcoming use.
+    #[allow(dead_code)]
     started_at: Instant,
 }
 
@@ -229,10 +252,13 @@ impl Batch {
     fn compress(&self) -> Result<Vec<u8>> {
         let mut enc = GzEncoder::new(Vec::new(), Compression::default());
         for line in &self.lines {
-            enc.write_all(line.as_bytes())?;
-            enc.write_all(b"\n")?;
+            enc.write_all(line.as_bytes())
+                .map_err(|e| Error::internal_step("gzip write", e.to_string()))?;
+            enc.write_all(b"\n")
+                .map_err(|e| Error::internal_step("gzip write", e.to_string()))?;
         }
-        Ok(enc.finish()?)
+        enc.finish()
+            .map_err(|e| Error::internal_step("gzip finish", e.to_string()))
     }
 }
 
@@ -242,10 +268,20 @@ impl Batch {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::registry()
+    // Same OTel wiring `stellar_k8s::logging::init_binary_subscriber` gives
+    // every other sidecar (issue #1369) — kept inline here to preserve the
+    // existing `EnvFilter::from_default_env()` behavior exactly.
+    let use_otel = env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok();
+    let registry = tracing_subscriber::registry()
         .with(fmt::layer().json())
-        .with(EnvFilter::from_default_env())
-        .init();
+        .with(EnvFilter::from_default_env());
+    if use_otel {
+        let otel_layer = stellar_k8s::telemetry::init_telemetry(&registry);
+        let trace_id_layer = stellar_k8s::telemetry::trace_id_layer();
+        registry.with(otel_layer).with(trace_id_layer).init();
+    } else {
+        registry.init();
+    }
 
     let cfg = Config::from_env()?;
     info!(
@@ -315,9 +351,12 @@ async fn tail_and_ship(
 ) -> Result<()> {
     info!(file = %log_file.display(), "Tailing log file");
 
-    let file = File::open(log_file)
-        .await
-        .with_context(|| format!("Cannot open {}", log_file.display()))?;
+    let file = File::open(log_file).await.map_err(|e| {
+        Error::internal_step(
+            "file io",
+            format!("Cannot open {}: {e}", log_file.display()),
+        )
+    })?;
 
     let mut reader = BufReader::new(file).lines();
     let mut batch = Batch::new();

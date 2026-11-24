@@ -1,0 +1,19 @@
+{{- if (and .Values.monitoring .Values.monitoring.enabled .Values.monitoring.podMonitor.enabled) }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "stellar-operator.fullname" . }}-nodes
+  labels:
+    {{- include "stellar-operator.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchExpressions:
+      {{- toYaml .Values.monitoring.podMonitor.selector.matchExpressions | nindent 6 }}
+  podMetricsEndpoints:
+    - port: {{ .Values.monitoring.podMonitor.portName }}
+      path: /metrics
+      interval: {{ .Values.monitoring.podMonitor.interval }}
+{{- end }}

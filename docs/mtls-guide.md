@@ -4,10 +4,33 @@ This guide explains how to enable mTLS for the operator, how node certificates a
 
 ## Scope
 
-This repository currently manages mTLS in two places:
+This repository supports Istio mesh mTLS and a separate application-certificate workflow:
 
-- Operator REST API mTLS (server cert + CA, with automatic server cert rotation)
-- StellarNode workload certs (per-node client cert secret, recreated on reconcile if missing)
+- Inter-service pod-to-pod mTLS through Istio sidecars, enabled with Helm `mtls.enabled=true`.
+- Operator and per-node application certificates, optionally rotated by cert-manager; these are
+  independent of Istio proxy identities and do not themselves encrypt traffic.
+
+### Enable Istio mesh mTLS
+
+Prerequisite: Istio must be installed and its sidecar injection webhook available. Enable mesh
+encryption with:
+
+```bash
+helm upgrade --install stellar-operator charts/stellar-operator \
+  --namespace stellar-system --create-namespace --set mtls.enabled=true
+```
+
+This enables injection for the operator and managed StellarNode/read-pool pods, and applies a
+STRICT `PeerAuthentication` only to resources managed by this operator. Do not enable the option
+before Istio is ready: selected pods without sidecars will fail to communicate under STRICT mode.
+See [End-to-End Encryption Architecture](security/e2e-encryption-architecture.md) for scope and
+verification commands.
+
+### Optional application-level certificates
+
+Set `spec.certManager` on a `StellarNode` to delegate its optional application certificate to
+cert-manager. The operator creates `<node-name>-mtls-cert` targeting `<node-name>-client-cert`,
+which is mounted at `/etc/stellar/tls`. This certificate is not the identity used by Istio.
 
 ## Certificate and Secret Model
 
@@ -75,6 +98,12 @@ If your deployment name differs, replace `stellar-operator` with the actual depl
 
 ## Verify mTLS Provisioning
 
+Run the one-shot verification script via Make (skips gracefully when no cluster is available):
+
+```bash
+make verify-mtls
+```
+
 Check CA and server secrets:
 
 ```bash
@@ -114,8 +143,26 @@ kubectl -n stellar-system set env deployment/stellar-operator CERT_ROTATION_THRE
 ## Node certificate behavior
 
 - Per-node certs are ensured on reconcile.
-- Existing node cert secrets are not proactively rotated by a timer.
-- If a `<node-name>-client-cert` secret is missing, reconcile recreates it.
+- If a `<node-name>-client-cert` secret is missing, reconcile recreates it (self-signed, via
+  `mtls::ensure_node_cert`).
+- The operator itself does not proactively rotate a self-signed `<node-name>-client-cert` on a
+  timer — it only regenerates the secret if it is deleted.
+- If `spec.certManager` is set on the `StellarNode`, cert-manager owns issuance and rotation of
+  `<node-name>-client-cert` instead (via the `Certificate` CR the operator creates). **On every
+  reconcile the operator now checks whether that Secret's `resourceVersion` changed since the
+  previous reconcile** (`mtls::check_and_restart_on_cert_rotation`, called from the reconcile loop
+  right after `ensure_node_cert`/`ensure_cert_manager_certificate`). If it changed — meaning
+  cert-manager rotated the certificate — the operator bumps a `stellar.org/cert-rotated-at`
+  annotation on the workload's pod template (StatefulSet for validators, Deployment for
+  Horizon/Soroban RPC), which Kubernetes uses to trigger a rolling restart so pods pick up the
+  new certificate. This is what makes "certificates rotate without downtime" actually true today:
+  rotation happens through a rolling restart (old pods keep serving on their still-valid
+  certificate until replaced one at a time), not a live in-process reload.
+  - The rotation-detection state (last-seen resourceVersion per node) is kept in the operator
+    process's memory. On operator restart it starts empty, so the very first reconcile after a
+    restart will not trigger a restart even if the cert had rotated earlier — the *next* rotation
+    after that will be caught normally. This is a deliberate, safe default (see the doc comment on
+    `maybe_restart_on_cert_rotation` in `src/controller/mtls.rs`), not a residual bug.
 
 ## Manual Rotation Runbooks
 
@@ -202,6 +249,23 @@ kubectl -n stellar-system logs deploy/stellar-operator --tail=200
 - Verify `ENABLE_MTLS=true`.
 - Verify `CERT_ROTATION_THRESHOLD_DAYS` value.
 - Confirm the running leader instance is healthy (rotation runs on the leader path).
+- For node certs specifically: rotation-triggered restarts only happen for nodes with
+  `spec.certManager` configured (cert-manager owns rotation). Self-signed
+  `<node-name>-client-cert` secrets are not rotated on a timer at all — see
+  [Node certificate behavior](#node-certificate-behavior).
+- If the operator process restarted recently, the first reconcile after restart cannot detect a
+  rotation that happened before the restart (the in-memory "last known resourceVersion" cache is
+  empty). Wait for the next actual rotation, or check `kubectl -n stellar-system get secret
+  <node-name>-client-cert -o jsonpath='{.metadata.resourceVersion}'` before and after a manual
+  `cert-manager` renewal to confirm the Secret itself is changing.
+
+## Mesh mTLS and application certificates
+
+Istio encrypts traffic between injected pod proxies and manages their identities. The
+`<node-name>-client-cert` and `stellar-operator-server-cert` are separate application-level
+certificates. Stellar Core's native HTTPS settings remain version-dependent; do not rely on them
+for pod-to-pod encryption. Mesh mode covers selected in-cluster workload traffic, not loopback
+traffic or external endpoints.
 
 ## Client trust failures after CA changes
 

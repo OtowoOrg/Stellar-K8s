@@ -1,0 +1,182 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "StellarSecurityPolicy defines security and compliance framework",
+  "properties": {
+    "spec": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "podSecurityStandards": {
+          "type": "object",
+          "description": "Pod security standards enforcement",
+          "properties": {
+            "enforce": {
+              "type": "string",
+              "enum": [
+                "baseline",
+                "restricted",
+                "privileged"
+              ],
+              "default": "restricted"
+            }
+          }
+        },
+        "networkPolicies": {
+          "type": "object",
+          "description": "Network policy configuration",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "defaultDenyIngress": {
+              "type": "boolean",
+              "default": true
+            },
+            "defaultDenyEgress": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        },
+        "secretManagement": {
+          "type": "object",
+          "description": "Secret management configuration",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "Vault",
+                "AWSSecretsManager",
+                "Sealed"
+              ]
+            },
+            "rotationInterval": {
+              "type": "string",
+              "default": "30d"
+            }
+          }
+        },
+        "complianceFrameworks": {
+          "type": "array",
+          "description": "Enabled compliance frameworks",
+          "items": {
+            "type": "string",
+            "enum": [
+              "SOC2",
+              "GDPR",
+              "PCI-DSS",
+              "HIPAA"
+            ]
+          }
+        },
+        "securityMonitoring": {
+          "type": "object",
+          "description": "Real-time security monitoring",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "True",
+                  "False",
+                  "Unknown"
+                ]
+              }
+            }
+          }
+        },
+        "complianceStatus": {
+          "type": "string",
+          "enum": [
+            "Compliant",
+            "NonCompliant",
+            "Unknown"
+          ]
+        },
+        "lastAuditTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "vulnerabilityCount": {
+          "type": "integer",
+          "default": 0
+        }
+      }
+    },
+    "apiVersion": {
+      "type": "string",
+      "enum": [
+        "stellar.org/v1alpha1"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "StellarSecurityPolicy"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "x-kubernetes-group-version-kind": [
+    {
+      "group": "stellar.org",
+      "version": "v1alpha1",
+      "kind": "StellarSecurityPolicy"
+    }
+  ]
+}

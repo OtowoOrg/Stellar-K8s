@@ -1,0 +1,24 @@
+nodeType: SorobanRpc
+network: testnet
+version: v21.0.0
+replicas: 2
+storageClass: stellar-local
+storageSize: 100Gi
+retentionPolicy: Delete
+seedSecret:
+  enabled: false
+soroban:
+  replicas: 2
+  minReplicas: 2
+  maxReplicas: 3
+  targetCPU: 70
+  stellarCoreUrl: http://validator-testnet:11626
+  maxEventsPerRequest: 10000
+  historyArchiveUrl: https://history.stellar.org/prd/core-testnet/core_testnet_001
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    cpu: "4"
+    memory: 8Gi

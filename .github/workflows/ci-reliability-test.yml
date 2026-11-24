@@ -1,0 +1,269 @@
+# CI Reliability Test - Validates pipeline stability and hardening
+name: CI Reliability Test
+
+on:
+  push:
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - 'Dockerfile'
+      - '.cargo/audit.toml'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - 'Dockerfile'
+      - '.cargo/audit.toml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Validate Docker Configuration ──────────────────────────────────────────────
+  validate-docker:
+    name: Validate Docker Configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate base image digest
+        run: |
+          # Extract the digest from Dockerfile (strip optional "AS <stage>" suffix)
+          DIGEST=$(grep -E "FROM debian:bookworm-slim@sha256:" Dockerfile | sed -E 's/.*@(sha256:[a-fA-F0-9]{64}).*/\1/')
+          echo "Found digest: $DIGEST"
+          
+          # Verify it's a valid SHA256 (64 hex characters)
+          if [[ ! "$DIGEST" =~ ^sha256:[a-fA-F0-9]{64}$ ]]; then
+            echo "❌ Invalid digest format: $DIGEST"
+            echo "Expected: sha256:[64 hex characters]"
+            exit 1
+          fi
+          
+          # Verify the digest exists (pull by digest)
+          echo "🔍 Verifying digest exists on registry..."
+          if ! docker pull debian:bookworm-slim@$DIGEST; then
+            echo "❌ Digest not found on registry: $DIGEST"
+            exit 1
+          fi
+          
+          echo "✅ Docker base image digest is valid"
+
+      - name: Test Docker build
+        run: |
+          # Test that the Dockerfile builds without errors
+          docker build --target runtime-base --platform linux/amd64 .
+          echo "✅ Docker build test passed"
+
+  # ── Validate Security Audit Configuration ──────────────────────────────────────
+  validate-security-audit:
+    name: Validate Security Audit Config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: "ci-audit-test"
+          extra-tools: "cargo-audit"
+
+      - name: Test cargo audit configuration
+        run: |
+          # Validate audit.toml syntax
+          if ! cargo audit --version; then
+            echo "❌ cargo-audit not working"
+            exit 1
+          fi
+          
+          # Test that audit runs (may have advisories, but should not error)
+          echo "🔍 Testing audit configuration..."
+          set +e  # Don't exit on audit findings
+          cargo audit --quiet 2>&1 | tee audit_output.txt
+          AUDIT_EXIT_CODE=$?
+          set -e
+          
+          # Check for configuration errors (exit code 2)
+          if [ $AUDIT_EXIT_CODE -eq 2 ]; then
+            echo "❌ Audit configuration error:"
+            cat audit_output.txt
+            exit 1
+          fi
+          
+          echo "✅ Security audit configuration is valid"
+          
+          # Validate ignore format in audit.toml
+          if grep -q "RUSTSEC-.*-.*" .cargo/audit.toml; then
+            echo "🔍 Found RUSTSEC ignores in audit.toml"
+            
+            # Check for future year entries (should not exist)
+            CURRENT_YEAR=$(date +%Y)
+            if grep -q "RUSTSEC-$((CURRENT_YEAR + 1))-" .cargo/audit.toml; then
+              echo "❌ Found future year RUSTSEC entries"
+              grep "RUSTSEC-$((CURRENT_YEAR + 1))-" .cargo/audit.toml
+              exit 1
+            fi
+            echo "✅ No future-dated RUSTSEC entries found"
+          fi
+
+  # ── Validate Action Version Consistency ────────────────────────────────────────
+  validate-action-versions:
+    name: Validate Action Version Consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check action version consistency
+        run: |
+          echo "🔍 Checking action version consistency..."
+          ERRORS=0
+          
+          # Function to check action consistency
+          check_action_versions() {
+            local action=$1
+            echo "Checking $action versions..."
+            
+            # Find all uses of this action (normalize indentation so whitespace ≠ version)
+            VERSIONS=$(find .github -name "*.yml" -exec grep -h "uses: $action@" {} \; | sed 's/^[[:space:]]*//' | sort -u)
+            VERSION_COUNT=$(echo "$VERSIONS" | grep -c . || true)
+            
+            if [ $VERSION_COUNT -gt 1 ]; then
+              echo "❌ Inconsistent versions for $action:"
+              echo "$VERSIONS"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "✅ $action: consistent version"
+            fi
+          }
+          
+          # Check common actions
+          check_action_versions "actions/setup-python"
+          check_action_versions "aquasecurity/trivy-action"
+          check_action_versions "docker/build-push-action"
+          check_action_versions "docker/metadata-action"
+          
+          if [ $ERRORS -gt 0 ]; then
+            echo "❌ Found $ERRORS action version inconsistencies"
+            exit 1
+          fi
+          
+          echo "✅ All action versions are consistent"
+
+  # ── Validate Rust Cache Configuration ──────────────────────────────────────────
+  validate-rust-cache:
+    name: Validate Rust Cache Config  
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check for deprecated cache settings
+        run: |
+          echo "🔍 Checking for deprecated Rust cache settings..."
+          
+          # Match the YAML key only (avoid false positives from this script's comments)
+          if grep -rIn --include='*.yml' -E '^[[:space:]]*cache-all-crates:' .github/; then
+            echo "❌ Found deprecated 'cache-all-crates' setting:"
+            grep -rIn --include='*.yml' -E '^[[:space:]]*cache-all-crates:' .github/
+            exit 1
+          fi
+          
+          # Verify new cache-directories setting exists
+          if ! grep -r "cache-directories" .github/actions/setup-rust/; then
+            echo "❌ Missing 'cache-directories' in setup-rust action"
+            exit 1
+          fi
+          
+          echo "✅ Rust cache configuration updated to non-deprecated settings"
+
+  # ── Test Error Handling and Retry Logic ───────────────────────────────────────
+  test-retry-logic:
+    name: Test Retry Logic
+    runs-on: ubuntu-latest  
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Test cargo install retry patterns
+        run: |
+          echo "🔍 Validating retry logic patterns..."
+
+          # Retry lives in the shared setup-rust composite (issue #1175),
+          # not inlined in every workflow job.
+          ACTION=".github/actions/setup-rust/action.yml"
+          if [[ ! -f "$ACTION" ]]; then
+            echo "❌ Missing setup-rust composite action"
+            exit 1
+          fi
+
+          if ! grep -q 'cargo install --locked' "$ACTION"; then
+            echo "❌ setup-rust does not install extra cargo tools"
+            exit 1
+          fi
+
+          if ! grep -q 'for i in 1 2 3' "$ACTION"; then
+            echo "❌ Missing retry loop in setup-rust extra-tools install"
+            exit 1
+          fi
+
+          # Workflows must not re-bootstrap tools that setup-rust already installs.
+          if grep -RIn --include='*.yml' -E 'cargo install (cargo-audit|cargo-tarpaulin|cargo-deny)' \
+               .github/workflows/ | grep -v 'ci-reliability-test.yml'; then
+            echo "❌ Found redundant cargo install bootstrap outside setup-rust"
+            grep -RIn --include='*.yml' -E 'cargo install (cargo-audit|cargo-tarpaulin|cargo-deny)' \
+              .github/workflows/ | grep -v 'ci-reliability-test.yml' || true
+            exit 1
+          fi
+
+          echo "✅ cargo tool install + retry is centralized in setup-rust"
+
+          # Only release.yml (cross-compile matrix) may call rust-toolchain directly.
+          LEAKS=$(grep -RIn --include='*.yml' -E 'uses:[[:space:]]*dtolnay/rust-toolchain' .github/ \
+            | grep -v 'setup-rust/action.yml' \
+            | grep -v 'release.yml' || true)
+          if [[ -n "$LEAKS" ]]; then
+            echo "❌ Raw dtolnay/rust-toolchain outside setup-rust/release.yml:"
+            echo "$LEAKS"
+            exit 1
+          fi
+          echo "✅ rust-toolchain usage is confined to setup-rust (+ release.yml)"
+
+  # ── Validate CI Documentation ──────────────────────────────────────────────────
+  validate-documentation:
+    name: Validate CI Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check CI documentation completeness
+        run: |
+          echo "🔍 Validating CI documentation..."
+          
+          # Check that troubleshooting guide exists
+          if [[ ! -f ".github/CI_TROUBLESHOOTING.md" ]]; then
+            echo "❌ Missing CI troubleshooting guide"
+            exit 1
+          fi
+          
+          # Check key sections exist in documentation
+          REQUIRED_SECTIONS=(
+            "Docker Build Failures"
+            "Security Audit Failures"
+            "Reproducing CI Failures Locally"
+            "Action Version Management"
+          )
+          
+          for section in "${REQUIRED_SECTIONS[@]}"; do
+            if ! grep -q "$section" .github/CI_TROUBLESHOOTING.md; then
+              echo "❌ Missing documentation section: $section"
+              exit 1
+            fi
+          done
+          
+          echo "✅ CI documentation is complete"
+
+  # ── Summary Report ─────────────────────────────────────────────────────────────

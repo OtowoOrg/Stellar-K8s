@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 use chrono::{DateTime, Utc};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::core::v1::Pod;
@@ -22,16 +34,6 @@ pub const CANARY_TEST_STATUS_ANNOTATION: &str = "stellar.org/canary-test-status"
 pub const CVE_ROLLOUT_STATUS_ANNOTATION: &str = "stellar.org/cve-rollout-status";
 pub const CVE_ROLLBACK_REASON_ANNOTATION: &str = "stellar.org/cve-rollback-reason";
 pub const CVE_AUTO_PATCH_ANNOTATION: &str = "stellar.org/cve-auto-patch";
-
-// Timeout and health-check constants reserved for the canary promotion flow.
-// The canary reconciler is being integrated; these constants will be referenced
-// once that path is wired in. Kept here to avoid magic numbers at the call site.
-#[allow(dead_code)]
-const CANARY_TEST_TIMEOUT_SECS: u64 = 300;
-#[allow(dead_code)] // used by canary health-check loop (in progress)
-const CONSENSUS_HEALTH_CHECK_INTERVAL_SECS: u64 = 30;
-#[allow(dead_code)] // used by canary degradation guard (in progress)
-const CONSENSUS_HEALTH_DEGRADATION_THRESHOLD: f64 = 0.95;
 
 /// Result of a CVE scan from registry scanner
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,7 +128,7 @@ impl VulnerabilitySeverity {
 }
 
 /// Count of vulnerabilities by severity
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CVECount {
     pub critical: u32,
     pub high: u32,

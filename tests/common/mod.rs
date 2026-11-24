@@ -1,3 +1,15 @@
+// Copyright 2024 Stellar-K8s Contributors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 /// tests/common/mod.rs
 ///
 /// Shared test fixtures, RAII cleanup guards, and helpers for integration and
@@ -5,12 +17,31 @@
 /// guard returned by one of the functions below so that cleanup is guaranteed
 /// even when the test panics or returns early with `?`.
 ///
-/// # Design goals (issue #906)
+/// # Design goals (issue #906, extended in issues #1140 and #934)
 /// - Deterministic creation *and* removal of fixtures.
 /// - Cleanup runs in `Drop`, so it fires even on test failure.
 /// - No cross-test coupling: each test gets its own namespace or unique
 ///   resource name and tears it down independently.
+/// - Fixture data lives in `fixtures.rs`; guards live here.
+/// - All cluster-required tests are gated behind `#[ignore]` so they never
+///   run in unit-test mode and are never silently skipped.
+///
+/// ## Available Guards
+///
+/// | Guard | Cleans up |
+/// |---|---|
+/// | [`NamespaceGuard`] | Kubernetes namespace (via `kubectl delete namespace`) |
+/// | [`StellarNodeGuard`] | Single `StellarNode` resource |
+/// | [`ManifestGuard`] | All resources defined in a YAML manifest (`kubectl delete -f -`) |
+/// | [`E2eTestGuard`] | Composite: StellarNodes + operator manifest + namespaces |
+/// | [`TempFileGuard`] | A temporary file on the local filesystem |
+/// | [`KindClusterGuard`] | A KinD cluster (`kind delete cluster --name <name>`) |
+/// | [`TestHarnessGuard`] | Composite: KinD cluster + `E2eTestGuard` |
 use std::process::{Command, Stdio};
+
+/// Re-export the fixtures module so integration tests can write
+/// `use common::fixtures::init_container;` (and other live helpers).
+pub mod fixtures;
 
 // ---------------------------------------------------------------------------
 // Namespace guard
@@ -212,7 +243,355 @@ impl Drop for E2eTestGuard {
 }
 
 // ---------------------------------------------------------------------------
-// Low-level helpers
+// General-purpose command helpers (consolidated from E2E test files)
+// ---------------------------------------------------------------------------
+
+/// Run an arbitrary command and return its trimmed stdout as a `String`.
+///
+/// Returns `Err` with diagnostic output when the command exits non-zero.
+/// Propagates the `KUBECONFIG` environment variable if set.
+pub fn run_cmd(program: &str, args: &[&str]) -> Result<String, String> {
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    if let Ok(kubeconfig) = std::env::var("KUBECONFIG") {
+        cmd.env("KUBECONFIG", kubeconfig);
+    }
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to spawn {program}: {e}"))?;
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "command failed: {program} {args:?}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Run an arbitrary command, suppressing stdout and stderr.
+///
+/// Returns `Ok(())` regardless of exit status so cleanup paths stay infallible.
+pub fn run_cmd_quiet(program: &str, args: &[&str]) -> Result<(), String> {
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    if let Ok(kubeconfig) = std::env::var("KUBECONFIG") {
+        cmd.env("KUBECONFIG", kubeconfig);
+    }
+    let _ = cmd.stdout(Stdio::null()).stderr(Stdio::null()).output();
+    Ok(())
+}
+
+/// Pipe `input` into `program <args>` via stdin, capturing output.
+///
+/// Returns `Ok(())` on success; returns `Err` with stdout/stderr on failure.
+pub fn run_cmd_with_stdin(program: &str, args: &[&str], input: &str) -> Result<(), String> {
+    use std::io::Write;
+
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    if let Ok(kubeconfig) = std::env::var("KUBECONFIG") {
+        cmd.env("KUBECONFIG", kubeconfig);
+    }
+
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to spawn {program}: {e}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(input.as_bytes())
+            .map_err(|e| format!("stdin write failed: {e}"))?;
+        stdin
+            .flush()
+            .map_err(|e| format!("stdin flush failed: {e}"))?;
+        drop(stdin);
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("wait failed: {e}"))?;
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "command failed: {program} {args:?}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        ));
+    }
+    Ok(())
+}
+
+/// Pipe `input` into `program <args>` via stdin, suppressing all output.
+///
+/// Returns `Ok(())` regardless of exit status.
+pub fn run_cmd_with_stdin_quiet(program: &str, args: &[&str], input: &str) -> Result<(), String> {
+    use std::io::Write;
+
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    if let Ok(kubeconfig) = std::env::var("KUBECONFIG") {
+        cmd.env("KUBECONFIG", kubeconfig);
+    }
+
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("failed to spawn {program}: {e}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input.as_bytes());
+        let _ = stdin.flush();
+        drop(stdin);
+    }
+    let _ = child.wait();
+    Ok(())
+}
+
+/// Apply a YAML manifest via `kubectl apply -f -`.
+pub fn kubectl_apply(manifest: &str) -> Result<(), String> {
+    run_cmd_with_stdin("kubectl", &["apply", "-f", "-"], manifest)
+}
+
+/// Poll `condition` every 3 seconds until it returns `Ok(true)` or `timeout`
+/// elapses.
+///
+/// Returns `Err` with a diagnostic message when the timeout is exceeded.
+pub fn wait_for<F>(
+    label: &str,
+    timeout: std::time::Duration,
+    mut condition: F,
+) -> Result<(), String>
+where
+    F: FnMut() -> Result<bool, String>,
+{
+    use std::thread::sleep;
+    use std::time::Instant;
+
+    let start = Instant::now();
+    let mut attempts: u32 = 0;
+    loop {
+        if condition()? {
+            return Ok(());
+        }
+        attempts += 1;
+        if start.elapsed() > timeout {
+            return Err(format!(
+                "timeout while waiting for {label} after {timeout:?} (attempts={attempts})"
+            ));
+        }
+        sleep(std::time::Duration::from_secs(3));
+    }
+}
+
+/// Create a KinD cluster with the given `name` if it does not already exist.
+pub fn ensure_kind_cluster(name: &str) -> Result<(), String> {
+    let clusters = run_cmd("kind", &["get", "clusters"])?;
+    if clusters.lines().any(|line| line.trim() == name) {
+        return Ok(());
+    }
+    run_cmd("kind", &["create", "cluster", "--name", name])?;
+    Ok(())
+}
+
+/// Delete a KinD cluster, ignoring any error (including a missing `kind`
+/// binary).  Private on purpose: teardown should go through [`ClusterGuard`]
+/// so it also runs on panic, rather than being done inline at the end of a
+/// test body.
+fn delete_kind_cluster(name: &str) {
+    let _ = run_cmd_quiet("kind", &["delete", "cluster", "--name", name]);
+}
+
+/// RAII guard that deletes a KinD cluster when dropped.
+///
+/// Every test that calls [`ensure_kind_cluster`] should own a `ClusterGuard`
+/// created *before* any cluster or namespace resources, so that an early `?`
+/// return or a panic cannot leave a Docker-backed cluster running on the
+/// host.  `kind` clusters hold a container, a network, and mounted volumes, so
+/// leaking one per test exhausts disk and can make later `kind` runs fail.
+///
+/// Set `SKIP_TEARDOWN=1` to keep the cluster after the test (useful when
+/// debugging a failed E2E run); teardown is otherwise always performed.
+pub struct ClusterGuard {
+    name: String,
+}
+
+impl ClusterGuard {
+    /// Record that `name` should be deleted when this guard is dropped.
+    ///
+    /// Prefer calling this immediately after [`ensure_kind_cluster`] succeeds.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
+
+    /// The cluster name this guard owns.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Drop for ClusterGuard {
+    fn drop(&mut self) {
+        if env_true("SKIP_TEARDOWN", false) {
+            eprintln!(
+                "[ClusterGuard] SKIP_TEARDOWN set — leaving kind cluster {:?} running; \
+                 delete it with: kind delete cluster --name {}",
+                self.name, self.name
+            );
+            return;
+        }
+        delete_kind_cluster(&self.name);
+    }
+}
+
+/// Parse a boolean-ish environment variable.  Recognises `"1"`, `"true"`,
+/// `"yes"`, `"on"` (case-insensitive) as true; everything else falls back to
+/// `default`.
+pub fn env_true(name: &str, default: bool) -> bool {
+    match std::env::var(name) {
+        Ok(value) => matches!(
+            value.to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => default,
+    }
+}
+
+/// Generate the operator deployment manifest (ServiceAccount + RBAC +
+/// Deployment) for E2E tests.
+///
+/// When `watch_namespace` is `Some(ns)`, a namespace-scoped `Role` /
+/// `RoleBinding` pair is created and `--watch-namespace` is passed to the
+/// operator.  When `None`, cluster-wide `ClusterRole` / `ClusterRoleBinding`
+/// resources are used.
+pub fn operator_manifest(image: &str, watch_namespace: Option<&str>) -> String {
+    let operator_name = "stellar-operator";
+    let operator_namespace = "stellar-system";
+
+    let rbac_kind = if watch_namespace.is_some() {
+        "Role"
+    } else {
+        "ClusterRole"
+    };
+    let rbac_binding_kind = if watch_namespace.is_some() {
+        "RoleBinding"
+    } else {
+        "ClusterRoleBinding"
+    };
+    let rbac_namespace = if let Some(ns) = watch_namespace {
+        format!("\n  namespace: {ns}")
+    } else {
+        String::new()
+    };
+
+    let watch_arg = if let Some(ns) = watch_namespace {
+        format!("\n            - --watch-namespace={ns}")
+    } else {
+        String::new()
+    };
+
+    format!(
+        r#"---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {operator_name}
+  namespace: {operator_namespace}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: {rbac_kind}
+metadata:
+  name: {operator_name}{rbac_namespace}
+rules:
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["stellar.org"]
+    resources: ["stellarnodes/finalizers"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: {rbac_binding_kind}
+metadata:
+  name: {operator_name}{rbac_namespace}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: {rbac_kind}
+  name: {operator_name}
+subjects:
+  - kind: ServiceAccount
+    name: {operator_name}
+    namespace: {operator_namespace}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {operator_name}
+  namespace: {operator_namespace}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {operator_name}
+  template:
+    metadata:
+      labels:
+        app: {operator_name}
+    spec:
+      serviceAccountName: {operator_name}
+      containers:
+        - name: operator
+          image: {image}
+          imagePullPolicy: IfNotPresent
+          args:
+            - run
+            - --namespace={operator_namespace} {watch_arg}
+          env:
+            - name: OPERATOR_NAMESPACE
+              value: {operator_namespace}
+"#
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Low-level kubectl helpers
 // ---------------------------------------------------------------------------
 
 /// Run `kubectl <args>` without printing output.  Returns `Ok(())` if the
@@ -339,4 +718,300 @@ pub fn skip_if_tools_missing(tools: &[&str]) -> bool {
         missing.join(", ")
     );
     true
+}
+
+// ---------------------------------------------------------------------------
+// TempFileGuard (issue #934)
+// ---------------------------------------------------------------------------
+
+/// RAII guard that deletes a temporary file when dropped.
+///
+/// Use this for test-generated files (e.g. kubeconfig snapshots, rendered
+/// manifests) so they are removed even if the test panics.
+///
+/// ```no_run
+/// let tmp = TempFileGuard::new("/tmp/test-kubeconfig.yaml");
+/// std::fs::write(&tmp.path, "...").unwrap();
+/// // file is deleted when `tmp` is dropped
+/// ```
+pub struct TempFileGuard {
+    /// Path of the file to delete on drop.
+    pub path: std::path::PathBuf,
+}
+
+impl TempFileGuard {
+    /// Create a guard for the given path.  The file does not need to exist yet.
+    pub fn new(path: impl Into<std::path::PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// KindClusterGuard (issue #934)
+// ---------------------------------------------------------------------------
+
+/// RAII guard that deletes a KinD cluster when dropped.
+///
+/// Ensures E2E tests that spin up ephemeral clusters always clean up, even on
+/// panic or early return via `?`.
+///
+/// ```no_run
+/// let _cluster = KindClusterGuard::new("stellar-e2e-test");
+/// // run test against cluster …
+/// // `kind delete cluster --name stellar-e2e-test` fires automatically here
+/// ```
+pub struct KindClusterGuard {
+    /// KinD cluster name.
+    pub name: String,
+    /// When `false` the cluster is not deleted on drop.  Useful for debugging.
+    pub enabled: bool,
+}
+
+impl KindClusterGuard {
+    /// Create a guard that will delete `name` on drop.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            enabled: true,
+        }
+    }
+
+    /// Disable deletion (e.g. for debugging a failed test).
+    pub fn preserve(mut self) -> Self {
+        self.enabled = false;
+        self
+    }
+}
+
+impl Drop for KindClusterGuard {
+    fn drop(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        let _ = run_cmd_quiet("kind", &["delete", "cluster", "--name", &self.name]);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TestHarnessGuard (issue #934)
+// ---------------------------------------------------------------------------
+
+/// Composite teardown guard that manages a KinD cluster together with the
+/// cluster-level resources created during an E2E test.
+///
+/// This is the recommended guard for full E2E tests that need both cluster
+/// lifecycle management and resource cleanup.
+///
+/// # Example
+///
+/// ```no_run
+/// let _harness = TestHarnessGuard::new("stellar-e2e")
+///     .track_node("my-validator", "stellar")
+///     .track_operator_manifest(operator_yaml.clone())
+///     .track_namespace("stellar")
+///     .track_namespace("stellar-system");
+/// ```
+pub struct TestHarnessGuard {
+    /// KinD cluster guard (optional — skipped when `None`).
+    cluster: Option<KindClusterGuard>,
+    /// Cluster-level resource teardown.
+    e2e: E2eTestGuard,
+}
+
+impl TestHarnessGuard {
+    /// Create a harness that will also delete the KinD cluster `cluster_name`.
+    pub fn new(cluster_name: impl Into<String>) -> Self {
+        Self {
+            cluster: Some(KindClusterGuard::new(cluster_name)),
+            e2e: E2eTestGuard::new(),
+        }
+    }
+
+    /// Create a harness that manages resources but does **not** delete any
+    /// cluster (useful when reusing a pre-existing cluster).
+    pub fn without_cluster() -> Self {
+        Self {
+            cluster: None,
+            e2e: E2eTestGuard::new(),
+        }
+    }
+
+    /// Register a `StellarNode` for cleanup.
+    pub fn track_node(mut self, name: impl Into<String>, namespace: impl Into<String>) -> Self {
+        self.e2e = self.e2e.track_node(name, namespace);
+        self
+    }
+
+    /// Register the operator manifest for cleanup.
+    pub fn track_operator_manifest(mut self, manifest: impl Into<String>) -> Self {
+        self.e2e = self.e2e.track_operator_manifest(manifest);
+        self
+    }
+
+    /// Register a namespace for cleanup.
+    pub fn track_namespace(mut self, namespace: impl Into<String>) -> Self {
+        self.e2e = self.e2e.track_namespace(namespace);
+        self
+    }
+
+    /// Disable KinD cluster deletion (preserves cluster for post-failure debugging).
+    pub fn preserve_cluster(mut self) -> Self {
+        if let Some(c) = self.cluster.take() {
+            self.cluster = Some(c.preserve());
+        }
+        self
+    }
+}
+
+impl Drop for TestHarnessGuard {
+    fn drop(&mut self) {
+        // Resources first, then cluster — mirrors the creation order in reverse.
+        // E2eTestGuard Drop runs when `e2e` is dropped.
+        // KindClusterGuard Drop runs when `cluster` is dropped.
+        // Rust drops struct fields in declaration order, so e2e (declared first)
+        // is dropped before cluster (declared second) — which is the correct order.
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // These tests only exercise the guards' field accessors and builder logic.
+    // Every guard implements `Drop` by shelling out to `kubectl delete`, so
+    // letting one fall out of scope here would issue destructive commands
+    // against whatever cluster the developer's kubeconfig points at. Each test
+    // therefore ends with `std::mem::forget`, which suppresses the destructor
+    // and keeps ordinary `cargo test` free of cluster side effects.
+    //
+    // See issue #934.
+
+    #[test]
+    fn test_namespace_guard_struct_creation() {
+        let guard = NamespaceGuard {
+            name: "test-ns-guard".to_string(),
+        };
+        assert_eq!(guard.name, "test-ns-guard");
+        std::mem::forget(guard);
+    }
+
+    #[test]
+    fn test_stellar_node_guard_creation() {
+        let guard = StellarNodeGuard::new("node-1", "stellar-test");
+        assert_eq!(guard.name, "node-1");
+        assert_eq!(guard.namespace, "stellar-test");
+        std::mem::forget(guard);
+    }
+
+    #[test]
+    fn test_manifest_guard_creation() {
+        let guard =
+            ManifestGuard::new("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: test-cm");
+        assert!(guard.manifest.contains("test-cm"));
+        std::mem::forget(guard);
+    }
+
+    #[test]
+    fn test_e2e_test_guard_builder() {
+        let guard = E2eTestGuard::new()
+            .track_node("node-a", "default")
+            .track_operator_manifest("kind: Deployment")
+            .track_namespace("test-namespace");
+
+        assert_eq!(guard.stellar_nodes.len(), 1);
+        assert_eq!(
+            guard.stellar_nodes[0],
+            ("node-a".to_string(), "default".to_string())
+        );
+        assert_eq!(guard.operator_manifest.as_deref(), Some("kind: Deployment"));
+        assert_eq!(guard.namespaces, vec!["test-namespace".to_string()]);
+        std::mem::forget(guard);
+    }
+
+    #[test]
+    fn test_cluster_guard_records_name() {
+        let guard = ClusterGuard::new("unit-test-cluster-does-not-exist");
+        assert_eq!(guard.name(), "unit-test-cluster-does-not-exist");
+        // Suppress Drop so the unit test never shells out to `kind`.
+        std::mem::forget(guard);
+    }
+
+    #[test]
+    fn test_cluster_guard_accepts_str_and_string() {
+        let from_str = ClusterGuard::new("abc");
+        assert_eq!(from_str.name(), "abc");
+        std::mem::forget(from_str);
+
+        let owned = String::from("def");
+        let from_string = ClusterGuard::new(owned);
+        assert_eq!(from_string.name(), "def");
+        std::mem::forget(from_string);
+    }
+
+    #[test]
+    fn test_skip_if_tools_missing_empty() {
+        let skip = skip_if_tools_missing(&[]);
+        assert!(!skip, "Empty tools list should not trigger skip");
+    }
+
+    // ── New guard tests (issue #934) ───────────────────────────────────────────
+
+    #[test]
+    fn test_temp_file_guard_creation() {
+        let path = std::path::PathBuf::from("/tmp/stellar-k8s-test-guard-creation.yaml");
+        let guard = TempFileGuard::new(path.clone());
+        assert_eq!(guard.path, path);
+    }
+
+    #[test]
+    fn test_temp_file_guard_deletes_file_on_drop() {
+        let path = std::path::PathBuf::from("/tmp/stellar-k8s-test-guard-drop.txt");
+        std::fs::write(&path, b"test").unwrap_or(());
+        {
+            let _guard = TempFileGuard::new(path.clone());
+            // Guard holds the path; file exists.
+        }
+        // Guard was dropped; file should be gone.
+        assert!(
+            !path.exists(),
+            "TempFileGuard should have deleted the file on drop"
+        );
+    }
+
+    #[test]
+    fn test_kind_cluster_guard_creation() {
+        let guard = KindClusterGuard::new("test-cluster");
+        assert_eq!(guard.name, "test-cluster");
+        assert!(guard.enabled);
+    }
+
+    #[test]
+    fn test_kind_cluster_guard_preserve() {
+        let guard = KindClusterGuard::new("test-cluster").preserve();
+        assert!(!guard.enabled, "preserve() should disable deletion");
+    }
+
+    #[test]
+    fn test_test_harness_guard_builder() {
+        let harness = TestHarnessGuard::new("stellar-e2e")
+            .track_node("validator-1", "stellar")
+            .track_operator_manifest("kind: Deployment")
+            .track_namespace("stellar");
+        assert!(harness.cluster.is_some());
+        assert_eq!(harness.e2e.stellar_nodes.len(), 1);
+        assert_eq!(harness.e2e.namespaces, vec!["stellar".to_string()]);
+    }
+
+    #[test]
+    fn test_test_harness_guard_without_cluster() {
+        let harness = TestHarnessGuard::without_cluster().track_namespace("stellar-system");
+        assert!(harness.cluster.is_none());
+        assert_eq!(harness.e2e.namespaces, vec!["stellar-system".to_string()]);
+    }
 }

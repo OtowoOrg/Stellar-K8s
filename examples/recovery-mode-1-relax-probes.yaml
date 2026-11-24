@@ -1,0 +1,33 @@
+# recovery-mode-1-relax-probes.yaml
+#
+# Recovery Mode, step 1 of 2. See docs/operations/disaster-recovery.md for
+# the full runbook this manifest supports.
+#
+# Apply this FIRST, on its own, while the operator is still reconciling
+# normally, so the relaxed probe actually lands on the live StatefulSet:
+#
+#   kubectl apply -f examples/recovery-mode-1-relax-probes.yaml
+#   kubectl rollout status statefulset/<node> -n <namespace>
+#   kubectl get statefulset <node> -n <namespace> \
+#     -o jsonpath='{.spec.template.spec.containers[0].readinessProbe}'
+#
+# Only after you've confirmed the probe change landed, move on to
+# recovery-mode-2-maintenance-mode.yaml. Applying both files in a single
+# `kubectl apply -f examples/` sweep does NOT give you that confirmation
+# step in between — apply them one at a time.
+#
+# What this does: relaxes the readiness probe so Kubernetes gives a
+# long-running catchup (a full-history replay can take hours) time to
+# finish instead of endlessly restarting the pod for "failing" readiness.
+apiVersion: stellar.org/v1alpha1
+kind: StellarNode
+metadata:
+  name: validator-primary # replace with your node's name
+  namespace: stellar-nodes # replace with your node's namespace
+spec:
+  probes:
+    readiness:
+      initialDelaySeconds: 60
+      periodSeconds: 30
+      failureThreshold: 240 # ~2h grace before k8s gives up on this pod
+      timeoutSeconds: 5

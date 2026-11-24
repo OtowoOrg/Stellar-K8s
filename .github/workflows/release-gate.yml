@@ -1,0 +1,72 @@
+name: Release Gate
+
+# Pre-publish gates that are NOT already covered by release.yml validate
+# (semver / Cargo.toml) or by ci.yml / release.yml helm lint & cargo audit.
+# Unique value: CHANGELOG entry + Helm unit tests.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Release Validation Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: "v3.16.0"
+
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --version v0.5.1
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Releasing version: ${VERSION}"
+
+      # ── Gate 1: CHANGELOG entry (unique to release-gate) ──────────────────
+      - name: Gate 1 — CHANGELOG.md has entry for this version
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if grep -qE "^## \[?v?${VERSION}\]?" CHANGELOG.md; then
+            echo "✓ CHANGELOG.md has entry for v${VERSION}"
+          else
+            echo "::error::CHANGELOG.md is missing an entry for v${VERSION}"
+            echo "::error::Add release notes to CHANGELOG.md before tagging."
+            exit 1
+          fi
+
+      # ── Gate 2: Helm unit tests (not covered by release.yml helm lint) ───
+      - name: Gate 2 — Helm unit tests
+        run: |
+          helm unittest charts/stellar-operator --strict --color
+          echo "✓ helm unittest --strict passed"
+
+      # ── Summary ──────────────────────────────────────────────────────────
+      - name: All gates passed
+        run: |
+          echo ""
+          echo "══════════════════════════════════════════════"
+          echo "✓ Release gates passed for v${{ steps.version.outputs.version }}"
+          echo "  (semver/Cargo.toml/Chart.yaml, cargo audit, and helm lint"
+          echo "   are enforced by release.yml / ci.yml — not duplicated here)"
+          echo "══════════════════════════════════════════════"
+          echo "The release.yml workflow may now proceed."

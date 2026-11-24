@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: Apache-2.0
+# In-cluster kube-bench job (issue #1380).
+#
+# Deploy with:
+#   kubectl create namespace kube-bench --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -f security/kube-bench/rbac.yaml
+#   kubectl create configmap stellar-bench-controls -n kube-bench \
+#     --from-file=stellar-bench.yaml=config/stellar-bench.yaml --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -f security/kube-bench/job.yaml
+#   kubectl -n kube-bench logs job/kube-bench
+#
+# The job scans the control-plane node read-only and writes a JSON report to
+# stdout. RBAC is scoped to get/list/watch of nodes, pods, namespaces, and
+# configmaps.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kube-bench
+  namespace: kube-bench
+  labels:
+    app: kube-bench
+    component: compliance-scan
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      serviceAccountName: kube-bench
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      hostPID: true
+      securityContext:
+        runAsNonRoot: false
+        privileged: true
+      containers:
+        - name: kube-bench
+          image: aquasec/kube-bench:v0.9.5
+          command: ["/opt/kube-bench/kube-bench"]
+          args:
+            - run
+            - --benchmark
+            - stellar-bench
+            - --output
+            - json
+          resources:
+            requests:
+              cpu: 250m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: controls
+              mountPath: /opt/kube-bench/cfg/stellar-bench.yaml
+              subPath: stellar-bench.yaml
+          securityContext:
+            privileged: true
+            readOnlyRootFilesystem: true
+      restartPolicy: Never
+      volumes:
+        - name: controls
+          configMap:
+            name: stellar-bench-controls

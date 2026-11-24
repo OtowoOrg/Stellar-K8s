@@ -89,6 +89,22 @@ jobs:
       - name: Run mTLS verification (skips when no cluster is available)
         run: make verify-mtls
 
+  secret-rotation-check:
+    name: Secret rotation check (skips without a cluster)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Same guard as verify-mtls: skip (exit 0) when kubectl or a current
+      # context is absent; otherwise a dropped replica fails the job.
+      - name: Run secret rotation check (skips when no cluster is available)
+        run: |
+          if ! command -v kubectl >/dev/null 2>&1 || [[ -z "$(kubectl config current-context 2>/dev/null || true)" ]]; then
+            echo "⚠ No Kubernetes cluster configured — skipping secret rotation check"
+            exit 0
+          fi
+          make secret-rotation-check
+
   supply-chain-security:
     name: Supply Chain Security
     runs-on: ubuntu-latest

@@ -48,6 +48,7 @@
 //! - Cleans up associated resources (Services, ConfigMaps, etc.)
 //! - Removes finalizer only after successful cleanup
 
+pub mod adaptive_hpa;
 pub mod benchmark;
 pub mod egress_policy_synthesis;
 pub mod blue_green;

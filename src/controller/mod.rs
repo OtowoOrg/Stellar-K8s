@@ -64,6 +64,7 @@ pub mod maintenance;
 pub mod migration;
 pub mod network_isolation;
 pub mod predictive_scaling;
+pub mod progressive_delivery;
 pub mod pss;
 pub mod quota;
 pub mod registry_controller;

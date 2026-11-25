@@ -87,6 +87,7 @@ Designed for high availability, type safety, and minimal footprint.
 | Local development | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Product storyboards | [docs/pitch-storyboards.md](docs/pitch-storyboards.md) |
+| Pitch video storyboard | [docs/pitch-video-storyboard.md](docs/pitch-video-storyboard.md) |
 | Example manifests | [examples/](examples/) |
 | Security disclosures | [SECURITY.md](SECURITY.md) |
 | Dependabot alert monitoring | Alerts/PRs from [`.github/dependabot.yml`](.github/dependabot.yml) are reviewed per [`docs/security/dependency-updates.md`](docs/security/dependency-updates.md); see [SECURITY.md](SECURITY.md#dependency-security) for the full dependency security policy |
@@ -787,6 +788,8 @@ See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes and releases.
 
 <!-- handsoff-issue-1764 -->
 - #1764: [EPIC] PITCH storyboards — product storyboards in `docs/pitch-storyboards.md` (Mermaid + tables); linked from the README intro and Contributing section.
+<!-- handsoff-issue-1899 -->
+- #1899: [EPIC] PITCH storyboards — added `docs/pitch-video-storyboard.md` (summary plus scene list for the pitch video), registered in `mkdocs.yml` and linked from the README documentation map.
 
 <!-- handsoff-issue-1677 -->
 - #1677: [EPIC] PITCH storyboards — linked from the Contributing section above (`docs/PITCH.md`).

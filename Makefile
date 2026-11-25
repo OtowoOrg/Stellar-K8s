@@ -40,7 +40,7 @@
 	bundle bundle-render bundle-generate bundle-validate bundle-build \
 	quickstart quickstart-setup quickstart-build quickstart-deploy \
 	health health-fast health-full validate preflight test-shell all \
-	shell-safety test-shell-safety tag-release validate-yaml test-yaml-validation \
+	shell-safety test-shell-safety tag-release tag-chart validate-yaml test-yaml-validation \
 	health health-fast validate preflight test-shell test-bats issue-template-lint all \
 	shell-safety test-shell-safety validate-yaml test-yaml-validation \
 	yaml-schema-validate test-db-migrations \
@@ -220,6 +220,9 @@ test-shell-safety: ## Unit tests for the shell safety gate (#1049)
 tag-release: ## Create annotated release tag: make tag-release TAG=vX.Y.Z [PUSH=1] [DRY_RUN=1]
 	@test -n "$(TAG)" || { echo "usage: make tag-release TAG=vX.Y.Z [PUSH=1] [DRY_RUN=1]"; exit 1; }
 	@bash scripts/tag-release.sh $(TAG) $(if $(PUSH),--push) $(if $(DRY_RUN),--dry-run)
+
+tag-chart: ## Create chart tag chart-vX.Y.Z from Chart.yaml on HEAD: make tag-chart [PUSH=1] [DRY_RUN=1] (#1940)
+	@bash scripts/tag-chart.sh $(if $(PUSH),--push) $(if $(DRY_RUN),--dry-run)
 
 # ── Manifest validation & drift ───────────────────────────────────────────────
 

@@ -13,7 +13,7 @@ This document specifies the exact peer ports, network passphrase, and quorum set
 | **History Archive** | `https://history.stellar.org/prd/core-testnet/` | `https://history.stellar.org/prd/core-live/` |
 
 !!! note "Dual-port requirement"
-    Testnet validators must be able to reach **both** `3510` and `11625` TCP. Omitting `3510` is the most common cause of a testnet validator stuck at `Joining SCP` with zero peers.
+    Testnet validators must be able to reach **both** `3510` and `11625` TCP. Omitting `3510` is the most common cause of a testnet validator stuck at `Joining SCP` with zero peers. See the [zero-peer / `Joining SCP` symptom checklist](../networking/testnet-egress-ports.md#8-symptom-checklist-zero-peers-joining-scp) and the [FAQ](../faq.md#q-what-does-joining-scp-mean-and-when-is-it-a-problem).
 
 ---
 
@@ -365,6 +365,8 @@ Expected: Resolves to one or more IPs
 ## Related Documentation
 
 - [Testnet Peer Egress Port Requirements](../networking/testnet-egress-ports.md) — detailed firewall guidance
+- [Zero peers / `Joining SCP` symptoms](../networking/testnet-egress-ports.md#8-symptom-checklist-zero-peers-joining-scp) — diagnosing blocked peer ports
+- [Networking Troubleshooting Guide](../troubleshooting/networking.md) — required outbound connections and P2P firewall checks
 - [Deploy a Testnet Validator](../tutorials/deploy-testnet-validator.md) — step-by-step tutorial
 - [API Reference](../api-reference.md) — full CRD field documentation
 - [Configuration Guide](index.md) — all configuration options

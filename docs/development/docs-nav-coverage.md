@@ -12,7 +12,7 @@ MkDocs silently skips navigation entries that point to missing files, which prod
 make nav-coverage
 ```
 
-Exits `0` when every local nav entry resolves; exits `1` and prints the offending paths otherwise.
+Exits `0` when every local nav entry resolves and is listed only once; exits `1` and prints the missing or duplicate paths otherwise.
 
 ## CI Behaviour
 
@@ -25,7 +25,7 @@ The check is intentionally fast (no network access, no build step) so it runs as
 
 ## How It Works
 
-`scripts/check_mkdocs_nav.py` loads `mkdocs.yml` with `yaml.BaseLoader`, walks the `nav:` tree recursively, and resolves each string entry against the configured `docs_dir` (defaults to `docs/`).  URL-scheme entries (`https://`, `//`) are skipped.  Any path that does not exist as a regular file is reported and causes a non-zero exit.
+`scripts/check_mkdocs_nav.py` loads `mkdocs.yml` with `yaml.BaseLoader`, walks the `nav:` tree recursively, and resolves each string entry against the configured `docs_dir` (defaults to `docs/`).  URL-scheme entries (`https://`, `//`) are skipped.  Any path that does not exist as a regular file is reported, any path listed more than once is reported as a duplicate, and either causes a non-zero exit.
 
 ## Adding a New Page
 

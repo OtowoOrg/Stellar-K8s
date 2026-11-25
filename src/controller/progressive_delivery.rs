@@ -347,11 +347,14 @@ fn urlencoding(s: &str) -> String {
 }
 
 fn now_rfc3339() -> String {
+    // chrono is already a dependency via predictive_scaling; use std time as a
+    // fallback string to avoid an extra import statement in this module.
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
+    // ISO-8601 without chrono: produce a valid RFC-3339 string.
     let (y, mo, d, h, mi, s) = epoch_to_parts(secs);
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
 }
@@ -365,6 +368,7 @@ fn epoch_to_parts(secs: u64) -> (u64, u64, u64, u64, u64, u64) {
     let h = total_hours % 24;
     let total_days = total_hours / 24;
 
+    // Gregorian calendar decomposition
     let mut year = 1970u64;
     let mut remaining = total_days;
     loop {
@@ -585,6 +589,7 @@ impl CanaryPromotionController {
                 timeout_secs = timeout.as_secs(),
                 "Rollback timed out"
             );
+            // Surface as a kube::Error by synthesising one from the timeout.
             Err(kube::Error::ReadEvents(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 format!(
@@ -688,11 +693,14 @@ impl CanaryPromotionController {
     ) -> Result<(), kube::Error> {
         use kube::api::{Patch, PatchParams};
 
+        // Build the patch payload according to the mesh type.
         let patch_body: serde_json::Value = match mesh_type {
             "istio" => serde_json::json!({
                 "spec": {
                     "http": [{
                         "route": [
+                            { "destination": { "host": format!("{resource_name}-stable") }, "weight": stable_weight },
+                            { "destination": { "host": format!("{resource_name}-canary") }, "weight": canary_weight }
                             {
                                 "destination": { "host": format!("{resource_name}-stable") },
                                 "weight": stable_weight
@@ -708,6 +716,8 @@ impl CanaryPromotionController {
             "linkerd" => serde_json::json!({
                 "spec": {
                     "backends": [
+                        { "weight": stable_weight, "service": { "name": format!("{resource_name}-stable") } },
+                        { "weight": canary_weight, "service": { "name": format!("{resource_name}-canary") } }
                         {
                             "weight": stable_weight,
                             "service": { "name": format!("{resource_name}-stable") }
@@ -732,6 +742,23 @@ impl CanaryPromotionController {
             }
         };
 
+        // Apply as a strategic merge patch against the VirtualService / TrafficSplit.
+        // We use the `networking.istio.io/v1alpha3` group for Istio and
+        // `split.smi-spec.io/v1alpha4` for Linkerd; both have generic JSON patch
+        // support via kube::api::DynamicObject.
+        let api: kube::Api<kube::core::DynamicObject> = {
+            use kube::discovery::ApiResource;
+            let (group, version, kind) = match mesh_type {
+                "linkerd" => (
+                    "split.smi-spec.io",
+                    "v1alpha4",
+                    "TrafficSplit",
+                ),
+                _ => (
+                    "networking.istio.io",
+                    "v1alpha3",
+                    "VirtualService",
+                ),
         let api: kube::Api<kube::core::DynamicObject> = {
             use kube::discovery::ApiResource;
             let (group, version, kind) = match mesh_type {
@@ -762,6 +789,8 @@ impl CanaryPromotionController {
     }
 
     /// Patch a Kubernetes Service's `stellar.org/canary-weight` annotation.
+    /// An external controller (e.g. the traffic shaper) reads this annotation
+    /// to split traffic between the stable and canary services.
     async fn patch_service_weight_annotation(
         &self,
         namespace: &str,
@@ -827,6 +856,7 @@ mod tests {
     #[test]
     fn test_step_hash_length() {
         let h = compute_step_hash("any-revision", 99);
+        // SHA-256 → 64 hex chars
         assert_eq!(h.len(), 64, "SHA-256 hex string must be 64 characters");
         assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
     }
@@ -852,6 +882,7 @@ mod tests {
         let s = format!("{key}");
         assert!(s.contains("rev-xyz"), "Display must include revision");
         assert!(s.contains("step2"), "Display must include step index");
+        // id prefix (12 chars) should appear
         assert!(s.contains(&key.id[..12]));
     }
 
@@ -919,6 +950,7 @@ mod tests {
                     passed: false,
                 },
             ],
+            gate_passed: false, // must be false when any threshold fails
             gate_passed: false,
             evaluated_at: "2024-01-01T00:00:00Z".to_string(),
         };
@@ -933,6 +965,7 @@ mod tests {
 
     #[test]
     fn test_no_slo_thresholds_all_pass() {
+        // With no thresholds configured, the gate is vacuously true.
         let step_key = PromotionStepKey::new("rev-empty", 0);
         let result = GateEvaluationResult {
             step_key,
@@ -949,6 +982,8 @@ mod tests {
 
     #[test]
     fn test_rollback_timeout_clamped_to_90s() {
+        // The rollback helper clamps to 90 s. Verify the clamping arithmetic.
+        let raw_timeout: u64 = 300; // 5 minutes
         let raw_timeout: u64 = 300; // 5 minutes – must be clamped
         let clamped = raw_timeout.min(90);
         assert_eq!(clamped, 90);
@@ -1049,6 +1084,7 @@ mod tests {
     #[test]
     fn test_now_rfc3339_format() {
         let ts = now_rfc3339();
+        // Must match YYYY-MM-DDTHH:MM:SSZ
         assert_eq!(ts.len(), 20, "timestamp must be 20 chars: {ts}");
         assert!(ts.ends_with('Z'));
         assert_eq!(&ts[4..5], "-");

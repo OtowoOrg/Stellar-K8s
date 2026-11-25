@@ -701,6 +701,14 @@ impl CanaryPromotionController {
                         "route": [
                             { "destination": { "host": format!("{resource_name}-stable") }, "weight": stable_weight },
                             { "destination": { "host": format!("{resource_name}-canary") }, "weight": canary_weight }
+                            {
+                                "destination": { "host": format!("{resource_name}-stable") },
+                                "weight": stable_weight
+                            },
+                            {
+                                "destination": { "host": format!("{resource_name}-canary") },
+                                "weight": canary_weight
+                            }
                         ]
                     }]
                 }
@@ -710,6 +718,14 @@ impl CanaryPromotionController {
                     "backends": [
                         { "weight": stable_weight, "service": { "name": format!("{resource_name}-stable") } },
                         { "weight": canary_weight, "service": { "name": format!("{resource_name}-canary") } }
+                        {
+                            "weight": stable_weight,
+                            "service": { "name": format!("{resource_name}-stable") }
+                        },
+                        {
+                            "weight": canary_weight,
+                            "service": { "name": format!("{resource_name}-canary") }
+                        }
                     ]
                 }
             }),
@@ -743,6 +759,11 @@ impl CanaryPromotionController {
                     "v1alpha3",
                     "VirtualService",
                 ),
+        let api: kube::Api<kube::core::DynamicObject> = {
+            use kube::discovery::ApiResource;
+            let (group, version, kind) = match mesh_type {
+                "linkerd" => ("split.smi-spec.io", "v1alpha4", "TrafficSplit"),
+                _ => ("networking.istio.io", "v1alpha3", "VirtualService"),
             };
             let ar = ApiResource {
                 group: group.to_string(),
@@ -930,6 +951,7 @@ mod tests {
                 },
             ],
             gate_passed: false, // must be false when any threshold fails
+            gate_passed: false,
             evaluated_at: "2024-01-01T00:00:00Z".to_string(),
         };
 
@@ -962,6 +984,7 @@ mod tests {
     fn test_rollback_timeout_clamped_to_90s() {
         // The rollback helper clamps to 90 s. Verify the clamping arithmetic.
         let raw_timeout: u64 = 300; // 5 minutes
+        let raw_timeout: u64 = 300; // 5 minutes – must be clamped
         let clamped = raw_timeout.min(90);
         assert_eq!(clamped, 90);
     }
@@ -971,6 +994,13 @@ mod tests {
         let raw_timeout: u64 = 60;
         let clamped = raw_timeout.min(90);
         assert_eq!(clamped, 60);
+    }
+
+    #[test]
+    fn test_rollback_timeout_exactly_90s_unchanged() {
+        let raw_timeout: u64 = 90;
+        let clamped = raw_timeout.min(90);
+        assert_eq!(clamped, 90);
     }
 
     // ------------------------------------------------------------------

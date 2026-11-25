@@ -667,6 +667,7 @@ kubectl exec -n stellar <validator-pod> -- curl -s http://localhost:11626/info
 
 **Where to go next:**
 
+- Full testnet onboarding guide (prerequisites to a running node): [Testnet Onboarding](./getting-started/testnet-onboarding.md)
 - Step-by-step walkthrough with screenshots of each check: [Deploy a Testnet Validator](./tutorials/deploy-testnet-validator.md)
 - Full deployment guide (quorum sets, archives, production options): [Validator Deployment Guide](./deployment-guides/validator.md)
 - Two facts to keep straight from day one: network passphrases and seeds. The **passphrase is derived from your manifest's `network:` field — don't hardcode it** (`testnet` → `Test SDF Network ; September 2015`, `mainnet` → `Public Global Stellar Network ; September 2015`); see [Network Isolation](./network-isolation.md) for why cross-network mixing is dangerous. **Seeds are always referenced via `validatorConfig.seedSecretRef`** pointing at a Kubernetes Secret, as in step 2 above — the [API reference for `seedSecretRef`](./api-reference.md) covers the field's exact behavior.

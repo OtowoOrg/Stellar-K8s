@@ -346,6 +346,12 @@ Every pull request against `main` runs [`.github/workflows/ci.yml`](.github/work
 | `make nav-coverage` | every `mkdocs.yml` nav path exists |
 | `make docs-ci-build` | `mkdocs build --strict` |
 
+Documentation builds are strict in this repository: [`mkdocs.yml`](mkdocs.yml)
+sets `strict: true`, and the docs PR check runs `mkdocs build --strict --verbose`,
+so broken links or missing navigation targets fail CI. Use `make docs-ci-build`
+(or `mkdocs build --strict`) locally — a plain `mkdocs build` can hide warnings
+that will fail the PR check. Fix every warning instead of suppressing it.
+
 Confirm a target exists with `make help` before documenting a new command.
 
 ## Reporting defects and documentation-only changes

@@ -204,6 +204,7 @@ nav:
     - Image Pinning: image-pinning.md
     - Health Checks: health-checks.md
     - CRD Architecture Manual: reference/crd-manual.md
+    - Operator Environment Variables: reference/operator-env-vars.md
     - CRD Examples: reference/examples/README.md
   - Tutorials:
     - tutorials/index.md

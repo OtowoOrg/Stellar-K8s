@@ -44,6 +44,23 @@ jobs:
               return;
             }
 
+            // ── Duplicate-comment guard ────────────────────────────────────
+            // Reopened items and transferred issues can bypass the count check
+            // above. Never greet the same author twice on the same item.
+            const item   = context.payload.issue || context.payload.pull_request;
+            const itemNumber = item.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: itemNumber,
+              per_page: 100,
+            });
+            if (comments.some(c => c.user?.login === 'github-actions[bot]' &&
+                                   c.body?.includes('👋 Welcome, Wave Contributor!'))) {
+              core.info(`Welcome already posted on #${itemNumber} — skipping.`);
+              return;
+            }
+
             // ── Build comment from WELCOME_TEMPLATE.md ───────────────────────
             const { data: templateFile } = await github.rest.repos.getContent({
               owner,
@@ -56,7 +73,6 @@ jobs:
               .replace(/^<!--[\s\S]*?-->\n/, '');
 
             // ── Fill [POINTS] / [DIFFICULTY] from an `N-points` label ────────
-            const item   = context.payload.issue || context.payload.pull_request;
             const labels = (item.labels || []).map(l => l.name);
             const points = labels.map(l => /^(\d+)-points$/.exec(l)).find(Boolean)?.[1];
             const difficulty = { 100: 'Trivial', 150: 'Medium', 200: 'High' }[points];

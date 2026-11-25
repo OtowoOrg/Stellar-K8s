@@ -4,6 +4,20 @@ Review issue labels when changing an issue template and during routine maintaine
 triage. This procedure is read-only; label creation, renaming, and removal should
 be agreed by maintainers before changing the repository's label catalog.
 
+## Lint issue templates locally
+
+CI runs the issue-form linter only for pull requests touching
+`.github/ISSUE_TEMPLATE/` (or the linter itself). Run the same check locally
+before pushing template changes:
+
+```bash
+python3 scripts/issue_template_lint.py   # equivalent: make issue-template-lint
+```
+
+The script exits non-zero when a template field or `config.yml` shape is
+invalid, which fails the CI job. Pull requests without template changes skip
+the job.
+
 ## Compare templates with the live catalog
 
 From an authenticated GitHub CLI session, list every upstream label:

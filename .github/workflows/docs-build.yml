@@ -42,7 +42,17 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.11'
+          # Cache pip's download/wheel cache (~/.cache/pip) across runs (#1941).
+          # The cache key is derived from the hash of requirements.txt, so any
+          # dependency change invalidates the cached packages. Only pip's
+          # package cache is stored — never credentials or workspace files.
           cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      - name: Report pip cache status
+        # Makes cache hits/misses diagnosable in CI logs: after a restore the
+        # downloads cache is non-empty; on a cold run it reports size 0.
+        run: pip cache info
 
       - name: Install documentation dependencies
         run: |

@@ -101,11 +101,13 @@ Two operational consequences:
 
 ### AppArmor
 
-**There is no `STELLAR_APPARMOR_ENABLED` flag.** AppArmor annotations are applied
-unconditionally to every generated pod; the operator has no environment variable
-that gates them and no code path that omits them.
+AppArmor annotations are **opt-in**. Enable them with the Helm value
+`operator.appArmorEnabled: true` (default `false`), which sets
+`STELLAR_APPARMOR_ENABLED: "true"` on the operator Deployment. When the variable is
+unset or not `true`, no AppArmor annotations are emitted, so pods start on hosts
+without AppArmor (for example kind or AL2023).
 
-For every container and init container in the pod, the operator adds:
+When enabled, for every container and init container in the pod, the operator adds:
 
 ```
 container.apparmor.security.beta.kubernetes.io/<container-name>: runtime/default

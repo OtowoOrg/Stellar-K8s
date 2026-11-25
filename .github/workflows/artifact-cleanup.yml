@@ -1,0 +1,173 @@
+name: Artifact Cleanup
+
+# Scheduled cleanup of GitHub Actions workflow artifacts (issue #1942).
+#
+# Deletes repository workflow artifacts older than 30 days while preserving
+# artifacts that releases, deployments, security evidence, or other essential
+# workflows depend on.
+#
+# Safety model — deletion scope (read before changing the exclusion lists):
+#   - Only artifacts of THIS repository are considered: every API call is made
+#     against $GITHUB_REPOSITORY, never across repositories.
+#   - Artifacts younger than RETENTION_DAYS (30) are never selected.
+#   - Artifacts whose name matches ESSENTIAL_NAME_REGEX (release binaries,
+#     packaged charts, SBOMs/provenance, release audits) are skipped.
+#   - Artifacts produced by workflows listed in EXCLUDED_WORKFLOW_PATHS
+#     (release, chart publish, provenance, security evidence, long-retention
+#     reports) are skipped; the workflow path is resolved from the artifact's
+#     originating workflow run.
+#   - If the originating workflow run (or its path) cannot be resolved, the
+#     artifact is skipped — fail-safe: never delete when the origin is unknown.
+#   - If listing artifacts fails, the job aborts before any deletion.
+#
+# Limitations: filtering is name/workflow based. An artifact uploaded by a
+# non-essential workflow that a release or deployment process still needs
+# after 30 days would be deleted — add it to the exclusion lists below if
+# such a case appears. Per-artifact deletion errors are logged, counted and
+# fail the job after the pass completes (they never abort the scan mid-way).
+
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Mondays 08:00 UTC — weekly hygiene
+  workflow_dispatch:
+
+# Least privilege: listing and deleting workflow artifacts requires the
+# `actions` scope (write includes read). Nothing else is granted.
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    name: Delete Artifacts Older Than 30 Days
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Delete workflow artifacts older than 30 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RETENTION_DAYS: "30"
+          # Workflows whose artifacts must survive cleanup (release binaries,
+          # chart publishing, provenance/SBOM, security evidence, and reports
+          # explicitly uploaded with retention-days > 30).
+          EXCLUDED_WORKFLOW_PATHS: |
+            .github/workflows/release.yml
+            .github/workflows/helm-release.yml
+            .github/workflows/supply-chain-provenance.yml
+            .github/workflows/security-audit.yml
+            .github/workflows/security-review.yml
+            .github/workflows/dependency-review.yml
+            .github/workflows/load-test.yml
+            .github/workflows/k8s-compat-matrix-advanced.yml
+          # Essential artifact name patterns (belt-and-suspenders: protects
+          # release uploads even if the originating run cannot be resolved).
+          ESSENTIAL_NAME_REGEX: '^(helm-chart|stellar-operator-|sbom-|security-sbom-|build-release$|build-rebuild$|reproducibility-audit$|license-inventory$)'
+        run: |
+          set -euo pipefail
+
+          now_epoch=$(date -u +%s)
+          cutoff_epoch=$(( now_epoch - RETENTION_DAYS * 86400 ))
+
+          echo "Repository      : ${GITHUB_REPOSITORY}"
+          echo "Retention       : ${RETENTION_DAYS} days"
+          echo "Cutoff (UTC)    : $(date -u -d "@${cutoff_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
+          echo "Now (UTC)       : $(date -u -d "@${now_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
+
+          artifacts_file=$(mktemp)
+          trap 'rm -f "${artifacts_file}"' EXIT
+
+          # ── List artifacts (paginated). Abort before deleting anything on failure. ──
+          echo "::group::List repository artifacts"
+          if ! gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+              --jq '.artifacts[] | [.id, .name, .created_at, (.workflow_run.id // 0), (.expired // false)] | @tsv' \
+              > "${artifacts_file}"; then
+            echo "::error::Failed to list workflow artifacts — aborting without deleting anything"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+          is_excluded_workflow() {
+            local path="$1" excluded
+            while IFS= read -r excluded; do
+              [[ -z "${excluded}" ]] && continue
+              [[ "${path}" == "${excluded}" ]] && return 0
+            done <<< "${EXCLUDED_WORKFLOW_PATHS}"
+            return 1
+          }
+
+          scanned=0
+          deleted=0
+          kept_young=0
+          kept_essential=0
+          kept_unknown=0
+          failed=0
+
+          while IFS=$'\t' read -r id name created_at run_id expired; do
+            [[ -z "${id}" ]] && continue
+            scanned=$(( scanned + 1 ))
+
+            if [[ "${expired}" == "true" ]]; then
+              echo "SKIP expired     : '${name}' (id=${id}) — already expired, GitHub reclaims it"
+              continue
+            fi
+
+            # Age gate: strictly older than RETENTION_DAYS is eligible.
+            created_epoch=$(date -u -d "${created_at}" +%s)
+            if (( created_epoch >= cutoff_epoch )); then
+              age_days=$(( (now_epoch - created_epoch) / 86400 ))
+              kept_young=$(( kept_young + 1 ))
+              echo "KEEP <${RETENTION_DAYS}d      : '${name}' (id=${id}, age=${age_days}d, created=${created_at})"
+              continue
+            fi
+
+            # Essential artifact by name?
+            if [[ "${name}" =~ ${ESSENTIAL_NAME_REGEX} ]]; then
+              kept_essential=$(( kept_essential + 1 ))
+              echo "KEEP essential   : '${name}' (id=${id}, created=${created_at}) — matches essential name pattern"
+              continue
+            fi
+
+            # Resolve the originating workflow; skip when unknown (fail-safe).
+            if [[ -z "${run_id}" || "${run_id}" == "0" ]]; then
+              kept_unknown=$(( kept_unknown + 1 ))
+              echo "KEEP unknown     : '${name}' (id=${id}, created=${created_at}) — no originating workflow run"
+              continue
+            fi
+
+            workflow_path=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+              --jq '.path // empty' 2>/dev/null || true)
+            if [[ -z "${workflow_path}" ]]; then
+              kept_unknown=$(( kept_unknown + 1 ))
+              echo "KEEP unknown     : '${name}' (id=${id}, run=${run_id}) — could not resolve workflow path"
+              continue
+            fi
+
+            # Essential workflow by path?
+            if is_excluded_workflow "${workflow_path}"; then
+              kept_essential=$(( kept_essential + 1 ))
+              echo "KEEP essential   : '${name}' (id=${id}, created=${created_at}) — from ${workflow_path}"
+              continue
+            fi
+
+            age_days=$(( (now_epoch - created_epoch) / 86400 ))
+            if gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}" > /dev/null; then
+              deleted=$(( deleted + 1 ))
+              echo "DELETE (>30d)    : '${name}' (id=${id}, age=${age_days}d, workflow=${workflow_path})"
+            else
+              failed=$(( failed + 1 ))
+              echo "::warning::Failed to delete artifact '${name}' (id=${id})"
+            fi
+          done < "${artifacts_file}"
+
+          echo ""
+          echo "=== Artifact cleanup summary (${GITHUB_REPOSITORY}) ==="
+          echo "  Scanned            : ${scanned}"
+          echo "  Deleted (>${RETENTION_DAYS}d)   : ${deleted}"
+          echo "  Kept (<${RETENTION_DAYS}d)      : ${kept_young}"
+          echo "  Kept (essential)   : ${kept_essential}"
+          echo "  Kept (unknown)     : ${kept_unknown}"
+          echo "  Deletion failures  : ${failed}"
+
+          if (( failed > 0 )); then
+            echo "::error::${failed} artifact deletion(s) failed — see warnings above"
+            exit 1
+          fi

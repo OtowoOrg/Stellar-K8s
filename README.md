@@ -4,6 +4,10 @@
 
 # Stellar-K8s: Cloud-Native Stellar Infrastructure
 
+<p align="center">
+  <a href="https://otowoorg.github.io/Stellar-K8s/"><strong>📖 Documentation: otowoorg.github.io/Stellar-K8s</strong></a>
+</p>
+
 <!-- CI / Quality -->
 <!-- Official GitHub Actions badge (no branch query): tracks the repository default branch. -->
 <p align="center">
@@ -78,6 +82,10 @@
 
 Designed for high availability, type safety, and minimal footprint.
 
+## Project status
+
+Stellar-K8s is in active development. The operator crate is at `0.2.0` and the `stellar-operator` Helm chart at `4.0.0` (released 2026-09-30). Phase 1 of the [roadmap](#roadmap) (CRD, controller, Helm chart, CI, sync-aware health checks and the `kubectl-stellar` plugin) is complete; Phase 2 and 3 items are still open. For what is ready to use today, start with the [full documentation](https://otowoorg.github.io/Stellar-K8s/) and the [changelog](CHANGELOG.md).
+
 ## Documentation map
 
 | Topic | Where to start |
@@ -87,6 +95,7 @@ Designed for high availability, type safety, and minimal footprint.
 | Local development | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Product storyboards | [docs/pitch-storyboards.md](docs/pitch-storyboards.md) |
+| Pitch video storyboard | [docs/pitch-video-storyboard.md](docs/pitch-video-storyboard.md) |
 | Example manifests | [examples/](examples/) |
 | Security disclosures | [SECURITY.md](SECURITY.md) |
 | Dependabot alert monitoring | Alerts/PRs from [`.github/dependabot.yml`](.github/dependabot.yml) are reviewed per [`docs/security/dependency-updates.md`](docs/security/dependency-updates.md); see [SECURITY.md](SECURITY.md#dependency-security) for the full dependency security policy |
@@ -140,6 +149,9 @@ Stellar-K8s follows the **Operator Pattern**, extending Kubernetes with a `Stell
 ## 🚀 Quick Start
 
 Get a Testnet node running in under 5 minutes.
+
+**Getting started:** [Prerequisites](docs/getting-started/prerequisites.md) • [Installation](docs/getting-started/installation.md) • [Quick start](docs/getting-started/quick-start.md)
+> 🧭 **Running a Testnet validator?** Follow the [one-page Testnet validator guide](docs/getting-started/testnet-validator-quickstart.md).
 
 > 📖 **Full documentation:** this Quick Start is a condensed walkthrough — the [online documentation site](https://otowoorg.github.io/Stellar-K8s/) has the complete guides (installation, configuration, networking, troubleshooting) for every node type.
 
@@ -414,7 +426,14 @@ Please see our **[Contributing Guide](CONTRIBUTING.md)** for details on our work
 
 Want the background story behind the project? Read the **[PITCH storyboards](docs/pitch-storyboards.md)** for the problem statement, target users, and the roadmap narrative.
 
-Report bugs, request features, propose epics, or submit maintenance and support requests using the [issue templates](https://github.com/OtowoOrg/Stellar-K8s/issues/new/choose).
+Report bugs, request features, propose epics, or submit maintenance and support requests using the [issue templates](https://github.com/OtowoOrg/Stellar-K8s/issues/new/choose). Pick the template that fits:
+
+- **Bug Report**: a reproducible defect in Stellar-K8s.
+- **Feature Request**: a new feature or enhancement.
+- **Epic (200 Points)**: a major feature or architectural effort.
+- **Maintenance / Chore**: repo hygiene, CI, docs, dependency updates, or refactoring.
+- **Stellar Wave Issue**: a structured contributor issue in the standard wave format.
+- **Support Question**: questions and troubleshooting belong in GitHub Discussions, not the issue tracker.
 
 ---
 
@@ -770,8 +789,12 @@ See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes and releases.
 
 <!-- handsoff-issue-1762 -->
 - #1762: [EPIC] README update — added a documentation map, linked CONTRIBUTING and PITCH storyboards, corrected Helm install to the in-repo `charts/stellar-operator` chart, and kept the CI badge pointed at `.github/workflows/ci.yml`.
+<!-- handsoff-issue-1897 -->
+- #1897: [EPIC] README update — added a "Project status" section (operator and chart versions, roadmap phase) linking the documentation site and changelog.
 <!-- handsoff-issue-1761 -->
 - #1761: [EPIC] CI badge status — README CI badge uses the official GitHub Actions URL for `.github/workflows/ci.yml` (default branch) and links to that workflow's runs page.
+<!-- handsoff-issue-1896 -->
+- #1896: [EPIC] CI badge status — `make ci-badge` now runs `scripts/ci/check-readme-badges.sh`, which fails if the CI badge is missing or any README badge points at a workflow file that no longer exists (bats: `scripts/tests/check-readme-badges.bats`).
 
 <!-- handsoff-issue-1674 -->
 - #1674: [EPIC] CI badge status — CI badge verified against `.github/workflows/ci.yml`; links resolve to the workflow page.
@@ -781,12 +804,16 @@ See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes and releases.
 
 <!-- handsoff-issue-1763 -->
 - #1763: [EPIC] CONTRIBUTING docs — root `CONTRIBUTING.md` documents fork/PR flow, verified `make` targets, and CI workflow `.github/workflows/ci.yml`; README links to it.
+<!-- handsoff-issue-1898 -->
+- #1898: [EPIC] CONTRIBUTING docs — added a Branching Rules guideline to reference the resolved issue with `Closes #<issue-number>` in the PR description.
 
 <!-- handsoff-issue-1676 -->
 - #1676: [EPIC] CONTRIBUTING docs — linked from the Contributing section above.
 
 <!-- handsoff-issue-1764 -->
 - #1764: [EPIC] PITCH storyboards — product storyboards in `docs/pitch-storyboards.md` (Mermaid + tables); linked from the README intro and Contributing section.
+<!-- handsoff-issue-1899 -->
+- #1899: [EPIC] PITCH storyboards — added `docs/pitch-video-storyboard.md` (summary plus scene list for the pitch video), registered in `mkdocs.yml` and linked from the README documentation map.
 
 <!-- handsoff-issue-1677 -->
 - #1677: [EPIC] PITCH storyboards — linked from the Contributing section above (`docs/PITCH.md`).

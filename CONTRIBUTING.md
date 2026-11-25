@@ -78,6 +78,7 @@ Use clear, descriptive branch names. Recommended prefixes:
 - Do not work directly on `main`.
 - Keep each branch scoped to a single feature, bug fix, or documentation item.
 - Rebase or merge `main` into your branch before opening a PR if `main` has advanced.
+- Reference the issue your branch resolves with `Closes #<issue-number>` in the PR description so GitHub links it and closes it on merge.
 
 ### Merge Strategy
 
@@ -92,8 +93,10 @@ If your PR contains multiple logical changes, split it into separate branches an
 
 Changes to `main` must go through a pull request. The `main` branch protection rule should require:
 
-- A pull request before merging.
-- Passing status checks from the primary workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (`CI/CD Pipeline`). Common jobs include **Lint & Format** (`lint`), **Test** (`test`), and **Security Audit** (`security-audit`, skipped when dependency files are unchanged). Do not treat a job named `build` as required; that job is not defined in `ci.yml`.
+- A pull request before merging, with at least one approving review, and no force pushes or deletion of `main`.
+- Passing status checks. From the primary workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (`CI/CD Pipeline`): **Detect Changes**, **Preflight (toolchain versions)**, **Lint & Format** (`lint`), **Test** (`test`) and **Security Audit** (`security-audit`, skipped when dependency files are unchanged). From [`conventional-commits.yml`](.github/workflows/conventional-commits.yml): **Validate Conventional Commits**. Do not treat a job named `build` as required; that job is not defined in `ci.yml`.
+
+The rule is committed as [`.github/rulesets/main.json`](.github/rulesets/main.json) and applied by a maintainer with `scripts/apply-branch-protection.sh`; see [Branch Protection](docs/branch-protection.md).
 
 See [Dependency Update Process](docs/dependency-update-process.md#branch-protection-prerequisites) for the full list of settings that auto-merge depends on.
 
@@ -116,8 +119,11 @@ Before opening a PR, confirm the following:
 
 Reviewers are assigned automatically from [`.github/CODEOWNERS`](.github/CODEOWNERS)
 (last matching rule wins). Paths such as `src/webhook/`, `charts/`, and `docs/` route
-to specific teams, so expect those reviews when you touch them. Keep the file in sync
-when paths move or teams change.
+to specific teams, so expect those reviews when you touch them. Every Markdown file
+is also routed to `@docs-team` in addition to the owners of its directory. Because the
+last matching rule replaces earlier ones, a directory with its own owners needs a
+sibling `<dir>/**/*.md` line that repeats those owners and adds `@docs-team`. Keep the
+file in sync when paths move or teams change.
 
 ### Required checks
 
@@ -290,11 +296,20 @@ script it exercises, then:
    reported per test case.
 4. Keep each suite self-contained: create any temp files under `$BATS_TEST_TMPDIR`
    and clean up after the test.
-5. Verify locally with `bats scripts/tests/<script-name>.bats` before pushing.
+5. Verify locally with `bats scripts/tests/<script-name>.bats`, then run the full
+   `make test-bats` target before pushing.
+
+New suites are picked up automatically: `make test-bats` discovers every
+`scripts/tests/*.bats` file except `helm-drift.bats`, which needs `helm` and
+runs through `make test-helm-drift`. The `Bats Suites` job in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) invokes the same target,
+so a new suite needs no workflow change.
 
 **Reference suite** — [`scripts/tests/preflight.bats`](scripts/tests/preflight.bats)
 is the canonical example: it shows the expected file layout, helper loading, and
-assertion style to follow when adding new suites.
+assertion style to follow when adding new suites. For scripts that call external
+tools, [`scripts/tests/dep-gate.bats`](scripts/tests/dep-gate.bats) shows the
+fixture and PATH-shim pattern used to stub those calls without network access.
 
 ### Operational scripts index
 
@@ -336,6 +351,12 @@ Every pull request against `main` runs [`.github/workflows/ci.yml`](.github/work
 | `make ci-local` | `fmt-check` + `lint` + `audit` + `test` + `build` + `issue-template-lint` + `test-bats` |
 | `make nav-coverage` | every `mkdocs.yml` nav path exists |
 | `make docs-ci-build` | `mkdocs build --strict` |
+
+Documentation builds are strict in this repository: [`mkdocs.yml`](mkdocs.yml)
+sets `strict: true`, and the docs PR check runs `mkdocs build --strict --verbose`,
+so broken links or missing navigation targets fail CI. Use `make docs-ci-build`
+(or `mkdocs build --strict`) locally — a plain `mkdocs build` can hide warnings
+that will fail the PR check. Fix every warning instead of suppressing it.
 
 Confirm a target exists with `make help` before documenting a new command.
 

@@ -335,8 +335,11 @@ jobs:
       - name: Install PyYAML
         run: pip install --quiet pyyaml
 
+      # The job above is path-filtered to .github/ISSUE_TEMPLATE/** (and the
+      # linter itself), so unrelated PRs skip it. Invoke the linter directly so
+      # its non-zero exit status fails this job on malformed forms.
       - name: Lint issue templates
-        run: make issue-template-lint
+        run: python3 scripts/issue_template_lint.py
 
       - name: Validate first-class issue type registry
         # The registry (.github/issue-types.yml) maps every first-class issue
@@ -414,6 +417,9 @@ jobs:
           shellcheck_cmd=(shellcheck -S error)
           [[ -n "${SHELLCHECK_EXCLUDES}" ]] && shellcheck_cmd+=(-e "${SHELLCHECK_EXCLUDES}")
           "${shellcheck_cmd[@]}" "${shell_files[@]}"
+
+      - name: Check shell script syntax (bash -n)
+        run: find scripts -type f -name "*.sh" -print0 | xargs -0 -n1 bash -n
 
       # ── Issue #1049: static analysis gate for unsafe shell patterns ────────
       # shellcheck -S error deliberately ignores patterns that are stylistic to

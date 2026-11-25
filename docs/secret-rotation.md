@@ -314,6 +314,19 @@ Secret rotation helps meet compliance requirements:
 
 See `examples/secret-rotation-example.yaml` for complete configuration examples.
 
+## Verify Rotation Without Downtime
+
+`scripts/secret-rotation-check.sh` patches a secret and fails if the consuming deployment's available replicas drop below the pre-rotation baseline during the observation window:
+
+```bash
+make secret-rotation-check                 # against the current kubectl context
+make secret-rotation-check DRY_RUN=1       # print the plan only, no cluster needed
+```
+
+For non-default targets, call the script directly: `scripts/secret-rotation-check.sh --namespace NS --secret NAME --deployment NAME --window SECONDS` (window defaults to 60).
+
+CI runs this in the `secret-rotation-check` job of `security-audit.yml`, which skips when no cluster context is configured.
+
 ## Related Documentation
 
 - [Backup Verification](backup-verification.md)

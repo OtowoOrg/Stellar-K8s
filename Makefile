@@ -26,7 +26,7 @@
 	build cache-warm test chaos-test ci-local quick watch \
 	docker-build docker-build-ci docker-multiarch docker-cache-purge \
 	fmt fmt-check lint lint-strict lint-all shellcheck codespell audit verify-mtls security-scan security-all security-report \
-	build test chaos-test ci-local quick watch \
+	build test chaos-test chaos-drill chaos-report ci-local quick watch \
 	docker-build docker-build-ci docker-multiarch docker-cache-purge docker-image-prune \
 	dev-setup dev-setup-rust dev-setup-tools dev-setup-hooks health-check pre-commit pre-commit-install run run-local run-dev \
 	install-crd apply-samples crd-gen regenerate completions completions-bash completions-zsh completions-fish \

@@ -89,6 +89,15 @@ jobs:
       - name: Run mTLS verification (skips when no cluster is available)
         run: make verify-mtls
 
+      # Exercise the no-cluster path deterministically: an empty KUBECONFIG has
+      # no current-context, so the script must report a skip (exit 0) rather
+      # than fail. A real verification failure still fails the step above.
+      - name: Verify graceful skip with an empty kubeconfig
+        env:
+          KUBECONFIG: ${{ runner.temp }}/empty-kubeconfig
+        run: |
+          : > "$KUBECONFIG"
+          make verify-mtls
   secret-rotation-check:
     name: Secret rotation check (skips without a cluster)
     runs-on: ubuntu-latest

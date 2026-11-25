@@ -422,6 +422,8 @@ featureFlags:
 
 We welcome contributions! This project uses pre-commit hooks to ensure code quality.
 
+Run `make health` before opening a PR and include the results in its description.
+
 Please see our **[Contributing Guide](CONTRIBUTING.md)** for details on our workflow, commit conventions, and pull request guidelines. For development setup instructions, see the **[Development Guide](DEVELOPMENT.md)**. An index of operational and helper scripts is available in **[`scripts/README.md`](scripts/README.md)**.
 
 Want the background story behind the project? Read the **[PITCH storyboards](docs/pitch-storyboards.md)** for the problem statement, target users, and the roadmap narrative.

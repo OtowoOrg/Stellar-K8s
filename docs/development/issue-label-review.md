@@ -1,8 +1,26 @@
 # Issue label review
 
 Review issue labels when changing an issue template and during routine maintainer
-triage. This procedure is read-only; label creation, renaming, and removal should
-be agreed by maintainers before changing the repository's label catalog.
+triage. Label creation, renaming, and removal should be agreed by maintainers
+before changing the repository's catalog.
+
+## Priority labels
+
+The repository does not currently have priority labels. The following proposed
+scheme documents how maintainers can prioritize issues if the labels are approved
+and added to the GitHub catalog:
+
+| Label | Use when |
+| --- | --- |
+| `priority-high` | An active security exposure, production outage or data-loss risk, or release-blocking defect needs prompt attention. |
+| `priority-medium` | Normal planned work, an ordinary defect, or an issue whose urgency has not yet been established. |
+| `priority-low` | Non-urgent documentation, polish, optional improvements, or test-only work. |
+
+Priority is based on impact and urgency, not effort or issue type. Assign exactly
+one priority label after reviewing an issue, and reassess it whenever impact
+changes. Do not add these labels to issue forms until they exist in the catalog:
+GitHub does not create missing labels from forms. This documentation change does
+not create labels or change labels on existing issues.
 
 ## Lint issue templates locally
 
@@ -27,7 +45,8 @@ gh api --paginate repos/OtowoOrg/Stellar-K8s/labels --jq '.[] | [.name, .descrip
 ```
 
 Compare the exact names with the top-level `labels` fields in
-[the issue templates](https://github.com/OtowoOrg/Stellar-K8s/tree/main/.github/ISSUE_TEMPLATE):
+[the issue templates](https://github.com/OtowoOrg/Stellar-K8s/tree/main/.github/ISSUE_TEMPLATE).
+The support form has no preset labels.
 
 | Template | Requested labels |
 | --- | --- |
@@ -37,19 +56,26 @@ Compare the exact names with the top-level `labels` fields in
 | 200-point Epic | `epic`, `200-points`, `needs-triage` |
 | Stellar Wave Issue | `stellar-wave` |
 
-The support form has no preset labels. Confirm every requested label exists;
-GitHub does not automatically create missing labels for issue forms. Record
-missing labels and unclear or overlapping descriptions for maintainer review.
+Confirm every requested label exists; GitHub does not automatically create
+missing labels for issue forms. Record missing labels and unclear or overlapping
+descriptions for maintainer review.
 In particular, check `stellar-wave` versus `Stellar Wave` before proposing
-consolidation. Keep program and points labels
-until their automation consumers have been reviewed.
+consolidation. Keep program and points labels until their automation consumers
+have been reviewed.
 
 The catalog review on **2026-10-16** found that `triage` and `chore` did not
 exist upstream. The bug form now uses the existing `needs-triage` label and the
-maintenance form requests only `maintenance`. All labels in the table above
-were present in that catalog. Both Wave labels exist and are retained to avoid
-changing program integrations. These template edits affect newly filed issues;
-they do not relabel existing issues.
+maintenance form requests only `maintenance`. Both Wave labels exist and are
+retained to avoid changing program integrations. The title-case `Stellar Wave`
+and lowercase `stellar-wave` labels are retained as a documented integration
+exception: do not consolidate them until the external Stellar Wave integration
+has been checked. Preset form labels affect new issues; they do not relabel
+existing issues.
+
+The catalog check on **2026-11-25** found no priority labels. It also found
+duplicate-purpose aliases: `Stellar Wave` / `stellar-wave` and `good first
+issue` / `good-first-issue` (both newcomer labels have the same description).
+They remain unchanged pending maintainer review of their consumers.
 
 ## Review open issues
 
@@ -72,8 +98,9 @@ are not fully represented by a repository search.
 Record the review date, missing template labels, affected issue numbers, proposed
 changes, and automation impact in the maintenance issue. A complete review
 accounts for every template label and documents any remaining discrepancies.
-After approved changes, repeat the catalog comparison and inspect an affected
-issue to confirm its labels. Update this table whenever template labels change.
+Priority-label creation and issue-by-issue assignment require GitHub maintainer
+permissions and are not part of this documentation-only scheme update. Update
+this table whenever template labels change.
 
 See [GitHub's issue-form syntax](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms)
 and [the contributing guide](https://github.com/OtowoOrg/Stellar-K8s/blob/main/CONTRIBUTING.md).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail when a local MkDocs navigation entry points to a missing docs file."""
+"""Fail when a local MkDocs navigation entry is missing or listed more than once."""
 
 import argparse
 from pathlib import Path
@@ -30,17 +30,24 @@ def main():
 
     docs_dir = (config_path.parent / config.get("docs_dir", "docs")).resolve()
     missing = []
+    seen = set()
+    duplicates = []
     for entry in nav_paths(config.get("nav", [])):
         parsed = urlsplit(entry)
         if parsed.scheme or entry.startswith("//"):
             continue
+        if entry in seen:
+            duplicates.append(entry)
+        seen.add(entry)
         target = (docs_dir / parsed.path).resolve()
         if not target.is_relative_to(docs_dir) or not target.is_file():
             missing.append((entry, target))
 
-    if missing:
+    if missing or duplicates:
         for entry, target in missing:
             print(f"Missing MkDocs nav target: {entry} ({target})")
+        for entry in duplicates:
+            print(f"Duplicate MkDocs nav entry: {entry}")
         return 1
 
     print(f"All local MkDocs nav targets resolve under {docs_dir}")

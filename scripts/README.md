@@ -70,6 +70,7 @@ Related documentation:
 | [`check-pipeline-log-redaction.sh`](check-pipeline-log-redaction.sh) | Ensures secrets are redacted from pipeline command logs; `--report`, `--fixture`, `--scrub`. | `make check-pipeline-log-redaction` | `cargo test --bin check-pipeline-log-redaction` |
 | [`audit-features.sh`](audit-features.sh) | Audits unused crate features, implicit feature propagation, and dead imports/code. | `./scripts/audit-features.sh [--report]` | — |
 | [`dead-code-report.sh`](dead-code-report.sh) | Informational dead-code and unused-config report written to `target/reports/dead-code-report.md`; always exits 0. `SKIP_CARGO=1` skips the compiler pass. | `make dead-code-report`, `SKIP_CARGO=1 ./scripts/dead-code-report.sh` | [`tests/dead-code-report.bats`](tests/dead-code-report.bats) |
+| [`audit-ledger-redteam.sh`](audit-ledger-redteam.sh) | Red-team check for ledger audit verification: mutates, deletes, or reorders ledger entries and confirms the verifier reports the affected sequence. | `bash scripts/audit-ledger-redteam.sh [path-to-stellar-audit-verify] [entries]` | — |
 | [`semver_gate.py`](semver_gate.py) | Release SemVer gate for charts, images, and CRDs. Subcommands: `required-bump`, `check --version X`. | `python3 scripts/semver_gate.py required-bump [--base REF]`, `python3 scripts/semver_gate.py check --version X [--base REF]` | [`tests/test_semver_gate.py`](tests/test_semver_gate.py) |
 | [`golden-path-pipeline-check.sh`](golden-path-pipeline-check.sh) | Runs the full canonical command sequence (fmt, clippy, issue templates, API docs, helm, release gate, quickstart golden path) from a clean checkout. Needs a full toolchain. | `make golden-path-pipeline`, `bash scripts/golden-path-pipeline-check.sh` | — |
 | [`check_mkdocs_nav.py`](check_mkdocs_nav.py) | Fails when a local `mkdocs.yml` nav entry points to a missing file under `docs/`. Needs PyYAML. | `make nav-coverage`, `python3 scripts/check_mkdocs_nav.py [mkdocs.yml]` | — |
@@ -84,6 +85,7 @@ Related documentation:
 | [`generate-api-docs.py`](generate-api-docs.py) | Generates `docs/api-reference.md` from the CRD OpenAPI schema; `--check` exits 1 when the docs are stale. | `make generate-api-docs`, `make check-api-docs` | — |
 | [`generate-openapi-spec.py`](generate-openapi-spec.py) | Validates `docs/api/openapi.yaml` and asserts that every operator REST route is documented; `--check` is the CI drift gate. | `make generate-openapi-spec`, `make check-openapi-spec` | — |
 | [`generate-observability-instrumentation.py`](generate-observability-instrumentation.py) | Generates the observability instrumentation Rust source for a service from its contract. | `python3 scripts/generate-observability-instrumentation.py --service NAME --out FILE` | — |
+| [`generate-conversion-webhooks.py`](generate-conversion-webhooks.py) | Validates the configured CRD version migration graphs and generates conversion webhook manifests. | `python3 scripts/generate-conversion-webhooks.py [--check]` | — |
 | [`sort-manifests.py`](sort-manifests.py) | Deterministic YAML manifest sorter (recursive key sort, documents ordered by kind/namespace/name). Reads stdin or a file argument. | `make crd-gen`, `make bundle-render`, `python3 scripts/sort-manifests.py FILE`, `helm template ... \| python3 scripts/sort-manifests.py` | — |
 | [`update-cap-matrix.py`](update-cap-matrix.py) | Refreshes the stellar-core release/CAP matrix in `config/caps.toml` from GitHub releases. Needs network access. | `python3 scripts/update-cap-matrix.py` (scheduled by `cap-matrix-update.yml`) | — |
 
@@ -112,17 +114,14 @@ Related documentation:
 
 | Script | Purpose | Invocation | Tests |
 |---|---|---|---|
-| [`health-check.sh`](health-check.sh) | See [Repository health](#repository-health-and-developer-setup). | `make health-check` | — |
 | [`quickstart-verify.sh`](quickstart-verify.sh) | End-to-end quickstart verification against a real kind cluster (creates and destroys it unless `SKIP_CLEANUP=1`). | `bash scripts/quickstart-verify.sh` (`CLUSTER_NAME=`, `SKIP_CLEANUP=`) | — |
 | [`quickstart-golden-path.sh`](quickstart-golden-path.sh) | Validates the documented quickstart path without a cluster: entry points exist, scripts parse, sample manifests are valid YAML. | `./scripts/quickstart-golden-path.sh` | — |
 | [`secret-rotation-check.sh`](secret-rotation-check.sh) | Checks operator secret rotation readiness. `--dry-run` validates arguments and prints the plan without a cluster. | `./scripts/secret-rotation-check.sh [--namespace NS] [--secret NAME] [--deployment NAME] [--window SECONDS] [--dry-run]` | [`tests/secret-rotation-check.bats`](tests/secret-rotation-check.bats) |
 | [`migrate-seed-key.sh`](migrate-seed-key.sh) | Adds the standardized `STELLAR_CORE_SEED` key to secrets that only have the legacy `SEED` key (the legacy key is kept); never prints secret values. Needs `kubectl`. | `scripts/migrate-seed-key.sh [--dry-run] <namespace> <secret-name>`, `scripts/migrate-seed-key.sh [--dry-run] --all <namespace>` | — |
-| [`secret-rotation-check.sh`](secret-rotation-check.sh) | Checks operator secret rotation readiness. `--dry-run` validates arguments and prints the plan without a cluster. | `make secret-rotation-check`, `make secret-rotation-check DRY_RUN=1`, `./scripts/secret-rotation-check.sh [--namespace NS] [--secret NAME] [--deployment NAME] [--window SECONDS] [--dry-run]` | [`tests/secret-rotation-check.bats`](tests/secret-rotation-check.bats) |
 | [`verify-mtls.sh`](verify-mtls.sh) | Verifies mTLS Certificates/Secrets and rotation readiness in `NAMESPACE` (default `stellar-system`). Needs `kubectl` and a cluster. | `NAMESPACE=stellar-system bash scripts/verify-mtls.sh` | — |
 | [`sync-federation-secrets.sh`](sync-federation-secrets.sh) | Copies a federation secret from a source cluster/namespace to a target cluster/namespace. Needs `kubectl` access to both clusters. | `./scripts/sync-federation-secrets.sh --source-cluster SRC --target-cluster DST --name NAME --namespace NS [--dry-run]` | — |
 | [`soak-test.sh`](soak-test.sh) | Long-running stability test: samples operator memory over `SOAK_DURATION` seconds and fails on RSS growth beyond the threshold. Needs a cluster. | `OPERATOR_NAMESPACE=stellar-system SOAK_DURATION=3600 ./scripts/soak-test.sh` | — |
 | [`run-chaos-drill.sh`](run-chaos-drill.sh) | Runs a single chaos drill (`DRILL_TYPE`, `DURATION`, `TARGET`, `NAMESPACE`, or the same values as positional arguments) and writes a JSON result. Needs a cluster. | `./scripts/run-chaos-drill.sh node-kill 60 validator stellar-chaos` | — |
-| [`migrate-seed-key.sh`](migrate-seed-key.sh) | Migrates Kubernetes secrets using legacy `SEED` key to include standardized `STELLAR_CORE_SEED`. | `scripts/migrate-seed-key.sh [--dry-run] <namespace> <secret-name>`, `scripts/migrate-seed-key.sh [--dry-run] --all <namespace>` | — |
 | [`aggregate-chaos-results.sh`](aggregate-chaos-results.sh) | Aggregates recorded drill results into `RESULTS.md`; exits non-zero if a drill missed its RTO target. | `./scripts/aggregate-chaos-results.sh [results-dir]` | - |
 
 ## Cost and capacity planning
@@ -142,7 +141,9 @@ failure.
 |---|---|---|
 | [`ci/check-cache-keys.sh`](ci/check-cache-keys.sh) | Verifies workflow cache keys follow the naming/scope conventions. | `ci.yml` → `repo-hygiene` |
 | [`ci/validate-config-samples.sh`](ci/validate-config-samples.sh) | kubeconform validation of `config/samples/`. | `ci.yml` → `repo-hygiene` |
+| [`ci/capi-cluster.sh`](ci/capi-cluster.sh) | Creates, inspects, or deletes an ephemeral Kind/Cluster API cluster for Kubernetes compatibility jobs. | `k8s-compat-matrix-advanced.yml` |
 | [`ci/check-stale-todos.sh`](ci/check-stale-todos.sh) | Fails on stale or unlinked issue references in work-item comments under critical paths. | `ci.yml` → `repo-hygiene` |
+| [`ci/check-observability-schema-compat.py`](ci/check-observability-schema-compat.py) | Compares the observability resource-attribute schema against a base ref and enforces compatible version changes. | `ci.yml` → observability schema compatibility gate |
 | [`ci/extract-crd-json-schemas.py`](ci/extract-crd-json-schemas.py) | Derives `schemas/crd/*.json` from the repository's own CRDs; `--check` fails on drift. | `ci.yml` → `repo-hygiene` |
 | [`ci/lint-observability-contract.py`](ci/lint-observability-contract.py) | Blocks resource attributes that are absent from the published observability JSON Schema. | `ci.yml` → `lint` (`make lint-observability-contract`) |
 | [`ci/validate-yaml.sh`](ci/validate-yaml.sh) | yamllint + CRD JSON-schema drift + kubeconform on Helm-rendered manifests. | `ci.yml` → `yaml-schema` (`make yaml-schema-validate`) |
@@ -153,6 +154,8 @@ failure.
 | [`ci/helm-upgrade-test.sh`](ci/helm-upgrade-test.sh) | Asserts that Helm upgrade overrides preserve resources, selectors, affinity, and ports. | `ci.yml` → `helm-test` (`make helm-upgrade-test`) |
 | [`ci/k8s-compat-smoke-tests.sh`](ci/k8s-compat-smoke-tests.sh) | Kubernetes version compatibility smoke tests for a given `TARGET_VERSION`. | `k8s-compat.yml` |
 | [`ci/generate-badge.sh`](ci/generate-badge.sh) | Renders an SVG compatibility badge from a `"passed/total"` string. | `k8s-compat-matrix-advanced.yml` |
+| [`ci/generate-compat-html-report.sh`](ci/generate-compat-html-report.sh) | Renders the Kubernetes compatibility matrix JSON report as HTML. | `k8s-compat-matrix-advanced.yml` |
+| [`ci/k8s-conformance-tests.sh`](ci/k8s-conformance-tests.sh) | Applies CRDs and sample manifests, checks operator readiness, and runs conformance checks against a target Kubernetes cluster. | `k8s-compat.yml` |
 | [`ci/collect-failure-diagnostics.sh`](ci/collect-failure-diagnostics.sh) | Assembles the unified diagnostics bundle (`manifest.json`, `summary.txt`, sanitized env, cluster dumps, extras) for failing runs. | `ci.yml` → `failure-diagnostics`; see [`docs/ci-failure-diagnostics.md`](../docs/ci-failure-diagnostics.md) |
 
 ## Shared shell libraries (`scripts/lib/`)
@@ -194,6 +197,9 @@ Python suites use `unittest` and are run individually, e.g.
 | [`tests/test_crd_migration_lint.py`](tests/test_crd_migration_lint.py) | `crd_migration_lint.py` backward-compatibility rules |
 | [`tests/test_semver_gate.py`](tests/test_semver_gate.py) | `semver_gate.py` required-bump and release checks |
 | [`tests/test_lint_observability_contract.py`](tests/test_lint_observability_contract.py) | `ci/lint-observability-contract.py` attribute gate |
+| [`tests/test_grafana_correlation.py`](tests/test_grafana_correlation.py) | Grafana log-to-trace correlation provisioning contract |
+| [`tests/test_observability_schema_compat.py`](tests/test_observability_schema_compat.py) | `ci/check-observability-schema-compat.py` compatibility rules |
+| [`tests/test_otel_collector_contract.py`](tests/test_otel_collector_contract.py) | OpenTelemetry Collector chart contract and dead-letter wiring |
 
 ## Adding a script
 

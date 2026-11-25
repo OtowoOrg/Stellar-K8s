@@ -365,7 +365,7 @@ jobs:
       - name: Run bats suites
         run: make test-bats
 
-  # ── 2.7. Codespell (#1682, #1769) ──────────────────────────────────────────
+  # ── 2.7. Codespell (#1682, #1769, #1904) ───────────────────────────────────
   # Spell-checks docs/, src/ and top-level Markdown as its own fast job so a typo
   # is reported without waiting on the Rust toolchain setup in `lint`. Runs the
   # same `make codespell` target contributors use locally; false positives go in

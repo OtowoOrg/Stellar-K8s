@@ -50,6 +50,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+• Withhold secret-rotation-triggered operator pod restarts while the control plane is degraded, preventing disruptive rollouts during recovery (#1973).
+• Restore the namespace teardown driver so the operator can resume namespace cleanup reconciliation.
+• Restore installation of the rustls ring `CryptoProvider` during operator startup to keep TLS clients initialized reliably.
 • Restore strict Helm chart validity for release validation: correct the corrupted `watchNamespace` guard in `templates/rbac.yaml` and remove duplicate `version`/`appVersion` keys from `Chart.yaml` so `helm lint --strict` and `helm template` pass (#1939).
 • Fix spelling errors reported by codespell in historical CHANGELOG entries (#1682).
 • Fix typos reported by codespell in `scripts/check-stale-samples.sh`, `scripts/benchmark-api.py`, and `argoCdParser.js` (#1769).

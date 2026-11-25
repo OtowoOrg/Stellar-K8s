@@ -183,7 +183,7 @@ shellcheck: ## Run shellcheck on all shell scripts
 
 CODESPELL_SKIP ?= Cargo.lock,package-lock.json,target,node_modules,vendor,*-vendor,THIRD_PARTY_LICENSES.md
 
-codespell: ## Spell-check docs/, src/ and top-level Markdown (same command as the CI codespell job) (#1682, #1769)
+codespell: ## Spell-check docs/, src/ and top-level Markdown (same command as the CI codespell job) (#1682, #1769, #1904)
 	@echo "→ Running codespell..."
 	@codespell --ignore-words=.codespellignore --skip="$(CODESPELL_SKIP)" docs/ src/ *.md
 

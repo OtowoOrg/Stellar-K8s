@@ -97,7 +97,7 @@ help: ## Show this help
 	@echo '  Docker:   make docker-build       Local Docker image'
 	@echo '  Cleanup:  make cleanup            Scratch artifacts + obsolete-path check'
 	@echo '  Clean:    make clean              Remove build artifacts'
-	@echo '  Badge:    make ci-badge           Regenerate the CI status badge SVG'
+	@echo '  Badge:    make ci-badge           Check README workflow badges point at existing workflows'
 	@echo ''
 	@echo 'Workflows:'
 	@echo '  make quickstart                  End-to-end local quickstart (kind cluster)'
@@ -624,10 +624,12 @@ check-breaking-changes: ## Detect breaking API changes vs base branch (#1288)
 
 # ── Issue #1674: CI badge status ─────────────────────────────────────────────
 
-ci-badge: ## Regenerate the CI status badge SVG (#1674)
-	@echo "→ Generating CI status badge..."
-	@bash scripts/ci/generate-badge.sh
-	@echo "✓ CI badge regenerated"
+# The README CI badge is GitHub's live status image for ci.yml, so there is
+# nothing to regenerate (generate-badge.sh is the compatibility-matrix badge
+# generator). This verifies the README's workflow badges instead (#1896).
+ci-badge: ## Check README workflow badges point at existing workflows (#1674, #1896)
+	@echo "→ Checking README workflow badges..."
+	@bash scripts/ci/check-readme-badges.sh
 
 completions: ## Generate shell completion scripts
 	@echo "→ Generating shell completions..."

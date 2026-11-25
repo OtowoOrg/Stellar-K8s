@@ -786,6 +786,8 @@ See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes and releases.
 - #1762: [EPIC] README update — added a documentation map, linked CONTRIBUTING and PITCH storyboards, corrected Helm install to the in-repo `charts/stellar-operator` chart, and kept the CI badge pointed at `.github/workflows/ci.yml`.
 <!-- handsoff-issue-1761 -->
 - #1761: [EPIC] CI badge status — README CI badge uses the official GitHub Actions URL for `.github/workflows/ci.yml` (default branch) and links to that workflow's runs page.
+<!-- handsoff-issue-1896 -->
+- #1896: [EPIC] CI badge status — `make ci-badge` now runs `scripts/ci/check-readme-badges.sh`, which fails if the CI badge is missing or any README badge points at a workflow file that no longer exists (bats: `scripts/tests/check-readme-badges.bats`).
 
 <!-- handsoff-issue-1674 -->
 - #1674: [EPIC] CI badge status — CI badge verified against `.github/workflows/ci.yml`; links resolve to the workflow page.

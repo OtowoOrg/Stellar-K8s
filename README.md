@@ -4,6 +4,10 @@
 
 # Stellar-K8s: Cloud-Native Stellar Infrastructure
 
+<p align="center">
+  <a href="https://otowoorg.github.io/Stellar-K8s/"><strong>📖 Documentation: otowoorg.github.io/Stellar-K8s</strong></a>
+</p>
+
 <!-- CI / Quality -->
 <!-- Official GitHub Actions badge (no branch query): tracks the repository default branch. -->
 <p align="center">
@@ -142,6 +146,7 @@ Stellar-K8s follows the **Operator Pattern**, extending Kubernetes with a `Stell
 Get a Testnet node running in under 5 minutes.
 
 **Getting started:** [Prerequisites](docs/getting-started/prerequisites.md) • [Installation](docs/getting-started/installation.md) • [Quick start](docs/getting-started/quick-start.md)
+> 🧭 **Running a Testnet validator?** Follow the [one-page Testnet validator guide](docs/getting-started/testnet-validator-quickstart.md).
 
 > 📖 **Full documentation:** this Quick Start is a condensed walkthrough — the [online documentation site](https://otowoorg.github.io/Stellar-K8s/) has the complete guides (installation, configuration, networking, troubleshooting) for every node type.
 
@@ -416,7 +421,14 @@ Please see our **[Contributing Guide](CONTRIBUTING.md)** for details on our work
 
 Want the background story behind the project? Read the **[PITCH storyboards](docs/pitch-storyboards.md)** for the problem statement, target users, and the roadmap narrative.
 
-Report bugs, request features, propose epics, or submit maintenance and support requests using the [issue templates](https://github.com/OtowoOrg/Stellar-K8s/issues/new/choose).
+Report bugs, request features, propose epics, or submit maintenance and support requests using the [issue templates](https://github.com/OtowoOrg/Stellar-K8s/issues/new/choose). Pick the template that fits:
+
+- **Bug Report**: a reproducible defect in Stellar-K8s.
+- **Feature Request**: a new feature or enhancement.
+- **Epic (200 Points)**: a major feature or architectural effort.
+- **Maintenance / Chore**: repo hygiene, CI, docs, dependency updates, or refactoring.
+- **Stellar Wave Issue**: a structured contributor issue in the standard wave format.
+- **Support Question**: questions and troubleshooting belong in GitHub Discussions, not the issue tracker.
 
 ---
 

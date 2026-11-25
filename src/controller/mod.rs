@@ -2,6 +2,7 @@
 
 pub mod autoscaler;
 pub mod benchmark;
+pub mod egress_policy_synthesis;
 pub mod blue_green;
 pub mod blue_green_core;
 

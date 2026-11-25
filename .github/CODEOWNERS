@@ -6,6 +6,15 @@
 # ==============================================================================
 *       @stellar-k8s-maintainers
 
+# Markdown: the Docs team reviews every .md file. This rule is deliberately the
+# first one after the default, so it only decides paths that have no more specific
+# rule below. Owned directories that hold markdown carry a sibling `*.md` line
+# next to their directory rule that repeats that directory's owners and adds
+# @docs-team, because the last matching rule replaces (it does not add to) the
+# owners of earlier ones. When a new owned directory gains markdown files, add
+# the same sibling line there.
+*.md                           @stellar-k8s-maintainers @docs-team
+
 # ==============================================================================
 # CI/CD & INFRASTRUCTURE
 # ==============================================================================
@@ -19,6 +28,7 @@
 /Tiltfile                      @devops-team
 /skaffold.yaml                 @devops-team
 /charts/                       @stellar-k8s-maintainers @devops-team
+/charts/**/*.md                @stellar-k8s-maintainers @devops-team @docs-team
 /scripts/                      @devops-team
 /.cargo/                       @stellar-k8s-maintainers
 /Makefile                      @stellar-k8s-maintainers @devops-team
@@ -48,8 +58,9 @@
 /src/policy_engine/            @security-team
 /src/data_residency.rs         @security-team
 /security/                     @security-team
+/security/**/*.md              @security-team @docs-team
 /policy/                       @security-team
-/SECURITY.md                   @security-team
+/SECURITY.md                   @security-team @docs-team
 /.gitleaks.toml                @security-team
 /.github/workflows/compliance-scan.yml @security-team
 /.github/workflows/container-image-security.yml @security-team
@@ -63,6 +74,7 @@
 /src/fork_detector/            @blockchain-team
 /src/protocol_compatibility.rs @blockchain-team
 /contracts/                    @blockchain-team
+/contracts/**/*.md             @blockchain-team @docs-team
 /formal_verification/          @blockchain-team @security-team
 
 # ==============================================================================
@@ -120,6 +132,7 @@
 # PERFORMANCE & OPTIMIZATION
 # ==============================================================================
 /benchmarks/                   @performance-team
+/benchmarks/**/*.md            @performance-team @docs-team
 /benches/                      @performance-team
 /src/benchmark_bisect.rs       @performance-team
 /src/benchmark_compare.rs      @performance-team
@@ -195,6 +208,7 @@ RELEASE_CHECKLIST.md           @stellar-k8s-maintainers @docs-team
 # FRONTEND & UI
 # ==============================================================================
 /frontend/                     @frontend-team
+/frontend/**/*.md              @frontend-team @docs-team
 /assets/                       @frontend-team
 /package.json                  @frontend-team
 /tsconfig.json                 @frontend-team
@@ -203,11 +217,13 @@ RELEASE_CHECKLIST.md           @stellar-k8s-maintainers @docs-team
 # WASM & PLUGINS
 # ==============================================================================
 /wasm-plugins/                 @wasm-team
+/wasm-plugins/**/*.md          @wasm-team @docs-team
 
 # ==============================================================================
 # TESTING & QUALITY
 # ==============================================================================
 /tests/                        @stellar-k8s-maintainers @qa-team
+/tests/**/*.md                 @stellar-k8s-maintainers @qa-team @docs-team
 /examples/                     @stellar-k8s-maintainers @docs-team
 /src/cli_tests.rs              @qa-team
 /.github/workflows/ci.yml      @stellar-k8s-maintainers @devops-team
@@ -227,5 +243,5 @@ Cargo.lock                     @stellar-k8s-maintainers
 # PROJECT GOVERNANCE
 # ==============================================================================
 LICENSE                        @stellar-k8s-maintainers @legal-team
-THIRD_PARTY_LICENSES.md        @stellar-k8s-maintainers @legal-team
+THIRD_PARTY_LICENSES.md        @stellar-k8s-maintainers @legal-team @docs-team
 /.github/CODEOWNERS            @stellar-k8s-maintainers

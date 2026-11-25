@@ -341,4 +341,4 @@ groups:
 For issues or questions:
 - GitHub Issues: [stellar-k8s/issues](https://github.com/OtowoOrg/Stellar-K8s/issues)
 - Stellar Discord: #soroban-rpc channel
-- Documentation: [docs/](../docs/)
+- Documentation: [docs/](../README.md)

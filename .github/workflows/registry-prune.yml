@@ -1,0 +1,90 @@
+name: Registry Prune
+
+# Prunes stale versions of the operator image (ghcr.io/<owner>/<repo>) with
+# scripts/prune-registry-images.sh. See docs/registry-pruning.md.
+#
+# Safety model:
+#   - Runs only on a schedule and on manual dispatch, never on push or pull_request.
+#   - Every run starts with a dry run that prints the plan to the job summary.
+#   - Scheduled runs are always dry runs. Versions are deleted only when a
+#     maintainer dispatches the workflow with dry_run set to false, and only
+#     after the plan step above has succeeded in the same job.
+#   - The script never deletes protected tags (latest, main, release tags), tags
+#     or digests the repo references, the newest versions, versions younger than
+#     min_age_days, or the children and signatures of a version it keeps.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1" # Mondays 03:17 UTC, dry run only
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run only. Set to false to delete the planned versions."
+        type: boolean
+        default: true
+      min_age_days:
+        description: "Only versions older than this many days may be deleted (minimum 1)"
+        type: string
+        default: "30"
+      keep_latest:
+        description: "Always keep this many of the newest versions"
+        type: string
+        default: "10"
+      max_delete:
+        description: "Refuse to delete more than this many versions in one run"
+        type: string
+        default: "100"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: registry-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Prune stale registry images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write # list and delete package versions (the plan step only reads)
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MIN_AGE_DAYS: ${{ inputs.min_age_days || '30' }}
+      KEEP_LATEST: ${{ inputs.keep_latest || '10' }}
+      MAX_DELETE: ${{ inputs.max_delete || '100' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Plan (dry run)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/prune-registry-images.sh \
+            --min-age-days "${MIN_AGE_DAYS}" \
+            --keep-latest "${KEEP_LATEST}" \
+            --max-delete "${MAX_DELETE}" | tee plan.txt
+          {
+            echo "### Registry prune plan (dry run)"
+            echo '```text'
+            cat plan.txt
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Delete planned versions
+        if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/prune-registry-images.sh --delete \
+            --min-age-days "${MIN_AGE_DAYS}" \
+            --keep-latest "${KEEP_LATEST}" \
+            --max-delete "${MAX_DELETE}" | tee delete.txt
+          {
+            echo "### Registry prune result"
+            echo '```text'
+            tail -n 5 delete.txt
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"

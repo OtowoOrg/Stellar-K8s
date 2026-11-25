@@ -75,7 +75,7 @@ The **Stellar Testnet** is a separate blockchain network maintained by the Stell
 - [ ] **Check peer connectivity**
   - Command: `kubectl exec -n stellar-testnet <pod> -- curl -s http://localhost:11626/peers | jq '.authenticated_peers | length'`
   - Expected: ≥ 1 peer within 2–5 minutes of pod start
-  - If `0`, review [Testnet Peer Egress Port Requirements](../networking/testnet-egress-ports.md#8-symptom-checklist-zero-peers--joining-scp)
+  - If `0`, review [Testnet Peer Egress Port Requirements](../networking/testnet-egress-ports.md#8-symptom-checklist-zero-peers-joining-scp)
 
 - [ ] **Check sync status**
   - Command: `kubectl exec -n stellar-testnet <pod> -- curl -s http://localhost:11626/info | jq '.state'`
@@ -165,7 +165,7 @@ kubectl exec -n stellar-testnet <pod> -- curl -s http://localhost:11626/peers | 
 ```
 
 **Fix:**
-1. Review [Testnet Peer Egress Port Requirements](../networking/testnet-egress-ports.md#8-symptom-checklist-zero-peers--joining-scp)
+1. Review [Testnet Peer Egress Port Requirements](../networking/testnet-egress-ports.md#8-symptom-checklist-zero-peers-joining-scp)
 2. Verify outbound TCP `3510` and `11625` are open to testnet cores
 3. Check cloud security groups, NAT gateways, and in-cluster network policies
 4. Test from a debug pod in the same namespace: `kubectl run -it --rm netdebug --image=nicolaka/netshoot --restart=Never -n stellar-testnet -- nc -zv -w 5 <sdf-testnet-host> 3510`

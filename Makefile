@@ -1,4 +1,4 @@
-.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all benchmark-soroban-cache wasm-cache-build run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart
+.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all benchmark-soroban-cache wasm-cache-build run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart repo-health golden-path-check
 # =============================================================================
 # Stellar-K8s Makefile
 #
@@ -26,7 +26,7 @@
 	build cache-warm test chaos-test ci-local quick watch \
 	docker-build docker-build-ci docker-multiarch docker-cache-purge \
 	fmt fmt-check lint lint-strict lint-all shellcheck codespell audit verify-mtls security-scan security-all security-report \
-	build test chaos-test ci-local quick watch \
+	build test chaos-test chaos-drill chaos-report ci-local quick watch \
 	docker-build docker-build-ci docker-multiarch docker-cache-purge docker-image-prune \
 	dev-setup dev-setup-rust dev-setup-tools dev-setup-hooks health-check pre-commit pre-commit-install run run-local run-dev \
 	install-crd apply-samples crd-gen regenerate completions completions-bash completions-zsh completions-fish \
@@ -40,7 +40,7 @@
 	bundle bundle-render bundle-generate bundle-validate bundle-build \
 	quickstart quickstart-setup quickstart-build quickstart-deploy \
 	health health-fast health-full validate preflight test-shell all \
-	shell-safety test-shell-safety tag-release validate-yaml test-yaml-validation \
+	shell-safety test-shell-safety tag-release tag-chart validate-yaml test-yaml-validation \
 	health health-fast validate preflight test-shell test-bats issue-template-lint all \
 	shell-safety test-shell-safety validate-yaml test-yaml-validation \
 	yaml-schema-validate test-db-migrations \
@@ -48,9 +48,12 @@
 	helm-drift helm-drift-update test-helm-drift test-helm-bump \
 	collect-failure-diagnostics test-failure-diagnostics \
 	check-unreachable-modules golden-path-pipeline secret-rotation-check dead-code-report \
+	check-stale-samples audit-features check-benchmark-sanity \
+	check-stale-samples audit-features \
 	check-pipeline-log-redaction \
 	license-headers check-license-headers \
 	argocd-sync \
+	federation-secrets-sync \
 	flux-sync flux-validate \
 	cost-estimate cost-estimate-check \
 	capacity-plan capacity-plan-check \
@@ -94,7 +97,7 @@ help: ## Show this help
 	@echo '  Docker:   make docker-build       Local Docker image'
 	@echo '  Cleanup:  make cleanup            Scratch artifacts + obsolete-path check'
 	@echo '  Clean:    make clean              Remove build artifacts'
-	@echo '  Badge:    make ci-badge           Regenerate the CI status badge SVG'
+	@echo '  Badge:    make ci-badge           Check README workflow badges point at existing workflows'
 	@echo ''
 	@echo 'Workflows:'
 	@echo '  make quickstart                  End-to-end local quickstart (kind cluster)'
@@ -190,11 +193,11 @@ security-report: ## Generate comprehensive security report
 
 shellcheck: ## Run shellcheck on all shell scripts
 	@echo "→ Running shellcheck..."
-	@find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error || true
+	@find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error
 
 CODESPELL_SKIP ?= Cargo.lock,package-lock.json,target,node_modules,vendor,*-vendor,THIRD_PARTY_LICENSES.md
 
-codespell: ## Spell-check docs/, src/ and top-level Markdown (same command as the CI codespell job) (#1682, #1769)
+codespell: ## Spell-check docs/, src/ and top-level Markdown (same command as the CI codespell job) (#1682, #1769, #1904)
 	@echo "→ Running codespell..."
 	@codespell --ignore-words=.codespellignore --skip="$(CODESPELL_SKIP)" docs/ src/ *.md
 
@@ -234,6 +237,9 @@ test-shell-safety: ## Unit tests for the shell safety gate (#1049)
 tag-release: ## Create annotated release tag: make tag-release TAG=vX.Y.Z [PUSH=1] [DRY_RUN=1]
 	@test -n "$(TAG)" || { echo "usage: make tag-release TAG=vX.Y.Z [PUSH=1] [DRY_RUN=1]"; exit 1; }
 	@bash scripts/tag-release.sh $(TAG) $(if $(PUSH),--push) $(if $(DRY_RUN),--dry-run)
+
+tag-chart: ## Create chart tag chart-vX.Y.Z from Chart.yaml on HEAD: make tag-chart [PUSH=1] [DRY_RUN=1] (#1940)
+	@bash scripts/tag-chart.sh $(if $(PUSH),--push) $(if $(DRY_RUN),--dry-run)
 
 # ── Manifest validation & drift ───────────────────────────────────────────────
 
@@ -373,6 +379,9 @@ docker-multiarch: ## Build the multi-arch (linux/amd64 + linux/arm64) image loca
 health: ## Run common repository health checks (format, lint, test, docs, links)
 	@bash scripts/repo-health.sh
 
+repo-health: ## Run the repository health check script
+	@bash scripts/repo-health.sh
+
 health-fast: ## Fast health gate (format, lint, compile only)
 	@bash scripts/repo-health.sh --fast
 
@@ -384,11 +393,42 @@ validate: health-fast ## Fast validation (alias for health-fast)
 golden-path-pipeline: ## Run the golden-path full pipeline command test from a clean checkout (#1774)
 	@bash scripts/golden-path-pipeline-check.sh
 
+golden-path-check: ## Run the golden-path full pipeline command test
+	@bash scripts/golden-path-pipeline-check.sh
+
 secret-rotation-check: ## Verify secret rotation without downtime (DRY_RUN=1 prints the plan without a cluster) (#1775)
 	@bash scripts/secret-rotation-check.sh $(if $(DRY_RUN),--dry-run)
 
+# Federation sync is opt-in: without source/target/secret settings (or without
+# kubectl/secret visibility) automation skips cleanly instead of failing.
+federation-secrets-sync: ## Sync federation secrets between clusters (skips when the federation stack is absent) (#1881)
+	@bash -c 'if [[ -z "$${SOURCE_CLUSTER:-}" || -z "$${TARGET_CLUSTER:-}" || -z "$${SECRET_NAME:-}" ]]; then \
+		echo "↷ Skipping federation secrets sync: set SOURCE_CLUSTER, TARGET_CLUSTER and SECRET_NAME"; \
+		exit 0; \
+	fi; \
+	if [[ "$${DRY_RUN:-false}" != "true" && "$${DRY_RUN:-false}" != "1" ]]; then \
+		command -v kubectl >/dev/null 2>&1 || { echo "↷ Skipping federation secrets sync: kubectl not available"; exit 0; }; \
+		kubectl --context "$${SOURCE_CLUSTER}" -n "$${NAMESPACE:-stellar-system}" get secret "$${SECRET_NAME}" >/dev/null 2>&1 || { echo "↷ Skipping federation secrets sync: source secret not available"; exit 0; }; \
+		kubectl --context "$${TARGET_CLUSTER}" get namespace "$${NAMESPACE:-stellar-system}" >/dev/null 2>&1 || { echo "↷ Skipping federation secrets sync: target namespace not available"; exit 0; }; \
+	fi; \
+	bash scripts/sync-federation-secrets.sh $(if $(filter 1 true,$(DRY_RUN)),--dry-run,)'
+
 dead-code-report: ## Generate the informational dead-code report at target/reports/dead-code-report.md (#1776)
 	@bash scripts/dead-code-report.sh
+
+check-stale-samples: ## Validate sample manifests against the current CRD schema (CI helper) (#1882)
+	@bash scripts/check-stale-samples.sh $(ARGS)
+
+audit-features: ## Audit unused crate features and dead imports (CI helper; pass ARGS=--report) (#1882)
+	@bash scripts/audit-features.sh $(ARGS)
+
+check-benchmark-sanity: ## Verify benchmark baselines and reproducibility (CI helper) (#1882)
+	@bash scripts/check-benchmark-sanity.sh $(ARGS)
+check-stale-samples: ## Detect stale sample manifests in config/samples/ (scripts/check-stale-samples.sh) (#1146)
+	@bash scripts/check-stale-samples.sh
+
+audit-features: ## Static audit for unused crate features and dead imports (scripts/audit-features.sh) (#1114)
+	@bash scripts/audit-features.sh
 
 # ── Quality & Health ───────────────────────────────────────────────────────────
 
@@ -453,7 +493,7 @@ check-openapi-spec: ## Fail if OpenAPI spec is missing required operator routes
 docs-build: ## Build the documentation site into site/
 	@python3 -m mkdocs --version >/dev/null 2>&1 || (echo "✗ mkdocs not installed. Run: pip install -r requirements.txt" && exit 1)
 	@echo "→ Building documentation site (mkdocs)..."
-	@python3 -m mkdocs build
+	@python3 -m mkdocs build --strict
 	@echo "✓ Documentation site written to site/"
 
 docs-serve: ## Serve the documentation site locally (http://127.0.0.1:8000)
@@ -598,10 +638,12 @@ check-breaking-changes: ## Detect breaking API changes vs base branch (#1288)
 
 # ── Issue #1674: CI badge status ─────────────────────────────────────────────
 
-ci-badge: ## Regenerate the CI status badge SVG (#1674)
-	@echo "→ Generating CI status badge..."
-	@bash scripts/ci/generate-badge.sh
-	@echo "✓ CI badge regenerated"
+# The README CI badge is GitHub's live status image for ci.yml, so there is
+# nothing to regenerate (generate-badge.sh is the compatibility-matrix badge
+# generator). This verifies the README's workflow badges instead (#1896).
+ci-badge: ## Check README workflow badges point at existing workflows (#1674, #1896)
+	@echo "→ Checking README workflow badges..."
+	@bash scripts/ci/check-readme-badges.sh
 
 completions: ## Generate shell completion scripts
 	@echo "→ Generating shell completions..."

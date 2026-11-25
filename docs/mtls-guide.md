@@ -104,6 +104,11 @@ Run the one-shot verification script via Make (skips gracefully when no cluster 
 make verify-mtls
 ```
 
+Without `kubectl` or a current kubeconfig context (including an empty
+`KUBECONFIG`), the target reports a skip and exits 0. When a cluster is
+available, missing or unready mTLS certificates make the target exit non-zero,
+which fails the CI job.
+
 Check CA and server secrets:
 
 ```bash

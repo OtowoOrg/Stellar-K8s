@@ -15,7 +15,9 @@ This directory contains ready-to-apply sample manifests for testing and developm
 | `sample-dryrun-validator.yaml` | Dry-run reconciliation verification and seed rotation |
 | `sample-policy-bundle.yaml` | Signed CEL runtime admission policy bundle |
 | `example-benchmark.yaml` | Benchmark runner manifest |
+| `apparmor-enabled.yaml` | Operator Deployment with opt-in AppArmor annotations (`STELLAR_APPARMOR_ENABLED=true`) |
 | `example_nodeport_config.yaml` | NodePort service configuration |
+| `apparmor-enabled.yaml` | AppArmor annotations enabled (`STELLAR_APPARMOR_ENABLED=true`); see `docs/production-security-hardening.md` |
 
 ## Quick Start
 

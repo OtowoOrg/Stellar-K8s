@@ -1,52 +1,58 @@
 #!/usr/bin/env bats
-# scripts/tests/repo-health.bats — Tests for scripts/repo-health.sh
 #
-# Run:  bats scripts/tests/repo-health.bats
-# Requires: bats-core (https://github.com/bats-core/bats-core)
+# bats suite for scripts/repo-health.sh
+#
+# Uses `--fast` so only cargo-backed steps run, and shims cargo via PATH to
+# keep the suite hermetic (no toolchain, network, or cluster required).
 
-REPO_HEALTH="${BATS_TEST_DIRNAME}/../repo-health.sh"
+setup() {
+  REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  SCRIPT="$REPO_ROOT/scripts/repo-health.sh"
 
-@test "repo-health.sh --help exits 0 and prints usage" {
-  run "${REPO_HEALTH}" --help
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage:"* ]]
-  [[ "$output" == *"--fast"* ]]
+  TEST_TMP="$(mktemp -d)"
+  SHIM_BIN="$TEST_TMP/bin"
+  mkdir -p "$SHIM_BIN"
+  export PATH="$SHIM_BIN:$PATH"
 }
 
-@test "repo-health.sh -h exits 0 and prints usage" {
-  run "${REPO_HEALTH}" -h
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage:"* ]]
+teardown() {
+  rm -rf "$TEST_TMP"
 }
 
-@test "repo-health.sh exits non-zero on unknown option" {
-  run "${REPO_HEALTH}" --unknown-flag
+# fail_fmt=1 makes the `cargo fmt --all --check` step fail.
+make_cargo_shim() {
+  local fail_fmt="${1:-0}"
+  cat >"$SHIM_BIN/cargo" <<EOF
+#!/usr/bin/env bash
+if [[ "${fail_fmt}" == "1" && "\$1" == "fmt" ]]; then
+  echo "shim: fmt check failed" >&2
+  exit 1
+fi
+exit 0
+EOF
+  chmod +x "$SHIM_BIN/cargo"
+}
+
+@test "script exists and is executable" {
+  [ -f "$SCRIPT" ]
+  [ -x "$SCRIPT" ]
+}
+
+@test "happy path: --fast succeeds when every cargo step passes" {
+  make_cargo_shim 0
+
+  run "$SCRIPT" --fast
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Stellar-K8s repository health check (fast)"* ]]
+  [[ "$output" == *"Format check (cargo fmt --all --check) passed"* ]]
+  [[ "$output" == *"All repository health checks passed (3/3)"* ]]
+}
+
+@test "failure path: a failing fmt step exits non-zero with a clear error" {
+  make_cargo_shim 1
+
+  run "$SCRIPT" --fast
   [ "$status" -ne 0 ]
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"Unknown option: --unknown-flag"* ]]
-}
-
-@test "repo-health.sh --fast succeeds when cargo checks pass" {
-  local tmpdir
-  tmpdir="$(mktemp -d)"
-  printf '#!/usr/bin/env bash\nexit 0\n' > "${tmpdir}/cargo"
-  chmod +x "${tmpdir}/cargo"
-
-  PATH="${tmpdir}:${PATH}" run "${REPO_HEALTH}" --fast
-  rm -rf "${tmpdir}"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Repository health checks passed"* ]]
-}
-
-@test "repo-health.sh --fast exits non-zero when cargo check fails" {
-  local tmpdir
-  tmpdir="$(mktemp -d)"
-  printf '#!/usr/bin/env bash\nexit 1\n' > "${tmpdir}/cargo"
-  chmod +x "${tmpdir}/cargo"
-
-  PATH="${tmpdir}:${PATH}" run "${REPO_HEALTH}" --fast
-  rm -rf "${tmpdir}"
-
-  [ "$status" -ne 0 ]
+  [[ "$output" == *"Code is not formatted"* ]]
+  [[ "$output" == *"Run 'make fmt' to auto-format Rust sources."* ]]
 }

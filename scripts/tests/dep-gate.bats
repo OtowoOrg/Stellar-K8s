@@ -69,6 +69,29 @@ SHIM
   [[ "$output" == *"cargo audit found unignored vulnerabilities"* ]]
 }
 
+@test "allow path: cargo deny policy check succeeds" {
+  run bash "$DEP_GATE" --quick
+
+  [[ "$output" == *"All dependency policies satisfied"* ]]
+  grep -q 'stub:.*cargo deny check' "$DEP_GATE_STUB_LOG"
+}
+
+@test "deny path: quick gate fails when cargo deny reports violations" {
+  # A blocked dependency change: audit passes, but the policy gate rejects it.
+  cat >"$SHIM_DIR/cargo" <<'SHIM'
+#!/usr/bin/env bash
+echo "stub:$0 $*" >>"${DEP_GATE_STUB_LOG:-/dev/null}"
+[ "$1" = "deny" ] && exit 1
+exit 0
+SHIM
+  chmod +x "$SHIM_DIR/cargo"
+
+  run bash "$DEP_GATE" --quick
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cargo deny check found violations"* ]]
+}
+
 @test "package manager calls are stubbed via PATH" {
   run bash "$DEP_GATE" --audit-only
 

@@ -3,12 +3,19 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## Chart v4.1.0 (2026-11-24) [minor]
+
+• CI artifact cleanup: scheduled `Artifact Cleanup` workflow deletes GitHub Actions workflow artifacts older than 30 days while preserving artifacts younger than 30 days, artifacts from release/provenance/security/long-retention workflows, artifacts matching essential name patterns (release binaries, packaged charts, SBOMs), and artifacts whose origin cannot be resolved (#1942).
+• Operator Helm chart version bumped to `4.1.0` with `appVersion` aligned; the chart tag `chart-v4.1.0` is created after merge per repository release policy (#1939).
+• Chart validation restored: duplicate `version`/`appVersion` keys removed from `Chart.yaml` and the corrupted `watchNamespace` guard in `templates/rbac.yaml` corrected so `helm lint --strict` and `helm template` pass (#1939).
+
 ## Chart v4.0.0 (2026-09-30) [major]
 
 ## Unreleased
 
 ### Added
 
+• Scheduled `Artifact Cleanup` CI workflow that deletes GitHub Actions workflow artifacts older than 30 days while protecting essential release, deployment, security, and debugging artifacts (#1942).
 • Dependency upgrade gate: `dependency-upgrade-gate` scans the repository for real call sites of an upgraded crate, generates consumer contract tests from them and blocks incompatible upgrades with consumer and `file:line` attribution; CI job `Dependency Contract Gate`, `scripts/dependency-upgrades.py` and `config/dependency-breaking-changes.json` (#1999).
 • Registry pull gate serving: the `StellarRegistry` reconciler now installs the pull-path gate, with REST endpoints to authorize a pull (`403` OCI error with a scan report link), serve scan reports and scan a pushed digest before it is acknowledged (#2000).
 • Config rollout query API: `GET /api/v1/config/rollouts[/:id]` and `GET /api/v1/config/versions[/:namespace/:node]` backed by a rollout snapshot registry, so the config version of every component is queryable (#1998).
@@ -43,6 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+• Restore strict Helm chart validity for release validation: correct the corrupted `watchNamespace` guard in `templates/rbac.yaml` and remove duplicate `version`/`appVersion` keys from `Chart.yaml` so `helm lint --strict` and `helm template` pass (#1939).
 • Fix spelling errors reported by codespell in historical CHANGELOG entries (#1682).
 • Fix typos reported by codespell in `scripts/check-stale-samples.sh`, `scripts/benchmark-api.py`, and `argoCdParser.js` (#1769).
 • Add domain terms and acceptable spelling variants to `.codespellignore` (#1769).

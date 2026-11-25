@@ -45,6 +45,24 @@ The script enforces the rules above: semver format, `Cargo.toml` version match, 
 
 Pushing a `v*.*.*` tag automatically triggers the [release workflow](#automated-pipeline).
 
+### Chart tags (`chart-vX.Y.Z`)
+
+Chart tags are separate from release tags: they carry the operator Helm chart
+version from `charts/stellar-operator/Chart.yaml` and are consumed by
+`helm-release.yml` / `bump-chart-version.sh`. To tag the current commit with
+the chart version (same guards: `main` only, clean tree, never overwrites an
+existing local or remote tag):
+
+```bash
+make tag-chart DRY_RUN=1      # validate and print the tag commands only
+make tag-chart                # create annotated chart-vX.Y.Z tag on HEAD
+make tag-chart PUSH=1         # create and push it to origin
+```
+
+Pushing a `chart-v*` tag is done intentionally as part of a chart release;
+`helm-release.yml` creates and pushes chart tags automatically when chart
+files change on `main`.
+
 ---
 
 ## Pre-release Checklist

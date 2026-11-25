@@ -43,6 +43,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+• Withhold secret-rotation-triggered operator pod restarts while the control plane is degraded, preventing disruptive rollouts during recovery (#1973).
+• Restore the namespace teardown driver so the operator can resume namespace cleanup reconciliation.
+• Restore installation of the rustls ring `CryptoProvider` during operator startup to keep TLS clients initialized reliably.
 • Fix spelling errors reported by codespell in historical CHANGELOG entries (#1682).
 • Fix typos reported by codespell in `scripts/check-stale-samples.sh`, `scripts/benchmark-api.py`, and `argoCdParser.js` (#1769).
 • Add domain terms and acceptable spelling variants to `.codespellignore` (#1769).

@@ -803,6 +803,8 @@ See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes and releases.
 
 <!-- handsoff-issue-1763 -->
 - #1763: [EPIC] CONTRIBUTING docs — root `CONTRIBUTING.md` documents fork/PR flow, verified `make` targets, and CI workflow `.github/workflows/ci.yml`; README links to it.
+<!-- handsoff-issue-1898 -->
+- #1898: [EPIC] CONTRIBUTING docs — added a Branching Rules guideline to reference the resolved issue with `Closes #<issue-number>` in the PR description.
 
 <!-- handsoff-issue-1676 -->
 - #1676: [EPIC] CONTRIBUTING docs — linked from the Contributing section above.

@@ -145,6 +145,7 @@ Stellar-K8s follows the **Operator Pattern**, extending Kubernetes with a `Stell
 
 Get a Testnet node running in under 5 minutes.
 
+**Getting started:** [Prerequisites](docs/getting-started/prerequisites.md) • [Installation](docs/getting-started/installation.md) • [Quick start](docs/getting-started/quick-start.md)
 > 🧭 **Running a Testnet validator?** Follow the [one-page Testnet validator guide](docs/getting-started/testnet-validator-quickstart.md).
 
 > 📖 **Full documentation:** this Quick Start is a condensed walkthrough — the [online documentation site](https://otowoorg.github.io/Stellar-K8s/) has the complete guides (installation, configuration, networking, troubleshooting) for every node type.

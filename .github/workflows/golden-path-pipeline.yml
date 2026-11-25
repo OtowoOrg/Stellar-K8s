@@ -1,6 +1,6 @@
 name: Golden Path Pipeline Check
 
-# Runs `make golden-path-pipeline` (scripts/golden-path-pipeline-check.sh, issue #1909)
+# Runs `make golden-path-check` (scripts/golden-path-pipeline-check.sh, issue #1909)
 # on changes that affect the canonical repo commands it chains together.
 
 on:
@@ -18,6 +18,8 @@ on:
       - "charts/stellar-operator/**"
       - "config/crd/**"
       - "docs/api-reference.md"
+      - "docs/getting-started/**"
+      - "README.md"
       - ".github/workflows/golden-path-pipeline.yml"
   push:
     branches: [main]
@@ -33,6 +35,8 @@ on:
       - "charts/stellar-operator/**"
       - "config/crd/**"
       - "docs/api-reference.md"
+      - "docs/getting-started/**"
+      - "README.md"
       - ".github/workflows/golden-path-pipeline.yml"
   workflow_dispatch: {}
 
@@ -57,4 +61,4 @@ jobs:
         uses: azure/setup-helm@v5
 
       - name: Run golden-path pipeline check
-        run: make golden-path-pipeline
+        run: make golden-path-check

@@ -5,6 +5,13 @@ name: Repo Health
 # uploaded as an artifact and summarised on the run page.
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/repo-health.sh"
+      - "scripts/lib/health-steps.sh"
+      - "Makefile"
+      - ".github/workflows/repo-health.yml"
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC
   workflow_dispatch:
@@ -30,10 +37,10 @@ jobs:
       with:
         cache-key: "ci-repo-health"
 
-    - name: Run make health
+    - name: Run repository health check
       run: |
         set -o pipefail
-        make health 2>&1 | tee repo-health.log
+        make repo-health 2>&1 | tee repo-health.log
 
     - name: Summarise result
       if: always()

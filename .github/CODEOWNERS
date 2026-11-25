@@ -29,7 +29,6 @@
 /src/controller/               @stellar-k8s-maintainers @kubernetes-experts
 /src/crd/                      @stellar-k8s-maintainers @kubernetes-experts
 /src/scheduler/                @stellar-k8s-maintainers @kubernetes-experts
-/src/admission/                @kubernetes-experts
 /controller/                   @stellar-k8s-maintainers @kubernetes-experts
 
 # ==============================================================================

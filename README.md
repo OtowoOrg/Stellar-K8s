@@ -4,6 +4,10 @@
 
 # Stellar-K8s: Cloud-Native Stellar Infrastructure
 
+<p align="center">
+  <a href="https://otowoorg.github.io/Stellar-K8s/"><strong>📖 Documentation: otowoorg.github.io/Stellar-K8s</strong></a>
+</p>
+
 <!-- CI / Quality -->
 <!-- Official GitHub Actions badge (no branch query): tracks the repository default branch. -->
 <p align="center">

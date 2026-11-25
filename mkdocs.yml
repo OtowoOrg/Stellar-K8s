@@ -390,6 +390,8 @@ nav:
     - Dependency Update Process: dependency-update-process.md
     - Dependency Upgrade Validation: dependency-upgrade-validation.md
     - Release Process: release-process.md
+    - Registry Pruning: registry-pruning.md
+    - Branch Protection: branch-protection.md
     - Developer Experience Platform: developer-experience-platform.md
     - Service Ownership Registry: service-ownership-registry.md
     - Platform Engineering Epics: platform-epics-1477-1478-1479-1480.md

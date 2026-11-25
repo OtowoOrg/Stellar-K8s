@@ -416,7 +416,14 @@ Please see our **[Contributing Guide](CONTRIBUTING.md)** for details on our work
 
 Want the background story behind the project? Read the **[PITCH storyboards](docs/pitch-storyboards.md)** for the problem statement, target users, and the roadmap narrative.
 
-Report bugs, request features, propose epics, or submit maintenance and support requests using the [issue templates](https://github.com/OtowoOrg/Stellar-K8s/issues/new/choose).
+Report bugs, request features, propose epics, or submit maintenance and support requests using the [issue templates](https://github.com/OtowoOrg/Stellar-K8s/issues/new/choose). Pick the template that fits:
+
+- **Bug Report**: a reproducible defect in Stellar-K8s.
+- **Feature Request**: a new feature or enhancement.
+- **Epic (200 Points)**: a major feature or architectural effort.
+- **Maintenance / Chore**: repo hygiene, CI, docs, dependency updates, or refactoring.
+- **Stellar Wave Issue**: a structured contributor issue in the standard wave format.
+- **Support Question**: questions and troubleshooting belong in GitHub Discussions, not the issue tracker.
 
 ---
 

@@ -1,4 +1,4 @@
-.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all benchmark-soroban-cache wasm-cache-build run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart
+.PHONY: help build test fmt fmt-check lint clean docker-build install-crd apply-samples dev-setup ci-local benchmark benchmark-upgrade benchmark-webhook benchmark-webhook-health benchmark-webhook-compare benchmark-webhook-save benchmark-all benchmark-soroban-cache wasm-cache-build run-dev helm-lint crd-gen run-local compose-up compose-dev compose-down compose-logs quickstart repo-health golden-path-check
 # =============================================================================
 # Stellar-K8s Makefile
 #
@@ -359,6 +359,9 @@ docker-multiarch: ## Build the multi-arch (linux/amd64 + linux/arm64) image loca
 health: ## Run common repository health checks (format, lint, test, docs, links)
 	@bash scripts/repo-health.sh
 
+repo-health: ## Run the repository health check script
+	@bash scripts/repo-health.sh
+
 health-fast: ## Fast health gate (format, lint, compile only)
 	@bash scripts/repo-health.sh --fast
 
@@ -368,6 +371,9 @@ health-full: ## Full health gate plus cargo audit and helm lint (#1773)
 validate: health-fast ## Fast validation (alias for health-fast)
 
 golden-path-pipeline: ## Run the golden-path full pipeline command test from a clean checkout (#1774)
+	@bash scripts/golden-path-pipeline-check.sh
+
+golden-path-check: ## Run the golden-path full pipeline command test
 	@bash scripts/golden-path-pipeline-check.sh
 
 secret-rotation-check: ## Verify secret rotation without downtime (DRY_RUN=1 prints the plan without a cluster) (#1775)

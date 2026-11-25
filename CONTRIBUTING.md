@@ -92,8 +92,10 @@ If your PR contains multiple logical changes, split it into separate branches an
 
 Changes to `main` must go through a pull request. The `main` branch protection rule should require:
 
-- A pull request before merging.
-- Passing status checks from the primary workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (`CI/CD Pipeline`). Common jobs include **Lint & Format** (`lint`), **Test** (`test`), and **Security Audit** (`security-audit`, skipped when dependency files are unchanged). Do not treat a job named `build` as required; that job is not defined in `ci.yml`.
+- A pull request before merging, with at least one approving review, and no force pushes or deletion of `main`.
+- Passing status checks. From the primary workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (`CI/CD Pipeline`): **Detect Changes**, **Preflight (toolchain versions)**, **Lint & Format** (`lint`), **Test** (`test`) and **Security Audit** (`security-audit`, skipped when dependency files are unchanged). From [`conventional-commits.yml`](.github/workflows/conventional-commits.yml): **Validate Conventional Commits**. Do not treat a job named `build` as required; that job is not defined in `ci.yml`.
+
+The rule is committed as [`.github/rulesets/main.json`](.github/rulesets/main.json) and applied by a maintainer with `scripts/apply-branch-protection.sh`; see [Branch Protection](docs/branch-protection.md).
 
 See [Dependency Update Process](docs/dependency-update-process.md#branch-protection-prerequisites) for the full list of settings that auto-merge depends on.
 
@@ -116,8 +118,11 @@ Before opening a PR, confirm the following:
 
 Reviewers are assigned automatically from [`.github/CODEOWNERS`](.github/CODEOWNERS)
 (last matching rule wins). Paths such as `src/webhook/`, `charts/`, and `docs/` route
-to specific teams, so expect those reviews when you touch them. Keep the file in sync
-when paths move or teams change.
+to specific teams, so expect those reviews when you touch them. Every Markdown file
+is also routed to `@docs-team` in addition to the owners of its directory. Because the
+last matching rule replaces earlier ones, a directory with its own owners needs a
+sibling `<dir>/**/*.md` line that repeats those owners and adds `@docs-team`. Keep the
+file in sync when paths move or teams change.
 
 ### Required checks
 

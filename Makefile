@@ -40,7 +40,7 @@
 	bundle bundle-render bundle-generate bundle-validate bundle-build \
 	quickstart quickstart-setup quickstart-build quickstart-deploy \
 	health health-fast health-full validate preflight test-shell all \
-	shell-safety test-shell-safety tag-release validate-yaml test-yaml-validation \
+	shell-safety test-shell-safety tag-release tag-chart validate-yaml test-yaml-validation \
 	health health-fast validate preflight test-shell test-bats issue-template-lint all \
 	shell-safety test-shell-safety validate-yaml test-yaml-validation \
 	yaml-schema-validate test-db-migrations \
@@ -48,6 +48,7 @@
 	helm-drift helm-drift-update test-helm-drift test-helm-bump \
 	collect-failure-diagnostics test-failure-diagnostics \
 	check-unreachable-modules golden-path-pipeline secret-rotation-check dead-code-report \
+	check-stale-samples audit-features \
 	check-pipeline-log-redaction \
 	license-headers check-license-headers \
 	argocd-sync \
@@ -176,7 +177,7 @@ security-report: ## Generate comprehensive security report
 
 shellcheck: ## Run shellcheck on all shell scripts
 	@echo "→ Running shellcheck..."
-	@find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error || true
+	@find scripts -type f -name "*.sh" -print0 | xargs -0 shellcheck -S error
 
 CODESPELL_SKIP ?= Cargo.lock,package-lock.json,target,node_modules,vendor,*-vendor,THIRD_PARTY_LICENSES.md
 
@@ -220,6 +221,9 @@ test-shell-safety: ## Unit tests for the shell safety gate (#1049)
 tag-release: ## Create annotated release tag: make tag-release TAG=vX.Y.Z [PUSH=1] [DRY_RUN=1]
 	@test -n "$(TAG)" || { echo "usage: make tag-release TAG=vX.Y.Z [PUSH=1] [DRY_RUN=1]"; exit 1; }
 	@bash scripts/tag-release.sh $(TAG) $(if $(PUSH),--push) $(if $(DRY_RUN),--dry-run)
+
+tag-chart: ## Create chart tag chart-vX.Y.Z from Chart.yaml on HEAD: make tag-chart [PUSH=1] [DRY_RUN=1] (#1940)
+	@bash scripts/tag-chart.sh $(if $(PUSH),--push) $(if $(DRY_RUN),--dry-run)
 
 # ── Manifest validation & drift ───────────────────────────────────────────────
 
@@ -376,6 +380,12 @@ secret-rotation-check: ## Verify secret rotation without downtime (DRY_RUN=1 pri
 dead-code-report: ## Generate the informational dead-code report at target/reports/dead-code-report.md (#1776)
 	@bash scripts/dead-code-report.sh
 
+check-stale-samples: ## Detect stale sample manifests in config/samples/ (scripts/check-stale-samples.sh) (#1146)
+	@bash scripts/check-stale-samples.sh
+
+audit-features: ## Static audit for unused crate features and dead imports (scripts/audit-features.sh) (#1114)
+	@bash scripts/audit-features.sh
+
 # ── Quality & Health ───────────────────────────────────────────────────────────
 
 check-unreachable-modules: ## Static check for unreachable modules and dead code paths (#1150)
@@ -439,7 +449,7 @@ check-openapi-spec: ## Fail if OpenAPI spec is missing required operator routes
 docs-build: ## Build the documentation site into site/
 	@python3 -m mkdocs --version >/dev/null 2>&1 || (echo "✗ mkdocs not installed. Run: pip install -r requirements.txt" && exit 1)
 	@echo "→ Building documentation site (mkdocs)..."
-	@python3 -m mkdocs build
+	@python3 -m mkdocs build --strict
 	@echo "✓ Documentation site written to site/"
 
 docs-serve: ## Serve the documentation site locally (http://127.0.0.1:8000)

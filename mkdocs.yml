@@ -160,11 +160,6 @@ nav:
       - GitOps, Capacity Planning, Upgrades: deployment-patterns/gitops-scaling-upgrades.md
       - Horizon RPC Farm: deployment-patterns/horizon-rpc-farm.md
       - Multi-Region and DR Patterns: deployment-patterns/multi-region-dr.md
-  - Multi-Region & Disaster Recovery:
-    - Deployment Patterns: deployment-patterns/index.md
-    - Horizon / RPC Farm: deployment-patterns/horizon-rpc-farm.md
-    - Multi-Region and DR: deployment-patterns/multi-region-dr.md
-    - GitOps, Scaling and Upgrades: deployment-patterns/gitops-scaling-upgrades.md
   - Multi-Region:
     - multi-region-deployment-and-failover.md
     - Multi-Region Failover Orchestration: multi-region-failover.md
@@ -187,7 +182,6 @@ nav:
     - CRD Reference: api-reference.md
     - Testnet Peer Configuration: configuration/testnet-peer-configuration.md
     - Operators: operator-sdk-guide.md
-    - Storage: volume-snapshots.md
     - CRD Reference: configuration/crd-reference.md
     - Operator Environment: configuration/operators.md
     - Storage: configuration/storage.md
@@ -249,11 +243,6 @@ nav:
       - Blue-Green Upgrade: operations/blue-green-upgrade.md
       - CVE-Triggered Rollouts: cve-auto-patch.md
     - Metrics and Dashboards:
-      - Metric Reference: observability/metric-reference.md
-      - Metric Naming Conventions: observability/metric-naming-conventions.md
-      - Metrics and Dashboards: observability/metrics-and-dashboards.md
-      - Telemetry Architecture: observability/telemetry-architecture.md
-      - Unified Observability Contract: observability/unified-contract.md
       - Stellar Metrics Guide: metrics/STELLAR_METRICS_GUIDE.md
       - Grafana Dashboard Guide: monitoring/GRAFANA_DASHBOARD_GUIDE.md
       - Soroban Dashboard Guide: monitoring/SOROBAN_DASHBOARD_GUIDE.md
@@ -386,7 +375,6 @@ nav:
     - Helm Chart Testing: helm-chart-testing.md
     - Database Migrations: database/migrations.md
     - Reconciler Phases: reconciler-phases.md
-    - Operator SDK Guide: operator-sdk-guide.md
     - Setup Prerequisites: development/setup-prerequisites.md
     - Command Matrix Tests: development/command-matrix.md
     - Makefile Refactoring: development/makefile-refactoring.md
@@ -402,6 +390,8 @@ nav:
     - Dependency Update Process: dependency-update-process.md
     - Dependency Upgrade Validation: dependency-upgrade-validation.md
     - Release Process: release-process.md
+    - Registry Pruning: registry-pruning.md
+    - Branch Protection: branch-protection.md
     - Developer Experience Platform: developer-experience-platform.md
     - Service Ownership Registry: service-ownership-registry.md
     - Platform Engineering Epics: platform-epics-1477-1478-1479-1480.md
@@ -419,7 +409,6 @@ nav:
     - First-Class Issue Types: first-class-issues.md
     - Change Notes: change-notes.md
   - Reference:
-    - FAQ: faq.md
     - Glossary: glossary.md
     - Kubernetes Compatibility Matrix: compat-matrix.md
     - Automation Features: AUTOMATION_FEATURES.md

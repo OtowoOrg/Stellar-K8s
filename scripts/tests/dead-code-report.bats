@@ -61,6 +61,12 @@ EOF
   # The report should surface the diagnostic the shim produced.
   run grep -q "DEMO_UNUSED" "$DEAD_CODE_REPORT_OUT"
   [ "$status" -eq 0 ]
+
+  # Both report sections must be present, not just the diagnostic body.
+  run grep -q "## Dead code (rustc diagnostics)" "$DEAD_CODE_REPORT_OUT"
+  [ "$status" -eq 0 ]
+  run grep -q "## Config keys not referenced in src/" "$DEAD_CODE_REPORT_OUT"
+  [ "$status" -eq 0 ]
 }
 
 @test "empty tool output yields a well-formed empty report" {
@@ -78,4 +84,7 @@ EOF
   # The empty-input path must say so explicitly rather than list findings.
   run grep -q "No dead-code diagnostics reported" "$DEAD_CODE_REPORT_OUT"
   [ "$status" -eq 0 ]
+
+  run grep -q "DEMO_UNUSED" "$DEAD_CODE_REPORT_OUT"
+  [ "$status" -ne 0 ]
 }

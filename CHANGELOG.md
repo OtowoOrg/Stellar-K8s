@@ -58,7 +58,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 • Add `pull-requests: write` permission to first-time contributor welcome workflow (#1772).
 • `make help` no longer prints the target list twice (#1679).
 • `preflight.bats` "gh missing" tests pass on hosts with `gh` in `/usr/bin`; `dep-gate.bats` tests the gate's real `--audit-only` interface (#1680).
-• Deduplicate operator environment variables.
+• Deduplicate operator environment variables so each variable is set once on the operator container (#1926).
+• Fix container `command` handling so the generated command is applied to the intended container only (#1926).
 • Prevent command injection in validator commands.
 • Scope config table lookups to the intended table.
 • Gate generated AppArmor annotations behind `STELLAR_APPARMOR_ENABLED`.

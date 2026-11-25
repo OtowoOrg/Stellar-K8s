@@ -26,9 +26,10 @@ This target is annotated and appears in `make help`.
 
 ### CI
 
-The sync is also exposed as a guarded workflow entry point. Automation runs the
-same target and skips safely when the federation stack is absent, while still
-propagating real failures.
+The sync is also exposed as a guarded workflow entry point in
+`.github/workflows/federation-secrets-sync.yml`. Automation runs the same target
+and skips safely when the federation stack is absent, while still propagating
+real failures.
 
 ## See Also
 

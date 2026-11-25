@@ -295,11 +295,20 @@ script it exercises, then:
    reported per test case.
 4. Keep each suite self-contained: create any temp files under `$BATS_TEST_TMPDIR`
    and clean up after the test.
-5. Verify locally with `bats scripts/tests/<script-name>.bats` before pushing.
+5. Verify locally with `bats scripts/tests/<script-name>.bats`, then run the full
+   `make test-bats` target before pushing.
+
+New suites are picked up automatically: `make test-bats` discovers every
+`scripts/tests/*.bats` file except `helm-drift.bats`, which needs `helm` and
+runs through `make test-helm-drift`. The `Bats Suites` job in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) invokes the same target,
+so a new suite needs no workflow change.
 
 **Reference suite** — [`scripts/tests/preflight.bats`](scripts/tests/preflight.bats)
 is the canonical example: it shows the expected file layout, helper loading, and
-assertion style to follow when adding new suites.
+assertion style to follow when adding new suites. For scripts that call external
+tools, [`scripts/tests/dep-gate.bats`](scripts/tests/dep-gate.bats) shows the
+fixture and PATH-shim pattern used to stub those calls without network access.
 
 ### Operational scripts index
 
@@ -341,6 +350,12 @@ Every pull request against `main` runs [`.github/workflows/ci.yml`](.github/work
 | `make ci-local` | `fmt-check` + `lint` + `audit` + `test` + `build` + `issue-template-lint` + `test-bats` |
 | `make nav-coverage` | every `mkdocs.yml` nav path exists |
 | `make docs-ci-build` | `mkdocs build --strict` |
+
+Documentation builds are strict in this repository: [`mkdocs.yml`](mkdocs.yml)
+sets `strict: true`, and the docs PR check runs `mkdocs build --strict --verbose`,
+so broken links or missing navigation targets fail CI. Use `make docs-ci-build`
+(or `mkdocs build --strict`) locally — a plain `mkdocs build` can hide warnings
+that will fail the PR check. Fix every warning instead of suppressing it.
 
 Confirm a target exists with `make help` before documenting a new command.
 

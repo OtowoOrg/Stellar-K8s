@@ -78,6 +78,10 @@
 
 Designed for high availability, type safety, and minimal footprint.
 
+## Project status
+
+Stellar-K8s is in active development. The operator crate is at `0.2.0` and the `stellar-operator` Helm chart at `4.0.0` (released 2026-09-30). Phase 1 of the [roadmap](#roadmap) (CRD, controller, Helm chart, CI, sync-aware health checks and the `kubectl-stellar` plugin) is complete; Phase 2 and 3 items are still open. For what is ready to use today, start with the [full documentation](https://otowoorg.github.io/Stellar-K8s/) and the [changelog](CHANGELOG.md).
+
 ## Documentation map
 
 | Topic | Where to start |
@@ -770,6 +774,8 @@ See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes and releases.
 
 <!-- handsoff-issue-1762 -->
 - #1762: [EPIC] README update — added a documentation map, linked CONTRIBUTING and PITCH storyboards, corrected Helm install to the in-repo `charts/stellar-operator` chart, and kept the CI badge pointed at `.github/workflows/ci.yml`.
+<!-- handsoff-issue-1897 -->
+- #1897: [EPIC] README update — added a "Project status" section (operator and chart versions, roadmap phase) linking the documentation site and changelog.
 <!-- handsoff-issue-1761 -->
 - #1761: [EPIC] CI badge status — README CI badge uses the official GitHub Actions URL for `.github/workflows/ci.yml` (default branch) and links to that workflow's runs page.
 

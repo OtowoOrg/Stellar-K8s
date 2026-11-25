@@ -48,10 +48,12 @@
 	helm-drift helm-drift-update test-helm-drift test-helm-bump \
 	collect-failure-diagnostics test-failure-diagnostics \
 	check-unreachable-modules golden-path-pipeline secret-rotation-check dead-code-report \
+	check-stale-samples audit-features check-benchmark-sanity \
 	check-stale-samples audit-features \
 	check-pipeline-log-redaction \
 	license-headers check-license-headers \
 	argocd-sync \
+	federation-secrets-sync \
 	flux-sync flux-validate \
 	cost-estimate cost-estimate-check \
 	capacity-plan capacity-plan-check \
@@ -377,9 +379,31 @@ golden-path-pipeline: ## Run the golden-path full pipeline command test from a c
 secret-rotation-check: ## Verify secret rotation without downtime (DRY_RUN=1 prints the plan without a cluster) (#1775)
 	@bash scripts/secret-rotation-check.sh $(if $(DRY_RUN),--dry-run)
 
+# Federation sync is opt-in: without source/target/secret settings (or without
+# kubectl/secret visibility) automation skips cleanly instead of failing.
+federation-secrets-sync: ## Sync federation secrets between clusters (skips when the federation stack is absent) (#1881)
+	@bash -c 'if [[ -z "$${SOURCE_CLUSTER:-}" || -z "$${TARGET_CLUSTER:-}" || -z "$${SECRET_NAME:-}" ]]; then \
+		echo "↷ Skipping federation secrets sync: set SOURCE_CLUSTER, TARGET_CLUSTER and SECRET_NAME"; \
+		exit 0; \
+	fi; \
+	if [[ "$${DRY_RUN:-false}" != "true" && "$${DRY_RUN:-false}" != "1" ]]; then \
+		command -v kubectl >/dev/null 2>&1 || { echo "↷ Skipping federation secrets sync: kubectl not available"; exit 0; }; \
+		kubectl --context "$${SOURCE_CLUSTER}" -n "$${NAMESPACE:-stellar-system}" get secret "$${SECRET_NAME}" >/dev/null 2>&1 || { echo "↷ Skipping federation secrets sync: source secret not available"; exit 0; }; \
+		kubectl --context "$${TARGET_CLUSTER}" get namespace "$${NAMESPACE:-stellar-system}" >/dev/null 2>&1 || { echo "↷ Skipping federation secrets sync: target namespace not available"; exit 0; }; \
+	fi; \
+	bash scripts/sync-federation-secrets.sh $(if $(filter 1 true,$(DRY_RUN)),--dry-run,)'
+
 dead-code-report: ## Generate the informational dead-code report at target/reports/dead-code-report.md (#1776)
 	@bash scripts/dead-code-report.sh
 
+check-stale-samples: ## Validate sample manifests against the current CRD schema (CI helper) (#1882)
+	@bash scripts/check-stale-samples.sh $(ARGS)
+
+audit-features: ## Audit unused crate features and dead imports (CI helper; pass ARGS=--report) (#1882)
+	@bash scripts/audit-features.sh $(ARGS)
+
+check-benchmark-sanity: ## Verify benchmark baselines and reproducibility (CI helper) (#1882)
+	@bash scripts/check-benchmark-sanity.sh $(ARGS)
 check-stale-samples: ## Detect stale sample manifests in config/samples/ (scripts/check-stale-samples.sh) (#1146)
 	@bash scripts/check-stale-samples.sh
 

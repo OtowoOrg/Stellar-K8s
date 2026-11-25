@@ -78,6 +78,7 @@ Use clear, descriptive branch names. Recommended prefixes:
 - Do not work directly on `main`.
 - Keep each branch scoped to a single feature, bug fix, or documentation item.
 - Rebase or merge `main` into your branch before opening a PR if `main` has advanced.
+- Reference the issue your branch resolves with `Closes #<issue-number>` in the PR description so GitHub links it and closes it on merge.
 
 ### Merge Strategy
 

@@ -16,6 +16,7 @@ This directory contains ready-to-apply sample manifests for testing and developm
 | `sample-policy-bundle.yaml` | Signed CEL runtime admission policy bundle |
 | `example-benchmark.yaml` | Benchmark runner manifest |
 | `example_nodeport_config.yaml` | NodePort service configuration |
+| `apparmor-enabled.yaml` | AppArmor annotations enabled (`STELLAR_APPARMOR_ENABLED=true`); see `docs/production-security-hardening.md` |
 
 ## Quick Start
 

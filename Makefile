@@ -48,6 +48,7 @@
 	helm-drift helm-drift-update test-helm-drift test-helm-bump \
 	collect-failure-diagnostics test-failure-diagnostics \
 	check-unreachable-modules golden-path-pipeline secret-rotation-check dead-code-report \
+	check-stale-samples audit-features check-benchmark-sanity \
 	check-pipeline-log-redaction \
 	license-headers check-license-headers \
 	argocd-sync \
@@ -375,6 +376,15 @@ secret-rotation-check: ## Verify secret rotation without downtime (DRY_RUN=1 pri
 
 dead-code-report: ## Generate the informational dead-code report at target/reports/dead-code-report.md (#1776)
 	@bash scripts/dead-code-report.sh
+
+check-stale-samples: ## Validate sample manifests against the current CRD schema (CI helper) (#1882)
+	@bash scripts/check-stale-samples.sh $(ARGS)
+
+audit-features: ## Audit unused crate features and dead imports (CI helper; pass ARGS=--report) (#1882)
+	@bash scripts/audit-features.sh $(ARGS)
+
+check-benchmark-sanity: ## Verify benchmark baselines and reproducibility (CI helper) (#1882)
+	@bash scripts/check-benchmark-sanity.sh $(ARGS)
 
 # ── Quality & Health ───────────────────────────────────────────────────────────
 

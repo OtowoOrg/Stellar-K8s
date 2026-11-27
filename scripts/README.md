@@ -56,6 +56,7 @@ Related documentation:
 |---|---|---|---|
 | [`issue_template_lint.py`](issue_template_lint.py) | Lints GitHub Issue Forms in `.github/ISSUE_TEMPLATE/`: required keys, `body` field types, and `config.yml` shape. Also validates the first-class issue type registry in `.github/issue-types.yml` (every form registered, labels and title prefixes in sync). | `make issue-template-lint`, `make issue-types-check` (`python3 scripts/issue_template_lint.py [--registry-only]`) | - |
 | [`check-shell-safety.py`](check-shell-safety.py) | Static analysis gate for unsafe shell patterns (unguarded `rm -rf`, `eval`, `curl \| bash`, missing strict mode). | `make shell-safety`, `make test-shell-safety` | [`tests/test_check_shell_safety.py`](tests/test_check_shell_safety.py) |
+| [`check-suspicious-code.py`](check-suspicious-code.py) | Scans tracked files for crypto-mining, backdoors, obfuscated or remote execution, exfiltration, risky Actions patterns, GitHub API spam, and committed binaries; `--base REF` limits the scan and `--report` is non-failing. | `scripts/check-suspicious-code.py [--base REF] [--report]` | — |
 | [`check-secrets.sh`](check-secrets.sh) | Secret-handling audit across the repository; `--report` never fails. | `bash scripts/check-secrets.sh [--report]` | — |
 | [`trivy-fs.sh`](trivy-fs.sh) | Local Trivy filesystem + IaC scan mirroring the `vulnerability-scan.yml` CI jobs; advisory only, never fails the build. Needs `trivy`. | `bash scripts/trivy-fs.sh [--severity HIGH,CRITICAL] [--fs-only\|--config-only]` | — |
 | [`validate-yaml-manifests.py`](validate-yaml-manifests.py) | Repository-wide schema validation of YAML manifests (syntax + Kubernetes/CRD schema + waivers). | `make validate-yaml`, `make test-yaml-validation` | [`tests/test_validate_yaml_manifests.py`](tests/test_validate_yaml_manifests.py) |
@@ -157,6 +158,7 @@ failure.
 | [`ci/generate-compat-html-report.sh`](ci/generate-compat-html-report.sh) | Renders the Kubernetes compatibility matrix JSON report as HTML. | `k8s-compat-matrix-advanced.yml` |
 | [`ci/k8s-conformance-tests.sh`](ci/k8s-conformance-tests.sh) | Applies CRDs and sample manifests, checks operator readiness, and runs conformance checks against a target Kubernetes cluster. | `k8s-compat.yml` |
 | [`ci/collect-failure-diagnostics.sh`](ci/collect-failure-diagnostics.sh) | Assembles the unified diagnostics bundle (`manifest.json`, `summary.txt`, sanitized env, cluster dumps, extras) for failing runs. | `ci.yml` → `failure-diagnostics`; see [`docs/ci-failure-diagnostics.md`](../docs/ci-failure-diagnostics.md) |
+| [`ci/check-readme-badges.sh`](ci/check-readme-badges.sh) | Verifies the README CI badge is present and every linked workflow badge points to an existing workflow file. | `ci.yml` → README badge validation |
 
 ## Shared shell libraries (`scripts/lib/`)
 
@@ -190,7 +192,10 @@ Python suites use `unittest` and are run individually, e.g.
 | [`tests/bump-chart-version.bats`](tests/bump-chart-version.bats) | `bump-chart-version.sh` SemVer rules and `min-bump` floor |
 | [`tests/secret-rotation-check.bats`](tests/secret-rotation-check.bats) | `secret-rotation-check.sh` non-destructive secret rotation verification |
 | [`tests/failure-diagnostics.bats`](tests/failure-diagnostics.bats) | `ci/collect-failure-diagnostics.sh` bundle layout |
+| [`tests/check-readme-badges.bats`](tests/check-readme-badges.bats) | `ci/check-readme-badges.sh` badge presence and workflow-link validation |
 | [`tests/shell-script-coverage.bats`](tests/shell-script-coverage.bats) | Comprehensive coverage for health-check, repo-health, tag-release, validate-metrics, and other critical shell scripts (#1702) |
+| [`tests/repo-health.bats`](tests/repo-health.bats) | `repo-health.sh` fast health path and failure reporting |
+| [`tests/verify-mtls.bats`](tests/verify-mtls.bats) | `verify-mtls.sh` Kubernetes command handling and mTLS readiness checks |
 | [`tests/test_check_shell_safety.py`](tests/test_check_shell_safety.py) | `check-shell-safety.py` rules (both positive and negative cases) |
 | [`tests/test_dependency_upgrades.py`](tests/test_dependency_upgrades.py) | `dependency-upgrades.py` lockfile comparison and direct-dependency detection |
 | [`tests/test_validate_yaml_manifests.py`](tests/test_validate_yaml_manifests.py) | `validate-yaml-manifests.py` validation layers |
